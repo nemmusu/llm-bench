@@ -6,7 +6,7 @@ import { niceMax } from '../../../../src/renderer/routes/run';
 import { renderApp } from '../helpers';
 import { exerciseFormatters } from './charts';
 import { IDS, summaries } from './fixtures';
-import { apiError, benchApi, planFor } from './world';
+import { apiError, benchApi, planFor, activeRun } from './world';
 
 const charts = vi.hoisted(() => ({ options: [] as Record<string, unknown>[] }));
 vi.mock('echarts/core', () => ({
@@ -127,12 +127,15 @@ describe('live run', () => {
   });
 
   it('a reopened screen resumes from the core; a finished run opens its result', async () => {
-    const api = benchApi({ active: { runId: IDS.full, phase: 'decode', progress: 0.5 } });
+    const api = benchApi({ active: activeRun(IDS.full, { phase: 'decode', progress: 0.5 }) });
     const { router } = renderApp(`/run/${IDS.full}`, api);
     expect(await screen.findByText('Il test sta continuando: ecco dove è arrivato.')).toBeTruthy();
+    // The core tells what runs, since when and for how long: labels, phases and ETA as if never left.
+    expect(await screen.findByText('Qwen3 8B · llama.cpp b11438 (CUDA 13.4) · Rapido')).toBeTruthy();
     await waitFor(() => expect(screen.getByText(/Il modello sta scrivendo testo di prova/)).toBeTruthy());
+    expect(screen.getByText('Fase 3 di 4')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Avanzamento del test' }).getAttribute('aria-valuetext')).toBe('50%');
-    expect(screen.getByText(/Mancano circa/)).toBeTruthy();
+    expect(screen.getByText(/Mancano circa 1 min 3\d s/)).toBeTruthy();
     // No power limit known: the scale follows the readings.
     act(() => api.emit({ type: 'telemetry', samples: [sample(10, { powerW: 470 })] }));
     api.world.active = null;
@@ -140,7 +143,7 @@ describe('live run', () => {
   });
 
   it('without GPU data or power limit the gauges still read well', async () => {
-    const api = benchApi({ active: { runId: RUN, phase: 'prepare', progress: 0 }, system: { ...benchApi().world.system, gpus: [] } });
+    const api = benchApi({ active: activeRun(RUN, { phase: 'prepare', progress: 0 }), system: { ...benchApi().world.system, gpus: [] } });
     renderApp(`/run/${RUN}`, api);
     expect(await screen.findByText('Calcolo il tempo rimanente…')).toBeTruthy();
     expect(screen.getByRole('meter', { name: 'Potenza' }).textContent).toContain('500');

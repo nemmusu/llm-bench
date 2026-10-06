@@ -1,16 +1,17 @@
 /**
- * "Avvia benchmark", start to finish: one clear confirmation for what must be downloaded or
- * installed (with sizes), the downloads themselves with progress, the "GPU busy" question, then
- * POST /api/runs and the live screen. Used by the Benchmark page and by "Rifai questo benchmark".
+ * "Avvia benchmark", start to finish: the exact plan of these choices (it lists what must be
+ * installed or downloaded, with sizes), one clear confirmation for it, the installs and downloads
+ * with progress, the "GPU busy" question, then POST /api/runs with the same request (the core finds
+ * what was just downloaded) and the live screen. Used by the Benchmark page and by "Rifai questo benchmark".
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Box, Check, Download, Loader, TriangleAlert } from 'lucide-react';
+import { Box, Check, Container, Download, Loader, TriangleAlert } from 'lucide-react';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { RunPlan, ServerInfo, StartRunRequest } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
-import type { DownloadJob, LocalModel } from '../../../contract/models';
+import type { DownloadJob } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { useApi, useServerEvents } from '../../lib/api-context';
 import { apiErrorData, ENGINES_KEY, LOCAL_MODELS_KEY, SERVERS_KEY } from '../../lib/queries-runs';
@@ -18,20 +19,15 @@ import { Button } from '../ui/button';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { Progress } from '../ui/progress';
 import { ErrorCard } from './error-card';
+import { needsFromPlan, type Need } from './needs';
 import { saveRunContext } from './run-context';
 
-/**
- * Something to fetch before the run can start. A model with `file` is one GGUF (the request then
- * points at the downloaded copy); without it the whole repo is fetched for vLLM (the core finds
- * the local copy by itself).
- */
-export type Need =
-  | { kind: 'engine'; label: string; bytes?: number }
-  | { kind: 'model'; label: string; bytes?: number; repo: string; revision: string; file?: string };
-
 export interface StartOptions {
+  /** What to fetch first when no plan can be made (the plan's own list wins). */
   needs: Need[];
+  /** The preview of exactly this request, when the caller has it (else it is asked for first). */
   plan?: RunPlan;
+  /** Also the name of the model download in the confirmation and in the downloads panel. */
   modelLabel: string;
   engineLabel: string;
   /** Called once the run really started (e.g. remember the choices in settings). */
@@ -141,6 +137,73 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
     [post],
   );
 
+  /** POST /api/engines/:kind/install and its 'engine.install' events until 'done' (or 'error', thrown). */
+  const install = useCallback(
+    async (kind: string, body: Record<string, unknown>, onEvent: (e: Extract<ServerEvent, { type: 'engine.install' }>) => void) => {
+      const wait = waitFor((e) => {
+        if (e.type !== 'engine.install' || e.kind !== kind) return undefined;
+        onEvent(e);
+        return INSTALL_DONE.has(e.stage) ? e : undefined;
+      });
+      try {
+        await api.post(`/api/engines/${kind}/install`, body);
+      } catch (e) {
+        wait.cancel();
+        throw e;
+      }
+      const end = await wait.promise;
+      if (end.error) throw Object.assign(new Error(end.error.message), { data: end.error });
+      void qc.invalidateQueries({ queryKey: ENGINES_KEY });
+      void qc.invalidateQueries({ queryKey: ['lib', 'engines'] });
+    },
+    [api, qc, waitFor],
+  );
+
+  /** POST /api/downloads and its 'download.update' events until the job ends; then the library knows the files. */
+  const download = useCallback(
+    async (need: Extract<Need, { kind: 'model' }>, onJob: (j: DownloadJob) => void) => {
+      const known: { id?: string } = {};
+      const early: DownloadJob[] = [];
+      const wait = waitFor((e) => {
+        if (e.type !== 'download.update') return undefined;
+        if (known.id === undefined) {
+          early.push(e.job);
+          return undefined;
+        }
+        if (e.job.id !== known.id) return undefined;
+        onJob(e.job);
+        return DOWNLOAD_DONE.has(e.job.state) ? e.job : undefined;
+      });
+      let job: DownloadJob;
+      try {
+        job = await api.post<DownloadJob>('/api/downloads', { repo: need.repo, revision: need.revision, files: [need.file ?? '*'], label: need.label });
+      } catch (e) {
+        wait.cancel();
+        throw e;
+      }
+      known.id = job.id;
+      downloadId.current = job.id;
+      // The job may have finished (or progressed) before its id was known.
+      const seen = [job, ...early.filter((j) => j.id === job.id)].pop()!;
+      onJob(seen);
+      let end: DownloadJob;
+      if (DOWNLOAD_DONE.has(seen.state)) {
+        wait.cancel();
+        end = seen;
+      } else end = await wait.promise;
+      downloadId.current = undefined;
+      if (end.state !== 'done') {
+        const code = end.error?.code ?? 'DOWNLOAD_FAILED';
+        throw Object.assign(new Error(end.error?.message ?? 'download failed'), { data: { code, message: end.error?.message ?? 'download failed' } });
+      }
+      // The run request names the model by repo and file: the core finds this copy once its library is rescanned.
+      await api.post('/api/models/rescan');
+      void qc.invalidateQueries({ queryKey: LOCAL_MODELS_KEY });
+      void qc.invalidateQueries({ queryKey: ['lib', 'models', 'local'] });
+    },
+    [api, qc, waitFor],
+  );
+
   const fetchNeeds = useCallback(
     async (request: StartRunRequest, opts: StartOptions) => {
       // Closing the dialog bumps the generation: late answers of this attempt are then ignored.
@@ -151,73 +214,14 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
         progress[i] = { ...progress[i]!, ...patch };
         if (alive()) setFlow({ step: 'fetching', request, opts, progress: [...progress] });
       };
+      const bytes = (i: number, stage: string, done: number, total: number | undefined) => update(i, { stage, done, ...(total ? { total } : {}) });
       setFlow({ step: 'fetching', request, opts, progress: [...progress] });
-      let req = request;
       try {
         for (const [i, need] of opts.needs.entries()) {
           update(i, { state: 'running' });
-          if (need.kind === 'engine') {
-            const wait = waitFor((e) => {
-              if (e.type !== 'engine.install' || e.kind !== 'llamacpp-native') return undefined;
-              update(i, { stage: e.stage, done: e.bytesDone, ...(e.bytesTotal ? { total: e.bytesTotal } : {}) });
-              return INSTALL_DONE.has(e.stage) ? e : undefined;
-            });
-            try {
-              await api.post('/api/engines/llamacpp-native/install', {});
-            } catch (e) {
-              wait.cancel();
-              throw e;
-            }
-            const end = await wait.promise;
-            if (end.error) throw Object.assign(new Error(end.error.message), { data: end.error });
-            void qc.invalidateQueries({ queryKey: ENGINES_KEY });
-            void qc.invalidateQueries({ queryKey: ['lib', 'engines'] });
-            void qc.invalidateQueries({ queryKey: ['bench', 'plan'] });
-          } else {
-            const known: { id?: string } = {};
-            const early: DownloadJob[] = [];
-            const wait = waitFor((e) => {
-              if (e.type !== 'download.update') return undefined;
-              if (known.id === undefined) {
-                early.push(e.job);
-                return undefined;
-              }
-              if (e.job.id !== known.id) return undefined;
-              update(i, { stage: e.job.state, done: e.job.bytesDone, ...(e.job.bytesTotal ? { total: e.job.bytesTotal } : {}) });
-              return DOWNLOAD_DONE.has(e.job.state) ? e.job : undefined;
-            });
-            let job: DownloadJob;
-            try {
-              job = await api.post<DownloadJob>('/api/downloads', { repo: need.repo, revision: need.revision, files: [need.file ?? '*'], label: need.label });
-            } catch (e) {
-              wait.cancel();
-              throw e;
-            }
-            known.id = job.id;
-            downloadId.current = job.id;
-            // The job may have finished (or progressed) before its id was known.
-            const seen = [job, ...early.filter((j) => j.id === job.id)].pop()!;
-            update(i, { stage: seen.state, done: seen.bytesDone, ...(seen.bytesTotal ? { total: seen.bytesTotal } : {}) });
-            let end: DownloadJob;
-            if (DOWNLOAD_DONE.has(seen.state)) {
-              wait.cancel();
-              end = seen;
-            } else end = await wait.promise;
-            downloadId.current = undefined;
-            if (end.state !== 'done') {
-              const code = end.error?.code ?? 'DOWNLOAD_FAILED';
-              throw Object.assign(new Error(end.error?.message ?? 'download failed'), { data: { code, message: end.error?.message ?? 'download failed' } });
-            }
-            const models = await api.post<LocalModel[]>('/api/models/rescan');
-            void qc.invalidateQueries({ queryKey: LOCAL_MODELS_KEY });
-            void qc.invalidateQueries({ queryKey: ['lib', 'models', 'local'] });
-            const file = need.file;
-            if (file !== undefined) {
-              const local = models.find((m) => m.identity.file === file || m.paths.some((p) => p.replaceAll('\\', '/').endsWith(`/${file}`)));
-              if (!local) throw Object.assign(new Error('downloaded model not found'), { data: { code: 'MODEL_NOT_FOUND', message: `${file} not found after download` } });
-              req = { ...req, model: { localId: local.id } };
-            }
-          }
+          if (need.kind === 'engine') await install('llamacpp-native', {}, (e) => bytes(i, e.stage, e.bytesDone, e.bytesTotal));
+          else if (need.kind === 'image') await install(need.engine, { image: need.label }, (e) => bytes(i, e.stage, e.bytesDone, e.bytesTotal));
+          else await download(need, (j) => bytes(i, j.state, j.bytesDone, j.bytesTotal));
           update(i, { state: 'done' });
         }
       } catch (e) {
@@ -226,36 +230,44 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
         setFlow({ step: 'fetching', request, opts, progress: progress.map((p) => (p.state === 'running' ? { ...p, state: 'failed' as const } : p)), error: data });
         return;
       }
+      void qc.invalidateQueries({ queryKey: ['bench', 'plan'] });
       // Fresh plan now that everything is in place: warnings (GPU busy) and the scenario for the live screen.
-      const plan = await api.post<RunPlan>('/api/runs/plan', req).catch(() => opts.plan);
+      const plan = await api.post<RunPlan>('/api/runs/plan', request).catch(() => opts.plan);
       if (!alive()) return;
-      const pre = { install: opts.needs.some((n) => n.kind === 'engine'), download: opts.needs.some((n) => n.kind === 'model') };
-      proceed(req, { ...opts, ...(plan ? { plan } : {}) }, pre);
+      const pre = { install: opts.needs.some((n) => n.kind !== 'model'), download: opts.needs.some((n) => n.kind === 'model') };
+      proceed(request, { ...opts, ...(plan ? { plan } : {}) }, pre);
     },
-    [api, qc, waitFor, proceed],
+    [api, qc, install, download, proceed],
+  );
+
+  /** With the plan of this request (if one could be made): confirm what must be fetched first, or go. */
+  const decide = useCallback(
+    (request: StartRunRequest, opts: StartOptions, plan: RunPlan | undefined) => {
+      const needs = plan ? needsFromPlan(request, plan, opts.modelLabel) : opts.needs;
+      const next: StartOptions = { ...opts, needs, ...(plan ? { plan } : {}) };
+      if (needs.length) setFlow({ step: 'confirm', request, opts: next });
+      else proceed(request, next, { install: false, download: false });
+    },
+    [proceed],
   );
 
   const start = useCallback(
     (request: StartRunRequest, opts: StartOptions) => {
-      if (opts.needs.length) {
-        setFlow({ step: 'confirm', request, opts });
-        return;
-      }
       if (opts.plan) {
-        proceed(request, opts, { install: false, download: false });
+        decide(request, opts, opts.plan);
         return;
       }
-      // Started before the preview of these exact choices arrived: get it now (GPU check, phases, duration).
+      // Started before the preview of these exact choices arrived: get it now (downloads, GPU check, phases, duration).
       const gen = ++generation.current;
       setFlow({ step: 'starting', request, opts });
       void api
         .post<RunPlan>('/api/runs/plan', request)
         .catch(() => undefined)
         .then((plan) => {
-          if (generation.current === gen) proceed(request, { ...opts, ...(plan ? { plan } : {}) }, { install: false, download: false });
+          if (generation.current === gen) decide(request, opts, plan);
         });
     },
-    [api, proceed],
+    [api, decide],
   );
 
   const close = () => {
@@ -276,9 +288,18 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
   return { start, ui: <StartDialogs flow={flow} onClose={close} onConfirm={fetchNeeds} onContinue={post} onStopServers={stopServersAndStart} /> };
 }
 
+const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
+
+/** "Installo llama.cpp", "Scarico l'immagine …", "Scarico Qwen3 4B · Q4_K_M" and why. */
+const NEED_TEXT = {
+  engine: ['benchmark.needs.installEngine', 'benchmark.needs.engineWhy'],
+  image: ['benchmark.needs.pullImage', 'benchmark.needs.imageWhy'],
+  model: ['benchmark.needs.downloadModel', 'benchmark.needs.modelWhy'],
+} as const;
+
 function NeedRow({ p }: { p: StepProgress }) {
   const { t, bytes, integer } = useI18n();
-  const Icon = p.need.kind === 'engine' ? Box : Download;
+  const Icon = NEED_ICONS[p.need.kind];
   // A total always comes with the bytes done.
   const pct = p.total ? Math.min(100, (100 * p.done!) / p.total) : p.state === 'done' ? 100 : 0;
   const stage =
@@ -364,16 +385,20 @@ function StartDialogs({
         }
       >
         <ul className="flex flex-col gap-2">
-          {flow.opts.needs.map((n) => (
-            <li key={n.label} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
-              {n.kind === 'engine' ? <Box aria-hidden className="size-4 text-accent-text" /> : <Download aria-hidden className="size-4 text-accent-text" />}
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium text-fg">{t(n.kind === 'engine' ? 'benchmark.needs.installEngine' : 'benchmark.needs.downloadModel', { name: n.label })}</span>
-                <span className="text-xs text-fg-3">{t(n.kind === 'engine' ? 'benchmark.needs.engineWhy' : 'benchmark.needs.modelWhy')}</span>
-              </span>
-              <span className="font-medium text-fg tabular-nums">{n.bytes === undefined ? t('benchmark.needs.sizeUnknown') : bytes(n.bytes)}</span>
-            </li>
-          ))}
+          {flow.opts.needs.map((n) => {
+            const Icon = NEED_ICONS[n.kind];
+            const [what, why] = NEED_TEXT[n.kind];
+            return (
+              <li key={n.label} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+                <Icon aria-hidden className="size-4 shrink-0 text-accent-text" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-medium break-words text-fg">{t(what, { name: n.label })}</span>
+                  <span className="text-xs text-fg-3">{t(why)}</span>
+                </span>
+                <span className="shrink-0 font-medium text-fg tabular-nums">{n.bytes === undefined ? t('benchmark.needs.sizeUnknown') : bytes(n.bytes)}</span>
+              </li>
+            );
+          })}
         </ul>
         <p className="mt-3 text-xs text-fg-3">{t('benchmark.needs.once')}</p>
       </DialogContent>

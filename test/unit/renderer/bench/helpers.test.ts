@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
+import type { RunPlan, StartRunRequest } from '../../../../src/contract/api';
+import type { EngineStatus } from '../../../../src/contract/engines';
 import type { LocalModel } from '../../../../src/contract/models';
 import type { RunResult, RunSummary } from '../../../../src/contract/results';
 import type { CuratedModel } from '../../../../src/contract/views';
@@ -30,7 +32,6 @@ import {
   peakConcurrency,
   prettyEngineLabel,
   prettyVariant,
-  runIdTime,
   shortGpuName,
   slug,
   summaryModelLabel,
@@ -40,6 +41,7 @@ import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS } from '../../../.
 import { kpisOf, sentenceKey } from '../../../../src/renderer/components/bench/kpis';
 import { initialLive, liveReducer, MAX_LOG_LINES } from '../../../../src/renderer/components/bench/live-state';
 import { engineFamily, initialModelKey, modelOptions, requestModel, savedModelId, triedOn } from '../../../../src/renderer/components/bench/model-options';
+import { guessNeeds, needsFromPlan } from '../../../../src/renderer/components/bench/needs';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
 import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../../../../src/renderer/components/bench/phases';
 import { findLocalModel, rerunOf } from '../../../../src/renderer/components/bench/rerun';
@@ -48,7 +50,7 @@ import { launchSummaryParts, paramParts, scenarioLines } from '../../../../src/r
 import { sharedGpuList, validityBody } from '../../../../src/renderer/components/bench/validity';
 import { readChartTokens } from '../../../../src/renderer/components/charts/echarts';
 import { createFormatters } from '../../../../src/renderer/i18n';
-import { HOST, IDS, seeded, summaries } from './fixtures';
+import { HOST_ID, IDS, seeded, summaries } from './fixtures';
 
 const it_ = createFormatters('it');
 const en = createFormatters('en');
@@ -100,7 +102,7 @@ describe('format', () => {
     expect(shortGpuName('NVIDIA RTX A6000')).toBe('RTX A6000');
   });
 
-  it('knows managed executables, slugs and run id times', () => {
+  it('knows managed executables and slugs', () => {
     expect(isManagedExecutable('C:\\Data\\engines\\llamacpp\\b1\\llama-server.exe', 'c:\\data\\engines\\')).toBe(true);
     expect(isManagedExecutable('C:\\llama\\llama-server.exe', 'C:\\Data\\engines')).toBe(false);
     expect(isManagedExecutable('x', undefined)).toBe(false);
@@ -108,9 +110,6 @@ describe('format', () => {
     expect(slug('···')).toBe('run');
     expect(countKey(1, 'one', 'other')).toBe('one');
     expect(countKey(2, 'one', 'other')).toBe('other');
-    expect(runIdTime('0000000001ABCDEFGHJKMNPQRS')).toBe(1);
-    expect(runIdTime('00000000Z0ABCDEFGHJKMNPQRS')).toBe(31 * 32);
-    expect(runIdTime('not-an-id')).toBeUndefined();
   });
 
   it('picks headline numbers', () => {
@@ -301,13 +300,15 @@ describe('history and filters', () => {
   });
 
   it('filters by text, model, GPU, engine, status and this PC', () => {
-    expect(filterRuns(list, NO_FILTERS, HOST)).toHaveLength(9);
-    expect(filterRuns(list, { ...NO_FILTERS, q: 'GEMMA' }, HOST)).toHaveLength(1);
-    expect(filterRuns(list, { ...NO_FILTERS, model: 'Qwen3 8B' }, HOST)).toHaveLength(2);
-    expect(filterRuns(list, { ...NO_FILTERS, gpu: 'NVIDIA GeForce RTX 3070' }, HOST)).toHaveLength(1);
-    expect(filterRuns(list, { ...NO_FILTERS, engine: 'vllm-docker' }, HOST)).toHaveLength(1);
-    expect(filterRuns(list, { ...NO_FILTERS, status: 'cancelled' }, HOST)).toHaveLength(1);
-    expect(filterRuns(list, { ...NO_FILTERS, thisPc: true }, HOST)).toHaveLength(8);
+    expect(filterRuns(list, NO_FILTERS, HOST_ID)).toHaveLength(9);
+    expect(filterRuns(list, { ...NO_FILTERS, q: 'GEMMA' }, HOST_ID)).toHaveLength(1);
+    expect(filterRuns(list, { ...NO_FILTERS, model: 'Qwen3 8B' }, HOST_ID)).toHaveLength(2);
+    expect(filterRuns(list, { ...NO_FILTERS, gpu: 'NVIDIA GeForce RTX 3070' }, HOST_ID)).toHaveLength(1);
+    expect(filterRuns(list, { ...NO_FILTERS, engine: 'vllm-docker' }, HOST_ID)).toHaveLength(1);
+    expect(filterRuns(list, { ...NO_FILTERS, status: 'cancelled' }, HOST_ID)).toHaveLength(1);
+    expect(filterRuns(list, { ...NO_FILTERS, thisPc: true }, HOST_ID)).toHaveLength(8);
+    // Same name, another PC (or this PC renamed): the id decides.
+    expect(filterRuns(list, { ...NO_FILTERS, thisPc: true }, 'another-id')).toHaveLength(0);
     expect(distinct(list, (r) => r.engineKind)).toEqual(['llamacpp-native', 'vllm-docker']);
     expect(ALL).toBe('all');
   });
@@ -342,11 +343,17 @@ describe('model options', () => {
     expect(initialModelKey(opts, 'nope')).toBe('local:s');
     expect(initialModelKey(opts.slice(1), undefined)).toBe('curated:w');
     expect(initialModelKey([], 'x')).toBeUndefined();
+    // A suggestion chosen (and saved) before its download is found as the library copy afterwards.
+    const later = modelOptions('llamacpp-native', [local('z'), local('b', { file: 'b.gguf' })], [curated('b')]);
+    expect(later.map((o) => o.key)).toEqual(['local:z', 'local:b']);
+    expect(initialModelKey(later, 'curated:b', [curated('b')])).toBe('local:b');
+    expect(initialModelKey(later, 'curated:gone', [curated('b')])).toBe('local:z');
     expect(savedModelId(opts[0]!)).toBe('s');
     expect(savedModelId(opts[1]!)).toBe('curated:w');
     expect(requestModel(opts[0]!)).toEqual({ localId: 's' });
     expect(requestModel(opts[1]!)).toEqual({ repo: 'org/w', revision: 'a'.repeat(40) });
-    expect(requestModel(modelOptions('llamacpp-native', [], [curated('b')])[0]!)).toBeUndefined();
+    // A GGUF suggestion is planned (and later run) by repo + file, before and after its download.
+    expect(requestModel(modelOptions('llamacpp-native', [], [curated('b')])[0]!)).toEqual({ repo: 'org/b-GGUF', file: 'b.gguf', revision: 'a'.repeat(40) });
   });
 
   it('finds the newest completed run of a model on this GPU', () => {
@@ -474,6 +481,14 @@ describe('rerun', () => {
     expect(vllm.draft.repo).toBe('Qwen/Qwen3-8B-FP8');
     const noRev = rerunOf({ ...seeded(IDS.vllm), model: { ...seeded(IDS.vllm).model, revision: undefined } }, [], undefined);
     expect(noRev.request.model).toEqual({ repo: 'Qwen/Qwen3-8B-FP8' });
+    // A GGUF downloaded from Hugging Face: the library copy while it is there, else repo + file (downloaded again first).
+    const hubGguf = { ...seeded(IDS.full).model, source: 'hf' as const, repo: 'Qwen/Qwen3-8B-GGUF', file: 'Qwen3-8B-Q4_K_M.gguf', revision: 'abc' };
+    expect(rerunOf({ ...seeded(IDS.full), model: hubGguf }, lib, undefined).request.model).toEqual({ localId: 'm' });
+    const gone = rerunOf({ ...seeded(IDS.full), model: hubGguf }, [], undefined);
+    expect(gone.request.model).toEqual({ repo: 'Qwen/Qwen3-8B-GGUF', file: 'Qwen3-8B-Q4_K_M.gguf', revision: 'abc' });
+    expect(gone.draft.repo).toBe('Qwen/Qwen3-8B-GGUF');
+    expect(gone.modelMissing).toBe(false);
+    expect(rerunOf({ ...seeded(IDS.full), model: { ...hubGguf, revision: undefined } }, [], undefined).request.model).toEqual({ repo: 'Qwen/Qwen3-8B-GGUF', file: 'Qwen3-8B-Q4_K_M.gguf' });
   });
 
   it('external endpoints and vLLM native', () => {
@@ -583,5 +598,54 @@ describe('compare', () => {
     expect(lines.tooltip.valueFormatter(2)).toBe('2 t');
     expect(lines.xAxis.axisLabel.formatter(4)).toBe('x4');
     expect(lines.series[0]!.data).toEqual([[1, 10], [2, null], [4, 40]]);
+  });
+});
+
+describe('needs before a run', () => {
+  const plan = (needs: RunPlan['needs']): RunPlan => ({ scenario: { profile: 'quick', seed: 42, steps: [] }, command: { argv: [], powershell: '', bash: '' }, needs, estimatedSeconds: 1, warnings: [] });
+  const req = (engine: StartRunRequest['engine'], model: StartRunRequest['model']): StartRunRequest => ({ engine, model, profile: 'quick', allowSharedGpu: false });
+
+  it('reads them from the plan, named for people', () => {
+    const gguf = req({ kind: 'llamacpp-native' }, { repo: 'org/m-GGUF', file: 'm.gguf', revision: 'r1' });
+    expect(
+      needsFromPlan(gguf, plan([{ kind: 'engine', label: 'llama.cpp', bytes: 5 }, { kind: 'model', label: 'org/m-GGUF/m.gguf', bytes: 9 }]), 'M · Q4_K_M'),
+    ).toEqual([
+      { kind: 'engine', label: 'llama.cpp', bytes: 5 },
+      { kind: 'model', label: 'M · Q4_K_M', bytes: 9, repo: 'org/m-GGUF', revision: 'r1', file: 'm.gguf' },
+    ]);
+    // A vLLM repo without a pinned revision and without a known size; a Docker image to pull.
+    const vllm = req({ kind: 'vllm-docker' }, { repo: 'org/m' });
+    // Engine first, then the image, then the model, whatever order the plan lists them in.
+    expect(needsFromPlan(vllm, plan([{ kind: 'model', label: 'org/m' }, { kind: 'image', label: 'vllm/vllm-openai:v1', bytes: 7 }, { kind: 'engine', label: 'x' }]), 'M')).toEqual([
+      { kind: 'engine', label: 'x' },
+      { kind: 'image', engine: 'vllm-docker', label: 'vllm/vllm-openai:v1', bytes: 7 },
+      { kind: 'model', label: 'M', repo: 'org/m', revision: 'main' },
+    ]);
+    expect(needsFromPlan(gguf, plan([]), 'M')).toEqual([]);
+  });
+
+  it('guesses them before the plan from the engine status and the chosen model', () => {
+    const status = (over: Partial<EngineStatus>): EngineStatus => ({ kind: 'llamacpp-native', available: false, installed: false, problems: [], supported: true, ...over });
+    const suggestion = modelOptions('llamacpp-native', [], [curated('b')])[0];
+    const repoOnly = modelOptions('vllm-docker', [], [curated('w', { engine: 'vllm', file: undefined, repo: 'org/w' } as Partial<CuratedModel>)])[0];
+    const mine = modelOptions('llamacpp-native', [local('a')], [])[0];
+    expect(guessNeeds({ engine: { kind: 'llamacpp-native' }, status: status({}), option: suggestion, modelLabel: 'B' })).toEqual([
+      { kind: 'engine', label: 'llama.cpp' },
+      { kind: 'model', label: 'B', bytes: 1000, repo: 'org/b-GGUF', revision: 'a'.repeat(40), file: 'b.gguf' },
+    ]);
+    // A custom executable, an unknown or installed status, a model on the PC: nothing to fetch.
+    expect(guessNeeds({ engine: { kind: 'llamacpp-native', executable: 'x' }, status: status({}), option: mine, modelLabel: 'A' })).toEqual([]);
+    expect(guessNeeds({ engine: { kind: 'llamacpp-native' }, status: undefined, option: undefined, modelLabel: 'A' })).toEqual([]);
+    expect(guessNeeds({ engine: { kind: 'llamacpp-native' }, status: status({ installed: true }), option: mine, modelLabel: 'A' })).toEqual([]);
+    // Docker: a missing image the status names; not when Docker itself is the problem, nor for a custom image.
+    const missing = status({ kind: 'vllm-docker', location: 'vllm/vllm-openai:v1', problems: ['ENGINE_NOT_INSTALLED'] });
+    expect(guessNeeds({ engine: { kind: 'vllm-docker' }, status: missing, option: repoOnly, modelLabel: 'W' })).toEqual([
+      { kind: 'image', engine: 'vllm-docker', label: 'vllm/vllm-openai:v1' },
+      { kind: 'model', label: 'W', bytes: 1000, repo: 'org/w', revision: 'a'.repeat(40) },
+    ]);
+    expect(guessNeeds({ engine: { kind: 'vllm-docker', image: 'mine:1' }, status: missing, option: undefined, modelLabel: 'W' })).toEqual([]);
+    expect(guessNeeds({ engine: { kind: 'llamacpp-docker' }, status: { ...missing, problems: ['DOCKER_NOT_RUNNING'] }, option: undefined, modelLabel: 'W' })).toEqual([]);
+    expect(guessNeeds({ engine: { kind: 'llamacpp-docker' }, status: { ...missing, location: undefined }, option: undefined, modelLabel: 'W' })).toEqual([]);
+    expect(guessNeeds({ engine: { kind: 'llamacpp-docker' }, status: undefined, option: undefined, modelLabel: 'W' })).toEqual([]);
   });
 });

@@ -20,7 +20,7 @@ import { processList } from '../../../../src/renderer/components/bench/start-flo
 import { renderApp } from '../helpers';
 import { exerciseFormatters } from './charts';
 import { IDS, seeded, summaries } from './fixtures';
-import { apiError, benchApi, curatedModel, deferred, localModel, planFor } from './world';
+import { apiError, benchApi, curatedModel, deferred, localModel, planFor, activeRun } from './world';
 
 const charts = vi.hoisted(() => ({ options: [] as Record<string, unknown>[] }));
 vi.mock('echarts/core', () => ({
@@ -113,16 +113,60 @@ describe('benchmark: unusual data', () => {
     expect(within(dialog).queryByText('Entra perfettamente')).toBeNull();
   });
 
-  it('llama.cpp reported installed, but the plan says it is missing (or needs it)', async () => {
+  it('llama.cpp reported installed, but the plan says otherwise: the plan wins', async () => {
     const api = benchApi();
     api.world.plan = () => {
       throw apiError('ENGINE_NOT_INSTALLED');
     };
     renderApp('/', api);
-    expect(await screen.findByText('Verrà installato: 480 MB')).toBeTruthy();
+    // A plan that cannot be made says why; nothing is guessed to be missing.
+    expect(await screen.findByRole('heading', { name: 'Il motore non è installato' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: /Anteprima comando/ }));
+    expect(screen.getByText('Il comando non è disponibile: controlla le scelte qui sopra.')).toBeTruthy();
+    expect(screen.getByText('Installato · b11438')).toBeTruthy();
     api.world.plan = () => planFor({ needs: [{ kind: 'engine', label: 'llama.cpp', bytes: 1024 * 1024 }] });
     await userEvent.click(screen.getByRole('radio', { name: /Standard/ }));
-    expect(await screen.findByText('Verrà installato: 1,0 MB')).toBeTruthy();
+    expect(await screen.findByText('Verrà installato prima del test: 1,0 MB')).toBeTruthy();
+  });
+
+  it('a Docker engine whose image is missing: pulled first, with progress', async () => {
+    const image = 'ghcr.io/ggml-org/llama.cpp:server-cuda';
+    const engines = benchApi().world.engines.map((e) => (e.kind === 'llamacpp-docker' ? { ...e, problems: ['ENGINE_NOT_INSTALLED'] } : e));
+    const api = benchApi({ engines });
+    api.settings.lastEngine = { kind: 'llamacpp-docker' };
+    let fail = true;
+    api.world.routes['POST /api/engines/llamacpp-docker/install'] = () => {
+      if (fail) throw apiError('DOCKER_NOT_RUNNING');
+      return { ok: true };
+    };
+    renderApp('/', api);
+    expect(await screen.findByText('Immagine da scaricare prima del test')).toBeTruthy();
+    expect(await screen.findByText('Immagine da scaricare prima del test: 2,7 GB')).toBeTruthy();
+    expect(screen.getByText('· verrà scaricata prima del test')).toBeTruthy();
+    await start();
+    const confirm = await screen.findByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' });
+    expect(within(confirm).getByText(`Scarico l’immagine ${image}`)).toBeTruthy();
+    expect(within(confirm).getByText('Il motore pronto per Docker. Succede solo la prima volta.')).toBeTruthy();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Scarica e avvia' }));
+    expect(await screen.findByRole('heading', { name: 'Docker non è avviato' })).toBeTruthy();
+    fail = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(posted(api, '/api/engines/llamacpp-docker/install')).toHaveLength(2));
+    expect(posted(api, '/api/engines/llamacpp-docker/install')[1]!.body).toEqual({ image });
+    api.world.engines = benchApi().world.engines;
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'download', bytesDone: 1 }));
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image, stage: 'download', bytesDone: 1024 ** 3, bytesTotal: 2 * 1024 ** 3 }));
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: image }).getAttribute('aria-valuetext')).toBe('1,0 GB di 2,0 GB'));
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image, stage: 'done', bytesDone: 2, bytesTotal: 2 }));
+    expect(await h1('Test in corso')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Fasi del test' }).textContent).toContain('Installazione');
+  });
+
+  it('a GPU whose driver version is unknown', async () => {
+    const system = benchApi().world.system;
+    const { driverVersion: _unknown, ...gpu } = system.gpus[0]!;
+    renderApp('/', benchApi({ system: { ...system, gpus: [gpu] } }));
+    expect(await screen.findByText(/RTX 5090 · 32 GB · driver –/)).toBeTruthy();
   });
 
   it('a custom executable is not something to install: the plan error is shown', async () => {
@@ -138,16 +182,18 @@ describe('benchmark: unusual data', () => {
     expect((screen.getByLabelText('Eseguibile personalizzato') as HTMLInputElement).value).toBe('C:\\y\\llama-server.exe');
   });
 
-  it('a vLLM repo need without a size uses the suggestion’s size; a GPU-busy warning without names', async () => {
+  it('a vLLM repo need without a size says so; a GPU-busy warning without names', async () => {
     const api = benchApi();
     api.settings.lastEngine = { kind: 'vllm-docker' };
     api.settings.lastModelId = 'curated:vllm-4b';
     api.world.plan = () => planFor({ needs: [{ kind: 'model', label: 'Qwen/Qwen3-4B-AWQ' }], warnings: [{ code: 'VRAM_BUSY' }] });
     renderApp('/', api);
-    expect(await screen.findByText('Verrà scaricato: 2,3 GB')).toBeTruthy();
+    expect(await screen.findByText('Verrà scaricato prima del test')).toBeTruthy();
+    expect(screen.getByText('Prima scarico vllm-4b · Q4_K_M.')).toBeTruthy();
     api.world.routes['POST /api/downloads'] = () => job({ state: 'done' });
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    expect(screen.getByText('dimensione da verificare')).toBeTruthy();
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     const busy = await screen.findByRole('dialog', { name: 'La scheda video è già occupata' });
     expect(within(busy).getByText('Programmi non identificati')).toBeTruthy();
   });
@@ -219,9 +265,9 @@ describe('start flow: failures in the middle', () => {
     api.world.routes['POST /api/engines/llamacpp-native/install'] = () => ({ ok: true });
     api.world.routes['POST /api/downloads'] = () => job({ id: 'd1' });
     renderApp('/', api);
-    await screen.findByText('Verrà scaricato: 2,3 GB');
+    await screen.findByText('Verrà scaricato prima del test: 2,3 GB');
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     const dialog = await screen.findByRole('dialog', { name: 'Preparo il test' });
     expect(within(dialog).getByText('In attesa')).toBeTruthy();
     expect(within(dialog).getByRole('progressbar', { name: 'gemma-12b · Q4_K_M' }).getAttribute('aria-valuetext')).toBe('0%');
@@ -229,15 +275,15 @@ describe('start flow: failures in the middle', () => {
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'done', bytesDone: 0 }));
     await waitFor(() => expect(within(dialog).getByRole('progressbar', { name: 'llama.cpp' }).getAttribute('aria-valuetext')).toBe('100%'));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(1));
-    // Other events while downloading are ignored; the copy is found by its path.
-    api.world.local = [localModel('gemma-12b', { file: 'renamed.gguf' })];
+    // Other events while downloading are ignored; a fresh plan that fails keeps the one from before.
     api.world.plan = () => {
       throw apiError('INTERNAL');
     };
     act(() => api.emit({ type: 'runs.changed' }));
     act(() => api.emit({ type: 'download.update', job: job({ id: 'd1', state: 'done', bytesDone: 1 }) }));
     expect(await h1('Test in corso')).toBeTruthy();
-    expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).model).toEqual({ localId: 'gemma-12b' });
+    expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).model).toEqual({ repo: 'org/gemma-12b-GGUF', file: 'gemma-12b.gguf', revision: 'b'.repeat(40) });
+    expect(screen.getByText('Fase 3 di 6')).toBeTruthy();
   });
 
   it('the engine is installed, then the model download fails: each row says how it went', async () => {
@@ -247,9 +293,9 @@ describe('start flow: failures in the middle', () => {
       throw apiError('DISK_FULL');
     };
     renderApp('/', api);
-    await screen.findByText('Verrà scaricato: 2,3 GB');
+    await screen.findByText('Verrà scaricato prima del test: 2,3 GB');
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'done', bytesDone: 1, bytesTotal: 1 }));
     expect(await screen.findByRole('heading', { name: 'Spazio su disco esaurito' })).toBeTruthy();
     const dialog = screen.getByRole('dialog');
@@ -264,9 +310,9 @@ describe('start flow: failures in the middle', () => {
       throw new TypeError('Failed to fetch');
     };
     renderApp('/', api);
-    await screen.findByText('Verrà scaricato: 2,3 GB');
+    await screen.findByText('Verrà scaricato prima del test: 2,3 GB');
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     expect(await screen.findByRole('heading', { name: 'Si è verificato un errore imprevisto' })).toBeTruthy();
     await userEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Chiudi' }).at(-1)!);
 
@@ -276,7 +322,7 @@ describe('start flow: failures in the middle', () => {
       throw apiError('DOWNLOAD_NOT_FOUND');
     };
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(2));
     await userEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -285,7 +331,7 @@ describe('start flow: failures in the middle', () => {
     const late = deferred<DownloadJob>();
     api.world.routes['POST /api/downloads'] = () => late.promise;
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(3));
     await userEvent.keyboard('{Escape}');
     await act(async () => late.resolve(job({ id: 'd5' })));
@@ -293,12 +339,13 @@ describe('start flow: failures in the middle', () => {
 
     // Download done, rescan fine, but the fresh plan comes back after the user closed the dialog.
     delete api.world.routes['POST /api/models/rescan'];
-    api.world.local = [localModel('gemma-12b')];
-    api.world.routes['POST /api/downloads'] = () => job({ id: 'd4', state: 'done' });
     const plan = deferred<ReturnType<typeof planFor>>();
-    api.world.plan = () => plan.promise as never;
+    api.world.routes['POST /api/downloads'] = () => {
+      api.world.plan = () => plan.promise as never;
+      return job({ id: 'd4', state: 'done' });
+    };
     await start();
-    await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/runs/plan').length).toBeGreaterThan(0));
     await userEvent.keyboard('{Escape}');
     await act(async () => plan.resolve(planFor()));
@@ -306,12 +353,29 @@ describe('start flow: failures in the middle', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('no plan can be made (Hugging Face unreachable): the guessed needs are fetched, then the run starts', async () => {
+    const api = benchApi({ local: [], curated: [curatedModel('gemma-12b')] });
+    api.world.plan = () => {
+      throw apiError('NETWORK', undefined, 0);
+    };
+    api.world.routes['POST /api/downloads'] = () => job({ id: 'd7', state: 'done' });
+    renderApp('/', api);
+    expect(await screen.findByRole('heading', { name: 'Connessione a internet non disponibile' })).toBeTruthy();
+    expect(screen.getByText('Verrà scaricato prima del test: 2,3 GB')).toBeTruthy();
+    await start();
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
+    expect(await h1('Test in corso')).toBeTruthy();
+    expect(posted(api, '/api/downloads')[0]!.body).toMatchObject({ repo: 'org/gemma-12b-GGUF', files: ['gemma-12b.gguf'] });
+    // Without a plan the live screen takes the scenario from the core's active run.
+    expect(await screen.findByText('Fase 2 di 5')).toBeTruthy();
+  });
+
   it('own server: the list cannot be read, or stopping fails', async () => {
     const api = benchApi();
     let owned = true;
     api.world.routes['POST /api/runs'] = () => {
       if (owned) throw apiError('VRAM_BUSY', { reason: 'own_server' });
-      api.world.active = { runId: '01M48PNN41KKD0ABVXTGK97Y6P', phase: 'prepare', progress: 0 };
+      api.world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: '01M48PNN41KKD0ABVXTGK97Y6P' };
     };
     api.world.routes['GET /api/servers'] = () => {
@@ -335,14 +399,14 @@ describe('start flow: failures in the middle', () => {
 
 describe('live run: odd ids and late polls', () => {
   it('a run id that is not a ULID, another run finishing, a poll after events', async () => {
-    const api = benchApi({ active: { runId: 'plain', phase: 'prepare', progress: 0 } });
+    const api = benchApi({ active: activeRun('plain', { phase: 'prepare', progress: 0 }) });
     const { router } = renderApp('/run/plain', api);
     expect(await h1('Test in corso')).toBeTruthy();
     act(() => api.emit({ type: 'telemetry', samples: [{ t: 0, gpu: 0, utilPct: null, memUsedMiB: null, memTotalMiB: null, powerW: null, tempC: null, smClockMHz: null, memClockMHz: null, pcieGen: null, pcieWidth: null, throttle: [] }] }));
     act(() => api.emit({ type: 'run.phase', runId: 'plain', phase: 'warm-load', progress: 0.2 }));
     act(() => api.emit({ type: 'run.done', runId: 'another', summary: summaries()[0]! }));
     // The next poll says the same run moved on: the events already know better.
-    api.world.active = { runId: 'plain', phase: 'prepare', progress: 0.1 };
+    api.world.active = activeRun('plain', { phase: 'prepare', progress: 0.1 });
     await new Promise((r) => setTimeout(r, 2300));
     expect(router.state.location.pathname).toBe('/run/plain');
     expect(screen.getByText(/Ricarico il modello/)).toBeTruthy();

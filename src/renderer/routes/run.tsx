@@ -4,8 +4,9 @@ import { ChevronDown, CircleStop, Loader } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import type { ActiveRun } from '../../contract/api';
 import type { RunPhase } from '../../contract/events';
-import { MIB_PER_GB, runIdTime } from '../components/bench/format';
+import { MIB_PER_GB, prettyEngineLabel } from '../components/bench/format';
 import { initialLive, liveReducer, type LiveState } from '../components/bench/live-state';
 import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../components/bench/phases';
 import { readRunContext, type RunContext } from '../components/bench/run-context';
@@ -52,8 +53,8 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const system = useBenchSystem();
   const active = useActiveRun(2000);
   const [live, setLive] = useState<LiveState>(() => initialLive());
-  // A reopened screen knows the start from the run id itself.
-  const [startedAt] = useState(() => ctx?.startedAt ?? runIdTime(runId) ?? Date.now());
+  // What the core says about this run (start time, ETA, labels, scenario): all a reopened screen has.
+  const [info, setInfo] = useState<ActiveRun | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -72,8 +73,11 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const [prevActive, setPrevActive] = useState(active.data);
   if (active.data !== prevActive) {
     setPrevActive(active.data);
-    // Until the first event arrives (screen reopened mid-run), show where the core says the run is.
-    if (activeRun?.runId === runId) setLive((s) => (s.marks.length ? s : { ...s, phase: activeRun.phase, progress: Math.max(s.progress, activeRun.progress) }));
+    if (activeRun?.runId === runId) {
+      setInfo(activeRun);
+      // Until the first event arrives (screen reopened mid-run), show where the core says the run is.
+      setLive((s) => (s.marks.length ? s : { ...s, phase: activeRun.phase, progress: Math.max(s.progress, activeRun.progress) }));
+    }
   }
   const over = active.data !== undefined && activeRun?.runId !== runId;
   useEffect(() => {
@@ -90,13 +94,14 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
     if (el) el.scrollTop = el.scrollHeight;
   }, [live.log.length, logOpen]);
 
-  const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario;
+  const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario ?? info?.scenario;
   const phases = relevantPhases(scenario, ctx?.pre);
   const current: RunPhase = displayPhase(live.phase, live.detail);
   const states = phaseStates(phases, current);
   const at = Math.max(0, phases.indexOf(current));
-  const elapsedSec = Math.max(0, (now - startedAt) / 1000);
-  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds);
+  const startedAt = ctx?.startedAt ?? (info ? Date.parse(info.startedAt) : undefined);
+  const elapsedSec = startedAt === undefined ? 0 : Math.max(0, (now - startedAt) / 1000);
+  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds ?? info?.estimatedSeconds);
   const detail = detailLine(live.phase, live.detail, scenario);
 
   const gpu = system.data?.gpus[0];
@@ -158,7 +163,9 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
       subtitle={
         ctx
           ? t('run.subtitle', { model: ctx.modelLabel, engine: ctx.engineLabel, profile: t(`benchmark.profiles.${ctx.request.profile}`) })
-          : t('run.subtitleResumed')
+          : info
+            ? t('run.subtitle', { model: info.modelName, engine: prettyEngineLabel(info.engineLabel), profile: t(`benchmark.profiles.${info.profile}`) })
+            : t('run.subtitleResumed')
       }
       actions={
         <Button variant="danger-outline" onClick={() => setConfirmOpen(true)} disabled={cancelling}>

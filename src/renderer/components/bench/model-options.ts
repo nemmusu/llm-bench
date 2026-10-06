@@ -32,14 +32,14 @@ function curatedOption(c: CuratedModel): ModelOption {
   return { key: `curated:${c.id}`, source: 'curated', name: c.label.split(' · ')[0]!, quant: c.quant, sizeBytes: c.sizeBytes, paramsB: c.paramsB, curated: c };
 }
 
-/** True when a curated entry is already on the PC (same file hash, file name or repo). */
+/** True when a library model is this curated entry (same file hash, file name or repo). */
+function sameModel(c: CuratedModel, m: LocalModel): boolean {
+  return (c.sha256 !== undefined && m.identity.sha256 === c.sha256) || (c.file !== undefined && m.identity.file === c.file) || (c.file === undefined && m.identity.repo === c.repo);
+}
+
+/** True when a curated entry is already on the PC. */
 function isLocal(c: CuratedModel, local: readonly LocalModel[]): boolean {
-  return local.some(
-    (m) =>
-      (c.sha256 !== undefined && m.identity.sha256 === c.sha256) ||
-      (c.file !== undefined && m.identity.file === c.file) ||
-      (c.file === undefined && m.identity.repo === c.repo),
-  );
+  return local.some((m) => sameModel(c, m));
 }
 
 export function modelOptions(kind: EngineKind, local: readonly LocalModel[], curated: readonly CuratedModel[]): ModelOption[] {
@@ -52,16 +52,18 @@ export function modelOptions(kind: EngineKind, local: readonly LocalModel[], cur
 
 /**
  * The saved choice (a local id, "curated:<id>", a bare curated id or a HF repo), else the first
- * local model, else the first suggestion.
+ * local model, else the first suggestion. A suggestion downloaded since it was saved is found as
+ * its library copy (`curated` is the suggestion list, where it still is).
  */
-export function initialModelKey(options: readonly ModelOption[], saved: string | undefined): string | undefined {
+export function initialModelKey(options: readonly ModelOption[], saved: string | undefined, curated: readonly CuratedModel[] = []): string | undefined {
   if (saved) {
+    const downloaded = curated.find((c) => saved === `curated:${c.id}`);
     const hit = options.find(
       (o) =>
         o.key === saved ||
         o.key === `local:${saved}` ||
         o.key === `curated:${saved}` ||
-        (o.source === 'curated' ? o.curated.repo === saved : o.local.identity.repo === saved),
+        (o.source === 'curated' ? o.curated.repo === saved : o.local.identity.repo === saved || (downloaded !== undefined && sameModel(downloaded, o.local))),
     );
     if (hit) return hit.key;
   }
@@ -73,11 +75,14 @@ export function savedModelId(o: ModelOption): string {
   return o.source === 'local' ? o.local.id : o.key;
 }
 
-/** The request's model part; undefined while a GGUF suggestion still has to be downloaded. */
-export function requestModel(o: ModelOption): StartRunRequest['model'] | undefined {
+/**
+ * The request's model part. A suggestion is named by its HF repo (and GGUF file): the core plans
+ * it before the download, and once downloaded it finds the library copy by itself.
+ */
+export function requestModel(o: ModelOption): StartRunRequest['model'] {
   if (o.source === 'local') return { localId: o.local.id };
-  if (o.curated.engine === 'vllm') return { repo: o.curated.repo, revision: o.curated.revision };
-  return undefined;
+  const { repo, revision, file } = o.curated;
+  return file === undefined ? { repo, revision } : { repo, file, revision };
 }
 
 /** Newest completed run of this model on this GPU ("Provato su questa GPU"). */

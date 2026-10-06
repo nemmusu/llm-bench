@@ -190,6 +190,32 @@ describe('createServices', () => {
     expect(needsNoSize).toEqual([{ kind: 'engine', label: 'llama.cpp' }]);
   });
 
+  it('plans the image pull of a Docker engine whose image is missing', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quietProc }));
+    const s = await createServices(ctx, { modelServices: false });
+    const needs = (s.bench as unknown as { deps: { needs: (r: StartRunRequest) => Promise<unknown> } }).deps.needs;
+    const llamaDocker = s.registry.require('llamacpp-docker');
+    const image = 'ghcr.io/ggml-org/llama.cpp:server-cuda';
+    const missing = { kind: 'llamacpp-docker' as const, available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true, location: image };
+    llamaDocker.detect = () => Promise.resolve(missing);
+    llamaDocker.installPlan = () => Promise.resolve({ kind: 'llamacpp-docker', label: image, bytes: 2_900_000_000, items: [], data: { image } });
+    const req = { ...base, engine: { kind: 'llamacpp-docker' as const }, model: { localId: 'x' } };
+    expect(await needs(req)).toEqual([{ kind: 'image', label: image, bytes: 2_900_000_000 }]);
+    // Size unknown (Docker Hub unreachable): listed without bytes.
+    llamaDocker.installPlan = () => Promise.reject(new Error('offline'));
+    expect(await needs(req)).toEqual([{ kind: 'image', label: image }]);
+    // Docker off: nothing to pull from here (the engine shows the Docker problem instead); image present: nothing.
+    llamaDocker.detect = () => Promise.resolve({ ...missing, problems: ['DOCKER_NOT_RUNNING'] });
+    expect(await needs(req)).toEqual([]);
+    // Without the image name there is nothing to name in the preview.
+    const { location: _none, ...unnamed } = missing;
+    llamaDocker.detect = () => Promise.resolve(unnamed);
+    expect(await needs(req)).toEqual([]);
+    const vllm = s.registry.require('vllm-docker');
+    vllm.detect = () => Promise.resolve({ kind: 'vllm-docker', available: true, installed: true, problems: [], supported: true, location: 'vllm/vllm-openai:v0.12.0' });
+    expect(await needs({ ...req, engine: { kind: 'vllm-docker' } })).toEqual([]);
+  });
+
   type BenchDeps = {
     publish: (e: unknown) => void;
     evictCache: (f: string[]) => Promise<unknown>;

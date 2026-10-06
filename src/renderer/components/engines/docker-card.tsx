@@ -24,8 +24,11 @@ const TONES: Record<string, StatusDotProps['tone']> = {
   unknown: 'neutral',
 };
 
-/** A Docker image pull with its progress (same events as installs, keyed by image). */
-export function PullButton({ image, label, disabled }: { image: string; label: string; disabled?: boolean }) {
+/**
+ * Installs a Docker engine by pulling its image (POST /api/engines/:engine/install), with the
+ * progress of its 'engine.install' events (keyed by image, see installKey).
+ */
+export function PullButton({ engine, image, label, disabled }: { engine: 'llamacpp-docker' | 'vllm-docker'; image: string; label: string; disabled?: boolean }) {
   const { t } = useI18n();
   const key = `pull:${image}`;
   const event = useInstallEvent(key);
@@ -34,7 +37,7 @@ export function PullButton({ image, label, disabled }: { image: string; label: s
   if (running) return <InstallProgress event={running} label={label} className="w-full" />;
   return (
     <div className="flex flex-col items-start gap-2">
-      <Button size="sm" disabled={disabled || start.isPending} onClick={() => start.mutate({ key, path: '/api/docker/pull', body: { image, kind: 'docker-pull' } })}>
+      <Button size="sm" disabled={disabled || start.isPending} onClick={() => start.mutate({ key, path: `/api/engines/${engine}/install`, body: { image } })}>
         <Download aria-hidden />
         {label}
       </Button>
@@ -83,7 +86,7 @@ export function DockerCard() {
           <ScanSearch aria-hidden />
           {t('engines.actions.testGpu')}
         </Button>
-        <PullButton image={LLAMA_IMAGE} label={t('engines.docker.pullLlama')} />
+        <PullButton engine="llamacpp-docker" image={LLAMA_IMAGE} label={t('engines.docker.pullLlama')} />
         <Button
           size="sm"
           variant="ghost"

@@ -4,7 +4,7 @@
  */
 import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
-import type { RunPlan, ServerInfo, SystemResponse } from '../../../../src/contract/api';
+import type { ActiveRun, RunPlan, ServerInfo, StartRunRequest, SystemResponse } from '../../../../src/contract/api';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
@@ -12,7 +12,7 @@ import type { RunResult } from '../../../../src/contract/results';
 import type { CuratedModel } from '../../../../src/contract/views';
 import { ApiError, type ApiClient } from '../../../../src/renderer/lib/api';
 import { fakeApi, type FakeApi } from '../helpers';
-import { HOST, seededRuns, summaries } from './fixtures';
+import { HOST, HOST_ID, seededRuns, summaries } from './fixtures';
 
 // Whole-app renders are slow under coverage with many test files in parallel.
 configure({ asyncUtilTimeout: 5000 });
@@ -107,7 +107,7 @@ export const SYSTEM: SystemResponse = {
   cpu: { model: 'CPU', cores: 8, threads: 16 },
   ramBytes: 64 * 1024 ** 3,
   hostLabel: HOST,
-  hostId: 'host-1',
+  hostId: HOST_ID,
   nvidiaSmi: { found: true },
   otherGpuUsers: [],
   docker: { state: 'running' },
@@ -131,8 +131,10 @@ export interface World {
   curated: CuratedModel[];
   runs: RunResult[];
   servers: ServerInfo[];
-  active: { runId: string; phase: string; progress: number } | null;
+  active: ActiveRun | null;
+  /** Download size of llama.cpp in the plan's engine need (null: unknown). */
   installBytes: number | null;
+  /** POST /api/runs/plan; by default planFor() with the needs the core would list for this world (see coreNeeds). */
   plan: (body: unknown) => RunPlan;
   fit: FitEstimate;
   /** Overrides by "METHOD /path" (exact) or "METHOD /prefix*" (prefix); throw an ApiError to fail. */
@@ -170,7 +172,7 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/system') return world.system;
     if (bare === '/api/engines') return world.engines;
     if (bare === '/api/models/local') return world.local;
-    if (bare === '/api/models/curated') return { vramGB: 32, reference: world.curated[0], models: world.curated };
+    if (bare === '/api/models/curated') return { vramGB: 31.84, tierGB: 32, reference: world.curated[0], models: world.curated };
     if (bare === '/api/runs') return summaries(world.runs);
     if (bare === '/api/runs/active') return { active: world.active };
     if (bare === '/api/runs/tried') {
@@ -190,7 +192,7 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/runs/plan') return world.plan(body);
     if (bare === '/api/models/fit') return world.fit;
     if (bare === '/api/runs') {
-      world.active = { runId: '01M48PNN41KKD0ABVXTGK97Y6P', phase: 'prepare', progress: 0 };
+      world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: world.active.runId };
     }
     if (bare === '/api/models/rescan') return world.local;
@@ -205,10 +207,36 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
   throw new Error(`unexpected ${method} ${path}`);
 }
 
+/**
+ * What the core's plan would list before a run in this world: llama.cpp when it is not installed,
+ * a Docker image the status says is missing, a hub GGUF / vLLM repo that is not in the library
+ * (sized like its suggestion). `pending` marks the placeholders in the command.
+ */
+export function coreNeeds(world: World, body: StartRunRequest): Pick<RunPlan, 'needs' | 'pending'> {
+  const needs: RunPlan['needs'] = [];
+  const pending: NonNullable<RunPlan['pending']> = [];
+  const { repo, file } = body.model;
+  const size = world.curated.find((c) => c.repo === repo && c.file === file)?.sizeBytes;
+  if (repo && file && !world.local.some((m) => m.identity.file === file)) {
+    needs.push({ kind: 'model', label: `${repo}/${file}`, ...(size === undefined ? {} : { bytes: size }) });
+    pending.push('model');
+  } else if (repo && !file && !world.local.some((m) => m.identity.repo === repo)) {
+    needs.push({ kind: 'model', label: repo, ...(size === undefined ? {} : { bytes: size }) });
+  }
+  const status = world.engines.find((e) => e.kind === body.engine.kind);
+  if (body.engine.kind === 'llamacpp-native' && !body.engine.executable && status?.installed === false) {
+    needs.push({ kind: 'engine', label: 'llama.cpp', ...(world.installBytes === null ? {} : { bytes: world.installBytes }) });
+    pending.push('engine');
+  }
+  if (status?.location && status.problems.includes('ENGINE_NOT_INSTALLED')) needs.push({ kind: 'image', label: status.location, bytes: 2_900_000_000 });
+  return { needs, ...(pending.length ? { pending } : {}) };
+}
+
 /** The app's ApiClient over a fake world (settings and health from the shared fake). */
 export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof fakeApi>[0] = { onboardingDone: true }): BenchApi {
   const base = fakeApi(settings);
   const world: World = { ...defaultWorld(), ...patch };
+  if (!patch.plan) world.plan = (body) => planFor(coreNeeds(world, body as StartRunRequest));
   const api = base as BenchApi;
   api.world = world;
   const baseGet = base.get;
@@ -223,6 +251,22 @@ export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof
   api.post = vi.fn(async <T,>(path: string, body?: unknown) => call<T>('POST', path, body)) as ApiClient['post'];
   api.del = vi.fn(async <T,>(path: string) => call<T>('DELETE', path)) as ApiClient['del'];
   return api;
+}
+
+/** GET /api/runs/active of a run that just started (Quick, 95 s expected); `over` changes any field. */
+export function activeRun(runId: string, over: Partial<ActiveRun> = {}): ActiveRun {
+  return {
+    runId,
+    phase: 'prepare',
+    progress: 0,
+    startedAt: new Date(Date.now() - 1000).toISOString(),
+    profile: 'quick',
+    estimatedSeconds: 95,
+    modelName: 'Qwen3 8B',
+    engineLabel: 'llama.cpp b11438 (cuda-13.4)',
+    scenario: planFor().scenario,
+    ...over,
+  };
 }
 
 /** A promise the test resolves or rejects later. */

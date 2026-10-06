@@ -23,9 +23,9 @@ import type {
   DockerStatusDetail,
   GpuCheckResult,
   HubFitResult,
+  HubRepoInfo,
   HubTag,
   InstalledBuild,
-  SetupJob,
   SystemCheckReport,
 } from '../../contract/views';
 import { translate, type Lang } from '../i18n';
@@ -53,7 +53,6 @@ export const libKeys = {
   system: ['lib', 'system'] as const,
   snapshot: ['lib', 'snapshot'] as const,
   check: ['lib', 'setup', 'check'] as const,
-  jobs: ['lib', 'setup', 'jobs'] as const,
   curated: ['lib', 'curated'] as const,
   local: ['lib', 'models', 'local'] as const,
   runs: ['lib', 'runs'] as const,
@@ -139,11 +138,6 @@ export function useRecheck() {
       void qc.invalidateQueries({ queryKey: libKeys.system });
     },
   });
-}
-
-export function useSetupJobs() {
-  const api = useApi();
-  return useQuery({ queryKey: libKeys.jobs, queryFn: () => api.get<SetupJob[]>('/api/setup/jobs') });
 }
 
 export function useDockerPlan(enabled: boolean) {
@@ -283,15 +277,12 @@ export function useHubSearch(p: HubSearchParams, enabled: boolean) {
   });
 }
 
-/** Repo card data (downloads, likes, license…): found through the search route. */
+/** GET /api/models/hub/:owner/:name: the repo card data (downloads, likes, license, gated, base model…). */
 export function useHubModel(repo: string) {
   const api = useApi();
   return useQuery({
     queryKey: [...libKeys.hub, 'model', repo],
-    queryFn: async () => {
-      const found = await api.get<HubModel[]>(`/api/models/search?${new URLSearchParams({ q: repo, limit: '10' }).toString()}`);
-      return found.find((m) => m.repo.toLowerCase() === repo.toLowerCase()) ?? null;
-    },
+    queryFn: () => api.get<HubRepoInfo>(`/api/models/hub/${repoPath(repo)}`),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -527,5 +518,5 @@ export function handleLibraryEvent(
   setInstall(qc, installKey(e), e);
   if (activeEvent(e)) return;
   // Something finished: everything derived from the machine state may have changed.
-  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.jobs, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
+  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
 }

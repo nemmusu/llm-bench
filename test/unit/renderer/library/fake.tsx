@@ -337,7 +337,6 @@ export function libApi(w: World = world()): LibApi {
     'GET /api/system': () => w.system,
     'GET /api/telemetry/snapshot': () => w.snapshot,
     'GET /api/setup/check': () => w.check,
-    'GET /api/setup/jobs': () => [],
     'GET /api/setup/docker/plan': () => ({ platform: 'win32', kind: 'docker-desktop', supported: true, url: 'https://desktop.docker.com/x.exe', sizeBytes: 6e8, wsl: { available: true } }),
     'GET /api/setup/docker/linux-script': () => ({ script: '#!/bin/sh\napt-get install docker-ce', steps: ['prepare', 'docker-install'] }),
     'POST /api/setup/docker/install': () => ({ started: true }),
@@ -355,6 +354,12 @@ export function libApi(w: World = world()): LibApi {
     'POST /api/runs/export': () => ({ format: 'gpubench', version: 1, runs: [] }),
     'POST /api/runs/import': () => ({ imported: 2, skipped: 1 }),
     'GET /api/models/search': (_b, q) => w.search.filter((m) => m.repo.toLowerCase().includes((q.get('q') ?? '').toLowerCase())),
+    // Repo info: the hub model of that repo among the known ones (as the core's hub client), else not found.
+    'GET /api/models/hub/*/*': (_b, _q, p) => {
+      const repo = p.split('/').slice(4).map(decodeURIComponent).join('/');
+      const m = w.search.find((x) => x.repo === repo);
+      return m ? { ...m, private: false } : fail('HF_NOT_FOUND', 404);
+    },
     'GET /api/models/hub/*/*/files': () => w.files,
     'GET /api/models/hub/*/*/readme': () => w.readme,
     'GET /api/models/hub/*/*/related': () => w.related,
@@ -384,7 +389,6 @@ export function libApi(w: World = world()): LibApi {
     'GET /api/docker/status': () => w.docker,
     'POST /api/docker/start': () => ({ ok: true, state: 'starting' }),
     'POST /api/docker/gpu-check': () => ({ image: 'x', gpus: ['GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)'] }),
-    'POST /api/docker/pull': () => ({ ok: true }),
     'POST /api/docker/cleanup': () => ({ removed: [{ id: 'a', name: 'gpubench-1' }] }),
     'GET /api/engines/vllm/tags': () => [
       { name: 'v0.31.0', recommended: true, cuda: '13.0', sizeBytes: 9e9, lastUpdated: '2026-10-04T00:00:00Z' },

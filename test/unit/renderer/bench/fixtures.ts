@@ -7,6 +7,8 @@ import { summaryOf } from '../../../../src/core/store/runs-repo';
 const DIR = path.resolve(import.meta.dirname, '../../../fixtures/runs');
 
 export const HOST = 'WORKSTATION';
+/** This PC's id as /api/system reports it in the fake world (world.ts SYSTEM.hostId). */
+export const HOST_ID = 'host-1';
 
 export const IDS = {
   full: '01K6Y7Q2ZC4M8N3B5V9R1T0XWE',
@@ -25,7 +27,7 @@ let cache: RunResult[] | undefined;
 export function seededRuns(): RunResult[] {
   cache ??= readdirSync(DIR)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => JSON.parse(readFileSync(path.join(DIR, f), 'utf8').replaceAll('__THIS_PC__', HOST)) as RunResult);
+    .map((f) => JSON.parse(readFileSync(path.join(DIR, f), 'utf8').replaceAll('__THIS_HOST_ID__', HOST_ID).replaceAll('__THIS_PC__', HOST)) as RunResult);
   return structuredClone(cache);
 }
 

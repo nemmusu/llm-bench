@@ -14,6 +14,7 @@
 // reduced motion so charts render without animation and frames are stable.
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,10 +34,48 @@ const RESULT_ID = '01K6Y7Q2ZC4M8N3B5V9R1T0XWE';
 const COMPARE_A = '01K6TZ5G1H4J7K2L8Z3X6C9VBN';
 const FAILED_ID = '01K6NA2S5D8F1G4H7J3K6L9ZXC';
 
-/** n, name, route, settings patch, optional page action, and which sizes to render. */
+const curated = JSON.parse(readFileSync(path.join(root, 'resources', 'curated-models.json'), 'utf8'));
+/** The curated reference model, served by the fake Hugging Face (not on the PC: it is previewed before its download). */
+const REFERENCE = curated.reference;
+const REFERENCE_PAGE = `/models/hub/${REFERENCE.repo}`;
+
+/**
+ * Picks the suggested reference model (not downloaded yet) and opens the command preview: the
+ * whole plan is there before anything is installed or downloaded.
+ */
+async function previewSuggestion(page) {
+  await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
+  await picker.getByRole('radio', { name: /^Qwen3 4B Q4_K_M/ }).click();
+  await picker.getByRole('button', { name: 'Conferma' }).click();
+  await page.getByText('· verrà scaricato prima del test').waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: /Anteprima comando/ }).click();
+  await page.getByText('Il modello non è ancora sul PC', { exact: false }).waitFor({ timeout: 30000 });
+}
+
+/** This PC's id as the core computes it (core/sysinfo/fingerprint.ts), for the seeded runs made "here". */
+function thisHostId() {
+  let machineId;
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], { encoding: 'utf8', windowsHide: true });
+      machineId = /MachineGuid\s+REG_\w+\s+(\S+)/i.exec(out)?.[1];
+    } else machineId = readFileSync('/etc/machine-id', 'utf8').trim() || undefined;
+  } catch {
+    // The core falls back to the host name too.
+  }
+  return createHash('sha256').update(`gpu-bench:${(machineId ?? os.hostname()).trim().toLowerCase()}`).digest('hex');
+}
+
+/**
+ * n, name, route, settings patch, optional page action (`click`, `keys`, or `act` for several steps;
+ * after `act` the page is reloaded so the next screens start clean), and which sizes to render.
+ */
 const SCREENS = [
   { n: 1, name: 'welcome', route: '/welcome', wait: 'Controllo del sistema' },
   { n: 2, name: 'benchmark', route: '/', wait: 'Pronto a misurare', small: true },
+  // Before the live run below installs llama.cpp: engine and model are both still to fetch.
+  { n: 15, name: 'benchmark-download', route: '/', wait: 'Pronto a misurare', act: previewSuggestion, small: true, full: true },
   { n: 3, name: 'run', route: 'LIVE', wait: 'Test in corso', settle: 2500 },
   { n: 4, name: 'result', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', small: true },
   { n: 5, name: 'benchmark-expert', route: '/', wait: 'Pronto a misurare', settings: { expertMode: true }, full: true },
@@ -49,13 +88,31 @@ const SCREENS = [
   { n: 12, name: 'result-en', route: `/results/${RESULT_ID}`, wait: 'GPU Bench score', settings: { language: 'en' } },
   { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Cosa cambia tra i due' },
   { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
+  { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
 ];
 
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
 async function fakeWorld(dataDir) {
   const cli = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
   const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n` });
-  const hub = await startFakeHub({ repos: demoRepos() });
+  const hub = await startFakeHub({
+    repos: [
+      ...demoRepos(),
+      {
+        id: REFERENCE.repo,
+        sha: REFERENCE.revision,
+        downloads: 812_000,
+        likes: 540,
+        license: 'apache-2.0',
+        lastModified: '2026-09-12T10:00:00.000Z',
+        pipelineTag: 'text-generation',
+        baseModel: 'Qwen/Qwen3-4B',
+        tags: ['gguf', 'text-generation'],
+        readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nQwen3 4B quantized for llama.cpp. The **reference** model of the GPU Bench score.\n',
+        files: [{ path: REFERENCE.file, gguf: { ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 192 * 1024 } }],
+      },
+    ],
+  });
   const dockerApi = await startFakeDockerApi({ images: {} });
   const models = path.join(dataDir, 'models', 'local');
   mkdirSync(models, { recursive: true });
@@ -64,8 +121,9 @@ async function fakeWorld(dataDir) {
   const results = path.join(dataDir, 'results');
   mkdirSync(results, { recursive: true });
   const seeds = path.join(root, 'test', 'fixtures', 'runs');
+  const hostId = thisHostId();
   for (const f of readdirSync(seeds).filter((x) => x.endsWith('.json'))) {
-    writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_PC__', os.hostname()));
+    writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname()));
   }
   writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
   const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
@@ -190,6 +248,7 @@ async function main() {
           }
           if (s.click) await page.getByRole(s.click.role, { name: s.click.name }).click();
           if (s.keys) await page.keyboard.press(s.keys);
+          if (s.act) await s.act(page);
           await page.waitForTimeout(s.settle ?? 900);
           // Move the pointer away so no hover state or tooltip leaks into the image.
           await page.mouse.move(size.w - 4, size.h - 4);
@@ -201,6 +260,8 @@ async function main() {
             await shoot(page, fullFile, { full: true });
             written.push(fullFile);
           }
+          // Screens that changed what is on the page leave it fresh for the next ones.
+          if (s.act) await page.reload();
         }
         await context.close();
       }

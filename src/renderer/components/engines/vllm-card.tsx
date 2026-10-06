@@ -80,7 +80,7 @@ export function VllmDockerCard() {
                     {t('engines.vllm.use')}
                   </Button>
                 )}
-                <PullButton image={image} label={t('engines.vllm.pull')} disabled={!running} />
+                <PullButton engine="vllm-docker" image={image} label={t('engines.vllm.pull')} disabled={!running} />
               </li>
             );
           })}

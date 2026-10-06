@@ -83,16 +83,6 @@ export function countKey<K extends string>(n: number, one: K, other: K): K {
   return n === 1 ? one : other;
 }
 
-const ULID = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-/** Creation time (ms) encoded in a run id (ULID-style, see core/store/runs-id.ts); undefined for other ids. */
-export function runIdTime(id: string): number | undefined {
-  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) return undefined;
-  let t = 0;
-  for (const ch of id.slice(0, 10)) t = t * 32 + ULID.indexOf(ch);
-  return t;
-}
-
 /** "llama.cpp b11438 (cuda-13.4)" (a RunSummary label) → "llama.cpp b11438 (CUDA 13.4)". */
 export function prettyEngineLabel(label: string): string {
   return label.replace(/\(([^)]+)\)$/, (_, v: string) => `(${prettyVariant(v)})`);

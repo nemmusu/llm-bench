@@ -260,10 +260,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       return cc ? smFromComputeCap(cc) : undefined;
     },
   });
+  const llamaDocker = new LlamaDockerAdapter(dockerEngine);
   const registry = new EngineRegistry([
     llama,
     new ExternalAdapter({ fetch: deps.fetch, clock: deps.clock, createClient }),
-    new LlamaDockerAdapter(dockerEngine),
+    llamaDocker,
     vllmDocker,
     // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
     new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
@@ -311,6 +312,15 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       if (!status.installed) {
         const plan = await llama.planInstall({}).catch(() => undefined);
         out.push({ kind: 'engine', label: 'llama.cpp', ...(plan ? { bytes: plan.bytes } : {}) });
+      }
+    }
+    if (req.engine.kind === 'llamacpp-docker' || req.engine.kind === 'vllm-docker') {
+      const adapter = req.engine.kind === 'vllm-docker' ? vllmDocker : llamaDocker;
+      const status = await adapter.detect(req.engine);
+      // Docker answers but the image is not there yet: it is pulled before the run (never part of the load time).
+      if (status.problems.includes('ENGINE_NOT_INSTALLED') && status.location) {
+        const plan = await adapter.installPlan(req.engine).catch(() => undefined);
+        out.push({ kind: 'image', label: status.location, ...(plan?.bytes ? { bytes: plan.bytes } : {}) });
       }
     }
     return out;

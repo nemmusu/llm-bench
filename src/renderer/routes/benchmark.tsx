@@ -4,6 +4,7 @@ import { Check, ChevronsUpDown, Download, HardDrive, Play, Timer, TriangleAlert 
 import { useMemo, useState, type ReactNode } from 'react';
 import type { StartRunRequest } from '../../contract/api';
 import type { EngineKind } from '../../contract/engines';
+import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
 import { ENGINE_ORDER, engineConfigOf, engineFormOf, savableEngine, type EngineForm } from '../components/bench/engine-form';
 import { ExpertPanel } from '../components/bench/expert-panel';
@@ -15,7 +16,8 @@ import { PlanCard } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
 import { takeDraft, type BenchDraft } from '../components/bench/run-context';
 import { ServersPanel } from '../components/bench/servers';
-import { useStartFlow, type Need } from '../components/bench/start-flow';
+import { guessNeeds, needsFromPlan } from '../components/bench/needs';
+import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
@@ -37,7 +39,6 @@ import {
   useBenchSystem,
   useCurated,
   useDebounced,
-  useLlamaInstallBytes,
   useLocalFit,
   usePlan,
   useRuns,
@@ -99,12 +100,25 @@ function BenchmarkSkeleton() {
   );
 }
 
-/** Model card body: the picker button and the verdicts for the selected model. */
-function SelectedModel({ option, engine, onOpen, params }: { option: ModelOption; engine: EngineKind; onOpen: () => void; params: StartRunRequest['params'] }) {
+/** Model card body: the picker button and the verdicts for the selected model (a suggestion's fit comes from the plan). */
+function SelectedModel({
+  option,
+  engine,
+  onOpen,
+  params,
+  planFit,
+}: {
+  option: ModelOption;
+  engine: EngineKind;
+  onOpen: () => void;
+  params: StartRunRequest['params'];
+  planFit: FitEstimate | undefined;
+}) {
   const { t, bytes } = useI18n();
   const system = useBenchSystem();
   const local = option.source === 'local' ? option.local : undefined;
   const fit = useLocalFit(local?.id, engine, params);
+  const fitLevel = (fit.data ?? planFit)?.level;
   const tried = useTried(local ? { weakKey: local.identity.weakKey, ...(local.identity.sha256 ? { sha256: local.identity.sha256 } : {}) } : undefined);
   const gpuName = system.data?.gpus[0]?.name;
   const best = tried.data?.find((r) => r.status === 'completed' && r.decodeTps !== undefined && r.gpuName === gpuName);
@@ -124,7 +138,7 @@ function SelectedModel({ option, engine, onOpen, params }: { option: ModelOption
         <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-3" />
       </button>
       <div className="flex flex-wrap gap-1.5">
-        {fit.data && <FitBadge level={fit.data.level} size="sm" />}
+        {fitLevel && <FitBadge level={fitLevel} size="sm" />}
         {option.source === 'curated' && (
           <Badge tone="accent" size="sm">
             {t('benchmark.pickModel.suggested')}
@@ -150,8 +164,10 @@ function BenchmarkScreen() {
   const runs = useRuns();
   useRunsLiveRefresh();
   const gpu = system.data?.gpus[0];
-  const vramGB = gpu ? Math.max(1, Math.round(gpu.memoryTotalMiB / MIB_PER_GB)) : undefined;
+  // The card's real size (31.8 GB for a "32 GB" one): the core decides which tier it counts as.
+  const vramGB = gpu ? gpu.memoryTotalMiB / MIB_PER_GB : undefined;
   const curated = useCurated(vramGB);
+  const tierGB = curated.data?.tierGB;
   const flow = useStartFlow();
   const expert = settings.expertMode;
 
@@ -172,7 +188,7 @@ function BenchmarkScreen() {
   const status = statusOf(effEngine);
 
   const options = useMemo(() => modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), [effEngine, local.data, curated.data]);
-  const modelKey = picked !== undefined && options.some((o) => o.key === picked) ? picked : initialModelKey(options, draft?.localId ?? draft?.repo ?? settings.lastModelId);
+  const modelKey = picked !== undefined && options.some((o) => o.key === picked) ? picked : initialModelKey(options, draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
 
   const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
@@ -194,40 +210,25 @@ function BenchmarkScreen() {
     ...(sendParams ? { params: parsedParams.params } : {}),
     allowSharedGpu: false,
   };
-  const planJson = useDebounced(valid && model !== undefined ? JSON.stringify(base) : '', 400);
+  const baseJson = JSON.stringify(base);
+  const planJson = useDebounced(valid ? baseJson : '', 400);
   const plan = usePlan(planJson ? (JSON.parse(planJson) as StartRunRequest) : undefined);
   const planError = plan.isError ? apiErrorData(plan.error) : undefined;
   const planData = plan.isError ? undefined : plan.data;
+  // The preview of exactly these choices (not the previous one still on screen while typing).
+  const currentPlan = planData && !plan.isPlaceholderData && planJson === baseJson ? planData : undefined;
 
-  const llamaMissing =
-    effEngine === 'llamacpp-native' &&
-    !config.executable &&
-    (status?.installed === false || planError?.code === 'ENGINE_NOT_INSTALLED' || planData?.needs.some((n) => n.kind === 'engine') === true);
-  const installBytes = useLlamaInstallBytes(llamaMissing);
-  const needs: Need[] = [];
-  if (llamaMissing) {
-    const b = planData?.needs.find((n) => n.kind === 'engine')?.bytes ?? installBytes.data ?? undefined;
-    needs.push({ kind: 'engine', label: 'llama.cpp', ...(b !== undefined ? { bytes: b } : {}) });
-  }
-  const toDownload = option?.source === 'curated' && option.curated.file !== undefined ? option.curated : undefined;
-  if (toDownload) {
-    needs.push({ kind: 'model', label: toDownload.label, bytes: toDownload.sizeBytes, repo: toDownload.repo, revision: toDownload.revision, file: toDownload.file! });
-  }
-  // vLLM: the plan says when the HF repo is not in the library yet; the whole repo is fetched first.
-  const vllmPick = option?.source === 'curated' && option.curated.engine === 'vllm' ? option.curated : undefined;
-  const repoNeed = vllmPick && planData?.needs.find((n) => n.kind === 'model');
-  if (vllmPick && repoNeed) {
-    needs.push({ kind: 'model', label: repoNeed.label, bytes: repoNeed.bytes ?? vllmPick.sizeBytes, repo: vllmPick.repo, revision: vllmPick.revision });
-  }
-  const modelNeed = needs.find((n) => n.kind === 'model');
-  const shownPlanError = planError && !(planError.code === 'ENGINE_NOT_INSTALLED' && llamaMissing) ? planError : undefined;
-
-  const gpuShort = gpu ? shortGpuName(gpu.name) : 'GPU';
   const modelLabel = external
     ? engineForm.modelName.trim() || engineForm.baseUrl.trim() || t('benchmark.engines.external')
     : option
       ? `${option.name}${option.quant ? ` · ${option.quant}` : ''}`
       : t('benchmark.noModel');
+  // What gets installed or downloaded before the test: the plan says it exactly; until then, a good guess.
+  const needs = currentPlan ? needsFromPlan(base, currentPlan, modelLabel) : guessNeeds({ engine: config, status, option, modelLabel });
+  const engineNeed = needs.find((n) => n.kind !== 'model');
+  const modelNeed = needs.find((n) => n.kind === 'model');
+
+  const gpuShort = gpu ? shortGpuName(gpu.name) : 'GPU';
   const engineLabel = t(`benchmark.engines.${effEngine}`);
   const profileTime = planData ? `≈ ${duration(planData.estimatedSeconds * 1000)}` : t(`benchmark.profileTime.${effProfile}`);
   const list = new Intl.ListFormat(f.locale, { type: 'conjunction' });
@@ -235,8 +236,7 @@ function BenchmarkScreen() {
   const start = () => {
     flow.start(base, {
       needs,
-      // Only a preview of exactly these choices (not the previous one still on screen while typing).
-      ...(planData && !plan.isPlaceholderData && planJson === JSON.stringify(base) ? { plan: planData } : {}),
+      ...(currentPlan ? { plan: currentPlan } : {}),
       modelLabel,
       engineLabel,
       onStarted: () =>
@@ -251,11 +251,12 @@ function BenchmarkScreen() {
 
   const engineFooter = (() => {
     if (external) return <Note icon={<Check />}>{t('benchmark.engineExternal')}</Note>;
-    if (llamaMissing) {
-      const b = needs[0]?.bytes;
+    if (engineNeed) {
+      const b = engineNeed.bytes;
+      const [soon, sized] = engineNeed.kind === 'engine' ? (['engineToInstallSoon', 'engineToInstall'] as const) : (['imageToPullSoon', 'imageToPull'] as const);
       return (
         <Note icon={<Download />} tone="accent">
-          {b === undefined ? t('benchmark.engineToInstallSoon') : t('benchmark.engineToInstall', { size: bytes(b) })}
+          {b === undefined ? t(`benchmark.${soon}`) : t(`benchmark.${sized}`, { size: bytes(b) })}
         </Note>
       );
     }
@@ -283,15 +284,15 @@ function BenchmarkScreen() {
   const modelFooter = (() => {
     if (external) return <Note icon={<HardDrive />}>{t('benchmark.modelOnServer')}</Note>;
     if (!option) return null;
-    if (option.source === 'local') return <Note icon={<HardDrive />}>{t('benchmark.modelLocal')}</Note>;
     if (modelNeed) {
       return (
         <Note icon={<Download />} tone="accent">
-          {t('benchmark.modelToDownload', { size: bytes(modelNeed.bytes!) })}
+          {modelNeed.bytes === undefined ? t('benchmark.modelToDownloadSoon') : t('benchmark.modelToDownload', { size: bytes(modelNeed.bytes) })}
         </Note>
       );
     }
-    return <Note icon={<Download />}>{t('benchmark.modelFromHub')}</Note>;
+    // A local pick, or a suggestion the plan found already downloaded.
+    return <Note icon={<HardDrive />}>{t('benchmark.modelLocal')}</Note>;
   })();
 
   const modelsLoading = local.isPending || (vramGB !== undefined && curated.isPending);
@@ -376,7 +377,7 @@ function BenchmarkScreen() {
               ) : modelsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : option ? (
-                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} />
+                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
               ) : (
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
@@ -432,14 +433,7 @@ function BenchmarkScreen() {
             />
           )}
 
-          <PlanCard
-            plan={planData}
-            loading={planJson !== '' && plan.isFetching}
-            error={shownPlanError}
-            needs={needs}
-            {...(toDownload ? { commandLater: 'model' as const } : llamaMissing && !planData ? { commandLater: 'engine' as const } : {})}
-            expert={expert}
-          />
+          <PlanCard plan={planData} loading={planJson !== '' && plan.isFetching} error={planError} needs={needs} expert={expert} />
         </div>
 
         <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
@@ -458,7 +452,7 @@ function BenchmarkScreen() {
         engine={effEngine}
         runs={runs.data ?? []}
         gpuName={gpu?.name}
-        description={t('benchmark.pickModel.description', { gpu: gpuShort, vram: vramGB ? `${integer(vramGB)} GB` : '–' })}
+        description={t('benchmark.pickModel.description', { gpu: gpuShort, vram: tierGB ? `${integer(tierGB)} GB` : vramGB ? `${f.number(vramGB, 1)} GB` : '–' })}
         onOpenModels={() => void navigate({ to: '/models' })}
       />
       {flow.ui}
