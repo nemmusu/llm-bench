@@ -64,6 +64,11 @@ linux:
   description: GPU Bench misura caricamento a freddo e a caldo, token/s, latenza, VRAM e consumi con llama.cpp e vLLM.
   maintainer: GPU Bench <noreply@gpubench.invalid>
   artifactName: gpu-bench-${version}-${arch}.${ext}
+  # Lets the desktop link the running window to gpu-bench.desktop (app_id / WM_CLASS).
+  syncDesktopName: true
 
 deb:
   priority: optional
+  # electron-builder's defaults plus ALSA: Electron links libasound.so.2, missing on a minimal
+  # Ubuntu 24.04 (found by the clean-distro test; there libasound2t64 provides libasound2).
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libasound2]
