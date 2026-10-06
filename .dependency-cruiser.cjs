@@ -10,8 +10,21 @@ module.exports = {
     {
       name: 'contract-is-pure',
       severity: 'error',
-      from: { path: '^src/contract' },
+      from: { path: '^src/contract', pathNot: '^src/contract/views\.ts$' },
       to: { path: '^src/(core|main|preload|renderer)' },
+    },
+    {
+      // views.ts re-exports core response types for the renderer: type-only, never runtime code.
+      name: 'views-type-only',
+      severity: 'error',
+      from: { path: '^src/contract/views\.ts$' },
+      to: { path: '^src/core', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'views-only-core',
+      severity: 'error',
+      from: { path: '^src/contract/views\.ts$' },
+      to: { path: '^src/(main|preload|renderer)' },
     },
     {
       name: 'core-no-electron',

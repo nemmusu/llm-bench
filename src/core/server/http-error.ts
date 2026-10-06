@@ -12,6 +12,17 @@ const STATUS: Partial<Record<ErrorCode, ContentfulStatusCode>> = {
   HF_RATE_LIMITED: 429,
   GITHUB_RATE_LIMITED: 429,
   CANCELLED: 409,
+  RUN_NOT_FOUND: 404,
+  DOWNLOAD_NOT_FOUND: 404,
+  RUN_IN_PROGRESS: 409,
+  // The machine is not ready for this request (yet): 503 tells the UI it is not a bug.
+  GPU_NOT_FOUND: 503,
+  DRIVER_MISSING: 503,
+  DOCKER_NOT_INSTALLED: 503,
+  DOCKER_NOT_RUNNING: 503,
+  DOCKER_NO_GPU: 503,
+  DOCKER_PERMISSION: 503,
+  DOCKER_UNSUPPORTED: 503,
 };
 
 export function statusFor(code: ErrorCode): ContentfulStatusCode {

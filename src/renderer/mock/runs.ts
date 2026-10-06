@@ -136,6 +136,8 @@ function buildResult(): RunResult {
     createdAt: '2026-10-06T10:42:00.000Z',
     finishedAt: '2026-10-06T10:57:08.000Z',
     status: 'completed',
+    notes: [],
+    sharedGpu: [{ pid: 18244, name: 'llama-server.exe', memMiB: 2355, kind: 'llm' }],
     scenario: {
       profile: 'full',
       seed: 42,

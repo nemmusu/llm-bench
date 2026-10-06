@@ -47,6 +47,8 @@ export const engineConfigSchema = z.object({
   flavor: apiFlavorSchema.optional(),
   /** vllm-native: path to the `vllm` executable or venv. */
   vllmPath: z.string().optional(),
+  /** Docker engines: read the model from this named volume instead of a host folder (faster on Windows). */
+  modelVolume: z.string().optional(),
 });
 export type EngineConfig = z.infer<typeof engineConfigSchema>;
 

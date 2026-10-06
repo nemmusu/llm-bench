@@ -23,8 +23,8 @@ export interface VllmNativeOptions {
   createClient: ModelClientFactory;
   ownership?: Pick<OwnershipRegistry, 'add' | 'remove'>;
   hfToken?: () => string | undefined;
-  /** argv prefix of uv (bundled binary); default ["uv"] from PATH. */
-  uv?: string[];
+  /** argv prefix of uv (the binary installed by the setup module); default ["uv"] from PATH. Resolved at install time. */
+  uv?: string[] | (() => Promise<string[] | undefined>);
   /** Argv placed before the vllm executable (tests run the fake engine through node). */
   launcherPrefix?: string[];
   readyTimeoutMs?: number;
@@ -194,7 +194,8 @@ export class VllmNativeAdapter implements EngineAdapter {
 
   async install(plan: InstallPlan, progress: ProgressSink, signal: AbortSignal): Promise<void> {
     const { spec } = installDataSchema.parse(plan.data);
-    await installVllm({ proc: this.o.deps.proc, enginesDir: this.o.deps.paths.enginesDir, uv: this.o.uv ?? ['uv'], spec }, progress, signal);
+    const uv = (typeof this.o.uv === 'function' ? await this.o.uv() : this.o.uv) ?? ['uv'];
+    await installVllm({ proc: this.o.deps.proc, enginesDir: this.o.deps.paths.enginesDir, uv, spec }, progress, signal);
     this.versions.clear();
   }
 }

@@ -22,6 +22,26 @@ export const modelFactsSchema = z.object({
   fullAttentionLayers: z.number().int().optional(),
   expertCount: z.number().int().optional(),
   expertUsedCount: z.number().int().optional(),
+  /** Exact per-layer KV layout (layers differ on Gemma 4, hybrid models…); see core/models/types.ts. */
+  kv: z
+    .object({
+      groups: z.array(
+        z.object({
+          layers: z.number(),
+          kvHeads: z.number(),
+          keyLength: z.number(),
+          valueLength: z.number(),
+          window: z.number().optional(),
+        }),
+      ),
+      recurrentLayers: z.number(),
+      recurrentBytesPerSeq: z.number(),
+    })
+    .optional(),
+  vocabSize: z.number().int().optional(),
+  feedForwardLength: z.number().int().optional(),
+  /** Share of the GGUF file llama.cpp keeps in RAM (input embeddings). */
+  cpuOnlyFraction: z.number().optional(),
 });
 export type ModelFacts = z.infer<typeof modelFactsSchema>;
 
@@ -90,7 +110,7 @@ export const hubFileSchema = z.object({
   quant: z.string().optional(),
   /** Grouped split parts share a groupKey; size is per file. */
   groupKey: z.string().optional(),
-  kind: z.enum(['weights', 'mmproj', 'mtp', 'config', 'tokenizer', 'other']),
+  kind: z.enum(['weights', 'mmproj', 'mtp', 'draft', 'config', 'tokenizer', 'other']),
 });
 export type HubFile = z.infer<typeof hubFileSchema>;
 

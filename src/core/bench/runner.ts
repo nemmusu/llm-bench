@@ -112,6 +112,14 @@ export interface RunInput {
   vramEstimateMiB?: number;
   /** Planning notes (skipped steps…), kept in the log excerpt. */
   notes?: string[];
+  /** Planning warnings as codes for the renderer (stored in RunResult.notes). */
+  warnings?: RunNote[];
+}
+
+/** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
+export interface RunNote {
+  code: string;
+  params?: Record<string, unknown>;
 }
 
 /** Bounds of the stored server log. */
@@ -176,6 +184,7 @@ interface RunState {
   pumps: Promise<void>[];
   logBlocks: { label: string; lines: string[] }[];
   notes: string[];
+  codes: RunNote[];
   coldMs: number[];
   warmMs: number[];
   coldPhases?: LoadPhase[];
@@ -279,6 +288,7 @@ export class BenchRunner {
       pumps: [],
       logBlocks: [],
       notes: [...(input.notes ?? [])],
+      codes: [...(input.warnings ?? [])],
       coldMs: [],
       warmMs: [],
       corpus: '',
@@ -473,6 +483,7 @@ export class BenchRunner {
       const unit = stepSeconds({ ...step, levels: [level] }, DEFAULT_EXPECTATIONS);
       if (isLlamaCpp(plan.kind) && level > slots) {
         s.notes.push(`concurrency level ${level} skipped: llama.cpp started with ${slots} slot(s)`);
+        s.codes.push({ code: 'concurrency_level_skipped', params: { level, parallel: slots } });
         this.advance(s, unit);
         continue;
       }
@@ -506,6 +517,7 @@ export class BenchRunner {
     const d = this.deps;
     if (!d.llamaBench || plan.kind !== 'llamacpp-native') {
       s.notes.push('llama-bench skipped: not available for this engine');
+      s.codes.push({ code: 'llama_bench_unsupported' });
       return;
     }
     // llama-bench loads its own copy of the model: free the GPU first.
@@ -806,6 +818,13 @@ export class BenchRunner {
       launch,
       metrics,
       validity,
+      notes: s.codes,
+      sharedGpu: sharedGpuUsers(s.otherUsers).map((u) => ({
+        pid: u.pid,
+        name: u.name,
+        ...(u.memMiB !== undefined ? { memMiB: u.memMiB } : {}),
+        ...(u.kind !== undefined ? { kind: u.kind } : {}),
+      })),
       ...(samples.length
         ? {
             telemetry: downsampleTelemetry(samples, s.marks, {

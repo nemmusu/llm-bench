@@ -221,7 +221,7 @@ describe('system routes', () => {
     expect((await app.request('/api/system', { headers })).status).toBe(200);
     expect((await app.request('/api/system', { headers: { host: '127.0.0.1:7000' } })).status).toBe(401);
     const err = await app.request('/api/telemetry/snapshot', { headers });
-    expect(err.status).toBe(500);
+    expect(err.status).toBe(503);
     expect(await err.json()).toEqual({ error: { code: 'DRIVER_MISSING', message: 'nvidia-smi cannot reach the NVIDIA driver' } });
   });
 

@@ -63,6 +63,8 @@ export function makeRun(over: Partial<RunResult> = {}): RunResult {
     createdAt: '2026-10-06T10:00:00.000Z',
     finishedAt: '2026-10-06T10:05:00.000Z',
     status: 'completed',
+    notes: [],
+    sharedGpu: [],
     scenario: { profile: 'quick', seed: 42, steps: [] },
     hardware: hardware(),
     model: modelIdentity(),

@@ -130,7 +130,7 @@ describe('setup routes', () => {
     expect(await json(await linux.app.request('/api/setup/docker/install', { method: 'POST' }))).toMatchObject({ job: { kind: 'docker-linux' } });
     const mac = setup({ platform: 'darwin' });
     const res = await mac.app.request('/api/setup/docker/install', { method: 'POST' });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     expect(await json(res)).toMatchObject({ error: { code: 'DOCKER_UNSUPPORTED' } });
   });
 

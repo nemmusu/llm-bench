@@ -187,6 +187,7 @@ export const it = {
     prefill: { label: 'Lettura prompt', status: 'Il modello sta leggendo testi di prova di varie lunghezze. Misuro quanto velocemente li legge.' },
     decode: { label: 'Generazione', status: 'Il modello sta scrivendo testo di prova. Misuro quante parole al secondo riesce a produrre.' },
     concurrency: { label: 'Più utenti', status: 'Simulo più persone che usano il modello nello stesso momento.' },
+    'llama-bench': { label: 'Test standard', status: 'Eseguo llama-bench, il test ufficiale di llama.cpp, per confrontarti con i numeri della community.' },
     cleanup: { label: 'Pulizia', status: 'Chiudo il motore e libero la memoria della scheda video.' },
     state: {
       done: 'Completata',
@@ -329,6 +330,10 @@ export const it = {
     DOCKER_UNSUPPORTED: { title: 'Questa versione di Docker non è supportata', what: 'Usa Docker Desktop o Docker Engine aggiornati.' },
     DOCKER_PULL_FAILED: { title: 'Download dell’immagine Docker non riuscito', what: 'Controlla la connessione e lo spazio su disco, poi riprova.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub ha limitato le richieste', what: 'Aspetta qualche minuto e riprova.' },
+    RUN_NOT_FOUND: { title: 'Risultato non trovato', what: 'Forse è stato eliminato o la cartella dei risultati è cambiata. Torna all’elenco dei risultati.' },
+    RUN_IN_PROGRESS: { title: 'C’è già un test in corso', what: 'Aspetta che finisca, oppure annullalo, prima di avviarne un altro.' },
+    DOWNLOAD_NOT_FOUND: { title: 'Download non trovato', what: 'Forse è già terminato o è stato annullato. Controlla l’elenco dei download.' },
+    DOCKER_INSTALL_FAILED: { title: 'Installazione di Docker non riuscita', what: 'Riprova; se succede ancora, installa Docker Desktop dal sito ufficiale e poi ricontrolla.' },
   },
   welcome: {
     title: 'Benvenuto in GPU Bench',

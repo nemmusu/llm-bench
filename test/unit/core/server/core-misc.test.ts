@@ -67,6 +67,15 @@ describe('SettingsRepo', () => {
     expect(await new SettingsRepo(t.dir).get()).toEqual(defaultSettings());
   });
 
+  it('serializes concurrent updates', async () => {
+    const repo = new SettingsRepo(t.dir);
+    await Promise.all([repo.update({ theme: 'dark' }), repo.update({ language: 'en' }), repo.update({ expertMode: true })]);
+    expect(await new SettingsRepo(t.dir).get()).toMatchObject({ theme: 'dark', language: 'en', expertMode: true });
+    // A failed update does not block the next ones.
+    await expect(repo.update({ language: 'xx' as never })).rejects.toThrow();
+    expect((await repo.update({ density: 'compact' })).density).toBe('compact');
+  });
+
   it('persists updates and serves them from cache', async () => {
     const repo = new SettingsRepo(t.dir);
     await repo.update({ theme: 'dark' });

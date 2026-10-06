@@ -14,6 +14,7 @@ export const RUN_PHASES = [
   'prefill',
   'decode',
   'concurrency',
+  'llama-bench',
   'cleanup',
 ] as const;
 export const runPhaseSchema = z.enum(RUN_PHASES);
@@ -45,7 +46,24 @@ export const serverEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('run.error'), runId: z.string(), error: appErrorSchema }),
   z.object({ type: z.literal('telemetry'), samples: z.array(gpuSampleSchema) }),
   z.object({ type: z.literal('download.update'), job: downloadJobSchema }),
-  z.object({ type: z.literal('engine.install'), kind: z.string(), bytesDone: z.number(), bytesTotal: z.number().optional(), stage: z.string() }),
+  z.object({
+    type: z.literal('engine.install'),
+    /** llamacpp-native, a docker image pull, docker-desktop, docker-linux, uv, vllm-native… */
+    kind: z.string(),
+    bytesDone: z.number(),
+    bytesTotal: z.number().optional(),
+    stage: z.string(),
+    /** Script steps (docker-linux) instead of bytes. */
+    step: z.number().optional(),
+    steps: z.number().optional(),
+    /** Docker image being pulled. */
+    image: z.string().optional(),
+    /** Docker Desktop state while starting (starting, running…) and whether it is unusually slow. */
+    state: z.string().optional(),
+    slow: z.boolean().optional(),
+    error: appErrorSchema.optional(),
+    result: z.record(z.string(), z.unknown()).optional(),
+  }),
   z.object({ type: z.literal('runs.changed') }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;

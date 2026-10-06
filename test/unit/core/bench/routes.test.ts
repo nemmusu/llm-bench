@@ -73,7 +73,7 @@ describe('bench routes', () => {
     expect((await t.call('GET', '/api/runs/r1')).body).toMatchObject({ id: 'r1', status: 'completed' });
     const missing = await t.call('GET', '/api/runs/nope');
     expect(missing.status).toBe(404);
-    expect(missing.body).toMatchObject({ error: { code: 'VALIDATION', params: { id: 'nope', reason: 'not_found' } } });
+    expect(missing.body).toMatchObject({ error: { code: 'RUN_NOT_FOUND', params: { id: 'nope' } } });
     expect((await t.call('DELETE', '/api/runs/r1')).body).toEqual({ ok: true });
     expect(t.hubEvents).toEqual([{ type: 'runs.changed' }]);
     expect((await t.call('DELETE', '/api/runs/r1')).status).toBe(404);
@@ -88,10 +88,10 @@ describe('bench routes', () => {
     const runId = (started.body as unknown as { runId: string }).runId;
     expect((await t.call('GET', '/api/runs/active')).body).toMatchObject({ active: { runId } });
     expect((await t.call('POST', '/api/runs/other/cancel')).status).toBe(404);
-    // A second start while one runs is refused with VALIDATION (400).
+    // A second start while one runs is refused with RUN_IN_PROGRESS (409).
     const busy = await t.call('POST', '/api/runs', request());
-    expect(busy.status).toBe(400);
-    expect(busy.body).toMatchObject({ error: { code: 'VALIDATION', params: { reason: 'run_in_progress' } } });
+    expect(busy.status).toBe(409);
+    expect(busy.body).toMatchObject({ error: { code: 'RUN_IN_PROGRESS', params: { reason: 'run_in_progress' } } });
     expect((await t.call('POST', `/api/runs/${runId}/cancel`)).body).toEqual({ ok: true });
     gate.resolve();
     await t.svc.whenIdle();

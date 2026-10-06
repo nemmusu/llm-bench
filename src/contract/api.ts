@@ -32,6 +32,12 @@ import { profileSchema, scenarioSchema } from './results';
  *   POST   /api/runs/:id/cancel              -> { ok: true }
  *   POST   /api/runs/plan                    (StartRunRequest) -> RunPlan (preview: command, downloads, duration)
  *   GET    /api/runs/tried?weakKey=&sha256=  -> RunSummary[] (results for a model, this GPU first)
+ *   GET    /api/servers                      -> ServerInfo[] ("Avvia solo il server così")
+ *   POST   /api/servers                      (StartServerRequest) -> ServerInfo (when ready)
+ *   DELETE /api/servers/:id                  -> { ok: true }
+ *
+ * Feature routes (setup, docker, cache, models extras) document themselves next to their handlers;
+ * their response types are re-exported for the renderer from contract/views.ts.
  */
 
 export const healthResponseSchema = z.object({ ok: z.literal(true), version: z.string(), pid: z.number() });
@@ -130,3 +136,19 @@ export const apiSchemas = {
   hubModel: hubModelSchema,
   hubFile: hubFileSchema,
 };
+
+export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true });
+export type StartServerRequest = z.infer<typeof startServerRequestSchema>;
+
+/** An engine started by GPU Bench outside a benchmark, kept running until the user stops it. */
+export const serverInfoSchema = z.object({
+  id: z.string(),
+  baseUrl: z.string(),
+  /** OpenAI-compatible base for other programs (…/v1). */
+  openaiUrl: z.string(),
+  modelName: z.string(),
+  engineLabel: z.string(),
+  startedAt: z.string(),
+  command: z.object({ argv: z.array(z.string()), powershell: z.string(), bash: z.string() }),
+});
+export type ServerInfo = z.infer<typeof serverInfoSchema>;

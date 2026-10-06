@@ -58,6 +58,15 @@ describe('BenchService.start', () => {
     expect(seen).toContain('decode:true');
   });
 
+  it('refuses to start while something else holds the GPU (blockedBy)', async () => {
+    const s = serviceSetup(tmp);
+    const svc = new BenchService({ ...s.deps, blockedBy: () => new AppError('VRAM_BUSY', 'server running', { params: { reason: 'own_server' } }) });
+    await expect(svc.start(request())).rejects.toMatchObject({ code: 'VRAM_BUSY', params: { reason: 'own_server' } });
+    const free = new BenchService({ ...s.deps, blockedBy: () => undefined });
+    await expect(free.start(request())).resolves.toHaveProperty('runId');
+    await free.whenIdle();
+  });
+
   it('one run at a time', async () => {
     const gate = deferred();
     const s = serviceSetup(tmp, { adapter: { gate: gate.promise } });
@@ -67,6 +76,7 @@ describe('BenchService.start', () => {
     gate.resolve();
     expect(err).toBeInstanceOf(AppError);
     expect((err as AppError).params).toEqual({ reason: 'run_in_progress', runId });
+    expect((err as AppError).code).toBe('RUN_IN_PROGRESS');
     await svc.whenIdle();
     await expect(svc.start(request())).resolves.toHaveProperty('runId');
     await svc.whenIdle();

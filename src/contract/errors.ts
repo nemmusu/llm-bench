@@ -42,6 +42,10 @@ export const ERROR_CODES = [
   'DOCKER_UNSUPPORTED',
   'DOCKER_PULL_FAILED',
   'GITHUB_RATE_LIMITED',
+  'RUN_NOT_FOUND',
+  'RUN_IN_PROGRESS',
+  'DOWNLOAD_NOT_FOUND',
+  'DOCKER_INSTALL_FAILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { RunPlan, StartRunRequest } from '../contract/api';
 import { AppError } from '../contract/errors';
@@ -5,6 +6,14 @@ import type { LocalModel } from '../contract/models';
 import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
+import { createCacheRoutes } from './cache/routes';
+import { createDockerRoutes } from './docker/routes';
+import { createDockerServices, type DockerServices } from './docker/services';
+import { LlamaDockerAdapter } from './engines/llamacpp-docker/adapter';
+import { smFromComputeCap } from './engines/shared/compat';
+import type { DockerLaunchPlan } from './engines/shared/docker-engine';
+import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
+import { VllmNativeAdapter } from './engines/vllm-native/adapter';
 import { createModelServices, type ModelServices } from './models/setup';
 import { createLlamaBench } from './engines/llama-bench/llama-bench';
 import { DockerInstaller } from './setup/docker-installer';
@@ -27,6 +36,8 @@ import { OwnershipRegistry } from './process/ownership';
 import { pickFreePort } from './process/ports';
 import type { RouteModule } from './server/app';
 import { RunsRepo } from './store/runs-repo';
+import { createServerRoutes } from './servers/routes';
+import { ServeService } from './servers/service';
 import { createSystemRoutes } from './system/routes';
 import { createSystemService } from './system/service';
 
@@ -39,8 +50,12 @@ export interface CoreServices {
   ownership: OwnershipRegistry;
   registry: EngineRegistry;
   llama: LlamaNativeAdapter;
+  docker: DockerServices;
+  vllmDocker: VllmDockerAdapter;
   runs: RunsRepo;
   bench: BenchService;
+  /** Engines started with "Avvia solo il server così". */
+  serve: ServeService;
   /** "Controllo sistema" checklist and guided installs (Docker, uv). */
   setup: SetupService;
   /** Local library, HF hub, fit estimates and downloads (absent only in narrow unit tests). */
@@ -49,6 +64,8 @@ export interface CoreServices {
   windowsStandby?: WindowsStandbyEvictor;
   /** PIDs of engine processes GPU Bench started (kept fresh for "other GPU users" checks). */
   ownPids(): number[];
+  /** Ownership marker of the run in progress (its container must survive a cleanup). */
+  activeMarker(): string | undefined;
 }
 
 export interface ServicesOptions {
@@ -133,7 +150,12 @@ export async function resolveModelTarget(req: StartRunRequest, models: ModelsLoo
 /** Inference clients for engine instances, sharing the core's fetch and clock. */
 export function clientFactory(deps: Pick<CoreContext['deps'], 'fetch' | 'clock'>): ClientFactory {
   return (flavor, baseUrl, o) =>
-    createInferenceClient(flavor, baseUrl, { fetch: deps.fetch, clock: deps.clock }, o?.apiKey ? { apiKey: o.apiKey } : {});
+    createInferenceClient(
+      flavor,
+      baseUrl,
+      { fetch: deps.fetch, clock: deps.clock },
+      { ...(o?.apiKey ? { apiKey: o.apiKey } : {}), ...(o?.model ? { model: o.model } : {}) },
+    );
 }
 
 export async function createServices(ctx: CoreContext, opts: ServicesOptions = {}): Promise<CoreServices> {
@@ -162,6 +184,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   const createClient = clientFactory(deps);
+  let uvArgv: () => Promise<string[] | undefined> = () => Promise.resolve(undefined);
 
   const llama = new LlamaNativeAdapter({
     deps,
@@ -170,7 +193,28 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     cudaVersion: async () => (await ctx.telemetry.probe().catch(() => []))[0]?.cudaVersion,
     ...(opts.llamaLauncherPrefix ? { launcherPrefix: opts.llamaLauncherPrefix } : {}),
   });
-  const registry = new EngineRegistry([llama, new ExternalAdapter({ fetch: deps.fetch, clock: deps.clock, createClient })]);
+  const docker = createDockerServices(deps);
+  const dockerEngine = { deps, cli: docker.cli, environment: docker.env, images: docker.images, createClient };
+  const vllmDocker = new VllmDockerAdapter({
+    ...dockerEngine,
+    hub: docker.hub,
+    api: docker.api,
+    hfToken: () => ctx.secrets.hfToken,
+    gpuSm: async () => {
+      const cc = (await ctx.telemetry.probe().catch(() => []))[0]?.computeCapability;
+      return cc ? smFromComputeCap(cc) : undefined;
+    },
+  });
+  const registry = new EngineRegistry([
+    llama,
+    new ExternalAdapter({ fetch: deps.fetch, clock: deps.clock, createClient }),
+    new LlamaDockerAdapter(dockerEngine),
+    vllmDocker,
+    // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
+    new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: async () => uvArgv() }),
+  ]);
+  // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
+  void docker.env.cleanupOrphans().catch(() => undefined);
 
   let windowsStandby: WindowsStandbyEvictor | undefined;
   let evictor: CacheEvictor = noEvictor;
@@ -213,13 +257,17 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   const osRelease = () => readOsRelease();
-  const docker = new DockerInstaller({
+  const dockerInstaller = new DockerInstaller({
     ...deps,
     cacheDir: deps.paths.cacheDir,
     osRelease,
     ...(deps.endpoints.dockerInstaller ? { installerUrl: deps.endpoints.dockerInstaller } : {}),
   });
   const uv = new UvInstaller({ ...deps, enginesDir: deps.paths.enginesDir, githubApi: deps.endpoints.githubApi });
+  uvArgv = async () => {
+    const p = await uv.uvPath();
+    return p ? [p] : undefined;
+  };
   const systemCheck = new SystemCheck({
     platform: deps.platform,
     arch: deps.arch,
@@ -231,7 +279,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     llamacppInstallBytes: async () => (await llama.planInstall({})).bytes,
     localModels: () => modelServices?.models.list() ?? Promise.resolve([]),
     modelsDir: () => modelServices?.models.libraryDir() ?? Promise.resolve(deps.paths.modelsDir),
-    dockerInstallBytes: () => docker.installerSize(),
+    dockerStatus: () => docker.env.dockerStatus(),
+    dockerInstallBytes: () => dockerInstaller.installerSize(),
     uvPath: () => uv.uvPath(),
     uvInstallBytes: async () => (await uv.plan()).sizeBytes,
     refresh: () => ctx.telemetry.refresh(),
@@ -239,13 +288,24 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   const setup = createSetupService({
     platform: deps.platform,
     systemCheck,
-    docker,
+    docker: dockerInstaller,
     uv,
+    onInstalled: () => void docker.env.dockerStatus().catch(() => undefined),
     publish: (e) => ctx.hub.publish(e),
     shutdown: ctx.shutdown,
     log: deps.log,
   });
 
+  const serve = new ServeService({
+    clock: deps.clock,
+    getAdapter: (kind) => registry.require(kind),
+    resolveModel: (req) => resolveModelTarget({ ...req, profile: 'quick', allowSharedGpu: true }, models),
+    pickPort: () => pickFreePort(),
+    displayCommand,
+    redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
+  });
+
+  let lastMarker: string | undefined;
   const bench = new BenchService({
     clock: deps.clock,
     runs,
@@ -256,6 +316,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
     getAdapter: (kind) => registry.require(kind),
     resolveModel: (req) => resolveModelTarget(req, models),
+    slowSharedFilesystem: (plan) => (plan as Partial<DockerLaunchPlan>).slowSharedFilesystem === true,
+    newMarker: () => (lastMarker = `gpubench-${randomUUID()}`),
     ...(modelServices
       ? {
           fit: async (req: StartRunRequest, model: ModelTarget, plan: { params: StartRunRequest['params'] }) =>
@@ -276,15 +338,21 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     ownPids: () => pidCache,
     telemetryIntervalMs: async () => (await ctx.settings.get()).telemetryIntervalMs,
     shutdown: ctx.shutdown,
+    blockedBy: () =>
+      serve.busy() ? new AppError('VRAM_BUSY', 'A GPU Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
   });
 
   return {
     ownership,
     registry,
     llama,
+    docker,
+    vllmDocker,
     runs,
     bench,
+    serve,
     setup,
+    activeMarker: () => (bench.active() ? lastMarker : undefined),
     ...(modelServices ? { modelServices } : {}),
     evictor,
     ...(windowsStandby ? { windowsStandby } : {}),
@@ -304,8 +372,21 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         sysinfo: ctx.sysinfo,
         log: ctx.deps.log,
         ownPids: s.ownPids,
+        dockerStatus: () => s.docker.env.dockerStatus(),
       }),
     ),
+    createDockerRoutes((ctx) => ({
+      env: s.docker.env,
+      images: s.docker.images,
+      vllm: s.vllmDocker,
+      publish: (e) => ctx.hub.publish(e),
+      defaultGpuImage: async () => (await ctx.settings.get()).lastEngine?.image ?? 'ghcr.io/ggml-org/llama.cpp:server-cuda',
+      activeMarkers: () => {
+        const m = s.activeMarker();
+        return m ? [m] : [];
+      },
+      shutdown: ctx.shutdown,
+    })),
     (app, ctx) =>
       createEnginesRoutes({
         registry: s.registry,
@@ -318,7 +399,9 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
+    createServerRoutes(s.serve),
     createSetupRoutes(s.setup),
+    createCacheRoutes(s),
     ...(s.modelServices?.routes ?? []),
   ];
 }

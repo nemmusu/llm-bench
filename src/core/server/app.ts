@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { timingSafeEqual } from 'node:crypto';
-import { settingsSchema } from '../../contract/settings';
+import { z } from 'zod';
+import { settingsSchema, type Settings } from '../../contract/settings';
 import type { ServerEvent } from '../../contract/events';
 import type { CoreContext } from '../context';
 import { errorResponse, parseBody } from './http-error';
@@ -70,7 +71,11 @@ export function createApp(ctx: CoreContext, opts: AppOptions): Hono {
 
   app.get('/api/settings', async (c) => c.json(await ctx.settings.get()));
   app.put('/api/settings', async (c) => {
-    const patch = await parseBody(c, settingsSchema.partial());
+    // zod fills defaults for keys that are absent, so only the keys actually sent are kept:
+    // a patch like { theme } must never reset the other settings.
+    const raw = await parseBody(c, z.record(z.string(), z.unknown()));
+    const parsed = settingsSchema.partial().strict().parse(raw);
+    const patch = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in raw)) as Partial<Settings>;
     return c.json(await ctx.settings.update(patch));
   });
 

@@ -196,6 +196,19 @@ export const runResultSchema = z.object({
   launch: launchRecordSchema,
   metrics: metricsSchema,
   validity: z.array(validityFlagSchema).default([]),
+  /** Planning notes and skipped steps (codes localized by the renderer, e.g. prompt_too_long). */
+  notes: z.array(z.object({ code: z.string(), params: z.record(z.string(), z.unknown()).optional() })).default([]),
+  /** Other processes that held GPU memory during the run (behind the gpu_shared flag). */
+  sharedGpu: z
+    .array(
+      z.object({
+        pid: z.number(),
+        name: z.string(),
+        memMiB: z.number().optional(),
+        kind: z.enum(['llm', 'vm', 'system', 'app']).optional(),
+      }),
+    )
+    .default([]),
   telemetry: telemetrySeriesSchema.optional(),
   logExcerpt: z.string().default(''),
   note: z.string().optional(),

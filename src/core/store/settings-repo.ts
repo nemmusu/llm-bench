@@ -5,6 +5,7 @@ import { readJsonFile, writeFileAtomic } from './atomic';
 /** settings.json in the data dir. Unknown/invalid content falls back to defaults (never crashes the app). */
 export class SettingsRepo {
   private cache: Settings | undefined;
+  private queue: Promise<unknown> = Promise.resolve();
   readonly file: string;
 
   constructor(dataDir: string) {
@@ -24,11 +25,16 @@ export class SettingsRepo {
     return this.cache;
   }
 
-  async update(patch: Partial<Settings>): Promise<Settings> {
-    const current = await this.get();
-    const next = settingsSchema.parse({ ...current, ...patch });
-    await writeFileAtomic(this.file, JSON.stringify(next, null, 2));
-    this.cache = next;
-    return next;
+  /** Updates are serialized: two saves at once must not both start from the same old state. */
+  update(patch: Partial<Settings>): Promise<Settings> {
+    const run = this.queue.then(async () => {
+      const current = await this.get();
+      const next = settingsSchema.parse({ ...current, ...patch });
+      await writeFileAtomic(this.file, JSON.stringify(next, null, 2));
+      this.cache = next;
+      return next;
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 }

@@ -88,6 +88,16 @@ describe('createApp', () => {
 
     const notJson = await app.request('/api/settings', { method: 'PUT', headers: auth, body: '{nope' });
     expect(notJson.status).toBe(400);
+
+    // A partial patch keeps every other setting (zod would otherwise refill defaults).
+    await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ onboardingDone: true }) });
+    const themed = await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ theme: 'dark' }) });
+    expect(await themed.json()).toMatchObject({ theme: 'dark', onboardingDone: true, language: 'en', expertMode: true });
+    // Unknown keys and non-objects are rejected.
+    const unknownKey = await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ nope: 1 }) });
+    expect(unknownKey.status).toBe(400);
+    const notObject = await app.request('/api/settings', { method: 'PUT', headers: auth, body: '[1]' });
+    expect(notObject.status).toBe(400);
   });
 
   it('returns 404 JSON for unknown API routes', async () => {

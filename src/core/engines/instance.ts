@@ -7,7 +7,7 @@ import type { EngineInstance, PhaseMark } from './types';
 import { ignore } from './util';
 
 /** Builds the HTTP client for a started engine (implemented in core/inference, injected by the composition root). */
-export type ClientFactory = (flavor: ApiFlavor, baseUrl: string, opts?: { apiKey?: string }) => InferenceClient;
+export type ClientFactory = (flavor: ApiFlavor, baseUrl: string, opts?: { apiKey?: string; model?: string }) => InferenceClient;
 
 export const DEFAULT_READY_TIMEOUT_MS = 15 * 60_000;
 export const DEFAULT_POLL_MS = 50;

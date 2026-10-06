@@ -140,7 +140,7 @@ describe('docker routes', () => {
     expect(bad.status).toBe(400);
     const failing = setup({}, { gpuCheck: async () => Promise.reject(new AppError('DOCKER_NO_GPU', 'no gpu')) });
     const res = await failing.post('/api/docker/gpu-check', {});
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: { code: 'DOCKER_NO_GPU', message: 'no gpu' } });
   });
 

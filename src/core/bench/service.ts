@@ -58,6 +58,8 @@ export interface BenchServiceDeps {
   telemetryIntervalMs?: () => number | Promise<number>;
   /** Core shutdown: cancels the active run (which is then saved as cancelled). */
   shutdown?: AbortSignal;
+  /** Reason a run cannot start right now (e.g. a GPU Bench server holds the GPU), or undefined. */
+  blockedBy?: () => AppError | undefined;
 }
 
 export interface ActiveRun {
@@ -189,10 +191,12 @@ export class BenchService {
    */
   async start(req: StartRunRequest): Promise<{ runId: string }> {
     if (this.current) {
-      throw new AppError('VALIDATION', 'run already in progress', {
+      throw new AppError('RUN_IN_PROGRESS', 'run already in progress', {
         params: { reason: 'run_in_progress', runId: this.current.runId },
       });
     }
+    const blocked = this.deps.blockedBy?.();
+    if (blocked) throw blocked;
     const d = this.deps;
     const runId = d.newRunId?.() ?? newRunId(d.clock.wall());
     const controller = new AbortController();
@@ -247,6 +251,7 @@ export class BenchService {
       ...(d.slowSharedFilesystem?.(p.launch, p.model) ? { slowSharedFilesystem: true } : {}),
       ...(fit ? { vramEstimateMiB: fit.needMiB } : {}),
       notes: p.warnings.map((w) => `plan: ${w.code}${w.params ? ` ${JSON.stringify(w.params)}` : ''}`),
+      warnings: p.warnings,
     };
     current.done = runner
       .run(input, controller.signal)

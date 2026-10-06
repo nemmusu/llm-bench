@@ -9,7 +9,7 @@ import type { BenchService } from './service';
 const exportRequestSchema = z.object({ ids: z.array(z.string()).min(1) });
 
 function notFound(c: Context, id: string): Response {
-  return c.json({ error: { code: 'VALIDATION', message: 'Run not found', params: { id, reason: 'not_found' } } }, 404);
+  return c.json({ error: { code: 'RUN_NOT_FOUND', message: 'Run not found', params: { id } } }, 404);
 }
 
 /**

@@ -74,7 +74,7 @@ function startCore(): Promise<number> {
 function titleBarColors(): { color: string; symbolColor: string } {
   return nativeTheme.shouldUseDarkColors
     ? { color: '#0b0d12', symbolColor: '#e6e8ee' }
-    : { color: '#f7f8fa', symbolColor: '#1b1f2a' };
+    : { color: '#f4f5f8', symbolColor: '#1b1f2a' };
 }
 
 async function createWindow(): Promise<void> {
@@ -85,7 +85,7 @@ async function createWindow(): Promise<void> {
     minHeight: 680,
     show: false,
     title: 'GPU Bench',
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0d12' : '#f7f8fa',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0d12' : '#f4f5f8',
     titleBarStyle: 'hidden',
     titleBarOverlay: { ...titleBarColors(), height: TITLEBAR_HEIGHT },
     icon: path.join(__dirname, '../../resources/icons/icon.png'),
@@ -140,6 +140,19 @@ function registerIpc(): void {
     core?.postMessage({ type: 'hf-token', token: value });
     return { ok: true, secure };
   });
+  ipcMain.handle(
+    'gpubench:save-file',
+    async (_e, opts: { defaultName?: unknown; content?: unknown; filters?: Electron.FileFilter[] }) => {
+      if (typeof opts?.defaultName !== 'string' || typeof opts.content !== 'string' || opts.content.length > 64 * 1024 * 1024) return null;
+      const r = await dialog.showSaveDialog(mainWindow!, {
+        defaultPath: path.join(app.getPath('documents'), path.basename(opts.defaultName)),
+        ...(Array.isArray(opts.filters) ? { filters: opts.filters } : {}),
+      });
+      if (r.canceled || !r.filePath) return null;
+      await fs.writeFile(r.filePath, opts.content, 'utf8');
+      return r.filePath;
+    },
+  );
   ipcMain.handle('gpubench:hf-token-clear', async () => {
     await fs.rm(path.join(dataDir(), 'hf-token.bin'), { force: true });
     core?.postMessage({ type: 'hf-token', token: null });

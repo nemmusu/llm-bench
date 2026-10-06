@@ -136,7 +136,7 @@ describe('live run', () => {
     renderApp(`/run/${MOCK_RUN_ID}`);
     expect(await h1('Test in corso')).toBeTruthy();
     const phases = screen.getByRole('list', { name: 'Fasi del test' });
-    expect(within(phases).getAllByRole('listitem')).toHaveLength(9);
+    expect(within(phases).getAllByRole('listitem')).toHaveLength(10);
     expect(within(phases).getByText('Generazione').closest('li')!.getAttribute('aria-current')).toBe('step');
     expect(screen.getByRole('meter', { name: 'Generazione' })).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Avanzamento del test' })).toBeTruthy();

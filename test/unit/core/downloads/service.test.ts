@@ -130,7 +130,7 @@ describe('DownloadService', () => {
     await expect(svc.add({ repo: REPO, revision: 'main', files: ['nope.gguf'] })).rejects.toMatchObject({ code: 'HF_NOT_FOUND', params: { file: 'nope.gguf' } });
     hub.addRepo({ id: 'only/Gguf', files: [{ path: 'm.gguf', size: 10 }] });
     await expect(svc.add({ repo: 'only/Gguf', revision: 'main', files: ['*'] })).rejects.toMatchObject({ code: 'VALIDATION' });
-    await expect(svc.pause('missing')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(svc.pause('missing')).rejects.toMatchObject({ code: 'DOWNLOAD_NOT_FOUND' });
   });
 
   it('runs at most two jobs at once and dedupes identical requests', async () => {

@@ -186,6 +186,7 @@ export const en: Messages = {
     prefill: { label: 'Prompt reading', status: 'The model is reading sample texts of different lengths. I am measuring how fast it reads them.' },
     decode: { label: 'Generation', status: 'The model is writing sample text. I am measuring how many words per second it can produce.' },
     concurrency: { label: 'Many users', status: 'Simulating several people using the model at the same time.' },
+    'llama-bench': { label: 'Standard test', status: 'Running llama-bench, llama.cpp’s official test, to compare with community numbers.' },
     cleanup: { label: 'Cleaning up', status: 'Closing the engine and freeing the graphics memory.' },
     state: {
       done: 'Done',
@@ -328,6 +329,10 @@ export const en: Messages = {
     DOCKER_UNSUPPORTED: { title: 'This Docker version is not supported', what: 'Use an up-to-date Docker Desktop or Docker Engine.' },
     DOCKER_PULL_FAILED: { title: 'Docker image download failed', what: 'Check the connection and disk space, then try again.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub is limiting requests', what: 'Wait a few minutes and try again.' },
+    RUN_NOT_FOUND: { title: 'Result not found', what: 'It may have been deleted, or the results folder changed. Go back to the results list.' },
+    RUN_IN_PROGRESS: { title: 'A test is already running', what: 'Wait for it to finish, or cancel it, before starting another one.' },
+    DOWNLOAD_NOT_FOUND: { title: 'Download not found', what: 'It may have finished or been cancelled already. Check the downloads list.' },
+    DOCKER_INSTALL_FAILED: { title: 'Docker installation failed', what: 'Try again; if it keeps failing, install Docker Desktop from the official website and check again.' },
   },
   welcome: {
     title: 'Welcome to GPU Bench',

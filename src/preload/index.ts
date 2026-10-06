@@ -12,6 +12,7 @@ const bridge: DesktopBridge = {
   setTitleBarTheme: (t) => ipcRenderer.invoke('gpubench:titlebar-theme', t) as Promise<void>,
   saveHfToken: (token) => ipcRenderer.invoke('gpubench:hf-token-save', token) as Promise<{ ok: boolean; secure: boolean }>,
   clearHfToken: () => ipcRenderer.invoke('gpubench:hf-token-clear') as Promise<void>,
+  saveFile: (opts) => ipcRenderer.invoke('gpubench:save-file', opts) as Promise<string | null>,
 };
 
 contextBridge.exposeInMainWorld('gpubench', bridge);

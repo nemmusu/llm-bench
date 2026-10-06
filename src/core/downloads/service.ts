@@ -216,7 +216,7 @@ export class DownloadService {
 
   private get(id: string): JobRecord {
     const rec = this.records.get(id);
-    if (!rec) throw new AppError('VALIDATION', `Unknown download ${id}`, { params: { id } });
+    if (!rec) throw new AppError('DOWNLOAD_NOT_FOUND', `Unknown download ${id}`, { params: { id } });
     return rec;
   }
 

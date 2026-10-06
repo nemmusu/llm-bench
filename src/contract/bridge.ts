@@ -9,4 +9,6 @@ export interface DesktopBridge {
   setTitleBarTheme(theme: { background: string; symbols: string }): Promise<void>;
   saveHfToken(token: string): Promise<{ ok: boolean; secure: boolean }>;
   clearHfToken(): Promise<void>;
+  /** Shows the native "Save as" dialog and writes `content` (exports). Resolves to the path, or null if cancelled. */
+  saveFile(opts: { defaultName: string; content: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null>;
 }
