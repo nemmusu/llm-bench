@@ -44,7 +44,7 @@ export function ResultsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const all = useMemo(() => runs.data ?? [], [runs.data]);
-  const data = useMemo(() => filterRuns(all, filters, system.data?.hostLabel), [all, filters, system.data?.hostLabel]);
+  const data = useMemo(() => filterRuns(all, filters, system.data?.hostId), [all, filters, system.data?.hostId]);
   const chosen = all.filter((r) => selected.has(r.id));
   const set = (patch: Partial<RunFilters>) => setFilters((cur) => ({ ...cur, ...patch }));
   const toggle = useCallback(
@@ -104,7 +104,7 @@ export function ResultsPage() {
         cell: (c) => (
           <span className="inline-flex items-center gap-2 text-fg-2">
             {shortGpuName(c.getValue())}
-            {system.data && c.row.original.hostLabel !== system.data.hostLabel && (
+            {system.data && c.row.original.hostId !== system.data.hostId && (
               <Badge tone="outline" size="sm" title={c.row.original.hostLabel}>
                 {t('results.otherPc')}
               </Badge>

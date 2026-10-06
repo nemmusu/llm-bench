@@ -149,12 +149,12 @@ describe('engines: Docker', () => {
     await userEvent.click(await within(docker).findByRole('button', { name: 'Verifica la GPU in Docker' }));
     expect(await within(docker).findByText('GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)')).toBeTruthy();
     await userEvent.click(within(docker).getByRole('button', { name: 'Scarica l’immagine di llama.cpp' }));
-    expect(api.calls.find((c) => c.path === '/api/docker/pull')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', kind: 'docker-pull' });
-    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'download', bytesDone: 1e9, bytesTotal: 3e9 }));
+    expect(api.calls.find((c) => c.path === '/api/engines/llamacpp-docker/install')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' });
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'download', bytesDone: 1e9, bytesTotal: 3e9 }));
     expect(await within(docker).findByText('954 MB di 2,8 GB · 33%')).toBeTruthy();
-    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'done', bytesDone: 3e9, bytesTotal: 3e9 }));
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'done', bytesDone: 3e9, bytesTotal: 3e9 }));
     expect(await within(docker).findByText('Immagine pronta: ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeTruthy();
-    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'error', bytesDone: 0 }));
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'error', bytesDone: 0 }));
     expect(await within(docker).findByText('Download dell’immagine Docker non riuscito')).toBeTruthy();
     await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }));
     expect(await screen.findByText('Contenitori rimossi: 1')).toBeTruthy();
@@ -258,7 +258,7 @@ describe('engines: vLLM and others', () => {
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0' }));
     expect(await within(tags).findByText('In uso')).toBeTruthy();
     await userEvent.click(within(tags).getAllByRole('button', { name: 'Scarica' })[0]!);
-    expect(api.calls.find((c) => c.path === '/api/docker/pull')?.body).toEqual({ image: 'vllm/vllm-openai:v0.31.0', kind: 'docker-pull' });
+    expect(api.calls.find((c) => c.path === '/api/engines/vllm-docker/install')?.body).toEqual({ image: 'vllm/vllm-openai:v0.31.0' });
   });
 
   it('tags errors; Docker stopped disables pulls; save errors', async () => {
@@ -348,7 +348,7 @@ describe('system check actions', () => {
     expect(b.openExternal).not.toHaveBeenCalled();
   });
 
-  it('setup job failures read the job error; reboot notes; unsupported distro docs; check errors per item', async () => {
+  it('setup job failures show the error of their last event; reboot notes; unsupported distro docs; check errors per item', async () => {
     const b = bridge();
     const api = libApi(
       world({
@@ -360,8 +360,6 @@ describe('system check actions', () => {
         ]),
       }),
     );
-    let jobs: unknown[] = [];
-    api.on('GET /api/setup/jobs', () => jobs);
     renderLib('/engines', api);
     const panel = (await screen.findByRole('heading', { level: 2, name: 'Controllo del sistema' })).closest('section') as HTMLElement;
     expect(await within(panel).findByText('Non sono riuscito a controllarlo: premi «Ricontrolla».')).toBeTruthy();
@@ -371,10 +369,10 @@ describe('system check actions', () => {
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annulla' }));
     await userEvent.click(within(panel).getByRole('button', { name: 'Installa Docker · 572 MB (Docker)' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Scarica e installa' }));
-    jobs = [{ kind: 'docker-desktop', state: 'failed', stage: 'failed', bytesDone: 0, startedAt: '', error: { code: 'DOCKER_INSTALL_FAILED', message: 'exit 1' } }];
-    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'failed', bytesDone: 0 }));
+    // The job's last event carries its error: no extra request to read it.
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'failed', bytesDone: 0, error: { code: 'DOCKER_INSTALL_FAILED', message: 'exit 1' } }));
     expect(await within(panel).findByText('Installazione di Docker non riuscita')).toBeTruthy();
-    jobs = [];
+    expect(api.calls.some((c) => c.path.startsWith('/api/setup/jobs'))).toBe(false);
     act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'reboot-maybe-required', bytesDone: 0 }));
     expect(await within(panel).findByText(/riavvia il PC per completare/)).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'failed', bytesDone: 0 }));

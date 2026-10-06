@@ -1,21 +1,41 @@
 /** Shared steps of the benchmark journeys: seeded history, axe scans, the welcome skip. */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { hostIdFrom, parseRegValue } from '../../../src/core/sysinfo/fingerprint';
 import { launchApp, ROOT, type AppHandle, type LaunchOptions } from '../fixtures';
 
 export { skipWelcome, h1 } from '../ui/helpers';
 
-/** Realistic saved runs (test/fixtures/runs): "__THIS_PC__" becomes this computer's name. */
+/**
+ * Realistic saved runs (test/fixtures/runs): "__THIS_PC__" becomes this computer's name and
+ * "__THIS_HOST_ID__" its id, so the runs made "here" are this PC's for the app too.
+ */
 export const SEED_DIR = path.join(ROOT, 'test', 'fixtures', 'runs');
+
+/** This PC's id exactly as the core computes it (sysinfo/fingerprint.ts: hashed machine id, else host name). */
+export function thisHostId(): string {
+  let machineId: string | undefined;
+  try {
+    machineId =
+      process.platform === 'win32'
+        ? parseRegValue(execFileSync('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], { encoding: 'utf8', windowsHide: true }), 'MachineGuid')
+        : readFileSync('/etc/machine-id', 'utf8').trim() || undefined;
+  } catch {
+    // Not readable: the core falls back to the host name too.
+  }
+  return hostIdFrom(machineId ?? os.hostname());
+}
 
 export function seedRuns(resultsDir: string, only?: (file: string) => boolean): string[] {
   mkdirSync(resultsDir, { recursive: true });
   const files = readdirSync(SEED_DIR).filter((f) => f.endsWith('.json') && (!only || only(f)));
+  const hostId = thisHostId();
   for (const f of files) {
-    const text = readFileSync(path.join(SEED_DIR, f), 'utf8').replaceAll('__THIS_PC__', os.hostname());
+    const text = readFileSync(path.join(SEED_DIR, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname());
     writeFileSync(path.join(resultsDir, f), text);
   }
   return files;

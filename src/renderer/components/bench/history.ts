@@ -27,7 +27,8 @@ export const ALL = 'all';
 
 export const NO_FILTERS: RunFilters = { q: '', model: ALL, gpu: ALL, engine: ALL, status: ALL, thisPc: false };
 
-export function filterRuns(runs: readonly RunSummary[], f: RunFilters, hostLabel: string | undefined): RunSummary[] {
+/** `hostId`: this PC's id (/api/system), so "Solo questo PC" keeps the runs made here even if the PC was renamed. */
+export function filterRuns(runs: readonly RunSummary[], f: RunFilters, hostId: string | undefined): RunSummary[] {
   const q = f.q.trim().toLowerCase();
   return runs.filter(
     (r) =>
@@ -36,7 +37,7 @@ export function filterRuns(runs: readonly RunSummary[], f: RunFilters, hostLabel
       (f.gpu === ALL || r.gpuName === f.gpu) &&
       (f.engine === ALL || r.engineKind === f.engine) &&
       (f.status === ALL || r.status === f.status) &&
-      (!f.thisPc || r.hostLabel === hostLabel),
+      (!f.thisPc || r.hostId === hostId),
   );
 }
 

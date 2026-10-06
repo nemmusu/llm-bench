@@ -47,14 +47,20 @@ export function rerunOf(run: RunResult, local: readonly LocalModel[], enginesDir
       model = { name };
       draft.modelName = name;
     }
-  } else if (run.model.source === 'hf' && run.model.repo) {
+  } else if (run.model.source === 'hf' && run.model.repo && run.model.format !== 'gguf') {
+    // vLLM: the repo (the core serves the library copy when there is one).
     model = { repo: run.model.repo, ...(run.model.revision ? { revision: run.model.revision } : {}) };
     draft.repo = run.model.repo;
   } else {
     const hit = findLocalModel(run, local);
+    const { repo, file, revision } = run.model;
     if (hit) {
       model = { localId: hit.id };
       draft.localId = hit.id;
+    } else if (repo && file) {
+      // A GGUF downloaded from Hugging Face and deleted since: the plan downloads it again first.
+      model = { repo, file, ...(revision ? { revision } : {}) };
+      draft.repo = repo;
     } else modelMissing = true;
   }
   if (run.scenario.profile === 'custom') draft.scenario = run.scenario;

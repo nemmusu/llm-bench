@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { StartRunRequest } from '../../../../src/contract/api';
 import type { DownloadJob } from '../../../../src/contract/models';
 import { renderApp } from '../helpers';
-import { apiError, benchApi, curatedModel, deferred, localModel, planFor } from './world';
+import { apiError, benchApi, curatedModel, deferred, localModel, planFor, activeRun } from './world';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -57,20 +57,24 @@ describe('benchmark home', () => {
 
   it('installs llama.cpp first, with progress, after one confirmation', async () => {
     const api = benchApi({ engines: benchApi().world.engines.map((e) => (e.kind === 'llamacpp-native' ? { ...e, installed: false, available: false } : e)) });
-    api.world.plan = () => {
-      throw apiError('ENGINE_NOT_INSTALLED');
-    };
     api.world.routes['POST /api/engines/llamacpp-native/install'] = () => ({ ok: true });
     renderApp('/', api);
-    expect(await screen.findByText('Verrà installato: 480 MB')).toBeTruthy();
-    expect(await screen.findByText('Prima scarico llama.cpp: 480 MB in tutto.')).toBeTruthy();
+    // Before the plan arrives the status already says llama.cpp is missing; the plan adds its size.
+    expect(await screen.findByText('Verrà installato prima del test')).toBeTruthy();
+    expect(await screen.findByText('Verrà installato prima del test: 480 MB')).toBeTruthy();
+    expect(screen.getByText('Prima scarico llama.cpp: 480 MB in tutto.')).toBeTruthy();
+    // The whole preview is there before the install: duration, steps, what is prepared first, the command.
+    expect(screen.getAllByText('≈ 1 min 35 s').length).toBe(2);
+    expect(screen.getByText('Da preparare')).toBeTruthy();
+    expect(screen.getByText('· verrà installato prima del test')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: /Anteprima comando/ }));
-    expect(screen.getByText('Vedrai il comando esatto appena llama.cpp sarà installato.')).toBeTruthy();
+    expect(screen.getByText('llama.cpp non è ancora installato: il comando usa già la cartella dove lo installerò prima del test.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Anteprima comando' }).textContent).toContain('llama-server -m m.gguf');
     await start();
     const dialog = await screen.findByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' });
     expect(within(dialog).getByText('Installo llama.cpp')).toBeTruthy();
     expect(within(dialog).getByText('480 MB')).toBeTruthy();
-    api.world.plan = () => planFor();
+    api.world.engines = api.world.engines.map((e) => (e.kind === 'llamacpp-native' ? { ...e, installed: true, available: true } : e));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Scarica e avvia' }));
     const progress = await screen.findByRole('dialog', { name: 'Preparo il test' });
     act(() => api.emit({ type: 'engine.install', kind: 'other', stage: 'download', bytesDone: 1 }));
@@ -91,7 +95,6 @@ describe('benchmark home', () => {
 
   it('reports a failed install and can retry or give up', async () => {
     const api = benchApi({ engines: benchApi().world.engines.map((e) => (e.kind === 'llamacpp-native' ? { ...e, installed: false, available: false } : e)), installBytes: null });
-    api.world.plan = () => planFor({ needs: [{ kind: 'engine', label: 'llama.cpp' }] });
     let fail = true;
     api.world.routes['POST /api/engines/llamacpp-native/install'] = () => {
       if (fail) throw apiError('GITHUB_RATE_LIMITED');
@@ -99,7 +102,7 @@ describe('benchmark home', () => {
     };
     renderApp('/', api);
     expect(await screen.findByText('Prima scarico llama.cpp.')).toBeTruthy();
-    expect(screen.getByText('Verrà installato al primo avvio')).toBeTruthy();
+    expect(screen.getByText('Verrà installato prima del test')).toBeTruthy();
     await start();
     expect(screen.getByText('dimensione da verificare')).toBeTruthy();
     expect(screen.getByText('Lo faccio io, poi il test parte da solo.')).toBeTruthy();
@@ -121,15 +124,19 @@ describe('benchmark home', () => {
     const job: DownloadJob = { id: 'j1', label: 'gemma', files: [{ path: 'gemma-12b.gguf' }], dest: 'C:\\models', state: 'queued', bytesDone: 0, createdAt: '2026-10-06T00:00:00.000Z' };
     api.world.routes['POST /api/downloads'] = () => job;
     renderApp('/', api);
-    expect(await screen.findByText('Verrà scaricato: 2,3 GB')).toBeTruthy();
+    expect(await screen.findByText('Verrà scaricato prima del test: 2,3 GB')).toBeTruthy();
+    // The preview is planned before the download: the suggestion is named by repo and file.
+    await waitFor(() => expect(posted(api, '/api/runs/plan')).toHaveLength(1));
+    expect((posted(api, '/api/runs/plan')[0]!.body as StartRunRequest).model).toEqual({ repo: 'org/gemma-12b-GGUF', file: 'gemma-12b.gguf', revision: 'b'.repeat(40) });
+    expect(await screen.findByText('· verrà scaricato prima del test')).toBeTruthy();
+    expect(screen.getAllByText('Entra perfettamente').length).toBe(2);
     await userEvent.click(screen.getByRole('button', { name: /Anteprima comando/ }));
-    expect(screen.getByText('Vedrai il comando esatto appena il modello sarà scaricato.')).toBeTruthy();
-    expect(posted(api, '/api/runs/plan')).toHaveLength(0);
+    expect(screen.getByText('Il modello non è ancora sul PC: il comando usa già il percorso dove lo salverò prima del test.')).toBeTruthy();
     await start();
     expect(await screen.findByText('Scarico gemma-12b · Q4_K_M')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(1));
-    expect(posted(api, '/api/downloads')[0]!.body).toMatchObject({ repo: 'org/gemma-12b-GGUF', files: ['gemma-12b.gguf'] });
+    expect(posted(api, '/api/downloads')[0]!.body).toMatchObject({ repo: 'org/gemma-12b-GGUF', files: ['gemma-12b.gguf'], label: 'gemma-12b · Q4_K_M' });
     api.world.local = [localModel('gemma-12b')];
     act(() => api.emit({ type: 'download.update', job: { ...job, id: 'other', state: 'done' } }));
     act(() => api.emit({ type: 'download.update', job: { ...job, state: 'running', bytesDone: 1024 ** 3, bytesTotal: 2 * 1024 ** 3 } }));
@@ -137,27 +144,36 @@ describe('benchmark home', () => {
     act(() => api.emit({ type: 'download.update', job: { ...job, state: 'verifying', bytesDone: 2, bytesTotal: 2 } }));
     act(() => api.emit({ type: 'download.update', job: { ...job, state: 'done', bytesDone: 2, bytesTotal: 2 } }));
     expect(await h1('Test in corso')).toBeTruthy();
-    expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).model).toEqual({ localId: 'gemma-12b' });
+    // The same request: the core resolves the downloaded copy (the library was rescanned first).
+    expect(posted(api, '/api/models/rescan').length).toBeGreaterThan(0);
+    expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).model).toEqual({ repo: 'org/gemma-12b-GGUF', file: 'gemma-12b.gguf', revision: 'b'.repeat(40) });
+    expect(screen.getByRole('list', { name: 'Fasi del test' }).textContent).toContain('Download');
   });
 
-  it('a download that finished before its id was known, a failed one, and a missing file', async () => {
+  it('a download that finished before its id was known, a copy the core cannot find, a failed one', async () => {
     const api = benchApi({ local: [], curated: [curatedModel('gemma-12b')] });
     const job: DownloadJob = { id: 'j1', label: 'g', files: [], dest: 'x', state: 'queued', bytesDone: 0, createdAt: '2026-10-06T00:00:00.000Z' };
     const answer = deferred<DownloadJob>();
     api.world.routes['POST /api/downloads'] = () => answer.promise;
+    api.world.routes['POST /api/runs'] = () => {
+      throw apiError('MODEL_NOT_FOUND', { reason: 'not_downloaded' });
+    };
     renderApp('/', api);
-    await screen.findByText('Verrà scaricato: 2,3 GB');
+    await screen.findByText('Verrà scaricato prima del test: 2,3 GB');
     await start();
     await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(1));
     act(() => api.emit({ type: 'download.update', job: { ...job, state: 'done', bytesDone: 5, bytesTotal: 5 } }));
-    // Finished, but rescan does not find the file.
+    // Finished before its id was known; then the core still cannot find the copy.
     await act(async () => answer.resolve(job));
-    expect(await screen.findByRole('heading', { name: 'Modello non trovato' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Il test non è partito' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Modello non trovato' })).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
 
-    // Retry: this time the download fails.
+    // Again: this time the download fails.
     api.world.routes['POST /api/downloads'] = () => job;
-    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await start();
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(2));
     act(() => api.emit({ type: 'download.update', job: { ...job, state: 'failed', bytesDone: 1, error: { code: 'DOWNLOAD_CHECKSUM', message: 'sha mismatch' } } }));
     expect(await screen.findByRole('heading', { name: 'Il file scaricato è danneggiato' })).toBeTruthy();
@@ -180,7 +196,7 @@ describe('benchmark home', () => {
     api.world.routes['POST /api/downloads'] = () => job;
     api.world.routes['POST /api/downloads/j9/cancel'] = () => job;
     renderApp('/', api);
-    await screen.findByText('Verrà scaricato: 2,3 GB');
+    await screen.findByText('Verrà scaricato prima del test: 2,3 GB');
     await start();
     await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/downloads')).toHaveLength(1));
@@ -207,9 +223,9 @@ describe('benchmark home', () => {
     const job: DownloadJob = { id: 'v1', label: 'q', files: [], dest: 'x', state: 'done', bytesDone: 2, bytesTotal: 2, createdAt: '2026-10-06T00:00:00.000Z' };
     api.world.routes['POST /api/downloads'] = () => job;
     renderApp('/', api);
-    expect(await screen.findByText('Verrà scaricato: 2,0 GB')).toBeTruthy();
+    expect(await screen.findByText('Verrà scaricato prima del test: 2,0 GB')).toBeTruthy();
     await start();
-    expect(await screen.findByText('Scarico Qwen/Qwen3-4B-AWQ')).toBeTruthy();
+    expect(await screen.findByText('Scarico vllm-4b · Q4_K_M')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Scarica e avvia' }));
     expect(await h1('Test in corso')).toBeTruthy();
     expect(posted(api, '/api/downloads')[0]!.body).toMatchObject({ repo: 'Qwen/Qwen3-4B-AWQ', files: ['*'] });
@@ -239,7 +255,7 @@ describe('benchmark home', () => {
       if (answer === 'own') throw apiError('VRAM_BUSY', { reason: 'own_server' });
       if (answer === 'progress') throw apiError('RUN_IN_PROGRESS', { runId: '01K6Y7Q2ZC4M8N3B5V9R1T0XWE' }, 409);
       if (answer === 'internal') throw new Error('boom');
-      api.world.active = { runId: '01M48PNN41KKD0ABVXTGK97Y6P', phase: 'prepare', progress: 0 };
+      api.world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: '01M48PNN41KKD0ABVXTGK97Y6P' };
     };
     api.world.servers = [{ id: 's1', baseUrl: 'http://127.0.0.1:5000', openaiUrl: 'http://127.0.0.1:5000/v1', modelName: 'Qwen', engineLabel: 'llama.cpp', startedAt: '2026-10-06T10:00:00.000Z', command: { argv: [], powershell: '', bash: '' } }];
@@ -275,7 +291,7 @@ describe('benchmark home', () => {
     let fail = true;
     api.world.routes['POST /api/runs'] = () => {
       if (fail) throw apiError('ENGINE_PORT_IN_USE');
-      api.world.active = { runId: '01M48PNN41KKD0ABVXTGK97Y6P', phase: 'prepare', progress: 0 };
+      api.world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: '01M48PNN41KKD0ABVXTGK97Y6P' };
     };
     renderApp('/', api);
@@ -327,7 +343,7 @@ describe('benchmark choices', () => {
     expect(within(dialog).getByText('Consigliato per la tua scheda')).toBeTruthy();
     await userEvent.click(within(dialog).getByRole('radio', { name: /gemma-12b/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Conferma' }));
-    expect(await screen.findByText('Verrà scaricato: 2,3 GB')).toBeTruthy();
+    expect(await screen.findByText('Verrà scaricato prima del test: 2,3 GB')).toBeTruthy();
     expect(screen.getAllByText('Consigliato per la tua scheda').length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('button', { name: /Cambia modello/ }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Altri modelli…' }));
@@ -338,7 +354,7 @@ describe('benchmark choices', () => {
     const api = benchApi({ local: [], curated: [curatedModel('vllm-4b', { engine: 'vllm', file: undefined, repo: 'Qwen/Qwen3-4B-AWQ' } as never)] });
     api.settings.lastEngine = { kind: 'vllm-docker' };
     const { router } = renderApp('/', api);
-    expect(await screen.findByText('Da Hugging Face')).toBeTruthy();
+    expect(await screen.findByText('Verrà scaricato prima del test: 2,3 GB')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: /Cambia modello/ }));
     expect(within(await screen.findByRole('dialog')).getByText('Da Hugging Face')).toBeTruthy();
     await userEvent.keyboard('{Escape}');

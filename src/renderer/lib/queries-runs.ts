@@ -5,12 +5,11 @@
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import type { RunPlan, ServerInfo, StartRunRequest, SystemResponse } from '../../contract/api';
+import type { ActiveRunResponse, RunPlan, ServerInfo, StartRunRequest, SystemResponse } from '../../contract/api';
 import type { EngineKind, EngineStatus, LaunchParams } from '../../contract/engines';
-import type { RunPhase } from '../../contract/events';
 import type { FitEstimate, LocalModel } from '../../contract/models';
 import type { RunResult, RunSummary } from '../../contract/results';
-import type { CuratedResponse, SystemCheckReport } from '../../contract/views';
+import type { CuratedResponse } from '../../contract/views';
 import { ApiError } from './api';
 import { useApi, useServerEvents } from './api-context';
 
@@ -37,18 +36,15 @@ export function useRun(id: string | undefined) {
   });
 }
 
-export interface ActiveRun {
-  runId: string;
-  phase: RunPhase;
-  progress: number;
-}
-
-/** GET /api/runs/active, polled while the live screen is open (fallback when an SSE event is missed). */
+/**
+ * GET /api/runs/active: the run in progress with its start time, ETA, labels and scenario, polled
+ * while the live screen is open (it rebuilds the screen after a reload, and catches a missed SSE event).
+ */
 export function useActiveRun(pollMs: number | false = false) {
   const api = useApi();
   return useQuery({
     queryKey: ['runs', 'active'],
-    queryFn: () => api.get<{ active: ActiveRun | null }>('/api/runs/active'),
+    queryFn: () => api.get<ActiveRunResponse>('/api/runs/active'),
     refetchInterval: pollMs,
     staleTime: 0,
     gcTime: 0,
@@ -94,7 +90,7 @@ export function useBenchLocalModels() {
   return useQuery({ queryKey: LOCAL_MODELS_KEY, queryFn: () => api.get<LocalModel[]>('/api/models/local'), staleTime: 30_000 });
 }
 
-/** GET /api/models/curated?vramGB=: recommendations for this card. */
+/** GET /api/models/curated?vramGB=: recommendations for this card (the core snaps the VRAM to its tier). */
 export function useCurated(vramGB: number | undefined) {
   const api = useApi();
   return useQuery({
@@ -113,21 +109,6 @@ export function useLocalFit(localId: string | undefined, engine: EngineKind, par
     queryFn: () => api.post<FitEstimate>('/api/models/fit', { localId, engine, ...(params ? { params } : {}) }),
     enabled: localId !== undefined && engine !== 'external',
     staleTime: 30_000,
-    retry: false,
-  });
-}
-
-/** GET /api/setup/check: the llama.cpp download size when the plan cannot be made yet. */
-export function useLlamaInstallBytes(enabled: boolean) {
-  const api = useApi();
-  return useQuery({
-    queryKey: ['bench', 'llama-install-bytes'],
-    queryFn: async () => {
-      const report = await api.get<SystemCheckReport>('/api/setup/check');
-      return report.items.find((i) => i.id === 'llamacpp')?.action?.bytes ?? null;
-    },
-    enabled,
-    staleTime: Infinity,
     retry: false,
   });
 }

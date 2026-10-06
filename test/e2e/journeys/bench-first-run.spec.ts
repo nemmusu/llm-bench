@@ -10,9 +10,13 @@ test('first benchmark: install llama.cpp inline, watch it run, read the result',
 
   // The seeded model is already chosen; llama.cpp is not installed yet.
   await expect(page.getByRole('button', { name: /Cambia modello: Qwen3 0\.6B/ })).toBeVisible();
-  await expect(page.getByText(/Verrà installato/).first()).toBeVisible();
+  await expect(page.getByText(/Verrà installato prima del test/).first()).toBeVisible();
   await expect(page.getByRole('radio', { name: /Rapido/ })).toBeChecked();
-  await expect(page.getByText('Vedrai il comando esatto appena llama.cpp sarà installato.')).toBeHidden();
+  // The preview is complete before the install: what is prepared first, and the exact command.
+  await expect(page.getByText('· verrà installato prima del test')).toBeVisible();
+  await page.getByRole('button', { name: /Anteprima comando/ }).click();
+  await expect(page.getByText('llama.cpp non è ancora installato: il comando usa già la cartella dove lo installerò prima del test.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('Qwen3-0.6B-Q4_K_M.gguf');
   await scan(page, 'benchmark home');
 
   await page.getByRole('button', { name: 'Avvia benchmark' }).click();

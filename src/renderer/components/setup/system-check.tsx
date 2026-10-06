@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CheckActionKind, CheckId, CheckItem, CheckState, SystemCheckReport } from '../../../contract/views';
 import { useI18n, type Formatters } from '../../i18n';
 import { cn } from '../../lib/cn';
-import { activeEvent, useInstallEvent, useRecheck, useSetupJobs, useStartInstall, useSystemCheck } from '../../lib/queries-library';
+import { activeEvent, useInstallEvent, useRecheck, useStartInstall, useSystemCheck } from '../../lib/queries-library';
 import { ErrorCallout } from '../library/error-callout';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -117,7 +117,6 @@ function CheckRow({ item, platform, onPickModel }: { item: CheckItem; platform: 
   const event = useInstallEvent(installKey ?? 'none');
   const start = useStartInstall();
   const recheck = useRecheck();
-  const jobs = useSetupJobs();
   const [confirm, setConfirm] = useState(false);
   const [driverOpened, setDriverOpened] = useState(false);
   const running = installKey === undefined ? undefined : activeEvent(event);
@@ -162,7 +161,6 @@ function CheckRow({ item, platform, onPickModel }: { item: CheckItem; platform: 
   }
   const icon = action?.kind === 'start-docker' ? <Play aria-hidden /> : action?.kind === 'open-driver-page' ? <ExternalLink aria-hidden /> : action?.kind === 'free-disk' ? <FolderOpen aria-hidden /> : <Download aria-hidden />;
   const failed = !active && (event?.stage === 'error' || event?.stage === 'failed');
-  const jobError = jobs.data?.find((j) => j.kind === installKey)?.error;
   const title = t(`setup.items.${item.id}.title`);
 
   return (
@@ -200,7 +198,8 @@ function CheckRow({ item, platform, onPickModel }: { item: CheckItem; platform: 
       {running && <InstallProgress event={running} label={title} className="pl-[52px]" />}
       {failed && (
         <div className="pl-[52px]">
-          <ErrorCallout error={event.error ?? jobError ?? { code: 'INTERNAL', message: event.stage }} />
+          {/* The final event of a failed install carries its error. */}
+          <ErrorCallout error={event.error ?? { code: 'INTERNAL', message: event.stage }} />
         </div>
       )}
       {!active && (event?.stage === 'reboot-maybe-required' || event?.stage === 'relogin-required') && (

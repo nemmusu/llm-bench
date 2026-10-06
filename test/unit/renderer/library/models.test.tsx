@@ -140,7 +140,7 @@ describe('models: download', () => {
     );
     renderLib('/models?tab=download', api);
     expect(await screen.findByText('Scelti per una scheda con 32 GB di memoria video.')).toBeTruthy();
-    expect(api.calls.some((c) => c.path === '/api/models/curated?vramGB=32')).toBe(true);
+    expect(api.calls.some((c) => c.path === '/api/models/curated')).toBe(true);
     const list = screen.getByRole('list', { name: 'Consigliati per la tua GPU' });
     expect(within(list).getByText('Modello di riferimento')).toBeTruthy();
     // The core sends a verdict with the list: no waiting for each badge.

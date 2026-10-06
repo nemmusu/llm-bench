@@ -62,7 +62,8 @@ test('expert mode: custom plan and launch parameters, exact command, settings re
     await skipWelcome(page);
     await page.getByRole('switch', { name: 'Modalità esperto' }).click();
     await expect(page.getByRole('heading', { name: 'Parametri avanzati' })).toBeVisible();
-    await expect(page.getByText('Vedrai il comando esatto appena llama.cpp sarà installato.')).toBeVisible();
+    await expect(page.getByText('llama.cpp non è ancora installato: il comando usa già la cartella dove lo installerò prima del test.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('llama-server');
 
     await page.getByRole('radio', { name: /Personalizzato/ }).click();
     await page.getByLabel('Caricamenti a freddo').fill('0');

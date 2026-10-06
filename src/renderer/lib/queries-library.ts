@@ -23,9 +23,9 @@ import type {
   DockerStatusDetail,
   GpuCheckResult,
   HubFitResult,
+  HubRepoInfo,
   HubTag,
   InstalledBuild,
-  SetupJob,
   SystemCheckReport,
 } from '../../contract/views';
 import { translate, type Lang } from '../i18n';
@@ -64,7 +64,6 @@ export const libKeys = {
   system: ['lib', 'system'] as const,
   snapshot: ['lib', 'snapshot'] as const,
   check: ['lib', 'setup', 'check'] as const,
-  jobs: ['lib', 'setup', 'jobs'] as const,
   curated: ['lib', 'curated'] as const,
   local: ['lib', 'models', 'local'] as const,
   runs: ['lib', 'runs'] as const,
@@ -152,11 +151,6 @@ export function useRecheck() {
   });
 }
 
-export function useSetupJobs() {
-  const api = useApi();
-  return useQuery({ queryKey: libKeys.jobs, queryFn: () => api.get<SetupJob[]>('/api/setup/jobs') });
-}
-
 export function useDockerPlan(enabled: boolean) {
   const api = useApi();
   return useQuery({ queryKey: ['lib', 'setup', 'docker-plan'], queryFn: () => api.get<DockerInstallPlan>('/api/setup/docker/plan'), enabled, staleTime: Infinity });
@@ -179,17 +173,13 @@ export function useLinuxScript(enabled: boolean) {
  * so the VRAM is rounded to whole GB before the core compares it with the tiers. The total comes
  * from the live snapshot (fast) rather than /api/system (which also lists GPU users and is slower).
  */
+/**
+ * GET /api/models/curated: the core reads the card's VRAM itself and judges each entry on the VRAM
+ * free now, so the list refreshes every half minute.
+ */
 export function useCurated() {
   const api = useApi();
-  const snap = useGpuSnapshot(2000);
-  const total = snap.data?.[0]?.memTotalMiB;
-  const vram = total ? Math.round(total / 1024) : undefined;
-  return useQuery({
-    queryKey: [...libKeys.curated, vram],
-    queryFn: () => api.get<CuratedResponse>(`/api/models/curated${vram ? `?vramGB=${vram}` : ''}`),
-    enabled: !snap.isPending,
-    staleTime: Infinity,
-  });
+  return useQuery({ queryKey: libKeys.curated, queryFn: () => api.get<CuratedResponse>('/api/models/curated'), staleTime: 30_000 });
 }
 
 export function useLibraryModels() {
@@ -306,12 +296,12 @@ export function useHubCatalog(p: CatalogParams, enabled: boolean) {
   });
 }
 
-/** Repo card data (downloads, likes, license…) of one hub repo. */
+/** GET /api/models/hub/:owner/:name: the repo card data (downloads, likes, license, gated, base model…). */
 export function useHubModel(repo: string) {
   const api = useApi();
   return useQuery({
     queryKey: [...libKeys.hub, 'model', repo],
-    queryFn: () => api.get<HubModel>(`/api/models/hub/${repoPath(repo)}`),
+    queryFn: () => api.get<HubRepoInfo>(`/api/models/hub/${repoPath(repo)}`),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -547,5 +537,5 @@ export function handleLibraryEvent(
   setInstall(qc, installKey(e), e);
   if (activeEvent(e)) return;
   // Something finished: everything derived from the machine state may have changed.
-  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.jobs, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
+  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
 }
