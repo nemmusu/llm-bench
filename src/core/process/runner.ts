@@ -21,7 +21,8 @@ export class LineSplitter {
   push(chunk: string): string[] {
     const text = this.rest + chunk;
     const parts = text.split(/\r?\n/);
-    this.rest = parts.pop() ?? '';
+    // split() always returns at least one element.
+    this.rest = parts.pop() as string;
     return parts;
   }
   flush(): string[] {
@@ -103,6 +104,11 @@ export function createProcessRunner(opts: RunnerOptions): ProcessRunner {
 
   function run(cmd: string, args: string[], ro: RunOptions = {}): Promise<RunOutput> {
     return new Promise((resolve) => {
+      // An 'abort' listener never fires for an already-aborted signal: do not even start.
+      if (ro.signal?.aborted) {
+        resolve({ code: null, stdout: '', stderr: 'aborted before start', timedOut: false });
+        return;
+      }
       let stdout = '';
       let stderr = '';
       let timedOut = false;
@@ -149,6 +155,9 @@ export function createProcessRunner(opts: RunnerOptions): ProcessRunner {
         finish(null);
       });
       child.on('close', (code) => finish(code));
+      // A child that exits without reading its input makes stdin emit EPIPE/EOF; unhandled,
+      // that 'error' event would crash the whole core.
+      child.stdin?.on('error', () => undefined);
       if (ro.input !== undefined) child.stdin?.end(ro.input);
       else child.stdin?.end();
     });
@@ -185,6 +194,8 @@ export function createProcessRunner(opts: RunnerOptions): ProcessRunner {
     };
     attach('stdout');
     attach('stderr');
+    // Without any pipe there is no 'end' event to close the iterator.
+    if (!open.stdout && !open.stderr) lines.close();
 
     const exited = new Promise<ExitInfo>((resolve) => {
       child.on('error', (e) => {
@@ -209,8 +220,13 @@ export function createProcessRunner(opts: RunnerOptions): ProcessRunner {
         }
         await killTree(pid, false);
         const grace = so.graceMs ?? 5000;
-        const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), grace));
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<'timeout'>((r) => {
+          timer = setTimeout(() => r('timeout'), grace);
+        });
         const res = await Promise.race([exited, timeout]);
+        // Without this the grace timer kept the event loop alive for up to graceMs after a clean stop.
+        clearTimeout(timer);
         if (res === 'timeout') await killTree(pid, true);
         return exited;
       })();
