@@ -33,7 +33,7 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  icon: resources/icons/icon.ico
+  icon: resources/icons/icon.png
 
 nsis:
   oneClick: false
@@ -58,7 +58,7 @@ linux:
       arch: [x64]
     - target: AppImage
       arch: [x64]
-  icon: resources/icons/png
+  icon: resources/icons/icon.png
   category: Utility
   synopsis: Misura le prestazioni della GPU con l'inferenza LLM
   description: GPU Bench misura caricamento a freddo e a caldo, token/s, latenza, VRAM e consumi con llama.cpp e vLLM.

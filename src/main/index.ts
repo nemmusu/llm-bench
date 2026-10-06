@@ -88,7 +88,9 @@ async function createWindow(): Promise<void> {
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0d12' : '#f4f5f8',
     titleBarStyle: 'hidden',
     titleBarOverlay: { ...titleBarColors(), height: TITLEBAR_HEIGHT },
-    icon: path.join(__dirname, '../../resources/icons/icon.png'),
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'app-resources', 'icons', 'icon.png')
+      : path.resolve(__dirname, '../../resources/icons/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,

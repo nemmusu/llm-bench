@@ -61,6 +61,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const app = await electron.launch({ args: [ROOT], cwd: ROOT, env });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
+  // Settled frames for assertions and axe: no fades (the app honours prefers-reduced-motion).
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const coverageDir = process.env.GPUBENCH_E2E_COVERAGE;
   if (coverageDir) {
     // Start collecting before the app code runs: reload under coverage.
