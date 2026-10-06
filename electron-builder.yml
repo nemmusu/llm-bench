@@ -70,6 +70,7 @@ linux:
 deb:
   priority: optional
   # electron-builder's defaults plus what a minimal Ubuntu 24.04 lacks (found by the clean-distro
-  # test): ALSA for Electron itself (libasound2t64 provides libasound2 there) and OpenMP for the
-  # llama.cpp Linux builds the app installs (libgomp.so.1).
-  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libasound2, libgomp1]
+  # test): ALSA for Electron itself and OpenMP for the llama.cpp Linux builds the app installs
+  # (libgomp.so.1). ALSA names the real package first: on 24.04 a bare "libasound2" is virtual and
+  # apt may pick liboss4-salsa-asound2, a stub Electron cannot load (undefined snd_* symbols).
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, 'libasound2t64 | libasound2', libgomp1]
