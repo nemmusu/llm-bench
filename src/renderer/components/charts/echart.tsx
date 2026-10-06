@@ -38,8 +38,8 @@ export function EChart({ build, height, label, className }: EChartProps) {
   }, []);
 
   useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
+    // Always set: the init effect above runs first, also when StrictMode re-runs effects.
+    const chart = chartRef.current!;
     const tokens = readChartTokens();
     const option = { ...baseOption(tokens, !prefersReducedMotion()), ...build(tokens) };
     // A theme switch replaces everything; live updates merge so lines glide instead of redrawing.

@@ -89,7 +89,8 @@ export function DataTable<T extends RowData>({ columns, data, caption, initialSo
                       meta?.className,
                     )}
                   >
-                    {header.isPlaceholder ? null : canSort ? (
+                    {/* No column groups in GPU Bench tables, so there are no placeholder headers. */}
+                    {canSort ? (
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}

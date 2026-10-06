@@ -248,7 +248,8 @@ describe('VllmNativeAdapter: install', () => {
         return mp;
       },
     );
-    const a = new VllmNativeAdapter({ deps: deps(root, proc), createClient: noClient, uv: ['/opt/gpubench/uv'], packageSpec: 'vllm==0.31.0' });
+    // uv is resolved at install time (the setup module may have installed it after start-up).
+    const a = new VllmNativeAdapter({ deps: deps(root, proc), createClient: noClient, uv: async () => ['/opt/gpubench/uv'], packageSpec: 'vllm==0.31.0' });
     const plan = await a.installPlan();
     expect(plan).toEqual({ kind: 'vllm-native', label: 'vLLM (vllm==0.31.0)', bytes: 0, items: [{ label: 'vllm==0.31.0 + PyTorch (CUDA)', bytes: 0 }], data: { spec: 'vllm==0.31.0' } });
     const stages: string[] = [];

@@ -8,7 +8,7 @@ import { applyDocumentTheme, prefersReducedMotion, resolveTheme, TITLE_BAR_COLOR
 import { useTweened } from '../../../src/renderer/lib/use-tweened';
 import { ApiProvider, EventsProvider, useApi, useCoreConnected, useServerEvents } from '../../../src/renderer/lib/api-context';
 import { SettingsProvider, useSettings } from '../../../src/renderer/lib/settings';
-import { useHealth, useSystem } from '../../../src/renderer/lib/queries';
+import { useHealth } from '../../../src/renderer/lib/queries';
 import type { ServerEvent } from '../../../src/contract/events';
 import { fakeApi, newQueryClient } from './helpers';
 
@@ -264,7 +264,7 @@ describe('SettingsProvider', () => {
 });
 
 describe('queries', () => {
-  it('resolve mock data and the real health route', async () => {
+  it('read the health route', async () => {
     const api = fakeApi();
     const qc = newQueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -275,11 +275,9 @@ describe('queries', () => {
     const { result } = renderHook(
       () => ({
         health: useHealth(),
-        system: useSystem(),
       }),
       { wrapper },
     );
     await waitFor(() => expect(result.current.health.data?.version).toBe('0.1.0'));
-    expect(result.current.system.data?.gpus[0]?.name).toContain('5090');
   });
 });

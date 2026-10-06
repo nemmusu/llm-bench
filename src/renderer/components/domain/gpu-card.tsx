@@ -1,20 +1,20 @@
 import { Activity, Zap } from 'lucide-react';
 import { useI18n } from '../../i18n';
-import { useSystem } from '../../lib/queries';
-import { useMockGpuLive } from '../../mock/gpu-live';
+import { useGpuSnapshot, useMainGpu } from '../../lib/queries-library';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { RadialGauge } from '../ui/radial-gauge';
 import { Skeleton } from '../ui/skeleton';
 import { StatusDot } from '../ui/status-dot';
 
-/** "Your GPU" card with live VRAM and temperature gauges. */
+/** "Your GPU" card with live VRAM, temperature, power and utilization (real readings, every second). */
 export function GpuCard() {
   const { t, number, integer } = useI18n();
-  const system = useSystem();
-  const live = useMockGpuLive();
-  const gpu = system.data?.gpus[0];
-  const totalGb = (gpu?.memoryTotalMiB ?? 1) / 1024;
+  const gpu = useMainGpu();
+  const sample = useGpuSnapshot(1000).data?.[0];
+  const totalGb = (gpu?.memoryTotalMiB ?? sample?.memTotalMiB ?? 1) / 1024;
+  const usedGb = (sample?.memUsedMiB ?? 0) / 1024;
+  const dash = (v: number | null | undefined, fmt: (n: number) => string) => (v === null || v === undefined ? '–' : fmt(v));
   return (
     <Card>
       <CardHeader>
@@ -37,7 +37,7 @@ export function GpuCard() {
       <CardContent className="grid grid-cols-2 gap-2 pt-4">
         <RadialGauge
           size={124}
-          value={live.current.memUsedMiB / 1024}
+          value={usedGb}
           max={totalGb}
           label={t('metrics.vram.label')}
           help={t('metrics.vram.help')}
@@ -49,7 +49,7 @@ export function GpuCard() {
         />
         <RadialGauge
           size={124}
-          value={live.current.tempC}
+          value={sample?.tempC ?? 0}
           max={100}
           label={t('metrics.temp.label')}
           help={t('metrics.temp.help')}
@@ -62,11 +62,11 @@ export function GpuCard() {
       <CardFooter className="justify-between text-xs tabular-nums">
         <span className="inline-flex items-center gap-1.5">
           <Zap aria-hidden className="size-3.5 text-fg-3" />
-          {t('metrics.power.label')} <b className="font-semibold text-fg">{integer(live.current.powerW)} W</b>
+          {t('metrics.power.label')} <b className="font-semibold text-fg">{dash(sample?.powerW, (w) => `${integer(w)} W`)}</b>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <Activity aria-hidden className="size-3.5 text-fg-3" />
-          {t('metrics.util.label')} <b className="font-semibold text-fg">{integer(live.current.utilPct)}%</b>
+          {t('metrics.util.label')} <b className="font-semibold text-fg">{dash(sample?.utilPct, (u) => `${integer(u)}%`)}</b>
         </span>
       </CardFooter>
     </Card>

@@ -122,6 +122,13 @@ describe('llamaServerArgs', () => {
     expect(llamaServerArgs(launchParamsSchema.parse({}), toggle, { modelPath: 'm', marker: 'k' })).not.toContain('-fa');
     expect(llamaServerArgs(launchParamsSchema.parse({}), { ...defaultLlamaCaps(), flashAttn: 'none' }, { modelPath: 'm', marker: 'k' })).toContain('999');
   });
+
+  it('shares one KV pool across slots when the build supports it', () => {
+    const caps = { ...defaultLlamaCaps(), flags: new Set(['--kv-unified']) };
+    const multi = llamaServerArgs(launchParamsSchema.parse({ parallel: 4 }), caps, { modelPath: 'm', marker: 'k' });
+    expect(multi.slice(multi.indexOf('-np'))).toEqual(['-np', '4', '--kv-unified']);
+    expect(llamaServerArgs(launchParamsSchema.parse({ parallel: 1 }), caps, { modelPath: 'm', marker: 'k' })).not.toContain('--kv-unified');
+  });
 });
 
 describe('LlamaDockerAdapter', () => {

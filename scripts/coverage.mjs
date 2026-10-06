@@ -159,7 +159,17 @@ const failures = [];
 for (const file of map.files()) {
   const s = map.fileCoverageFor(file).toSummary();
   const bad = ['statements', 'branches', 'functions', 'lines'].filter((k) => s[k].total > 0 && s[k].pct < 100);
-  if (bad.length) failures.push(`${path.relative(root, file)}: ${bad.map((k) => `${k} ${s[k].pct}%`).join(', ')}`);
+  if (bad.length) {
+    // Where to look: the first uncovered statement and branch lines.
+    const fc = map.fileCoverageFor(file);
+    const stmtLines = [...new Set(fc.getUncoveredLines().map(Number))].slice(0, 12);
+    const branchLines = [...new Set(Object.entries(fc.b).filter(([, hits]) => hits.some((h) => h === 0)).map(([id]) => fc.branchMap[id].loc.start.line))].slice(0, 12);
+    failures.push(
+      `${path.relative(root, file)}: ${bad.map((k) => `${k} ${s[k].pct}%`).join(', ')}` +
+        (stmtLines.length ? ` | lines ${stmtLines.join(',')}` : '') +
+        (branchLines.length ? ` | branches at ${branchLines.join(',')}` : ''),
+    );
+  }
 }
 
 // Every source file must be present (a file never loaded by any test is 0% covered).

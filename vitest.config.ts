@@ -17,7 +17,7 @@ export default defineConfig({
         test: {
           name: 'core',
           environment: 'node',
-          include: ['test/unit/core/**/*.test.ts', 'test/unit/contract/**/*.test.ts', 'test/integration/**/*.test.ts'],
+          include: ['test/unit/core/**/*.test.ts', 'test/unit/contract/**/*.test.ts', 'test/unit/main/**/*.test.ts', 'test/unit/preload/**/*.test.ts', 'test/integration/**/*.test.ts'],
           testTimeout: 30_000,
         },
       },

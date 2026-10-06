@@ -5,7 +5,7 @@ import playwright from 'eslint-plugin-playwright';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'coverage/**', '.qa/**', 'node_modules/**', 'test/fakes/**/*.mjs'] },
+  { ignores: ['out/**', 'dist/**', 'coverage/**', '.qa/**', '.claude/**', 'node_modules/**', 'test/fakes/**/*.mjs'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
