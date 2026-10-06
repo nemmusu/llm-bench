@@ -58,6 +58,10 @@ export interface CoreServices {
   serve: ServeService;
   /** "Controllo sistema" checklist and guided installs (Docker, uv). */
   setup: SetupService;
+  systemCheck: SystemCheck;
+  dockerInstaller: DockerInstaller;
+  uv: UvInstaller;
+  refreshDocker(): void;
   /** Local library, HF hub, fit estimates and downloads (absent only in narrow unit tests). */
   modelServices?: ModelServices;
   evictor: CacheEvictor;
@@ -184,7 +188,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   const createClient = clientFactory(deps);
-  let uvArgv: () => Promise<string[] | undefined> = () => Promise.resolve(undefined);
+  const uv = new UvInstaller({ ...deps, enginesDir: deps.paths.enginesDir, githubApi: deps.endpoints.githubApi });
+  const uvArgv = async (): Promise<string[] | undefined> => {
+    const p = await uv.uvPath();
+    return p ? [p] : undefined;
+  };
 
   const llama = new LlamaNativeAdapter({
     deps,
@@ -211,7 +219,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     new LlamaDockerAdapter(dockerEngine),
     vllmDocker,
     // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
-    new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: async () => uvArgv() }),
+    new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
   ]);
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
   void docker.env.cleanupOrphans().catch(() => undefined);
@@ -257,17 +265,15 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   const osRelease = () => readOsRelease();
+  /** After a guided install, re-read Docker's state so the UI sees it at once. */
+  const refreshDocker = (): void => void docker.env.dockerStatus().catch(() => undefined);
   const dockerInstaller = new DockerInstaller({
     ...deps,
     cacheDir: deps.paths.cacheDir,
     osRelease,
     ...(deps.endpoints.dockerInstaller ? { installerUrl: deps.endpoints.dockerInstaller } : {}),
   });
-  const uv = new UvInstaller({ ...deps, enginesDir: deps.paths.enginesDir, githubApi: deps.endpoints.githubApi });
-  uvArgv = async () => {
-    const p = await uv.uvPath();
-    return p ? [p] : undefined;
-  };
+
   const systemCheck = new SystemCheck({
     platform: deps.platform,
     arch: deps.arch,
@@ -290,7 +296,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     systemCheck,
     docker: dockerInstaller,
     uv,
-    onInstalled: () => void docker.env.dockerStatus().catch(() => undefined),
+    onInstalled: refreshDocker,
     publish: (e) => ctx.hub.publish(e),
     shutdown: ctx.shutdown,
     log: deps.log,
@@ -352,6 +358,10 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     bench,
     serve,
     setup,
+    systemCheck,
+    dockerInstaller,
+    uv,
+    refreshDocker,
     activeMarker: () => (bench.active() ? lastMarker : undefined),
     ...(modelServices ? { modelServices } : {}),
     evictor,

@@ -347,3 +347,107 @@ describe('setup wiring', () => {
     }
   });
 });
+
+describe('composition details', () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    t = tempDir();
+  });
+  afterEach(() => t.cleanup());
+
+  const quiet: ProcessRunner = {
+    run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+    spawn: () => {
+      throw new Error('no spawn');
+    },
+  };
+  type Any = Record<string, (...a: unknown[]) => unknown>;
+
+  it('passes the served model name to clients', () => {
+    const make = clientFactory({ fetch: globalThis.fetch, clock: systemClock });
+    expect(make('vllm', 'http://h:1', { model: 'gpubench-x' }).flavor).toBe('vllm');
+  });
+
+  it('feeds tokens, GPU arch and uv to the vLLM engines', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quiet, platform: 'linux' }));
+    ctx.secrets.hfToken = 'hf_x';
+    const s = await createServices(ctx, { modelServices: false });
+    const vd = (s.vllmDocker as unknown as { v: Any }).v;
+    expect(vd.hfToken!()).toBe('hf_x');
+    expect(await vd.gpuSm!()).toBeUndefined();
+    ctx.telemetry.probe = () => Promise.reject(new Error('no driver'));
+    expect(await vd.gpuSm!()).toBeUndefined();
+    ctx.telemetry.probe = () => Promise.resolve([{ computeCapability: '12.0' } as never]);
+    expect(await vd.gpuSm!()).toBe('sm_120');
+    const vn = (s.registry.get('vllm-native') as unknown as { o: Any }).o;
+    expect(vn.hfToken!()).toBe('hf_x');
+    expect(await vn.uv!()).toBeUndefined();
+    s.uv.uvPath = () => Promise.resolve('/data/engines/uv/uv');
+    expect(await vn.uv!()).toEqual(['/data/engines/uv/uv']);
+    // Docker installer size and the post-install refresh are wired to the real objects.
+    s.dockerInstaller.installerSize = () => Promise.resolve(600_000_000);
+    expect(await (s.systemCheck as unknown as { s: Any }).s.dockerInstallBytes!()).toBe(600_000_000);
+    expect(s.refreshDocker()).toBeUndefined();
+    // A failing status read after an install is ignored (the next poll will retry).
+    s.docker.env.dockerStatus = () => Promise.reject(new Error('cli hung'));
+    expect(s.refreshDocker()).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 5));
+  });
+
+  it('runs servers through the registry and blocks benchmarks while one is up', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    const s = await createServices(ctx, { modelServices: false });
+    const sd = (s.serve as unknown as { deps: Any }).deps;
+    expect((sd.getAdapter!('external') as { kind: string }).kind).toBe('external');
+    expect(await sd.resolveModel!({ engine: { kind: 'external', baseUrl: 'http://h:1' }, model: { name: 'm' } })).toMatchObject({ servedName: 'm' });
+    expect(await sd.pickPort!()).toBeGreaterThan(0);
+    expect(sd.redact!(['x', '--api-key', 'k'], { HF_TOKEN: 'v' })).toEqual({ argv: ['x', '--api-key', '<API_KEY>'], env: { HF_TOKEN: '<HF_TOKEN>' } });
+    const blockedBy = (s.bench as unknown as { deps: Any }).deps.blockedBy!;
+    expect(blockedBy()).toBeUndefined();
+    s.serve.busy = () => true;
+    expect(blockedBy()).toMatchObject({ code: 'VRAM_BUSY', params: { reason: 'own_server' } });
+  });
+
+  it('protects the running container from cleanup and picks the GPU-check image', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    const s = await createServices(ctx, { modelServices: false });
+    expect(s.activeMarker()).toBeUndefined();
+    const newMarker = (s.bench as unknown as { deps: Any }).deps.newMarker!;
+    const marker = newMarker() as string;
+    s.bench.active = () => ({ runId: 'r', phase: 'decode', progress: 0.5 });
+    expect(s.activeMarker()).toBe(marker);
+
+    const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+    const H = { authorization: 'Bearer t', host: '127.0.0.1:1', 'content-type': 'application/json' };
+    const images: string[] = [];
+    s.docker.env.gpuCheck = (image: string) => {
+      images.push(image);
+      return Promise.resolve({ ok: true, output: 'GPU 0' } as never);
+    };
+    await app.request('/api/docker/gpu-check', { method: 'POST', headers: H, body: '{}' });
+    await ctx.settings.update({ lastEngine: { kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0' } });
+    await app.request('/api/docker/gpu-check', { method: 'POST', headers: H, body: '{}' });
+    expect(images).toEqual(['ghcr.io/ggml-org/llama.cpp:server-cuda', 'vllm/vllm-openai:v0.31.0']);
+
+    const kept: unknown[] = [];
+    s.docker.env.cleanupOrphans = (keep?: Iterable<string>) => {
+      kept.push([...(keep ?? [])]);
+      return Promise.resolve({ removed: [] });
+    };
+    await app.request('/api/docker/cleanup', { method: 'POST', headers: H, body: '{}' });
+    s.bench.active = () => undefined as never;
+    await app.request('/api/docker/cleanup', { method: 'POST', headers: H, body: '{}' });
+    expect(kept).toEqual([[marker], []]);
+
+    // Pull progress goes to the event hub.
+    const events: string[] = [];
+    ctx.hub.subscribe((e) => events.push(e.type));
+    s.docker.images.pull = (_ref: string, onProgress: (p: unknown) => void) => {
+      onProgress({ bytesDone: 1, bytesTotal: 2, layersDone: 0, layersTotal: 1, status: 'Downloading' });
+      return Promise.resolve();
+    };
+    await app.request('/api/docker/pull', { method: 'POST', headers: H, body: JSON.stringify({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }) });
+    for (let i = 0; i < 50 && !events.includes('engine.install'); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(events).toContain('engine.install');
+  });
+});

@@ -61,7 +61,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const release = e.build ?? e.version;
   const engineLabel = `${e.name}${release ? ` ${release}` : ''}${e.variant ? ` (${e.variant})` : ''}`;
   const prefill = largest ? (largest.prefillTpsEngine ?? largest.prefillTps).median : undefined;
-  const vramMiB = m.vram.deltaMiB ?? m.vram.peakMiB;
+  // The engine's own VRAM when the OS could attribute it; otherwise the total-minus-baseline estimate.
+  const vramMiB = m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
   return {
     id: run.id,
     createdAt: run.createdAt,

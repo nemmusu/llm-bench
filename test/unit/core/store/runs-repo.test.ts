@@ -90,6 +90,10 @@ describe('summaryOf', () => {
     bare.metrics = { ...bare.metrics, latency: [], vram: {} };
     expect(summaryOf(bare, 'h')).toMatchObject({ engineLabel: 'vLLM' });
     expect(summaryOf(bare, 'h')).not.toHaveProperty('vramPeakMiB');
+    // The engine's own VRAM wins over the total delta when it could be measured per process.
+    const perProcess = makeRun();
+    perProcess.metrics = { ...perProcess.metrics, vram: { peakMiB: 24000, deltaMiB: 21900, processPeakMiB: 3110, method: 'process' } };
+    expect(summaryOf(perProcess, 'p').vramPeakMiB).toBe(3110);
   });
 });
 
