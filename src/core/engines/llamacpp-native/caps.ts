@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { AppError } from '../../../contract/errors';
+import { missingLibraryError } from '../../process/missing-library';
 import type { ProcessRunner } from '../../deps';
 import type { EngineCaps } from '../types';
 
@@ -223,6 +224,8 @@ export class CapsProbe {
     const help = await this.proc.run(cmd, [...pre, '--help'], { timeoutMs: this.timeoutMs, env });
     const text = `${help.stdout}\n${help.stderr}`;
     if (help.code !== 0 || parseHelp(text).length === 0) {
+      const missing = missingLibraryError(text, cmd);
+      if (missing) throw missing;
       throw new AppError('ENGINE_START_FAILED', `${cmd} --help failed`, {
         params: { code: String(help.code) },
         detail: text.trim().slice(0, 2000),

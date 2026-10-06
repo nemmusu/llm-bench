@@ -61,6 +61,8 @@ export const engineStatusSchema = z.object({
   location: z.string().optional(),
   /** Why the engine cannot be used right now (error codes, see errors.ts). */
   problems: z.array(z.string()).default([]),
+  /** Values for the first problem's message (e.g. the missing system library and its package). */
+  problemParams: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   supported: z.boolean().default(true),
 });
 export type EngineStatus = z.infer<typeof engineStatusSchema>;

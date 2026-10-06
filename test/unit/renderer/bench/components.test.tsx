@@ -63,6 +63,13 @@ describe('ErrorCard', () => {
     expect(fixFor('NETWORK')).toBe('retry');
   });
 
+  it('messages carry the error params (the missing library and its package)', async () => {
+    inRouter(<ErrorCard error={{ code: 'ENGINE_MISSING_LIBRARY', message: 'x', params: { library: 'libgomp.so.1', package: 'libgomp1' } }} />);
+    expect(await screen.findByRole('heading', { name: 'Manca una libreria di sistema: libgomp.so.1' })).toBeTruthy();
+    expect(screen.getByText(/«sudo apt install libgomp1»/)).toBeTruthy();
+    expect(fixFor('ENGINE_MISSING_LIBRARY')).toBe('retry');
+  });
+
   it('without handlers some errors have no button', async () => {
     const errs: AppErrorData[] = [
       { code: 'RUN_IN_PROGRESS', message: 'x' },

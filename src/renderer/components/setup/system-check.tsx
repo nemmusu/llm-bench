@@ -85,6 +85,7 @@ export function itemDetail(item: CheckItem, f: Pick<Formatters, 't' | 'number'>)
       return item.code === 'DRIVER_MISSING' ? t('setup.items.gpu.needsDriver') : t('setup.items.gpu.missing');
     case 'llamacpp':
       if (item.state === 'ok') return t('setup.items.llamacpp.ok', { version: str(p.version), variant: str(p.variant) });
+      if (item.code === 'ENGINE_MISSING_LIBRARY') return t('setup.items.llamacpp.missingLibrary', { library: str(p.library), package: str(p.package) });
       return item.state === 'warning' ? t('setup.items.llamacpp.broken') : t('setup.items.llamacpp.missing');
     case 'models':
       if (item.state !== 'ok') return t('setup.items.models.missing');

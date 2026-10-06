@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { InstallEngineRequest, LlamaRelease } from '../../../contract/api';
 import type { EngineConfig, EngineStatus, LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
+import { missingLibrary } from '../../process/missing-library';
 import type { EngineIdentity } from '../../../contract/results';
 import type { CoreDeps, ManagedProcess } from '../../deps';
 import type { OwnershipRegistry } from '../../process/ownership';
@@ -108,13 +109,15 @@ export class LlamaNativeAdapter implements EngineAdapter {
       return { kind: this.kind, available: false, installed: false, problems: [toAppErrorData(e).code], supported: true };
     }
     const v = await this.caps.version(this.argvFor(exe), this.exeEnv(exe));
+    const lib = v.ok ? undefined : missingLibrary(v.output);
     const status: EngineStatus = {
       kind: this.kind,
       available: v.ok,
       installed: true,
       variant: exe.variant,
       location: exe.path,
-      problems: v.ok ? [] : ['ENGINE_START_FAILED'],
+      problems: v.ok ? [] : [lib ? 'ENGINE_MISSING_LIBRARY' : 'ENGINE_START_FAILED'],
+      ...(lib ? { problemParams: { library: lib.library, package: lib.package } } : {}),
       supported: true,
     };
     if (v.build !== undefined) status.version = v.build;

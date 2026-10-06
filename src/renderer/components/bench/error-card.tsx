@@ -75,9 +75,9 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
       <div className="flex items-start gap-3">
         <CircleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-danger-text" />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <Heading className="text-md font-semibold text-fg">{t(`errors.${error.code}.title`)}</Heading>
+          <Heading className="text-md font-semibold text-fg">{t(`errors.${error.code}.title`, error.params)}</Heading>
           <p className="text-sm text-fg-2">
-            <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {t(`errors.${error.code}.what`)}
+            <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {t(`errors.${error.code}.what`, error.params)}
           </p>
           {(onFix || extra) && (
             <div className="flex flex-wrap gap-2 pt-1">

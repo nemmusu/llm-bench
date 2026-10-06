@@ -145,6 +145,14 @@ describe('clean PC paths', () => {
     expect(item(noProblem.items, 'llamacpp')).toMatchObject({ code: 'ENGINE_START_FAILED', action: { kind: 'install-llamacpp' } });
   });
 
+  it('llama.cpp missing a system library: amber with the library, no reinstall (apt fixes it)', async () => {
+    const st: EngineStatus = { ...LLAMA_OK, available: false, problems: ['ENGINE_MISSING_LIBRARY'], problemParams: { library: 'libgomp.so.1', package: 'libgomp1' } };
+    const r = await new SystemCheck(sources({ llamacpp: () => Promise.resolve(st) })).check();
+    const it_ = item(r.items, 'llamacpp');
+    expect(it_).toMatchObject({ state: 'warning', code: 'ENGINE_MISSING_LIBRARY', params: { library: 'libgomp.so.1', package: 'libgomp1' } });
+    expect(it_.action).toBeUndefined();
+  });
+
   it('low disk: amber with how much to free', async () => {
     const r = await new SystemCheck(sources({ statfs: () => Promise.resolve({ bavail: BigInt(5 * 1024 * 1024), bsize: BigInt(1024) }) })).check();
     expect(item(r.items, 'disk')).toMatchObject({ state: 'warning', code: 'DISK_FULL', params: { freeGb: 5 }, action: { kind: 'free-disk', bytes: DEFAULT_MIN_FREE_BYTES - 5 * GIB } });

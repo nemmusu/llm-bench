@@ -416,6 +416,10 @@ export const en: Messages = {
     VRAM_BUSY: { title: 'The graphics memory is in use', what: 'Close the programs using it, or continue anyway knowing the numbers will be lower.' },
     ENGINE_NOT_INSTALLED: { title: 'The engine is not installed', what: 'Press “Install”: I will download and set it up for you.' },
     ENGINE_INSTALL_FAILED: { title: 'Engine installation failed', what: 'Try again; if it still fails, pick another version in Engines.' },
+    ENGINE_MISSING_LIBRARY: {
+      title: 'A system library is missing: {library}',
+      what: 'The engine needs it and this Linux does not have it. Open a terminal, run “sudo apt install {package}”, then try again: nothing needs reinstalling.',
+    },
     ENGINE_START_FAILED: { title: 'The engine did not start', what: 'Open the log for details, or try simpler settings.' },
     ENGINE_EXITED: { title: 'The engine closed unexpectedly', what: 'Open the log to see what happened and try again.' },
     ENGINE_TIMEOUT: { title: 'The engine did not answer in time', what: 'Try again: the first time can take longer. If it happens again, try a smaller model.' },
@@ -488,6 +492,7 @@ export const en: Messages = {
         ok: 'Version {version} · {variant}',
         missing: 'It runs the models. I download and set it up for you: nothing to do on your side.',
         broken: 'It is installed but does not start: I will reinstall it.',
+        missingLibrary: 'It is installed, but your Linux lacks {library}: in a terminal run “sudo apt install {package}”, then press “Check again”.',
       },
       models: {
         title: 'Models',

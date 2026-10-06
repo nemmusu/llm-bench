@@ -3,6 +3,7 @@ import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../../../contract/errors';
+import { missingLibraryError } from '../../process/missing-library';
 import type { Clock, Platform, ProcessRunner } from '../../deps';
 import { writeFileAtomic } from '../../store/atomic';
 import type { ProgressSink } from '../types';
@@ -169,6 +170,10 @@ export async function installLlamaBuild(
       output: `${out.stderr}\n${out.stdout}`.trim().split(/\r?\n/).slice(0, 4).join('\n'),
     };
     await writeFileAtomic(path.join(dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
+    // Installed, but it cannot run until the system has a library it links against: say which, now
+    // (not after a model download). Once the user installs it, the build works without reinstalling.
+    const missing = manifest.smoke.ok ? undefined : missingLibraryError(`${out.stderr}\n${out.stdout}`, serverPath);
+    if (missing) throw missing;
     progress({ stage: 'done', bytesDone: total, bytesTotal: total });
     return { ...manifest, id, dir, serverPath };
   } catch (e) {

@@ -116,7 +116,11 @@ export function LlamaCard({ installBytes }: { installBytes?: number | undefined 
           {status?.available ? (
             <p className="text-sm text-success-text">{t('engines.llama.customOk', { version: status.version ?? '–' })}</p>
           ) : (
-            status && <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_START_FAILED', message: status.location ?? custom }} />
+            status && (
+              <ErrorCallout
+                error={{ code: status.problems[0] ?? 'ENGINE_START_FAILED', message: status.location ?? custom, ...(status.problemParams ? { params: status.problemParams } : {}) }}
+              />
+            )
           )}
           <Button size="sm" className="self-start" onClick={() => selectBuild()}>
             <RotateCcw aria-hidden />

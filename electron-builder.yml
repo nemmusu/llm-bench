@@ -69,6 +69,7 @@ linux:
 
 deb:
   priority: optional
-  # electron-builder's defaults plus ALSA: Electron links libasound.so.2, missing on a minimal
-  # Ubuntu 24.04 (found by the clean-distro test; there libasound2t64 provides libasound2).
-  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libasound2]
+  # electron-builder's defaults plus what a minimal Ubuntu 24.04 lacks (found by the clean-distro
+  # test): ALSA for Electron itself (libasound2t64 provides libasound2 there) and OpenMP for the
+  # llama.cpp Linux builds the app installs (libgomp.so.1).
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libasound2, libgomp1]

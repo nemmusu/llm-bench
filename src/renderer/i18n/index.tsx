@@ -13,7 +13,7 @@ type Leaves<T, P extends string = ''> = {
 
 /** Every valid translation key, e.g. "nav.results". */
 export type MessageKey = Leaves<Messages>;
-export type Params = Record<string, string | number>;
+export type Params = Record<string, string | number | boolean>;
 
 const DICTS: Record<Lang, Messages> = { it, en };
 
@@ -120,7 +120,7 @@ export type ErrorCatalogIsExhaustive = Assert<Exact<keyof Messages['errors'], Er
 export type ValidityCatalogIsExhaustive = Assert<Exact<keyof Messages['validity'], ValidityFlag>>;
 export type PhaseCatalogIsExhaustive = Assert<Exact<Exclude<keyof Messages['phases'], 'state'>, RunPhase>>;
 
-/** Localized "what happened / what to do" for an error code from the core. */
-export function errorText(f: Pick<Formatters, 't'>, code: ErrorCode): { title: string; what: string } {
-  return { title: f.t(`errors.${code}.title`), what: f.t(`errors.${code}.what`) };
+/** Localized "what happened / what to do" for an error code from the core, with its params (library, package…). */
+export function errorText(f: Pick<Formatters, 't'>, code: ErrorCode, params?: Params): { title: string; what: string } {
+  return { title: f.t(`errors.${code}.title`, params), what: f.t(`errors.${code}.what`, params) };
 }

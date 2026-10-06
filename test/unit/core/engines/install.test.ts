@@ -114,6 +114,16 @@ describe('installLlamaBuild', () => {
     expect(proc.calls[0]?.[2]?.env).toEqual({ LD_LIBRARY_PATH: b.dir });
   });
 
+  it('a smoke run missing a system library fails the install with the fix, the build stays in place', async () => {
+    const d = deps({ proc: smokeRunner({ code: 127, stdout: '', stderr: './llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file: No such file or directory', timedOut: false }), platform: 'linux' });
+    await expect(installLlamaBuild(d, release.tag, sel(release, 'linux'), () => {}, new AbortController().signal)).rejects.toMatchObject({
+      code: 'ENGINE_MISSING_LIBRARY',
+      params: { library: 'libgomp.so.1', package: 'libgomp1' },
+    });
+    // Once the library is installed it works: nothing to download again.
+    expect(await listInstalled(d.enginesDir)).toHaveLength(1);
+  });
+
   it('records a failing or hanging smoke run without failing the install', async () => {
     const failing = await installLlamaBuild(
       deps({ proc: smokeRunner({ code: -1073741515, stdout: '', stderr: '', timedOut: false }) }),

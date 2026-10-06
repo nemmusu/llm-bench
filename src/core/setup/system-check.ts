@@ -244,6 +244,8 @@ export class SystemCheck {
     const action: CheckAction = { kind: 'install-llamacpp', ...(bytes !== undefined ? { bytes } : {}) };
     if (st.installed) {
       const code = (st.problems[0] as ErrorCode | undefined) ?? 'ENGINE_START_FAILED';
+      // A missing system library is fixed with the package manager, not by reinstalling llama.cpp.
+      if (code === 'ENGINE_MISSING_LIBRARY') return { id: 'llamacpp', state: 'warning', required: true, params: { ...params, ...st.problemParams }, code };
       return { id: 'llamacpp', state: 'warning', required: true, params, code, action };
     }
     return { id: 'llamacpp', state: 'missing', required: true, params, code: 'ENGINE_NOT_INSTALLED', action };

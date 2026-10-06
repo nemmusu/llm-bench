@@ -144,6 +144,9 @@ describe('system check details', () => {
     expect(d(item('gpu', { state: 'missing', code: 'GPU_NOT_FOUND' }))).toBe('Non ho trovato una scheda video NVIDIA.');
     expect(d(item('llamacpp', { params: { version: 'b1', variant: 'cuda' } }))).toBe('Versione b1 · cuda');
     expect(d(item('llamacpp', { state: 'warning' }))).toContain('non parte');
+    expect(d(item('llamacpp', { state: 'warning', code: 'ENGINE_MISSING_LIBRARY', params: { library: 'libgomp.so.1', package: 'libgomp1' } }))).toBe(
+      'È installato, ma al tuo Linux manca libgomp.so.1: in un terminale esegui «sudo apt install libgomp1», poi premi Ricontrolla.',
+    );
     expect(d(item('llamacpp', { state: 'missing' }))).toContain('Lo scarico');
     expect(d(item('models', { params: { count: 3 } }))).toBe('3 modelli sul tuo PC');
     expect(d(item('models', { params: { count: 1 } }))).toBe('1 modello sul tuo PC');

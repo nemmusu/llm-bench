@@ -164,6 +164,14 @@ describe('detect / resolveExecutable', () => {
     const st = await adapter(d).detect();
     expect(st).toMatchObject({ installed: true, available: false, problems: ['ENGINE_START_FAILED'] });
     expect(st.version).toBeUndefined();
+    expect(st.problemParams).toBeUndefined();
+  });
+
+  it('a binary missing a system library says which, and the package that has it', async () => {
+    const d = deps({ proc: fakeProc({ version: { code: 127, stdout: '', stderr: './llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file: No such file or directory', timedOut: false } }) });
+    writeBuild(d.paths.enginesDir, 'b1', 'cpu');
+    const st = await adapter(d).detect();
+    expect(st).toMatchObject({ installed: true, available: false, problems: ['ENGINE_MISSING_LIBRARY'], problemParams: { library: 'libgomp.so.1', package: 'libgomp1' } });
   });
 });
 

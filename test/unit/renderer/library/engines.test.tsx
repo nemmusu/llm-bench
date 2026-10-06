@@ -95,6 +95,18 @@ describe('engines: llama.cpp', () => {
     expect(await within(llama).findByText('Alcuni valori non sono validi')).toBeTruthy();
   });
 
+  it('a custom llama-server missing a system library: which one, and the command that fixes it', async () => {
+    bridge({ platform: 'linux' });
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', executable: '/opt/llama/llama-server' } } }));
+    api.w.engines = [
+      { kind: 'llamacpp-native', available: false, installed: true, problems: ['ENGINE_MISSING_LIBRARY'], problemParams: { library: 'libgomp.so.1', package: 'libgomp1' }, supported: true },
+    ];
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('Manca una libreria di sistema: libgomp.so.1')).toBeTruthy();
+    expect(within(llama).getByText(/esegui «sudo apt install libgomp1» e poi riprova/)).toBeTruthy();
+  });
+
   it('builds without CUDA: the in-use one follows the saved build', async () => {
     const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', build: 'b10997-vulkan' } } }));
     renderLib('/engines', api);

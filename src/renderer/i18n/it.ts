@@ -418,6 +418,10 @@ export const it = {
     ENGINE_NOT_INSTALLED: { title: 'Il motore non è installato', what: 'Premi «Installa»: lo scarico e lo preparo io.' },
     ENGINE_INSTALL_FAILED: { title: 'Installazione del motore non riuscita', what: 'Riprova; se non funziona, scegli un’altra versione in Motori.' },
     ENGINE_START_FAILED: { title: 'Il motore non è partito', what: 'Apri il log per i dettagli, oppure prova con impostazioni più semplici.' },
+    ENGINE_MISSING_LIBRARY: {
+      title: 'Manca una libreria di sistema: {library}',
+      what: 'Il motore ne ha bisogno e su questo Linux non c’è. Apri un terminale, esegui «sudo apt install {package}» e poi riprova: non serve reinstallare nulla.',
+    },
     ENGINE_EXITED: { title: 'Il motore si è chiuso all’improvviso', what: 'Apri il log per capire cosa è successo e riprova.' },
     ENGINE_TIMEOUT: { title: 'Il motore non ha risposto in tempo', what: 'Riprova: la prima volta può servire più tempo. Se capita ancora, prova un modello più piccolo.' },
     ENGINE_OOM: { title: 'Memoria della scheda video insufficiente', what: 'Scegli un modello più piccolo, una quantizzazione più leggera o un contesto più corto.' },
@@ -489,6 +493,7 @@ export const it = {
         ok: 'Versione {version} · {variant}',
         missing: 'Serve per far girare i modelli. Lo scarico e lo preparo io: non devi fare nulla.',
         broken: 'È installato ma non parte: lo reinstallo io.',
+        missingLibrary: 'È installato, ma al tuo Linux manca {library}: in un terminale esegui «sudo apt install {package}», poi premi Ricontrolla.',
       },
       models: {
         title: 'Modelli',

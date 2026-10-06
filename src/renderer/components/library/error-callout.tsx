@@ -13,7 +13,7 @@ export interface ErrorCalloutProps {
 export function ErrorCallout({ error, action, className }: ErrorCalloutProps) {
   const i18n = useI18n();
   const data = errorData(error);
-  const { title, what } = errorText(i18n, data.code);
+  const { title, what } = errorText(i18n, data.code, data.params);
   return (
     <Callout tone="danger" title={title} {...(action ? { action } : {})} {...(className ? { className } : {})}>
       <p>{what}</p>

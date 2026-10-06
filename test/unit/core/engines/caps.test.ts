@@ -146,6 +146,11 @@ describe('CapsProbe', () => {
     expect(run.mock.calls.filter((c) => (c[1] as string[]).includes('--help'))).toHaveLength(2);
   });
 
+  it('a missing system library is named, with its package', async () => {
+    const { proc } = runner({ code: 127, stdout: '', stderr: './llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file: No such file or directory', timedOut: false });
+    await expect(new CapsProbe(proc).probe(['x'])).rejects.toMatchObject({ code: 'ENGINE_MISSING_LIBRARY', params: { library: 'libgomp.so.1', package: 'libgomp1' } });
+  });
+
   it('exit 0 without any option table is still a failure', async () => {
     const { proc } = runner({ code: 0, stdout: 'hello', stderr: '', timedOut: false });
     await expect(new CapsProbe(proc).probe(['x'])).rejects.toMatchObject({ code: 'ENGINE_START_FAILED' });
