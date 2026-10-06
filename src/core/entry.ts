@@ -11,7 +11,7 @@ import { createCore } from './index';
 import { createLogger, systemClock } from './node-deps';
 import { createProcessRunner } from './process/runner';
 import type { CoreDeps, Platform } from './deps';
-import { allModules } from './modules';
+import { parseArgvEnv } from './services';
 import v8 from 'node:v8';
 
 declare const __APP_VERSION__: string;
@@ -81,7 +81,8 @@ async function main(): Promise<void> {
 
   const token = env.GPUBENCH_TOKEN ?? argv('token') ?? randomBytes(24).toString('base64url');
   const port = Number(env.GPUBENCH_PORT ?? argv('port') ?? 0);
-  const core = await createCore(deps, { token, port, modules: allModules });
+  const llamaLauncherPrefix = parseArgvEnv(env.GPUBENCH_LLAMA_LAUNCHER);
+  const core = await createCore(deps, { token, port, services: llamaLauncherPrefix ? { llamaLauncherPrefix } : {} });
 
   const shutdown = async () => {
     await core.close();

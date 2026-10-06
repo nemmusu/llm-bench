@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { CoreContext } from './context';
 import type { CoreDeps } from './deps';
 import { createApp, type RouteModule } from './server/app';
+import { createServices, serviceModules, type CoreServices, type ServicesOptions } from './services';
 import { EventHub } from './server/event-hub';
 import { SettingsRepo } from './store/settings-repo';
 import { createSysInfo } from './sysinfo/fingerprint';
@@ -10,6 +11,7 @@ import { createTelemetry } from './telemetry/factory';
 
 export interface CoreHandle {
   ctx: CoreContext;
+  services: CoreServices;
   port: number;
   url: string;
   close(): Promise<void>;
@@ -19,7 +21,9 @@ export interface CoreOptions {
   token: string;
   /** 0 = pick a free port. */
   port?: number;
+  /** Extra route modules (tests). */
   modules?: RouteModule[];
+  services?: ServicesOptions;
   sseHeartbeatMs?: number;
 }
 
@@ -36,11 +40,12 @@ export async function createCore(deps: CoreDeps, opts: CoreOptions): Promise<Cor
     telemetry,
     sysinfo: createSysInfo(deps, { telemetry }),
   };
+  const services = await createServices(ctx, opts.services);
   let boundPort = 0;
   const app = createApp(ctx, {
     token: opts.token,
     port: () => boundPort,
-    modules: opts.modules ?? [],
+    modules: [...serviceModules(services), ...(opts.modules ?? [])],
     ...(opts.sseHeartbeatMs ? { sseHeartbeatMs: opts.sseHeartbeatMs } : {}),
   });
 
@@ -53,12 +58,13 @@ export async function createCore(deps: CoreDeps, opts: CoreOptions): Promise<Cor
 
   return {
     ctx,
+    services,
     port: boundPort,
     url: `http://127.0.0.1:${boundPort}`,
     close: () =>
       new Promise<void>((resolve) => {
         shutdown.abort();
-        server.close(() => resolve());
+        void services.bench.whenIdle().finally(() => server.close(() => resolve()));
         // SSE streams keep connections open: drop them so close() completes.
         (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
       }),
