@@ -4,10 +4,10 @@ import { useI18n } from '../../i18n';
 import { useCoreConnected } from '../../lib/api-context';
 import { cn } from '../../lib/cn';
 import { NAV_MAIN, NAV_SETTINGS, navIdFor, type NavItem } from '../../lib/nav';
-import { useSystem } from '../../lib/queries';
-import { useMockGpuLive } from '../../mock/gpu-live';
+import { useGpuSnapshot, useSystemInfo } from '../../lib/queries-library';
 import { VersionLabel } from '../domain/version-label';
 import { IconButton } from '../ui/button';
+import { Skeleton } from '../ui/skeleton';
 import { StatusDot } from '../ui/status-dot';
 import { Tooltip } from '../ui/tooltip';
 
@@ -42,10 +42,11 @@ function NavLink({ item, active, collapsed }: { item: NavItem; active: boolean; 
 function GpuStatus({ collapsed }: { collapsed: boolean }) {
   const { t, number } = useI18n();
   const connected = useCoreConnected();
-  const system = useSystem();
-  const live = useMockGpuLive();
-  const gpu = system.data?.gpus[0];
-  const usedGb = live.current.memUsedMiB / 1024;
+  const system = useSystemInfo();
+  const snapshot = useGpuSnapshot(2000);
+  const gpu = system.data?.gpus.find((g) => g.vendor === 'nvidia');
+  const sample = snapshot.data?.find((s) => s.gpu === gpu?.index);
+  const usedGb = (sample?.memUsedMiB ?? gpu?.memoryUsedMiB ?? 0) / 1024;
   const totalGb = (gpu?.memoryTotalMiB ?? 0) / 1024;
   const coreText = connected ? t('shell.coreConnected') : t('shell.coreDisconnected');
 
@@ -60,7 +61,9 @@ function GpuStatus({ collapsed }: { collapsed: boolean }) {
   }
   return (
     <section aria-label={t('shell.gpuStatus')} className="rounded-lg border border-border bg-surface p-3 shadow-xs">
-      {gpu ? (
+      {system.isPending ? (
+        <Skeleton className="h-10" />
+      ) : gpu ? (
         <>
           <p className="truncate text-xs font-semibold text-fg">{gpu.name.replace('NVIDIA GeForce ', '')}</p>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3" aria-hidden>

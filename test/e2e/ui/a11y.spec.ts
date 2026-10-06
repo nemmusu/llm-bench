@@ -1,15 +1,16 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
-import { currentTheme, goToHash, h1, LIVE_ID, RESULT_ID, skipWelcome } from './helpers';
+import { currentTheme, goToHash, h1, skipWelcome } from './helpers';
 
-/** Every screen, reached the way the app routes them, with the heading that proves it rendered. */
+/**
+ * Every screen, reached the way the app routes them, with the heading that proves it rendered.
+ * The live run and a single result need real runs: test/e2e/journeys/bench-*.spec.ts scan them.
+ */
 const SCREENS: [hash: string, heading: string | RegExp][] = [
   ['#/welcome', 'Benvenuto in GPU Bench'],
   ['#/', 'Benchmark'],
-  [`#/run/${LIVE_ID}`, 'Test in corso'],
   ['#/results', 'Risultati'],
-  [`#/results/${RESULT_ID}`, /Qwen3 8B/],
   ['#/compare', 'Confronta'],
   ['#/models', 'Modelli'],
   ['#/engines', 'Motori'],
@@ -39,8 +40,8 @@ for (const theme of ['light', 'dark'] as const) {
     for (const [hash, heading] of SCREENS) {
       await goToHash(page, hash);
       await expect(h1(page, heading)).toBeVisible();
-      // Let async data, gauges and charts settle before scanning.
-      await page.waitForTimeout(400);
+      // Let async data, gauges and charts settle before scanning: no element is still loading.
+      await expect.poll(() => page.evaluate(() => document.querySelectorAll('[aria-busy="true"]').length)).toBe(0);
       await scan(page, `${hash} (${theme})`);
     }
   });

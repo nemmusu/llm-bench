@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import { translate, useI18n } from '../../i18n';
 import { NAV_MAIN, NAV_SETTINGS } from '../../lib/nav';
 import { useSettings } from '../../lib/settings';
-import { MOCK_LIVE_RUN_ID } from '../../mock/runs';
 import { Kbd } from '../ui/kbd';
 
 /** Ctrl+K / ⌘K toggles the palette from anywhere. */
@@ -73,7 +72,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <Command.List className="max-h-[min(420px,60vh)] overflow-y-auto py-2">
               <Command.Empty className="px-4 py-8 text-center text-sm text-fg-3">{t('palette.empty')}</Command.Empty>
               <Command.Group heading={t('palette.groupActions')} className={groupClass}>
-                <Item value="action-start" icon={<Play />} onSelect={run(() => void navigate({ to: '/run/$runId', params: { runId: MOCK_LIVE_RUN_ID } }))}>
+                <Item value="action-start" icon={<Play />} onSelect={run(() => void navigate({ to: '/' }))}>
                   {t('palette.startBenchmark')}
                 </Item>
                 <Item value="action-compare" icon={<GitCompareArrows />} onSelect={run(() => void navigate({ to: '/compare' }))}>

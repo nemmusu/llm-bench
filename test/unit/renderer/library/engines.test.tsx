@@ -1,0 +1,415 @@
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { bridge, ENGINES, fail, item, libApi, okItems, renderLib, report, system, world } from './fake';
+
+vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
+vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
+vi.mock('echarts/components', () => ({ AxisPointerComponent: {}, DataZoomComponent: {}, GridComponent: {}, LegendComponent: {}, MarkAreaComponent: {}, MarkLineComponent: {}, TooltipComponent: {} }));
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }));
+
+afterEach(() => {
+  delete (window as { gpubench?: unknown }).gpubench;
+  vi.restoreAllMocks();
+});
+
+const h1 = (name: string | RegExp) => screen.findByRole('heading', { level: 1, name });
+const card = (title: string) => screen.findByRole('region', { name: title });
+const linux = system({ os: { platform: 'linux', release: '6', arch: 'x64', name: 'Ubuntu 24.04', isWsl: false } });
+
+describe('engines: llama.cpp', () => {
+  it('installed builds: use, remove, releases, latest, custom executable', async () => {
+    const b = bridge();
+    const api = libApi();
+    renderLib('/engines', api);
+    expect(await h1('Motori')).toBeTruthy();
+    const llama = await card('llama.cpp');
+    const builds = await within(llama).findByRole('list', { name: 'Versioni installate' });
+    expect(within(builds).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(builds).getByText('CUDA 13.4')).toBeTruthy();
+    expect(within(builds).getByText('vulkan')).toBeTruthy();
+    expect(within(builds).getByText('In uso')).toBeTruthy();
+    await userEvent.click(within(builds).getByRole('button', { name: 'Usa questa' }));
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native', build: 'b10997' }));
+    expect(api.calls.filter((c) => c.path === '/api/engines').length).toBeGreaterThan(1);
+    await userEvent.click(within(builds).getByRole('button', { name: 'Rimuovi b11438' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Rimuovere llama.cpp b11438?' });
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Rimuovi' }));
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/api/engines/llamacpp/installed/b11438-cuda-13.4')).toBe(true));
+
+    await userEvent.click(within(llama).getByRole('button', { name: 'Scegli versione…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Versioni di llama.cpp' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Installa b11500' }));
+    expect(api.calls.find((c) => c.path === '/api/engines/llamacpp-native/install')?.body).toEqual({ build: 'b11500' });
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'extract', bytesDone: 5, bytesTotal: 5 }));
+    expect(await within(llama).findByText('Estrazione dei file')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_INSTALL_FAILED', message: 'x' } }));
+    expect(await within(llama).findByText('Installazione del motore non riuscita')).toBeTruthy();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Installa l’ultima versione' }));
+    expect(api.calls.filter((c) => c.path === '/api/engines/llamacpp-native/install').pop()?.body).toEqual({});
+
+    // A custom llama-server: validated by detecting it.
+    api.w.engines = [{ ...ENGINES()[0]!, version: 'b9999', location: 'D:\\llama\\llama-server.exe' }];
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa un eseguibile personalizzato…' }));
+    expect(b.pickFile).toHaveBeenCalledWith({ title: 'Scegli llama-server', filters: [{ name: 'llama-server', extensions: ['exe'] }] });
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native', executable: 'D:\\llama\\llama-server.exe' }));
+    expect(await within(llama).findByText('Funziona · versione b9999')).toBeTruthy();
+    expect(within(llama).queryByText('In uso')).toBeNull();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da GPU Bench' }));
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native' }));
+  });
+
+  it('a custom executable that does not work, cancelled picks, errors', async () => {
+    const b = bridge({ platform: 'linux', pickFile: vi.fn(async () => null) });
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', executable: '/opt/x/llama-server' } } }));
+    api.w.engines = [{ kind: 'llamacpp-native', available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }];
+    api.on('DELETE /api/engines/llamacpp/installed/*', () => fail('INTERNAL', 500));
+    api.on('GET /api/engines/llamacpp/releases', () => fail('GITHUB_RATE_LIMITED', 429));
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('Il motore non è installato')).toBeTruthy();
+    expect(within(llama).getByText('Non installato')).toBeTruthy();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa un eseguibile personalizzato…' }));
+    expect(b.pickFile).toHaveBeenCalledWith({ title: 'Scegli llama-server' });
+    await userEvent.click(await within(llama).findByRole('button', { name: 'Rimuovi b10997' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Annulla' }));
+    await userEvent.click(within(llama).getByRole('button', { name: 'Rimuovi b10997' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(llama).findByText('Si è verificato un errore imprevisto')).toBeTruthy();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Scegli versione…' }));
+    expect(await within(await screen.findByRole('dialog')).findByText('GitHub ha limitato le richieste')).toBeTruthy();
+  });
+
+  it('broken install, installed-but-failing custom, builds error, save error', async () => {
+    bridge();
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', executable: 'D:\\x.exe', build: 'b10997' } } }));
+    api.w.engines = [{ kind: 'llamacpp-native', available: false, installed: true, problems: [], supported: true }];
+    api.on('GET /api/engines/llamacpp/installed', () => fail('INTERNAL', 500));
+    api.on('PUT /api/settings', () => fail('VALIDATION'));
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('Non parte')).toBeTruthy();
+    expect(await within(llama).findByText('Il motore non è partito')).toBeTruthy();
+    expect(await within(llama).findByText('Si è verificato un errore imprevisto')).toBeTruthy();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da GPU Bench' }));
+    expect(await within(llama).findByText('Alcuni valori non sono validi')).toBeTruthy();
+  });
+
+  it('builds without CUDA: the in-use one follows the saved build', async () => {
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', build: 'b10997-vulkan' } } }));
+    renderLib('/engines', api);
+    const builds = await screen.findByRole('list', { name: 'Versioni installate' });
+    const rows = within(builds).getAllByRole('listitem');
+    expect(within(rows[1]!).getByText('In uso')).toBeTruthy();
+    expect(within(rows[0]!).getByRole('button', { name: 'Usa questa' })).toBeTruthy();
+  });
+
+  it('no builds yet: the install button is the primary action', async () => {
+    const api = libApi(world({ builds: [] }));
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByRole('button', { name: 'Installa' })).toBeTruthy();
+  });
+});
+
+describe('engines: Docker', () => {
+  it('stopped → start with progress (slow hint) → running', async () => {
+    const api = libApi(world({ docker: { state: 'stopped' }, check: report([...okItems().slice(0, 5), item('docker', { state: 'optional', code: 'DOCKER_NOT_RUNNING', params: { dockerState: 'stopped' }, action: { kind: 'start-docker' } })]) }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    expect(await within(docker).findByText('Spento')).toBeTruthy();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Avvia Docker' }));
+    expect(api.calls.some((c) => c.path === '/api/docker/start')).toBe(true);
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'starting', bytesDone: 65000, state: 'starting', slow: true }));
+    expect(await within(docker).findByText(/ci sta mettendo più del solito/)).toBeTruthy();
+    expect(within(docker).getByText('1 min 05 s')).toBeTruthy();
+    expect(screen.getAllByRole('progressbar', { name: /Docker/ }).length).toBeGreaterThan(0);
+    api.w.docker = { state: 'running', version: '29.8.0' };
+    api.w.check = report(okItems());
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'running', bytesDone: 0, state: 'running' }));
+    expect(await within(docker).findByText('Acceso')).toBeTruthy();
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/api/setup/check?fresh=1')).toBe(true));
+  });
+
+  it('a failed start explains the problem', async () => {
+    const api = libApi(world({ docker: { state: 'stopped' } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Avvia Docker' }));
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'error', bytesDone: 0, error: { code: 'DOCKER_NOT_RUNNING', message: 'timeout' } }));
+    expect(await within(docker).findByText('Docker non è avviato')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'error', bytesDone: 0 }));
+    expect(await within(docker).findByText('Docker non è avviato')).toBeTruthy();
+  });
+
+  it('running: GPU check, image pull with progress, cleanup', async () => {
+    const api = libApi();
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Verifica la GPU in Docker' }));
+    expect(await within(docker).findByText('GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)')).toBeTruthy();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Scarica l’immagine di llama.cpp' }));
+    expect(api.calls.find((c) => c.path === '/api/docker/pull')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', kind: 'docker-pull' });
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'download', bytesDone: 1e9, bytesTotal: 3e9 }));
+    expect(await within(docker).findByText('954 MB di 2,8 GB · 33%')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'done', bytesDone: 3e9, bytesTotal: 3e9 }));
+    expect(await within(docker).findByText('Immagine pronta: ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-pull', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'error', bytesDone: 0 }));
+    expect(await within(docker).findByText('Download dell’immagine Docker non riuscito')).toBeTruthy();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }));
+    expect(await screen.findByText('Contenitori rimossi: 1')).toBeTruthy();
+  });
+
+  it('GPU check and cleanup errors; a reason is shown when not running', async () => {
+    const api = libApi(world({ docker: { state: 'no-gpu', reason: 'gpu-check-failed' } }));
+    api.on('POST /api/docker/gpu-check', () => fail('DOCKER_NO_GPU'));
+    api.on('POST /api/docker/cleanup', () => fail('DOCKER_PERMISSION'));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    expect(await within(docker).findByText('Motivo: gpu-check-failed')).toBeTruthy();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Verifica la GPU in Docker' }));
+    expect(await within(docker).findByText('Docker non vede la scheda video')).toBeTruthy();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }));
+    expect(await within(docker).findByText('Non ho i permessi per usare Docker')).toBeTruthy();
+  });
+
+  it('not installed on Windows: confirm with size and WSL notes, then install with progress', async () => {
+    const api = libApi(world({ docker: { state: 'not-installed' } }));
+    api.on('GET /api/setup/docker/plan', () => ({ platform: 'win32', kind: 'docker-desktop', supported: true, url: 'https://desktop.docker.com/i.exe', wsl: { available: false, meetsDockerMinimum: false } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Installa Docker' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Installare Docker Desktop?' });
+    expect(await within(dialog).findByText('desktop.docker.com')).toBeTruthy();
+    expect(within(dialog).getByText('–')).toBeTruthy();
+    expect(within(dialog).getByText(/Manca WSL 2/)).toBeTruthy();
+    expect(within(dialog).getByText(/La versione di WSL è vecchia/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scarica e installa' }));
+    expect(api.calls.some((c) => c.path === '/api/setup/docker/install')).toBe(true);
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'installer', bytesDone: 1, bytesTotal: 1 }));
+    expect(await within(docker).findByText('Installazione: conferma la richiesta di Windows')).toBeTruthy();
+  });
+
+  it('install plan errors and unsupported PCs', async () => {
+    const api = libApi(world({ docker: { state: 'not-installed' } }));
+    let n = 0;
+    api.on('GET /api/setup/docker/plan', () => (n++ === 0 ? fail('NETWORK', 502) : { platform: 'win32', kind: 'docker-desktop', supported: false, reason: 'unsupported-arch', arch: 'ia32' }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Installa Docker' }));
+    expect(await within(await screen.findByRole('dialog')).findByText('Connessione a internet non disponibile')).toBeTruthy();
+  });
+
+  it('Linux: the exact script is shown before installing; permissions fixed the same way', async () => {
+    const api = libApi(world({ system: linux, docker: { state: 'no-permission' } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Installa Docker' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Installare Docker Engine?' });
+    expect(await within(dialog).findByText('Docker Engine')).toBeTruthy();
+    await userEvent.click(within(dialog).getByText('Mostra i comandi esatti'));
+    expect(within(dialog).getByLabelText('Script di installazione').textContent).toContain('apt-get install docker-ce');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Installa' }));
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-linux', stage: 'nvidia-toolkit', bytesDone: 5, bytesTotal: 7 }));
+    expect(await within(docker).findByText('Passo 5 di 7 · 71%')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-linux', stage: 'relogin-required', bytesDone: 7, bytesTotal: 7 }));
+    expect(await within(docker).findByText('Permessi mancanti')).toBeTruthy();
+  });
+
+  it('Linux script errors; unknown, unsupported and starting states', async () => {
+    const api = libApi(world({ system: linux, docker: { state: 'no-gpu' } }));
+    api.on('GET /api/setup/docker/linux-script', () => fail('INTERNAL', 500));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Installa Docker' }));
+    expect(await within(await screen.findByRole('dialog')).findByText('Si è verificato un errore imprevisto')).toBeTruthy();
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+  });
+
+  it('unknown, unsupported and starting states only offer a re-check', async () => {
+    const api = libApi(world({ docker: { state: 'unknown' } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    expect(await within(docker).findByText('Non riesco a capire lo stato di Docker: premi «Ricontrolla».')).toBeTruthy();
+    api.w.docker = { state: 'unsupported', reason: 'podman' };
+    await userEvent.click(within(docker).getByRole('button', { name: 'Ricontrolla' }));
+    expect(await within(docker).findByText('Questa installazione di Docker non è supportata da GPU Bench.')).toBeTruthy();
+    expect(within(docker).getByText('Motivo: podman')).toBeTruthy();
+    api.w.docker = { state: 'starting' };
+    await userEvent.click(within(docker).getByRole('button', { name: 'Ricontrolla' }));
+    expect(await within(docker).findByText('Avvio in corso')).toBeTruthy();
+  });
+});
+
+describe('engines: vLLM and others', () => {
+  it('Docker tags with the recommended one, use and pull; show all', async () => {
+    const api = libApi();
+    renderLib('/engines', api);
+    const vllm = await card('vLLM (Docker)');
+    const tags = await within(vllm).findByRole('list', { name: 'Versioni di vLLM (immagini Docker)' });
+    expect(within(tags).getAllByRole('listitem')).toHaveLength(6);
+    expect(within(tags).getByText('Consigliato')).toBeTruthy();
+    expect(within(tags).getByText('Non supporta la tua GPU')).toBeTruthy();
+    expect(within(tags).getByText('CUDA 13.0 · 8,4 GB · 4 ott 2026')).toBeTruthy();
+    await userEvent.click(within(vllm).getByRole('button', { name: 'Mostra tutte (8)' }));
+    expect(within(tags).getAllByRole('listitem')).toHaveLength(8);
+    await userEvent.click(within(vllm).getByRole('button', { name: 'Mostra meno' }));
+    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa questa' })[0]!);
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0' }));
+    expect(await within(tags).findByText('In uso')).toBeTruthy();
+    await userEvent.click(within(tags).getAllByRole('button', { name: 'Scarica' })[0]!);
+    expect(api.calls.find((c) => c.path === '/api/docker/pull')?.body).toEqual({ image: 'vllm/vllm-openai:v0.31.0', kind: 'docker-pull' });
+  });
+
+  it('tags errors; Docker stopped disables pulls; save errors', async () => {
+    const api = libApi(world({ docker: { state: 'stopped' } }));
+    let n = 0;
+    api.on('GET /api/engines/vllm/tags', () => (n++ === 0 ? fail('NETWORK', 502) : [{ name: 'v1' }]));
+    api.on('PUT /api/settings', () => fail('VALIDATION'));
+    renderLib('/engines', api);
+    const vllm = await card('vLLM (Docker)');
+    expect(await within(vllm).findByText('Connessione a internet non disponibile')).toBeTruthy();
+    expect(within(vllm).getByText('Serve Docker acceso')).toBeTruthy();
+  });
+
+  it('vLLM on Linux: prepare uv, then install vLLM; errors; installed version', async () => {
+    const api = libApi(
+      world({
+        system: linux,
+        engines: [...ENGINES().slice(0, 3), { kind: 'vllm-native', available: false, installed: false, problems: [], supported: true }],
+        check: report([...okItems().slice(0, 6), item('vllm-native', { state: 'optional', params: { uv: false }, action: { kind: 'install-uv', bytes: 2e7 } })], { platform: 'linux' }),
+      }),
+    );
+    renderLib('/engines', api);
+    const native = await card('vLLM (Linux)');
+    await userEvent.click(await within(native).findByRole('button', { name: 'Prepara vLLM' }));
+    expect(api.calls.some((c) => c.path === '/api/setup/uv/install')).toBe(true);
+    act(() => api.emit({ type: 'engine.install', kind: 'uv', stage: 'download', bytesDone: 1e7, bytesTotal: 2e7 }));
+    expect(await within(native).findByRole('progressbar', { name: 'vLLM (Linux)' })).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'uv', stage: 'failed', bytesDone: 0 }));
+    api.w.check = report([...okItems().slice(0, 6), item('vllm-native', { state: 'optional', params: { uv: true }, action: { kind: 'install-vllm' } })], { platform: 'linux' });
+    act(() => api.emit({ type: 'engine.install', kind: 'uv', stage: 'installed', bytesDone: 0 }));
+    await userEvent.click(await within(native).findByRole('button', { name: 'Installa vLLM' }));
+    expect(api.calls.some((c) => c.path === '/api/engines/vllm-native/install')).toBe(true);
+    act(() => api.emit({ type: 'engine.install', kind: 'vllm-native', stage: 'error', bytesDone: 0 }));
+    expect(await within(native).findByText('Installazione del motore non riuscita')).toBeTruthy();
+    api.w.engines = [...ENGINES().slice(0, 3), { kind: 'vllm-native', available: true, installed: true, version: '0.11.0', problems: [], supported: true }];
+    api.w.check = report([...okItems().slice(0, 6), item('vllm-native', { params: { version: '0.11.0' } })], { platform: 'linux' });
+    act(() => api.emit({ type: 'engine.install', kind: 'vllm-native', stage: 'done', bytesDone: 0 }));
+    expect(await within(native).findByText('Versione installata: 0.11.0')).toBeTruthy();
+    expect(within(native).getByText('Pronto')).toBeTruthy();
+  });
+
+  it('external server opens the Benchmark in expert mode', async () => {
+    const api = libApi();
+    const { router } = renderLib('/engines', api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Configura nel Benchmark' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    expect(api.w.settings.expertMode).toBe(true);
+    expect(api.w.settings.lastEngine).toEqual({ kind: 'external' });
+  });
+});
+
+describe('system check actions', () => {
+  it('Docker install, uv, vLLM, free disk, docs and model picking from the Engines page', async () => {
+    const b = bridge({ platform: 'linux' });
+    const api = libApi(
+      world({
+        system: linux,
+        check: report(
+          [
+            ...okItems().slice(0, 3),
+            item('models', { state: 'missing', code: 'MODEL_NOT_FOUND', action: { kind: 'pick-model' } }),
+            item('disk', { state: 'warning', code: 'DISK_FULL', params: { freeGb: 3, path: '/', minFreeGb: 20 }, action: { kind: 'free-disk', bytes: 17e9 } }),
+            item('docker', { state: 'optional', code: 'DOCKER_NOT_INSTALLED', params: { dockerState: 'not-installed' }, action: { kind: 'install-docker-linux' } }),
+            item('vllm-native', { state: 'optional', params: { uv: true }, action: { kind: 'install-vllm' } }),
+          ],
+          { platform: 'linux' },
+        ),
+      }),
+    );
+    const { router } = renderLib('/engines', api);
+    const panel = (await screen.findByRole('heading', { level: 2, name: 'Controllo del sistema' })).closest('section') as HTMLElement;
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Installa Docker (Docker)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Installare Docker Engine?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Installa' }));
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/api/setup/docker/install')).toBe(true));
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-linux', stage: 'docker-repo', bytesDone: 3, bytesTotal: 7 }));
+    expect(await within(panel).findByText('Archivio di Docker')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-linux', stage: 'relogin-required', bytesDone: 7, bytesTotal: 7 }));
+    expect(await within(panel).findByText(/esci dalla sessione e rientra/)).toBeTruthy();
+    await userEvent.click(within(panel).getByRole('button', { name: 'Installa vLLM (vLLM (Linux))' }));
+    expect(api.calls.some((c) => c.path === '/api/engines/vllm-native/install')).toBe(true);
+    await userEvent.click(within(panel).getByRole('button', { name: /Scegli un’altra cartella/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
+    await router.navigate({ to: '/engines' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Scegli un modello (Modelli)' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download' }));
+    expect(b.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('setup job failures read the job error; reboot notes; unsupported distro docs; check errors per item', async () => {
+    const b = bridge();
+    const api = libApi(
+      world({
+        check: report([
+          item('driver', { state: 'warning', code: 'INTERNAL', error: { code: 'INTERNAL', message: 'timeout' } }),
+          ...okItems().slice(1, 5),
+          item('docker', { state: 'optional', code: 'DOCKER_NOT_INSTALLED', params: { dockerState: 'not-installed' }, action: { kind: 'install-docker', bytes: 6e8 } }),
+          item('vllm-native', { state: 'warning', params: { dockerState: 'no-permission', distroSupport: 'unsupported-distro', docs: 'https://docs.docker.com/engine/install/' } }),
+        ]),
+      }),
+    );
+    let jobs: unknown[] = [];
+    api.on('GET /api/setup/jobs', () => jobs);
+    renderLib('/engines', api);
+    const panel = (await screen.findByRole('heading', { level: 2, name: 'Controllo del sistema' })).closest('section') as HTMLElement;
+    expect(await within(panel).findByText('Non sono riuscito a controllarlo: premi «Ricontrolla».')).toBeTruthy();
+    await userEvent.click(within(panel).getByRole('button', { name: 'Apri la guida di Docker' }));
+    expect(b.openExternal).toHaveBeenCalledWith('https://docs.docker.com/engine/install/');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Installa Docker · 572 MB (Docker)' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Installa Docker · 572 MB (Docker)' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Scarica e installa' }));
+    jobs = [{ kind: 'docker-desktop', state: 'failed', stage: 'failed', bytesDone: 0, startedAt: '', error: { code: 'DOCKER_INSTALL_FAILED', message: 'exit 1' } }];
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'failed', bytesDone: 0 }));
+    expect(await within(panel).findByText('Installazione di Docker non riuscita')).toBeTruthy();
+    jobs = [];
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'reboot-maybe-required', bytesDone: 0 }));
+    expect(await within(panel).findByText(/riavvia il PC per completare/)).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'failed', bytesDone: 0 }));
+    expect(await within(panel).findByText('Si è verificato un errore imprevisto')).toBeTruthy();
+  });
+
+  it('a start request that fails at once shows the error in the row', async () => {
+    const api = libApi(world({ check: report([...okItems().slice(0, 5), item('docker', { state: 'optional', params: { dockerState: 'stopped' }, action: { kind: 'start-docker' } })]) }));
+    api.on('POST /api/docker/start', () => fail('DOCKER_UNSUPPORTED'));
+    renderLib('/engines', api);
+    const panel = (await screen.findByRole('heading', { level: 2, name: 'Controllo del sistema' })).closest('section') as HTMLElement;
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Avvia Docker (Docker)' }));
+    expect(await within(panel).findByText('Questa versione di Docker non è supportata')).toBeTruthy();
+  });
+
+  it('a working custom executable that reports no version; vLLM save errors; plan for an unsupported PC; panel re-check', async () => {
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', executable: 'D:\\x.exe' } }, docker: { state: 'not-installed' } }));
+    api.w.engines = [{ ...ENGINES()[0]!, version: undefined }, ...ENGINES().slice(1)];
+    let n = 0;
+    api.on('GET /api/setup/docker/plan', () => (n++ === 0 ? fail('NETWORK', 502) : { platform: 'win32', kind: 'docker-desktop', supported: false, reason: 'unsupported-arch', arch: 'ia32' }));
+    renderLib('/engines', api);
+    expect(await screen.findByText('Funziona · versione –')).toBeTruthy();
+    const docker = await card('Docker');
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Installa Docker' }));
+    await within(await screen.findByRole('dialog')).findByText('Connessione a internet non disponibile');
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+    await userEvent.click(within(docker).getByRole('button', { name: 'Installa Docker' }));
+    expect(await within(await screen.findByRole('dialog')).findByText(/processore non supportato/)).toBeTruthy();
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+    const panel = (await screen.findByRole('heading', { level: 2, name: 'Controllo del sistema' })).closest('section') as HTMLElement;
+    await userEvent.click(within(panel).getAllByRole('button', { name: 'Ricontrolla' })[0]!);
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/api/setup/check?fresh=1')).toBe(true));
+    api.on('PUT /api/settings', () => fail('VALIDATION'));
+    const vllm = await card('vLLM (Docker)');
+    await userEvent.click((await within(vllm).findAllByRole('button', { name: 'Usa questa' }))[0]!);
+    expect(await within(vllm).findByText('Alcuni valori non sono validi')).toBeTruthy();
+  });
+});

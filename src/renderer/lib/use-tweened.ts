@@ -6,29 +6,27 @@ import { prefersReducedMotion } from './theme';
  * jumping. Returns the target directly when the user prefers reduced motion.
  */
 export function useTweened(target: number, durationMs = 450): number {
+  const still = prefersReducedMotion() || durationMs <= 0;
   const [shown, setShown] = useState(target);
-  const fromRef = useRef(target);
+  // Last value painted: the next animation starts from there.
   const shownRef = useRef(target);
-  shownRef.current = shown;
 
   useEffect(() => {
-    if (prefersReducedMotion() || durationMs <= 0) {
-      setShown(target);
-      return;
-    }
-    fromRef.current = shownRef.current;
+    if (still) return;
+    const from = shownRef.current;
     const start = performance.now();
     let frame = 0;
     const step = (now: number) => {
       const p = Math.min(1, (now - start) / durationMs);
       // easeOutCubic: fast start, gentle landing.
-      const eased = 1 - (1 - p) ** 3;
-      setShown(fromRef.current + (target - fromRef.current) * eased);
+      const value = from + (target - from) * (1 - (1 - p) ** 3);
+      shownRef.current = value;
+      setShown(value);
       if (p < 1) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [target, durationMs]);
+  }, [target, durationMs, still]);
 
-  return shown;
+  return still ? target : shown;
 }

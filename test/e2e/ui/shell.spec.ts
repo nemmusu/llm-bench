@@ -66,7 +66,7 @@ test('the command palette opens with Ctrl+K and navigates', async ({ gb }) => {
   await expect(page.getByRole('dialog')).toBeHidden();
   await page.getByRole('button', { name: 'Apri la palette dei comandi' }).click();
   await page.getByRole('option', { name: 'Avvia benchmark' }).click();
-  await expect(h1(page, 'Test in corso')).toBeVisible();
+  await expect(h1(page, 'Benchmark')).toBeVisible();
 });
 
 test('the theme toggle switches light and dark', async ({ gb }) => {

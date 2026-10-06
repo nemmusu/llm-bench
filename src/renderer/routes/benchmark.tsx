@@ -1,19 +1,28 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from '@tanstack/react-router';
-import { Check, ChevronsUpDown, Download, FolderOpen, HardDrive, Play, Timer } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, HardDrive, Play, Timer, TriangleAlert } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
+import type { StartRunRequest } from '../../contract/api';
 import type { EngineKind } from '../../contract/engines';
 import type { Profile } from '../../contract/results';
-import { ModelPicker } from '../components/domain/model-picker';
+import { ENGINE_ORDER, engineConfigOf, engineFormOf, savableEngine, type EngineForm } from '../components/bench/engine-form';
+import { ExpertPanel } from '../components/bench/expert-panel';
+import { formFromParams, formFromScenario, hasCustomParams, paramsFromForm, scenarioFromForm, type ParamsForm, type ScenarioForm } from '../components/bench/expert-form';
+import { MIB_PER_GB, shortGpuName } from '../components/bench/format';
+import { BenchModelPicker } from '../components/bench/model-picker';
+import { initialModelKey, modelOptions, requestModel, savedModelId, type ModelOption } from '../components/bench/model-options';
+import { PlanCard } from '../components/bench/plan-card';
+import { RecentRuns } from '../components/bench/recent-runs';
+import { takeDraft, type BenchDraft } from '../components/bench/run-context';
+import { ServersPanel } from '../components/bench/servers';
+import { useStartFlow, type Need } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
-import { RecentResults } from '../components/domain/recent-results';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { CodeBlock } from '../components/ui/code-block';
 import { FitBadge } from '../components/ui/fit-badge';
 import { HelpTip } from '../components/ui/help-tip';
-import { Field, Input, Textarea } from '../components/ui/input';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { Select } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
@@ -21,14 +30,22 @@ import { Switch } from '../components/ui/switch';
 import { TriedBadge } from '../components/ui/tried-badge';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/cn';
-import { useEngines, useRecommendedModels, useSystem } from '../lib/queries';
+import {
+  apiErrorData,
+  useBenchEngines,
+  useBenchLocalModels,
+  useBenchSystem,
+  useCurated,
+  useDebounced,
+  useLlamaInstallBytes,
+  useLocalFit,
+  usePlan,
+  useRuns,
+  useRunsLiveRefresh,
+  useTried,
+} from '../lib/queries-runs';
 import { useSettings } from '../lib/settings';
-import { findChoice } from '../mock/models';
-import { DEFAULT_EXPERT, DEFAULT_IMAGES, previewCommand, type ExpertParams } from '../mock/plan';
-import { MOCK_LIVE_RUN_ID } from '../mock/runs';
-import { LLAMACPP_BUILD, LLAMACPP_DOWNLOAD_BYTES } from '../mock/system';
 
-const ENGINE_ORDER: EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'external'];
 const PROFILES = ['quick', 'standard', 'full'] as const;
 
 function ChoiceCard({ step, title, help, badge, children, footer }: { step: number; title: string; help: string; badge?: ReactNode; children: ReactNode; footer?: ReactNode }) {
@@ -48,164 +65,20 @@ function ChoiceCard({ step, title, help, badge, children, footer }: { step: numb
   );
 }
 
-function Note({ icon, tone = 'muted', children }: { icon: ReactNode; tone?: 'muted' | 'accent' | 'success'; children: ReactNode }) {
+function Note({ icon, tone = 'muted', children }: { icon: ReactNode; tone?: 'muted' | 'accent' | 'success' | 'warning'; children: ReactNode }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 [&_svg]:size-4',
+        'inline-flex min-w-0 items-center gap-1.5 [&_svg]:size-4 [&_svg]:shrink-0',
         tone === 'accent' && 'text-accent-text',
         tone === 'success' && 'text-success-text',
+        tone === 'warning' && 'text-warning-text',
         tone === 'muted' && 'text-fg-2',
       )}
     >
       {icon}
-      {children}
+      <span className="min-w-0">{children}</span>
     </span>
-  );
-}
-
-function ExpertPanel({
-  engine,
-  params,
-  onChange,
-  command,
-}: {
-  engine: EngineKind;
-  params: ExpertParams;
-  onChange: (p: ExpertParams) => void;
-  command: { powershell: string; bash: string };
-}) {
-  const { t } = useI18n();
-  const set = <K extends keyof ExpertParams>(key: K) => (value: ExpertParams[K]) => onChange({ ...params, [key]: value });
-  const text = (key: keyof ExpertParams, label: string, placeholder: string, hint?: string) => (
-    <Field label={label} hint={hint}>
-      {({ id, describedBy }) => (
-        <Input
-          id={id}
-          aria-describedby={describedBy}
-          value={params[key]}
-          placeholder={placeholder}
-          onChange={(e) => set(key)(e.target.value as never)}
-          className="tabular-nums"
-        />
-      )}
-    </Field>
-  );
-  const docker = engine === 'llamacpp-docker' || engine === 'vllm-docker';
-  return (
-    <Card className="flex flex-col">
-      <div className="flex flex-col gap-1 px-card pt-card">
-        <h2 className="text-md font-semibold tracking-[-0.01em]">{t('benchmark.expert.title')}</h2>
-        <p className="text-sm text-fg-2">{t('benchmark.expert.description')}</p>
-      </div>
-      <div className="grid gap-x-8 gap-y-6 p-card lg:grid-cols-2">
-        <fieldset className="flex flex-col gap-4">
-          <legend className="mb-3 text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('benchmark.expert.sectionLaunch')}</legend>
-          <div className="grid grid-cols-2 gap-4">
-            {text('ctx', t('benchmark.expert.ctx'), '8192')}
-            {text('ngl', t('benchmark.expert.ngl'), t('benchmark.expert.nglAll'))}
-            <Field label={t('benchmark.expert.flashAttention')}>
-              {({ id }) => (
-                <Select
-                  id={id}
-                  value={params.flashAttention}
-                  onValueChange={set('flashAttention')}
-                  options={[
-                    { value: 'auto', label: t('common.auto') },
-                    { value: 'on', label: t('common.on') },
-                    { value: 'off', label: t('common.off') },
-                  ]}
-                />
-              )}
-            </Field>
-            <Field label={t('benchmark.expert.kvCache')}>
-              {({ id }) => (
-                <Select
-                  id={id}
-                  value={params.kvCache}
-                  onValueChange={set('kvCache')}
-                  options={[
-                    { value: 'auto', label: t('common.auto') },
-                    { value: 'f16', label: 'f16' },
-                    { value: 'q8_0', label: 'q8_0' },
-                    { value: 'q4_0', label: 'q4_0' },
-                  ]}
-                />
-              )}
-            </Field>
-            {text('batch', t('benchmark.expert.batch'), '2048')}
-            {text('ubatch', t('benchmark.expert.ubatch'), '512')}
-            {text('threads', t('benchmark.expert.threads'), t('common.auto'))}
-            {text('parallel', t('benchmark.expert.parallel'), '1')}
-          </div>
-        </fieldset>
-        <fieldset className="flex flex-col gap-4">
-          <legend className="mb-3 text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('benchmark.expert.sectionTest')}</legend>
-          <div className="grid grid-cols-2 gap-4">
-            {text('promptLengths', t('benchmark.expert.promptLengths'), '512, 4096', t('benchmark.expert.listHint'))}
-            {text('outputTokens', t('benchmark.expert.outputTokens'), '256')}
-            {text('repetitions', t('benchmark.expert.repetitions'), '5')}
-            {text('concurrency', t('benchmark.expert.concurrency'), '1, 4', t('benchmark.expert.listHint'))}
-          </div>
-          <Field label={t('benchmark.expert.executable')} hint={t('benchmark.expert.executableHint')}>
-            {({ id, describedBy }) => (
-              <div className="flex gap-2">
-                <Input
-                  id={id}
-                  aria-describedby={describedBy}
-                  value={params.executable}
-                  placeholder={`…\\llama.cpp\\${LLAMACPP_BUILD}\\llama-server.exe`}
-                  onChange={(e) => set('executable')(e.target.value)}
-                  className="font-mono text-xs"
-                />
-                <Button
-                  onClick={() =>
-                    void window.gpubench
-                      ?.pickFile({ title: t('benchmark.expert.executable') })
-                      .then((p) => p && set('executable')(p))
-                  }
-                >
-                  <FolderOpen aria-hidden />
-                  {t('common.browse')}
-                </Button>
-              </div>
-            )}
-          </Field>
-          {docker && text('image', t('benchmark.expert.dockerImage'), DEFAULT_IMAGES[engine] ?? '')}
-        </fieldset>
-        <Field label={t('benchmark.expert.extraArgs')} hint={t('benchmark.expert.extraArgsHint')}>
-          {({ id, describedBy }) => (
-            <Textarea
-              id={id}
-              aria-describedby={describedBy}
-              value={params.extraArgs}
-              placeholder="--mlock"
-              onChange={(e) => set('extraArgs')(e.target.value)}
-              className="font-mono text-xs"
-            />
-          )}
-        </Field>
-        <Field label={t('benchmark.expert.env')} hint={t('benchmark.expert.envHint')}>
-          {({ id, describedBy }) => (
-            <Textarea
-              id={id}
-              aria-describedby={describedBy}
-              value={params.env}
-              placeholder="CUDA_VISIBLE_DEVICES=0"
-              onChange={(e) => set('env')(e.target.value)}
-              className="font-mono text-xs"
-            />
-          )}
-        </Field>
-      </div>
-      <div className="flex flex-col gap-2 border-t border-border p-card">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-semibold">{t('benchmark.expert.preview')}</h3>
-          <span className="text-xs text-fg-3">· {t('benchmark.expert.previewHint')}</span>
-        </div>
-        <CodeBlock commands={command} label={t('benchmark.expert.preview')} />
-      </div>
-    </Card>
   );
 }
 
@@ -226,37 +99,202 @@ function BenchmarkSkeleton() {
   );
 }
 
+/** Model card body: the picker button and the verdicts for the selected model. */
+function SelectedModel({ option, engine, onOpen, params }: { option: ModelOption; engine: EngineKind; onOpen: () => void; params: StartRunRequest['params'] }) {
+  const { t, bytes } = useI18n();
+  const system = useBenchSystem();
+  const local = option.source === 'local' ? option.local : undefined;
+  const fit = useLocalFit(local?.id, engine, params);
+  const tried = useTried(local ? { weakKey: local.identity.weakKey, ...(local.identity.sha256 ? { sha256: local.identity.sha256 } : {}) } : undefined);
+  const gpuName = system.data?.gpus[0]?.name;
+  const best = tried.data?.find((r) => r.status === 'completed' && r.decodeTps !== undefined && r.gpuName === gpuName);
+  const detail = [option.quant, option.sizeBytes === undefined ? undefined : bytes(option.sizeBytes)].filter(Boolean).join(' · ');
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${t('benchmark.changeModel')}: ${option.name}${option.quant ? ` ${option.quant}` : ''}`}
+        className="flex items-center gap-3 rounded-lg border border-border-strong bg-surface px-3 py-2 text-left shadow-xs transition-colors hover:bg-surface-2 focus-ring"
+      >
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-md font-semibold text-fg">{option.name}</span>
+          <span className="text-sm text-fg-3 tabular-nums">{detail}</span>
+        </span>
+        <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-3" />
+      </button>
+      <div className="flex flex-wrap gap-1.5">
+        {fit.data && <FitBadge level={fit.data.level} size="sm" />}
+        {option.source === 'curated' && (
+          <Badge tone="accent" size="sm">
+            {t('benchmark.pickModel.suggested')}
+          </Badge>
+        )}
+        {best && <TriedBadge tps={best.decodeTps!} date={best.createdAt} size="sm" />}
+      </div>
+    </>
+  );
+}
+
 /** One big Start button and three friendly choices (engine, model, duration). */
 function BenchmarkScreen() {
-  const { t, bytes, integer } = useI18n();
+  const f = useI18n();
+  const { t, bytes, integer, duration } = f;
   const { settings, update } = useSettings();
+  const qc = useQueryClient();
   const navigate = useNavigate();
-  const system = useSystem();
-  const engines = useEngines();
-  const models = useRecommendedModels();
-  const [engine, setEngine] = useState<EngineKind>(settings.lastEngine?.kind ?? 'llamacpp-native');
-  const [modelId, setModelId] = useState(settings.lastModelId ?? 'qwen3-8b-q4km');
-  const [profile, setProfile] = useState<Profile>(settings.lastProfile === 'custom' ? 'quick' : settings.lastProfile);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [expert, setExpert] = useState<ExpertParams>(DEFAULT_EXPERT);
-
-  const model = findChoice(modelId);
-  const engineStatus = engines.data?.find((e) => e.kind === engine);
+  const [draft] = useState<BenchDraft | undefined>(() => takeDraft(qc));
+  const system = useBenchSystem();
+  const engines = useBenchEngines();
+  const local = useBenchLocalModels();
+  const runs = useRuns();
+  useRunsLiveRefresh();
   const gpu = system.data?.gpus[0];
-  const gpuShort = gpu?.name.replace('NVIDIA GeForce ', '') ?? 'GPU';
-  const vram = gpu ? `${integer(gpu.memoryTotalMiB / 1024)} GB` : '';
-  const engineMissing = engine === 'llamacpp-native' && engineStatus?.installed === false;
-  const command = useMemo(() => previewCommand(engine, model, expert), [engine, model, expert]);
+  const vramGB = gpu ? Math.max(1, Math.round(gpu.memoryTotalMiB / MIB_PER_GB)) : undefined;
+  const curated = useCurated(vramGB);
+  const flow = useStartFlow();
+  const expert = settings.expertMode;
 
-  const downloads: { label: string; bytes: number }[] = [];
-  if (engineMissing) downloads.push({ label: 'llama.cpp', bytes: LLAMACPP_DOWNLOAD_BYTES });
-  if (!model.local) downloads.push({ label: model.name, bytes: model.sizeBytes });
-  const list = new Intl.ListFormat(settings.language, { type: 'conjunction' });
+  const savedEngine = draft?.engine ?? settings.lastEngine;
+  const [engine, setEngine] = useState<EngineKind>(savedEngine?.kind ?? 'llamacpp-native');
+  const [engineForm, setEngineForm] = useState<EngineForm>(() => ({ ...engineFormOf(savedEngine), modelName: draft?.modelName ?? '' }));
+  const [profile, setProfile] = useState<Profile>(draft?.profile ?? settings.lastProfile);
+  const [paramsForm, setParamsForm] = useState<ParamsForm>(() => formFromParams(draft?.params ?? settings.lastParams));
+  const [scenarioForm, setScenarioForm] = useState<ScenarioForm>(() => formFromScenario(draft?.scenario));
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const statusOf = (k: EngineKind) => engines.data?.find((e) => e.kind === k);
+  // External endpoints and custom plans are expert features; unsupported engines fall back to llama.cpp.
+  const effEngine: EngineKind = (engine === 'external' && !expert) || statusOf(engine)?.supported === false ? 'llamacpp-native' : engine;
+  const effProfile: Profile = profile === 'custom' && !expert ? 'quick' : profile;
+  const custom = effProfile === 'custom';
+  const status = statusOf(effEngine);
+
+  const options = useMemo(() => modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), [effEngine, local.data, curated.data]);
+  const modelKey = picked !== undefined && options.some((o) => o.key === picked) ? picked : initialModelKey(options, draft?.localId ?? draft?.repo ?? settings.lastModelId);
+  const option = options.find((o) => o.key === modelKey);
+
+  const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
+  const parsedParams = paramsFromForm(paramsForm);
+  const parsedScenario = scenarioFromForm(scenarioForm);
+  const sendParams = expert && effEngine !== 'external' && hasCustomParams(parsedParams.params);
+  const external = effEngine === 'external';
+  const model: StartRunRequest['model'] | undefined = external ? (engineForm.modelName.trim() ? { name: engineForm.modelName.trim() } : {}) : option ? requestModel(option) : undefined;
+  const valid =
+    engineInvalid.length === 0 &&
+    !(sendParams && parsedParams.invalid.length) &&
+    !(custom && (parsedScenario.invalid.length > 0 || parsedScenario.scenario.steps.length === 0)) &&
+    (external || option !== undefined);
+  const base: StartRunRequest = {
+    engine: config,
+    model: model ?? {},
+    profile: effProfile,
+    ...(custom ? { scenario: parsedScenario.scenario } : {}),
+    ...(sendParams ? { params: parsedParams.params } : {}),
+    allowSharedGpu: false,
+  };
+  const planJson = useDebounced(valid && model !== undefined ? JSON.stringify(base) : '', 400);
+  const plan = usePlan(planJson ? (JSON.parse(planJson) as StartRunRequest) : undefined);
+  const planError = plan.isError ? apiErrorData(plan.error) : undefined;
+  const planData = plan.isError ? undefined : plan.data;
+
+  const llamaMissing =
+    effEngine === 'llamacpp-native' &&
+    !config.executable &&
+    (status?.installed === false || planError?.code === 'ENGINE_NOT_INSTALLED' || planData?.needs.some((n) => n.kind === 'engine') === true);
+  const installBytes = useLlamaInstallBytes(llamaMissing);
+  const needs: Need[] = [];
+  if (llamaMissing) {
+    const b = planData?.needs.find((n) => n.kind === 'engine')?.bytes ?? installBytes.data ?? undefined;
+    needs.push({ kind: 'engine', label: 'llama.cpp', ...(b !== undefined ? { bytes: b } : {}) });
+  }
+  const toDownload = option?.source === 'curated' && option.curated.file !== undefined ? option.curated : undefined;
+  if (toDownload) {
+    needs.push({ kind: 'model', label: toDownload.label, bytes: toDownload.sizeBytes, repo: toDownload.repo, revision: toDownload.revision, file: toDownload.file! });
+  }
+  // vLLM: the plan says when the HF repo is not in the library yet; the whole repo is fetched first.
+  const vllmPick = option?.source === 'curated' && option.curated.engine === 'vllm' ? option.curated : undefined;
+  const repoNeed = vllmPick && planData?.needs.find((n) => n.kind === 'model');
+  if (vllmPick && repoNeed) {
+    needs.push({ kind: 'model', label: repoNeed.label, bytes: repoNeed.bytes ?? vllmPick.sizeBytes, repo: vllmPick.repo, revision: vllmPick.revision });
+  }
+  const modelNeed = needs.find((n) => n.kind === 'model');
+  const shownPlanError = planError && !(planError.code === 'ENGINE_NOT_INSTALLED' && llamaMissing) ? planError : undefined;
+
+  const gpuShort = gpu ? shortGpuName(gpu.name) : 'GPU';
+  const modelLabel = external
+    ? engineForm.modelName.trim() || engineForm.baseUrl.trim() || t('benchmark.engines.external')
+    : option
+      ? `${option.name}${option.quant ? ` · ${option.quant}` : ''}`
+      : t('benchmark.noModel');
+  const engineLabel = t(`benchmark.engines.${effEngine}`);
+  const profileTime = planData ? `≈ ${duration(planData.estimatedSeconds * 1000)}` : t(`benchmark.profileTime.${effProfile}`);
+  const list = new Intl.ListFormat(f.locale, { type: 'conjunction' });
 
   const start = () => {
-    update({ lastEngine: { kind: engine }, lastModelId: modelId, lastProfile: profile });
-    void navigate({ to: '/run/$runId', params: { runId: MOCK_LIVE_RUN_ID } });
+    flow.start(base, {
+      needs,
+      // Only a preview of exactly these choices (not the previous one still on screen while typing).
+      ...(planData && !plan.isPlaceholderData && planJson === JSON.stringify(base) ? { plan: planData } : {}),
+      modelLabel,
+      engineLabel,
+      onStarted: () =>
+        update({
+          lastEngine: savableEngine(config),
+          ...(option ? { lastModelId: savedModelId(option) } : {}),
+          lastProfile: effProfile,
+          ...(expert ? { lastParams: parsedParams.params } : {}),
+        }),
+    });
   };
+
+  const engineFooter = (() => {
+    if (external) return <Note icon={<Check />}>{t('benchmark.engineExternal')}</Note>;
+    if (llamaMissing) {
+      const b = needs[0]?.bytes;
+      return (
+        <Note icon={<Download />} tone="accent">
+          {b === undefined ? t('benchmark.engineToInstallSoon') : t('benchmark.engineToInstall', { size: bytes(b) })}
+        </Note>
+      );
+    }
+    if (!status) return <Skeleton className="h-4 w-40" />;
+    if (status.available || config.executable) {
+      return (
+        <Note icon={<Check />} tone="success">
+          {status.version ? t('benchmark.engineInstalled', { version: status.version }) : t('common.installed')}
+        </Note>
+      );
+    }
+    const problem = status.problems[0];
+    return (
+      <span className="flex w-full items-center justify-between gap-2">
+        <Note icon={<TriangleAlert />} tone="warning">
+          {problem ? t(`errors.${problem as 'INTERNAL'}.title`) : t('common.notInstalled')}
+        </Note>
+        <Button size="sm" variant="link" onClick={() => void navigate({ to: '/engines' })}>
+          {t('benchmark.openEngines')}
+        </Button>
+      </span>
+    );
+  })();
+
+  const modelFooter = (() => {
+    if (external) return <Note icon={<HardDrive />}>{t('benchmark.modelOnServer')}</Note>;
+    if (!option) return null;
+    if (option.source === 'local') return <Note icon={<HardDrive />}>{t('benchmark.modelLocal')}</Note>;
+    if (modelNeed) {
+      return (
+        <Note icon={<Download />} tone="accent">
+          {t('benchmark.modelToDownload', { size: bytes(modelNeed.bytes!) })}
+        </Note>
+      );
+    }
+    return <Note icon={<Download />}>{t('benchmark.modelFromHub')}</Note>;
+  })();
+
+  const modelsLoading = local.isPending || (vramGB !== undefined && curated.isPending);
 
   return (
     <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="wide">
@@ -271,39 +309,36 @@ function BenchmarkScreen() {
             </svg>
             <div className="relative flex flex-col gap-6 p-7 compact:p-5">
               <div className="flex min-w-0 flex-col gap-2">
-                {gpu ? (
-                  <h2 className="text-3xl font-semibold tracking-[-0.025em] text-balance">{t('benchmark.heroTitle', { gpu: gpuShort })}</h2>
+                {system.data ? (
+                  <h2 className="text-3xl font-semibold tracking-[-0.025em] text-balance">
+                    {gpu ? t('benchmark.heroTitle', { gpu: gpuShort }) : t('benchmark.heroNoGpu')}
+                  </h2>
                 ) : (
                   <Skeleton className="h-9 w-80" />
                 )}
                 <p className="text-md text-fg-2">
-                  {t('benchmark.heroSummary', {
-                    engine: t(`benchmark.engines.${engine}`),
-                    model: `${model.name} ${model.quant}`,
-                    duration: `${t(`benchmark.profiles.${profile}`)} (${t(`benchmark.profileTime.${profile}`)})`,
-                  })}
+                  {t('benchmark.heroSummary', { engine: engineLabel, model: modelLabel, duration: `${t(`benchmark.profiles.${effProfile}`)} (${profileTime})` })}
                 </p>
-                {downloads.length > 0 && (
+                {needs.length > 0 && (
                   <p className="mt-1 inline-flex items-center gap-2 text-sm text-fg-2">
                     <Download aria-hidden className="size-4 text-accent-text" />
-                    {t('benchmark.willDownload', {
-                      items: list.format(downloads.map((d) => d.label)),
-                      size: bytes(downloads.reduce((a, d) => a + d.bytes, 0)),
-                    })}
+                    {needs.every((n) => n.bytes !== undefined)
+                      ? t('benchmark.willDownload', { items: list.format(needs.map((n) => n.label)), size: bytes(needs.reduce((a, n) => a + n.bytes!, 0)) })
+                      : t('benchmark.willDownloadNoSize', { items: list.format(needs.map((n) => n.label)) })}
                   </p>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                <Button variant="primary" size="xl" onClick={start} className="min-w-64">
+                <Button variant="primary" size="xl" onClick={start} disabled={!valid} className="min-w-64">
                   <Play aria-hidden className="fill-current" />
                   {t('benchmark.start')}
                 </Button>
                 <span className="flex flex-col text-sm text-fg-3">
                   <span className="inline-flex items-center gap-1.5 font-medium text-fg-2">
                     <Timer aria-hidden className="size-4" />
-                    {t(`benchmark.profileTime.${profile}`)}
+                    {profileTime}
                   </span>
-                  {t('benchmark.startHint')}
+                  {valid ? t('benchmark.startHint') : t('benchmark.startBlocked')}
                 </span>
               </div>
             </div>
@@ -314,86 +349,62 @@ function BenchmarkScreen() {
               step={1}
               title={t('benchmark.choice.engine')}
               help={t('benchmark.choice.engineHelp')}
-              badge={engine === 'llamacpp-native' ? <Badge tone="accent" size="sm">{t('common.recommended')}</Badge> : undefined}
-              footer={
-                engineMissing ? (
-                  <Note icon={<Download />} tone="accent">
-                    {t('benchmark.engineToInstall', { size: bytes(LLAMACPP_DOWNLOAD_BYTES) })}
-                  </Note>
-                ) : (
-                  <Note icon={<Check />} tone="success">
-                    {t('benchmark.engineInstalled', { version: engineStatus?.version ?? LLAMACPP_BUILD })}
-                  </Note>
-                )
-              }
+              badge={effEngine === 'llamacpp-native' ? <Badge tone="accent" size="sm">{t('common.recommended')}</Badge> : undefined}
+              footer={engineFooter}
             >
-              <Select
+              <Select<EngineKind>
                 aria-label={t('benchmark.changeEngine')}
-                value={engine}
-                onValueChange={setEngine}
+                value={effEngine}
+                onValueChange={(k) => {
+                  setEngine(k);
+                  setPicked(undefined);
+                }}
                 className="h-11 text-md font-semibold"
-                options={ENGINE_ORDER.map((k) => ({
+                options={ENGINE_ORDER.filter((k) => expert || k !== 'external').map((k) => ({
                   value: k,
                   label: t(`benchmark.engines.${k}`),
                   description: t(`benchmark.engineDesc.${k}`),
-                  disabled: engines.data?.find((e) => e.kind === k)?.supported === false,
+                  disabled: statusOf(k)?.supported === false,
                 }))}
               />
-              <p className="text-sm text-fg-2">{t(`benchmark.engineDesc.${engine}`)}</p>
+              <p className="text-sm text-fg-2">{t(`benchmark.engineDesc.${effEngine}`)}</p>
             </ChoiceCard>
 
-            <ChoiceCard
-              step={2}
-              title={t('benchmark.choice.model')}
-              help={t('benchmark.choice.modelHelp')}
-              footer={
-                model.local ? (
-                  <Note icon={<HardDrive />}>{t('benchmark.modelLocal')}</Note>
-                ) : (
-                  <Note icon={<Download />} tone="accent">
-                    {t('benchmark.modelToDownload', { size: bytes(model.sizeBytes) })}
-                  </Note>
-                )
-              }
-            >
-              {models.isPending ? (
+            <ChoiceCard step={2} title={t('benchmark.choice.model')} help={t('benchmark.choice.modelHelp')} footer={modelFooter}>
+              {external ? (
+                <p className="text-sm text-fg-2">{engineForm.modelName.trim() ? t('benchmark.externalModel', { name: engineForm.modelName.trim() }) : t('benchmark.externalModelDefault')}</p>
+              ) : modelsLoading ? (
                 <Skeleton className="h-16 w-full" />
+              ) : option ? (
+                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} />
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setPickerOpen(true)}
-                  aria-label={`${t('benchmark.changeModel')}: ${model.name} ${model.quant}`}
-                  className="flex items-center gap-3 rounded-lg border border-border-strong bg-surface px-3 py-2 text-left shadow-xs transition-colors hover:bg-surface-2 focus-ring"
-                >
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-md font-semibold text-fg">{model.name}</span>
-                    <span className="text-sm text-fg-3 tabular-nums">
-                      {model.quant} · {bytes(model.sizeBytes)}
-                    </span>
-                  </span>
-                  <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-3" />
-                </button>
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
+                  <Button size="sm" onClick={() => void navigate({ to: '/models' })}>
+                    {t('benchmark.openModels')}
+                  </Button>
+                </div>
               )}
-              <div className="flex flex-wrap gap-1.5">
-                <FitBadge level={model.fit} size="sm" />
-                {model.tried && <TriedBadge tps={model.tried.tps} date={model.tried.date} size="sm" />}
-              </div>
             </ChoiceCard>
 
             <ChoiceCard step={3} title={t('benchmark.choice.duration')} help={t('benchmark.choice.durationHelp')}>
-              <SegmentedControl
+              <SegmentedControl<Profile>
                 label={t('benchmark.choice.duration')}
-                value={profile}
+                value={effProfile}
                 onValueChange={setProfile}
                 layout="list"
-                options={PROFILES.map((p) => ({ value: p, label: t(`benchmark.profiles.${p}`), sublabel: t(`benchmark.profileTime.${p}`) }))}
+                options={[...PROFILES, ...(expert ? (['custom'] as const) : [])].map((p) => ({
+                  value: p,
+                  label: t(`benchmark.profiles.${p}`),
+                  sublabel: t(`benchmark.profileTime.${p}`),
+                }))}
               />
-              <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${profile}`)}</p>
+              <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
             </ChoiceCard>
           </div>
 
           <div className="flex items-center gap-3 self-start px-1 py-1">
-            <Switch id="expert-switch" checked={settings.expertMode} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
+            <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
             <div className="flex flex-col">
               <label htmlFor="expert-switch" className="cursor-pointer text-sm font-semibold text-fg">
                 {t('benchmark.expert.label')}
@@ -404,24 +415,54 @@ function BenchmarkScreen() {
             </div>
           </div>
 
-          {settings.expertMode && <ExpertPanel engine={engine} params={expert} onChange={setExpert} command={command} />}
+          {expert && (
+            <ExpertPanel
+              engine={effEngine}
+              engineForm={engineForm}
+              engineInvalid={engineInvalid}
+              onEngine={(p) => setEngineForm((cur) => ({ ...cur, ...p }))}
+              params={paramsForm}
+              paramsInvalid={parsedParams.invalid}
+              onParams={(p) => setParamsForm((cur) => ({ ...cur, ...p }))}
+              custom={custom}
+              scenario={scenarioForm}
+              scenarioInvalid={parsedScenario.invalid}
+              onScenario={(p) => setScenarioForm((cur) => ({ ...cur, ...p }))}
+              defaultImage={status?.location}
+            />
+          )}
+
+          <PlanCard
+            plan={planData}
+            loading={planJson !== '' && plan.isFetching}
+            error={shownPlanError}
+            needs={needs}
+            {...(toDownload ? { commandLater: 'model' as const } : llamaMissing && !planData ? { commandLater: 'engine' as const } : {})}
+            expert={expert}
+          />
         </div>
 
         <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
           <GpuCard />
-          <RecentResults />
+          <ServersPanel />
+          <RecentRuns />
         </section>
       </div>
 
-      <ModelPicker
+      <BenchModelPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        models={models.data ?? []}
-        value={modelId}
-        onChange={setModelId}
-        gpuName={gpuShort}
-        vram={vram}
+        options={options}
+        value={modelKey ?? ''}
+        onChange={setPicked}
+        engine={effEngine}
+        runs={runs.data ?? []}
+        gpuName={gpu?.name}
+        description={t('benchmark.pickModel.description', { gpu: gpuShort, vram: vramGB ? `${integer(vramGB)} GB` : '–' })}
+        onOpenModels={() => void navigate({ to: '/models' })}
       />
+      {flow.ui}
     </Page>
   );
 }
+

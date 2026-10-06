@@ -1,8 +1,9 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter, type RouterHistory } from '@tanstack/react-router';
 import { AppShell } from '../components/shell/app-shell';
 import { BenchmarkPage } from './benchmark';
-import { ComparePage } from './compare';
+import { ComparePage, validateCompareSearch } from './compare';
 import { EnginesPage } from './engines';
+import { ModelDetailPage } from './model-detail';
 import { ModelsPage } from './models';
 import { MonitorPage } from './monitor';
 import { NotFoundPage } from './not-found';
@@ -24,8 +25,14 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/run/$runId', component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/results', component: ResultsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/results/$runId', component: ResultPage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/compare', component: ComparePage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/models', component: ModelsPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/compare', component: ComparePage, validateSearch: validateCompareSearch }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/models',
+    component: ModelsPage,
+    validateSearch: (s: Record<string, unknown>): { tab?: 'download' } => (s.tab === 'download' ? { tab: 'download' } : {}),
+  }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/models/hub/$owner/$name', component: ModelDetailPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/engines', component: EnginesPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/monitor', component: MonitorPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsPage }),

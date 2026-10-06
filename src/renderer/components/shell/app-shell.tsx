@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
+import { LibraryEvents } from '../library/library-events';
 import { CommandPalette, usePaletteShortcut } from './command-palette';
 import { Sidebar } from './sidebar';
 import { TitleBar } from './title-bar';
@@ -79,6 +80,7 @@ export function AppShell() {
           </main>
         </div>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <LibraryEvents />
       </div>
     </MotionConfig>
   );

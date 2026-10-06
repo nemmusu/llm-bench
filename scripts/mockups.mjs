@@ -1,50 +1,95 @@
-// Renders the design mockups of the key screens to .qa/mockups/*.png (light + dark).
+// Renders the key screens to .qa/mockups/*.png (light + dark), with real data.
 //
 //   node scripts/mockups.mjs              build, then screenshot everything
 //   node scripts/mockups.mjs --no-build   reuse the current out/ folder
 //   node scripts/mockups.mjs --only=result,run
 //
 // How it works: the core starts in browser mode (`node out/core/index.cjs`) with a throw-away
-// GPUBENCH_DATA_DIR, so the real settings file is never touched. The theme (and language,
-// onboarding, expert mode) is set with PUT /api/settings before each navigation: the same path the
-// UI uses, no special dev hooks. Chromium runs with reduced motion so charts render without
-// animation and frames are stable. Screens with mock data are reached by URL (hash routes).
+// GPUBENCH_DATA_DIR inside the same fake world the E2E tests use (fake nvidia-smi RTX 5090, fake
+// GitHub serving llama.cpp whose llama-server is the fake engine, fake Hugging Face, fake Docker),
+// so the real settings, models and GPU are never touched. The results folder is seeded with the
+// realistic runs of test/fixtures/runs; the live screen shows a real (fake-engine) run started
+// through the API. Theme, language, onboarding and expert mode are set with PUT /api/settings
+// before each navigation: the same path the UI uses, no special dev hooks. Chromium runs with
+// reduced motion so charts render without animation and frames are stable.
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { startFakeDockerApi } from '../test/fakes/fake-docker/api.mjs';
+import { startFakeGithub } from '../test/fakes/fake-github/server.mjs';
+import { demoRepos, startFakeHub } from '../test/fakes/fake-hub/hub.mjs';
+import { buildGguf, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 const only = [...args].find((a) => a.startsWith('--only='))?.slice(7).split(',');
 const outDir = path.join(root, '.qa', 'mockups');
 
-// Ids of the mock runs (src/renderer/mock/runs.ts).
+// Seeded runs (test/fixtures/runs).
 const RESULT_ID = '01K6Y7Q2ZC4M8N3B5V9R1T0XWE';
-const LIVE_ID = '01K6YB3H8F2D6S9K4P7M1Q5ZRA';
+const COMPARE_A = '01K6TZ5G1H4J7K2L8Z3X6C9VBN';
+const FAILED_ID = '01K6NA2S5D8F1G4H7J3K6L9ZXC';
 
 /** n, name, route, settings patch, optional page action, and which sizes to render. */
 const SCREENS = [
   { n: 1, name: 'welcome', route: '/welcome', wait: 'Controllo del sistema' },
-  { n: 2, name: 'benchmark', route: '/', wait: 'Avvia benchmark', small: true },
-  { n: 3, name: 'run', route: `/run/${LIVE_ID}`, wait: 'Test in corso', settle: 1600 },
+  { n: 2, name: 'benchmark', route: '/', wait: 'Pronto a misurare', small: true },
+  { n: 3, name: 'run', route: 'LIVE', wait: 'Test in corso', settle: 2500 },
   { n: 4, name: 'result', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', small: true },
-  { n: 5, name: 'benchmark-expert', route: '/', wait: 'Anteprima comando', settings: { expertMode: true }, full: true },
+  { n: 5, name: 'benchmark-expert', route: '/', wait: 'Pronto a misurare', settings: { expertMode: true }, full: true },
   { n: 6, name: 'result-launch', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', tab: 'Come è stato avviato' },
-  { n: 7, name: 'model-picker', route: '/', wait: 'Avvia benchmark', click: { role: 'button', name: /Cambia modello/ } },
+  { n: 7, name: 'model-picker', route: '/', wait: 'Pronto a misurare', click: { role: 'button', name: /Cambia modello/ } },
   { n: 8, name: 'results', route: '/results', wait: 'Risultati' },
   { n: 9, name: 'monitor', route: '/monitor', wait: 'Monitor GPU', settle: 900 },
   { n: 10, name: 'settings', route: '/settings', wait: 'Impostazioni' },
   { n: 11, name: 'palette', route: '/', wait: 'Avvia benchmark', keys: 'Control+K' },
   { n: 12, name: 'result-en', route: `/results/${RESULT_ID}`, wait: 'GPU Bench score', settings: { language: 'en' } },
+  { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Cosa cambia tra i due' },
+  { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
 ];
 
-function startCore(dataDir) {
+/** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
+async function fakeWorld(dataDir) {
+  const cli = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
+  const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n` });
+  const hub = await startFakeHub({ repos: demoRepos() });
+  const dockerApi = await startFakeDockerApi({ images: {} });
+  const models = path.join(dataDir, 'models', 'local');
+  mkdirSync(models, { recursive: true });
+  writeFileSync(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 8B', sizeLabel: '8B' }), totalSize: 96 * 1024 }));
+  writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
+  const results = path.join(dataDir, 'results');
+  mkdirSync(results, { recursive: true });
+  const seeds = path.join(root, 'test', 'fixtures', 'runs');
+  for (const f of readdirSync(seeds).filter((x) => x.endsWith('.json'))) {
+    writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_PC__', os.hostname()));
+  }
+  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
+  const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
+  writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
+  const env = {
+    GPUBENCH_GITHUB_API: github.url,
+    GPUBENCH_HF_ENDPOINT: hub.url,
+    GPUBENCH_DOCKER_HOST: dockerApi.socketPath,
+    GPUBENCH_DOCKER: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-docker', 'fake-docker.mjs')]),
+    FAKE_DOCKER_STATE: path.join(dataDir, 'fake-docker'),
+    GPUBENCH_NVIDIA_SMI: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-nvidia-smi', 'fake-nvidia-smi.mjs')]),
+    FAKE_NVIDIA_SMI_STATE: smiState,
+    GPUBENCH_LLAMA_LAUNCHER: JSON.stringify([process.execPath]),
+    // Slow enough that the live screen is mid-run when it is photographed.
+    FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsCold: 2600, loadMsWarm: 900, prefillTps: 8900, decodeTps: 46, tokensPerChunk: 1 }),
+    FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
+  };
+  return { env, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
+}
+
+function startCore(dataDir, extraEnv) {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, [path.join(root, 'out/core/index.cjs')], {
-      env: { ...process.env, GPUBENCH_DATA_DIR: dataDir, GPUBENCH_MODELS_DIR: path.join(dataDir, 'models') },
+      env: { ...process.env, ...extraEnv, GPUBENCH_DATA_DIR: dataDir, GPUBENCH_MODELS_DIR: path.join(dataDir, 'models') },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
     let buf = '';
@@ -57,13 +102,39 @@ function startCore(dataDir) {
   });
 }
 
-async function putSettings(info, patch) {
-  const res = await fetch(`http://127.0.0.1:${info.port}/api/settings`, {
-    method: 'PUT',
+async function api(info, method, route, body) {
+  const res = await fetch(`http://127.0.0.1:${info.port}${route}`, {
+    method,
     headers: { authorization: `Bearer ${info.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify(patch),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  if (!res.ok) throw new Error(`PUT /api/settings → ${res.status}`);
+  if (!res.ok) throw new Error(`${method} ${route} → ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+const putSettings = (info, patch) => api(info, 'PUT', '/api/settings', patch);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A run in progress for the live screen, started the way a user does (Standard, Avvia, and the
+ * one-time llama.cpp install), photographed once generation is under way.
+ */
+async function openLiveRun(page, info) {
+  const { active } = await api(info, 'GET', '/api/runs/active');
+  if (active) await api(info, 'POST', `/api/runs/${active.runId}/cancel`);
+  while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(300);
+  await page.goto(`${info.url}#/`);
+  await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+  await page.getByRole('radio', { name: /Standard/ }).click();
+  await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+  const confirm = page.getByRole('button', { name: 'Scarica e avvia' });
+  if (await confirm.waitFor({ timeout: 3000 }).then(() => true, () => false)) await confirm.click();
+  await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+  for (let i = 0; i < 240; i++) {
+    const now = (await api(info, 'GET', '/api/runs/active')).active;
+    if (!now || now.progress > 0.35) break;
+    await sleep(500);
+  }
 }
 
 async function shoot(page, file, { full } = {}) {
@@ -87,7 +158,8 @@ async function main() {
   if (!args.has('--no-build')) execFileSync(process.execPath, [path.join(root, 'scripts/build.mjs')], { stdio: 'inherit', cwd: root });
   mkdirSync(outDir, { recursive: true });
   const dataDir = mkdtempSync(path.join(os.tmpdir(), 'gpubench-mockups-'));
-  const { proc, info } = await startCore(dataDir);
+  const world = await fakeWorld(dataDir);
+  const { proc, info } = await startCore(dataDir, world.env);
   const browser = await chromium.launch();
   const written = [];
   try {
@@ -108,8 +180,9 @@ async function main() {
           if (only && !only.includes(s.name)) continue;
           if (size.suffix && !s.small) continue;
           await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, ...s.settings });
-          await page.goto(`${info.url}#${s.route}`);
-          await page.getByText(s.wait).first().waitFor({ timeout: 15000 });
+          if (s.route === 'LIVE') await openLiveRun(page, info);
+          else await page.goto(`${info.url}#${s.route}`);
+          await page.getByText(s.wait).first().waitFor({ timeout: 30000 });
           await page.evaluate(() => document.fonts.ready);
           if (s.tab) {
             await page.getByRole('tab', { name: s.tab }).click();
@@ -117,7 +190,7 @@ async function main() {
           }
           if (s.click) await page.getByRole(s.click.role, { name: s.click.name }).click();
           if (s.keys) await page.keyboard.press(s.keys);
-          await page.waitForTimeout(s.settle ?? 700);
+          await page.waitForTimeout(s.settle ?? 900);
           // Move the pointer away so no hover state or tooltip leaks into the image.
           await page.mouse.move(size.w - 4, size.h - 4);
           const file = path.join(outDir, `${s.n}-${s.name}-${theme}${size.suffix}.png`);
@@ -134,8 +207,12 @@ async function main() {
     }
   } finally {
     await browser.close();
+    const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));
+    if (active.active) await api(info, 'POST', `/api/runs/${active.active.runId}/cancel`).catch(() => undefined);
+    await sleep(500);
     proc.kill();
-    rmSync(dataDir, { recursive: true, force: true });
+    await world.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
   for (const f of written) console.log(path.relative(root, f));
 }

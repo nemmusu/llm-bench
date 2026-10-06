@@ -1,9 +1,5 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Mock ids used by the M0 screens (src/renderer/mock/runs.ts). */
-export const RESULT_ID = '01K6Y7Q2ZC4M8N3B5V9R1T0XWE';
-export const LIVE_ID = '01K6YB3H8F2D6S9K4P7M1Q5ZRA';
-
 /** Sidebar entries and the h1 each one leads to, per language. */
 export const PAGES = {
   it: [

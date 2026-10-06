@@ -5,6 +5,7 @@ import { cn } from '../../lib/cn';
 import { pageTitleKey } from '../../lib/nav';
 import { useSettings } from '../../lib/settings';
 import { Logo } from '../brand/logo';
+import { DownloadsPanel } from '../library/downloads-panel';
 import { IconButton } from '../ui/button';
 import { Kbd } from '../ui/kbd';
 
@@ -62,7 +63,8 @@ export function TitleBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         </button>
       </div>
 
-      <div className="app-no-drag ml-auto flex items-center">
+      <div className="app-no-drag ml-auto flex items-center gap-1">
+        <DownloadsPanel />
         <IconButton
           size="sm"
           label={t('shell.toggleTheme')}

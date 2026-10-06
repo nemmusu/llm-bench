@@ -61,6 +61,9 @@ export function useCoreConnected(): boolean {
 export function useServerEvents(handler: Listener): void {
   const { subscribe } = useContext(EventsContext);
   const ref = useRef(handler);
-  ref.current = handler;
+  // Keep the latest handler without re-subscribing (refs are written outside render).
+  useEffect(() => {
+    ref.current = handler;
+  });
   useEffect(() => subscribe((e) => ref.current(e)), [subscribe]);
 }

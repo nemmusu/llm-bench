@@ -1,10 +1,8 @@
 /**
- * Mock data for M0 screens. M1 replaces each export with the matching API route:
- *   mockSystem  → GET /api/system
- *   mockEngines → GET /api/engines
+ * Mock data still used by the benchmark home GPU card (lib/queries.ts useSystem):
+ *   mockSystem → GET /api/system (the setup & library screens already use the real route)
  */
 import type { SystemResponse } from '../../contract/api';
-import type { EngineStatus } from '../../contract/engines';
 import type { GpuInfo } from '../../contract/hardware';
 
 export const MIB = 1024 * 1024;
@@ -44,22 +42,3 @@ export const mockSystem: SystemResponse = {
     enginesDir: 'C:\\Users\\utente\\AppData\\Roaming\\GPU Bench\\engines',
   },
 };
-
-/** Size of the managed llama.cpp download (binaries + cudart) shown before installing. */
-export const LLAMACPP_DOWNLOAD_BYTES = 480 * MIB;
-export const LLAMACPP_BUILD = 'b11438';
-
-export const mockEngines: EngineStatus[] = [
-  { kind: 'llamacpp-native', available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true },
-  {
-    kind: 'llamacpp-docker',
-    available: false,
-    installed: false,
-    variant: 'server-cuda',
-    problems: ['DOCKER_NOT_RUNNING'],
-    supported: true,
-  },
-  { kind: 'vllm-docker', available: false, installed: false, version: 'v0.12.0', problems: ['DOCKER_NOT_RUNNING'], supported: true },
-  { kind: 'vllm-native', available: false, installed: false, problems: [], supported: false },
-  { kind: 'external', available: true, installed: true, problems: [], supported: true },
-];

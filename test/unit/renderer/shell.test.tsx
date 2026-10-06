@@ -170,6 +170,6 @@ describe('command palette', () => {
     await pick('Confronta due risultati');
     expect(await screen.findByRole('heading', { level: 1, name: 'Confronta' })).toBeTruthy();
     await pick('Avvia benchmark');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Test in corso' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Benchmark' })).toBeTruthy();
   });
 });

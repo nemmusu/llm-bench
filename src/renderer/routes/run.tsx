@@ -1,10 +1,15 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { ChevronDown, CircleStop, Loader } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { RUN_PHASES } from '../../contract/events';
-import { timelineOption, type PhaseBand } from '../components/charts/builders';
+import type { RunPhase } from '../../contract/events';
+import { MIB_PER_GB, runIdTime } from '../components/bench/format';
+import { initialLive, liveReducer, type LiveState } from '../components/bench/live-state';
+import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../components/bench/phases';
+import { readRunContext, type RunContext } from '../components/bench/run-context';
+import { timelineOption } from '../components/charts/builders';
 import { ChartCard } from '../components/charts/chart-card';
 import { EChart } from '../components/charts/echart';
 import type { ChartTokens } from '../components/charts/echarts';
@@ -18,66 +23,147 @@ import { RadialGauge } from '../components/ui/radial-gauge';
 import { StatusDot } from '../components/ui/status-dot';
 import { Stepper } from '../components/ui/stepper';
 import { useI18n } from '../i18n';
+import { useApi, useServerEvents } from '../lib/api-context';
 import { cn } from '../lib/cn';
-import { useMockLiveRun } from '../mock/live';
-import { mockGpu, POWER_LIMIT_W } from '../mock/system';
+import { apiErrorData, useActiveRun, useBenchSystem } from '../lib/queries-runs';
+import { useSettings } from '../lib/settings';
+
+/** A gauge scale that grows with the value: 1, 2 or 5 × 10ⁿ above it. */
+export function niceMax(v: number | undefined, floor: number): number {
+  const target = Math.max(floor, (v ?? 0) * 1.25);
+  const p = 10 ** Math.floor(Math.log10(target));
+  return [1, 2, 5, 10].map((m) => m * p).find((x) => x >= target)!;
+}
 
 /** Live screen while a benchmark runs: phases, big gauges, telemetry, log and Cancel. */
 export function RunPage() {
   const { runId } = useParams({ from: '/run/$runId' });
-  const { t, number, integer, duration } = useI18n();
+  const qc = useQueryClient();
+  // Remount per run: the live state belongs to one run only.
+  return <LiveRun key={runId} runId={runId} ctx={readRunContext(qc, runId)} />;
+}
+
+function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined }) {
+  const f = useI18n();
+  const { t, number, integer, duration } = f;
+  const api = useApi();
   const navigate = useNavigate();
-  const run = useMockLiveRun(runId);
+  const { settings } = useSettings();
+  const system = useBenchSystem();
+  const active = useActiveRun(2000);
+  const [live, setLive] = useState<LiveState>(() => initialLive());
+  // A reopened screen knows the start from the run id itself.
+  const [startedAt] = useState(() => ctx?.startedAt ?? runIdTime(runId) ?? Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [logOpen, setLogOpen] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
+  const [logOpen, setLogOpen] = useState(settings.expertMode);
   const logRef = useRef<HTMLPreElement>(null);
-  const totalGb = mockGpu.memoryTotalMiB / 1024;
-  const currentIndex = RUN_PHASES.indexOf(run.phase);
+
+  const toResult = useCallback(() => void navigate({ to: '/results/$runId', params: { runId }, replace: true }), [navigate, runId]);
+
+  useServerEvents((e) => {
+    setLive((s) => liveReducer(s, e, runId));
+    if (e.type === 'run.done' && e.runId === runId) toResult();
+  });
+
+  // The core is the source of truth: resume the phase after a reload, leave when the run is over.
+  const activeRun = active.data?.active;
+  const [prevActive, setPrevActive] = useState(active.data);
+  if (active.data !== prevActive) {
+    setPrevActive(active.data);
+    // Until the first event arrives (screen reopened mid-run), show where the core says the run is.
+    if (activeRun?.runId === runId) setLive((s) => (s.marks.length ? s : { ...s, phase: activeRun.phase, progress: Math.max(s.progress, activeRun.progress) }));
+  }
+  const over = active.data !== undefined && activeRun?.runId !== runId;
+  useEffect(() => {
+    if (over) toResult();
+  }, [over, toResult]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [run.log.length, logOpen]);
+  }, [live.log.length, logOpen]);
 
-  const { samples, schedule } = run;
-  const bands: PhaseBand[] = schedule.map((s) => ({ start: s.start, end: s.end, label: t(`phases.${s.phase}.label`) }));
+  const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario;
+  const phases = relevantPhases(scenario, ctx?.pre);
+  const current: RunPhase = displayPhase(live.phase, live.detail);
+  const states = phaseStates(phases, current);
+  const at = Math.max(0, phases.indexOf(current));
+  const elapsedSec = Math.max(0, (now - startedAt) / 1000);
+  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds);
+  const detail = detailLine(live.phase, live.detail, scenario);
+
+  const gpu = system.data?.gpus[0];
+  const last = live.samples[live.samples.length - 1];
+  const totalGb = (last?.memTotalMiB ?? gpu?.memoryTotalMiB ?? 0) / MIB_PER_GB;
+  const powerMax = gpu?.powerLimitW ?? niceMax(last?.powerW ?? undefined, 300);
+  const t0 = live.samples[0]?.t ?? 0;
+  const endSec = ((last?.t ?? t0) - t0) / 1000;
+  const bands = phaseBands(
+    live.marks.map((m) => ({ t: Math.max(0, (m.t - t0) / 1000), label: m.phase })),
+    endSec,
+  ).map((b) => ({ start: b.start, end: b.end, label: t(`phases.${b.phase}.label`) }));
+
+  const samples = live.samples;
   const build = useCallback(
     (tk: ChartTokens) =>
       timelineOption(
         tk,
-        samples.map((s) => s.t),
+        samples.map((s) => (s.t - t0) / 1000),
         [
           { name: t('metrics.util.label'), unit: '%', values: samples.map((s) => s.utilPct), format: (v) => `${integer(v)} %`, max: 100 },
-          { name: t('metrics.vram.label'), unit: 'GB', values: samples.map((s) => s.memUsedMiB / 1024), format: (v) => `${number(v, 1)} GB`, max: Math.ceil(totalGb) },
-          { name: t('metrics.power.label'), unit: 'W', values: samples.map((s) => s.powerW), format: (v) => `${integer(v)} W`, max: 600 },
+          {
+            name: t('metrics.vram.label'),
+            unit: 'GB',
+            values: samples.map((s) => (s.memUsedMiB === null ? null : s.memUsedMiB / MIB_PER_GB)),
+            format: (v) => `${number(v, 1)} GB`,
+            ...(totalGb ? { max: Math.ceil(totalGb) } : {}),
+          },
+          { name: t('metrics.power.label'), unit: 'W', values: samples.map((s) => s.powerW), format: (v) => `${integer(v)} W`, max: powerMax },
         ],
-        schedule.map((s) => ({ start: s.start, end: s.end, label: t(`phases.${s.phase}.label`) })),
-        { xMax: schedule[schedule.length - 1]!.end, rowHeight: 56 },
+        bands,
+        { xMax: Math.max(10, endSec), rowHeight: 56 },
       ),
-    [samples, schedule, t, number, integer, totalGb],
+    [samples, t0, bands, endSec, t, number, integer, totalGb, powerMax],
   );
 
-  const cancel = () => {
-    toast(t('run.cancelled'));
-    void navigate({ to: '/' });
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      await api.post(`/api/runs/${encodeURIComponent(runId)}/cancel`);
+      toast(t('run.cancelling'));
+    } catch (e) {
+      setCancelling(false);
+      toast.error(t(`errors.${apiErrorData(e).code}.title`));
+    }
   };
 
-  const live = run.live;
+  const dash = (v: number | undefined, fmt: (n: number) => string) => (v === undefined ? '–' : fmt(v));
   return (
     <Page
       width="wide"
       eyebrow={
         <span className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
           <StatusDot tone="accent" pulse />
-          {t('run.phaseOf', { n: currentIndex + 1, total: RUN_PHASES.length })}
+          {t('run.phaseOf', { n: at + 1, total: phases.length })}
         </span>
       }
       title={t('run.title')}
-      subtitle={t('run.subtitle', { model: run.modelName, engine: run.engineLabel, profile: t(`benchmark.profiles.${run.profile}`) })}
+      subtitle={
+        ctx
+          ? t('run.subtitle', { model: ctx.modelLabel, engine: ctx.engineLabel, profile: t(`benchmark.profiles.${ctx.request.profile}`) })
+          : t('run.subtitleResumed')
+      }
       actions={
-        <Button variant="danger-outline" onClick={() => setConfirmOpen(true)}>
-          <CircleStop aria-hidden />
-          {t('run.cancel')}
+        <Button variant="danger-outline" onClick={() => setConfirmOpen(true)} disabled={cancelling}>
+          {cancelling ? <Loader aria-hidden className="animate-spin" /> : <CircleStop aria-hidden />}
+          {cancelling ? t('run.cancelling') : t('run.cancel')}
         </Button>
       }
     >
@@ -86,7 +172,7 @@ export function RunPage() {
           <div className="px-card pt-6 pb-5">
             <Stepper
               label={t('run.phasesLabel')}
-              steps={RUN_PHASES.map((p) => ({ id: p, label: t(`phases.${p}.label`), state: run.phaseStates[p] }))}
+              steps={phases.map((p) => ({ id: p, label: t(`phases.${p}.label`), state: states[p]! }))}
               stateLabels={{
                 done: t('phases.state.done'),
                 current: t('phases.state.current'),
@@ -99,19 +185,17 @@ export function RunPage() {
             <div className="flex items-start gap-3" aria-live="polite">
               <Loader aria-hidden className="mt-0.5 size-5 shrink-0 animate-spin text-accent [animation-duration:2.4s]" />
               <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-md font-medium text-fg">{t(`phases.${run.phase}.status`)}</p>
-                <p className="text-sm text-fg-3 tabular-nums">
-                  {t('run.detailRepetition', { n: run.repetition.n, total: run.repetition.total, tokens: run.repetition.tokens })}
-                </p>
+                <p className="text-md font-medium text-fg">{t(`phases.${current}.status`)}</p>
+                {detail && <p className="text-sm text-fg-3 tabular-nums">{t(detail.key, { ...detail.params, ...('tokens' in detail.params ? { tokens: integer(detail.params.tokens) } : {}) })}</p>}
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <Progress value={run.progress * 100} label={t('run.progress')} valueText={`${integer(run.progress * 100)}%`} className="flex-1" />
-              <span className="w-10 text-right text-sm font-semibold tabular-nums">{integer(run.progress * 100)}%</span>
+              <Progress value={live.progress * 100} label={t('run.progress')} valueText={`${integer(live.progress * 100)}%`} className="flex-1" />
+              <span className="w-10 text-right text-sm font-semibold tabular-nums">{integer(live.progress * 100)}%</span>
             </div>
             <div className="flex justify-between text-xs text-fg-3 tabular-nums">
-              <span>{t('run.elapsed', { time: duration(run.elapsedSec * 1000) })}</span>
-              <span>{t('run.eta', { time: duration(run.etaSec * 1000) })}</span>
+              <span>{t('run.elapsed', { time: duration(elapsedSec * 1000) })}</span>
+              <span>{left === undefined ? t('run.etaUnknown') : t('run.eta', { time: duration(left * 1000) })}</span>
             </div>
           </div>
         </Card>
@@ -120,54 +204,54 @@ export function RunPage() {
           <Card className="grid grid-cols-2 gap-y-6 px-card py-6 sm:grid-cols-3 xl:grid-cols-5">
             <RadialGauge
               size={156}
-              value={live.decodeTps}
-              max={250}
+              value={live.decodeTps ?? 0}
+              max={niceMax(live.decodeTps, 50)}
               label={t('metrics.decode.label')}
               help={t('metrics.decode.help')}
               unit="tok/s"
-              format={(v) => number(v, 1)}
+              format={() => dash(live.decodeTps, (v) => number(v, 1))}
             />
             <RadialGauge
               size={156}
-              value={live.prefillTps}
-              max={12000}
+              value={live.prefillTps ?? 0}
+              max={niceMax(live.prefillTps, 1000)}
               label={t('metrics.prefill.label')}
               help={t('metrics.prefill.help')}
               unit="tok/s"
-              format={(v) => integer(v)}
+              format={() => dash(live.prefillTps, integer)}
             />
             <RadialGauge
               size={156}
-              value={live.vramGiB}
-              max={totalGb}
+              value={(last?.memUsedMiB ?? 0) / MIB_PER_GB}
+              max={totalGb || 1}
               label={t('metrics.vram.label')}
               help={t('metrics.vram.help')}
               unit="GB"
-              caption={`GB ${t('common.of')} ${number(totalGb, 1)}`}
-              format={(v) => number(v, 1)}
+              caption={totalGb ? `GB ${t('common.of')} ${number(totalGb, 1)}` : undefined}
+              format={() => dash(last?.memUsedMiB ?? undefined, (v) => number(v / MIB_PER_GB, 1))}
               warnAt={0.85}
               dangerAt={0.95}
             />
             <RadialGauge
               size={156}
-              value={live.tempC}
+              value={last?.tempC ?? 0}
               max={100}
               label={t('metrics.temp.label')}
               help={t('metrics.temp.help')}
               unit="°C"
-              format={(v) => integer(v)}
+              format={() => dash(last?.tempC ?? undefined, integer)}
               warnAt={0.8}
               dangerAt={0.88}
             />
             <RadialGauge
               size={156}
-              value={live.powerW}
-              max={POWER_LIMIT_W}
+              value={last?.powerW ?? 0}
+              max={powerMax}
               label={t('metrics.power.label')}
               help={t('metrics.power.help')}
               unit="W"
-              caption={`W ${t('common.of')} ${integer(POWER_LIMIT_W)}`}
-              format={(v) => integer(v)}
+              caption={`W ${t('common.of')} ${integer(powerMax)}`}
+              format={() => dash(last?.powerW ?? undefined, integer)}
             />
           </Card>
         </section>
@@ -185,17 +269,24 @@ export function RunPage() {
             columns: [t('chart.time'), t('chart.phase'), `${t('metrics.util.label')} (%)`, `${t('metrics.vram.label')} (GB)`, `${t('metrics.power.label')} (W)`],
             numeric: [2, 3, 4],
             rows: samples
-              .filter((_, i) => i % 5 === 0)
-              .map((s) => [
-                duration(s.t * 1000),
-                bands.find((b) => s.t >= b.start && s.t < b.end)?.label ?? '',
-                integer(s.utilPct),
-                number(s.memUsedMiB / 1024, 1),
-                integer(s.powerW),
-              ]),
+              .filter((_, i) => i % 4 === 0)
+              .map((s) => {
+                const x = (s.t - t0) / 1000;
+                return [
+                  duration(x * 1000),
+                  bands.find((b) => x >= b.start && x <= b.end)?.label ?? '',
+                  s.utilPct === null ? '–' : integer(s.utilPct),
+                  s.memUsedMiB === null ? '–' : number(s.memUsedMiB / MIB_PER_GB, 1),
+                  s.powerW === null ? '–' : integer(s.powerW),
+                ];
+              }),
           }}
         >
-          <EChart build={build} height={34 + 3 * 56 + 2 * 40 + 32} label={t('run.telemetry')} />
+          {samples.length ? (
+            <EChart build={build} height={34 + 3 * 56 + 2 * 40 + 32} label={t('run.telemetry')} />
+          ) : (
+            <p className="py-10 text-center text-sm text-fg-3">{t('run.telemetryWaiting')}</p>
+          )}
         </ChartCard>
 
         <Collapsible.Root open={logOpen} onOpenChange={setLogOpen}>
@@ -208,7 +299,7 @@ export function RunPage() {
               >
                 <span className="flex items-center gap-2">
                   <span className="text-md font-semibold">{t('run.log')}</span>
-                  <Badge size="sm">{t('run.logLines', { n: run.log.length })}</Badge>
+                  <Badge size="sm">{t('run.logLines', { n: live.log.length })}</Badge>
                 </span>
                 <ChevronDown aria-hidden className={cn('size-4 text-fg-3 transition-transform', logOpen && 'rotate-180')} />
               </button>
@@ -221,7 +312,7 @@ export function RunPage() {
                 aria-label={t('run.log')}
                 className="max-h-64 overflow-auto border-t border-border bg-surface-2 px-card py-3 font-mono text-[12px] leading-5 text-fg-2 focus-ring"
               >
-                {run.log.join('\n')}
+                {live.log.length ? live.log.join('\n') : t('run.logEmpty')}
               </pre>
             </Collapsible.Content>
           </Card>
@@ -235,7 +326,7 @@ export function RunPage() {
         description={t('run.cancelBody')}
         cancelLabel={t('run.cancelKeep')}
         confirmLabel={t('run.cancelConfirm')}
-        onConfirm={cancel}
+        onConfirm={() => void cancel()}
       />
     </Page>
   );
