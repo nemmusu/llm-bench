@@ -1,0 +1,278 @@
+import { randomUUID } from 'node:crypto';
+import type { RunPlan, StartRunRequest } from '../../contract/api';
+import { launchParamsSchema, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { AppError } from '../../contract/errors';
+import type { RunPhase, ServerEvent } from '../../contract/events';
+import type { HardwareFingerprint } from '../../contract/hardware';
+import type { FitEstimate } from '../../contract/models';
+import type { Scenario } from '../../contract/results';
+import type { Clock } from '../deps';
+import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
+import { newRunId } from '../store/runs-id';
+import type { HereIdentity, RunsRepo } from '../store/runs-repo';
+import type { TelemetrySampler } from '../telemetry/types';
+import { loadCorpus } from './prompts';
+import { BenchRunner, launchRecordOf, type RunInput, type RunnerDeps } from './runner';
+import {
+  buildScenario,
+  estimateSeconds,
+  fitScenario,
+  limitsFor,
+  type Expectations,
+  type ScenarioWarning,
+} from './scenarios';
+import { loadScoreReference } from './score';
+
+export interface BenchServiceDeps {
+  clock: Clock;
+  runs: RunsRepo;
+  publish: (e: ServerEvent) => void;
+  telemetry: TelemetrySampler;
+  fingerprint: () => Promise<HardwareFingerprint>;
+  displayCommand: RunnerDeps['displayCommand'];
+  /** Secret redaction for stored/previewed commands (engines' redactArgv/redactEnv). */
+  redact?: RunnerDeps['redact'];
+  getAdapter: (kind: EngineKind) => EngineAdapter;
+  /** Local model / HF repo / external name → what the engine loads. Throws AppError (MODEL_NOT_FOUND…). */
+  resolveModel: (req: StartRunRequest) => Promise<ModelTarget>;
+  /** A free 127.0.0.1 port for the engine. */
+  pickPort: () => Promise<number>;
+  /** Ownership marker for the engine process/container (default gpubench-<uuid>). */
+  newMarker?: () => string;
+  newRunId?: () => string;
+  /** Downloads/installs the run needs first (engine, model, image), for the plan preview. */
+  needs?: (req: StartRunRequest) => Promise<RunPlan['needs']>;
+  /** VRAM fit estimate for the plan preview and the run's VRAM "estimate vs measured". */
+  fit?: (req: StartRunRequest, model: ModelTarget, plan: LaunchPlan) => Promise<FitEstimate | undefined>;
+  /** true when the model is read through a 9p/drvfs share (Docker Desktop on Windows, WSL /mnt/c). */
+  slowSharedFilesystem?: (plan: LaunchPlan, model: ModelTarget) => boolean;
+  evictCache?: RunnerDeps['evictCache'];
+  llamaBench?: RunnerDeps['llamaBench'];
+  appVersion: string;
+  cacheDir: string;
+  /** Bundled resources (corpus/, score-reference.json). */
+  resourcesDir: string;
+  ownPids: () => number[];
+  /** Telemetry sampling interval (settings.telemetryIntervalMs). */
+  telemetryIntervalMs?: () => number | Promise<number>;
+  /** Core shutdown: cancels the active run (which is then saved as cancelled). */
+  shutdown?: AbortSignal;
+}
+
+export interface ActiveRun {
+  runId: string;
+  phase: RunPhase;
+  progress: number;
+}
+
+interface Current extends ActiveRun {
+  controller: AbortController;
+  done: Promise<void>;
+}
+
+interface Prepared {
+  model: ModelTarget;
+  adapter: EngineAdapter;
+  params: LaunchParams;
+  port: number;
+  marker: string;
+  launch: LaunchPlan;
+  scenario: Scenario;
+  warnings: ScenarioWarning[];
+}
+
+/** Starts, tracks and cancels benchmark runs: one at a time (the GPU is the shared resource). */
+export class BenchService {
+  private readonly deps: BenchServiceDeps;
+  private current: Current | undefined;
+  private corpusText: Promise<string> | undefined;
+  private hereCache: HereIdentity | undefined;
+
+  constructor(deps: BenchServiceDeps) {
+    this.deps = deps;
+    deps.shutdown?.addEventListener('abort', () => this.current?.controller.abort(), { once: true });
+  }
+
+  /** The scenario a request asks for, before fitting it to the engine. */
+  scenarioFor(req: StartRunRequest): Scenario {
+    if (req.profile !== 'custom') return buildScenario(req.profile, req.scenario?.seed);
+    if (!req.scenario) {
+      throw new AppError('VALIDATION', 'A custom profile needs a scenario', { params: { reason: 'scenario_required' } });
+    }
+    return { ...req.scenario, profile: 'custom' };
+  }
+
+  private async prepare(req: StartRunRequest): Promise<Prepared> {
+    const scenario = this.scenarioFor(req);
+    const model = await this.deps.resolveModel(req);
+    const adapter = this.deps.getAdapter(req.engine.kind);
+    const params = req.params ?? launchParamsSchema.parse({});
+    const port = await this.deps.pickPort();
+    const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
+    const launch = await adapter.plan(req.engine, model, params, { port, marker });
+    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, model.identity.facts?.contextLength));
+    return { model, adapter, params, port, marker, launch, scenario: fitted.scenario, warnings: fitted.warnings };
+  }
+
+  /** "This PC + GPU", for ranking past results. Cached once known. */
+  async here(): Promise<HereIdentity> {
+    if (this.hereCache) return this.hereCache;
+    const fp = await this.deps.fingerprint();
+    const gpu = fp.gpus[0];
+    this.hereCache = { hostId: fp.hostId, ...(gpu ? { gpuUuid: gpu.uuid, gpuName: gpu.name } : {}) };
+    return this.hereCache;
+  }
+
+  /** Speeds from the latest completed run of this model on this PC, to estimate durations. */
+  private async expectations(model: ModelTarget): Promise<Partial<Expectations>> {
+    try {
+      const here = await this.here();
+      const id = model.identity;
+      const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).find(
+        (r) => r.status === 'completed' && r.hostId === here.hostId,
+      );
+      if (!past) return {};
+      return {
+        ...(past.decodeTps ? { decodeTps: past.decodeTps } : {}),
+        ...(past.prefillTps ? { prefillTps: past.prefillTps } : {}),
+        ...(past.coldLoadMs ? { coldLoadSec: past.coldLoadMs / 1000 } : {}),
+        ...(past.warmLoadMs ? { warmLoadSec: past.warmLoadMs / 1000 } : {}),
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  /** Preview for "Anteprima comando": exact command, downloads needed, duration, VRAM fit, warnings. */
+  async plan(req: StartRunRequest): Promise<RunPlan> {
+    const p = await this.prepare(req);
+    const shown = launchRecordOf(p.launch, this.deps.displayCommand, this.deps.redact);
+    const needs = (await this.deps.needs?.(req)) ?? [];
+    const fit = await this.deps.fit?.(req, p.model, p.launch);
+    const warnings: RunPlan['warnings'] = [...p.warnings];
+    if (await this.deps.telemetry.available().catch(() => false)) {
+      const llms = (await this.deps.telemetry.otherGpuUsers(this.deps.ownPids()).catch(() => [])).filter((u) => u.knownLlm);
+      if (llms.length) {
+        warnings.push({
+          code: 'VRAM_BUSY',
+          params: { names: llms.map((u) => u.name).join(', '), pids: llms.map((u) => u.pid).join(', ') },
+        });
+      }
+    }
+    if (fit?.level === 'no') warnings.push({ code: 'MODEL_TOO_LARGE', params: { needMiB: fit.needMiB, availableMiB: fit.availableMiB } });
+    if (fit?.level === 'partial') warnings.push({ code: 'partial_offload', params: { maxGpuLayers: fit.maxGpuLayers } });
+    if (this.deps.slowSharedFilesystem?.(p.launch, p.model)) warnings.push({ code: 'slow_shared_filesystem' });
+    return {
+      scenario: p.scenario,
+      command: { argv: shown.argv, ...shown.display },
+      needs,
+      estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)),
+      ...(fit ? { fit } : {}),
+      warnings,
+    };
+  }
+
+  private corpus(): Promise<string> {
+    this.corpusText ??= loadCorpus(this.deps.resourcesDir).catch((e: unknown) => {
+      this.corpusText = undefined;
+      throw e;
+    });
+    return this.corpusText;
+  }
+
+  /**
+   * Starts a run in the background and returns its id. Fails fast (nothing saved) when another
+   * run is active or the request cannot be resolved; once started, a RunResult is always saved.
+   */
+  async start(req: StartRunRequest): Promise<{ runId: string }> {
+    if (this.current) {
+      throw new AppError('VALIDATION', 'run already in progress', {
+        params: { reason: 'run_in_progress', runId: this.current.runId },
+      });
+    }
+    const d = this.deps;
+    const runId = d.newRunId?.() ?? newRunId(d.clock.wall());
+    const controller = new AbortController();
+    // Claimed before the first await so two concurrent starts cannot both pass the check.
+    const current: Current = { runId, phase: 'prepare', progress: 0, controller, done: Promise.resolve() };
+    this.current = current;
+    let p: Prepared;
+    let fit: FitEstimate | undefined;
+    let interval: number | undefined;
+    try {
+      p = await this.prepare(req);
+      fit = await d.fit?.(req, p.model, p.launch).catch(() => undefined);
+      interval = await d.telemetryIntervalMs?.();
+    } catch (e) {
+      this.current = undefined;
+      throw e;
+    }
+    const runner = new BenchRunner({
+      clock: d.clock,
+      adapter: p.adapter,
+      telemetry: d.telemetry,
+      runs: d.runs,
+      publish: (e) => {
+        if (e.type === 'run.phase') {
+          current.phase = e.phase;
+          current.progress = e.progress;
+        }
+        d.publish(e);
+      },
+      fingerprint: d.fingerprint,
+      displayCommand: d.displayCommand,
+      ...(d.redact ? { redact: d.redact } : {}),
+      ...(d.evictCache ? { evictCache: d.evictCache } : {}),
+      ...(d.llamaBench ? { llamaBench: d.llamaBench } : {}),
+      appVersion: d.appVersion,
+      cacheDir: d.cacheDir,
+      corpus: () => this.corpus(),
+      scoreReference: () => loadScoreReference(d.resourcesDir),
+      ownPids: d.ownPids,
+      ...(interval ? { telemetryIntervalMs: interval } : {}),
+    });
+    const input: RunInput = {
+      runId,
+      engineConfig: req.engine,
+      model: p.model,
+      params: p.params,
+      scenario: p.scenario,
+      port: p.port,
+      marker: p.marker,
+      allowSharedGpu: req.allowSharedGpu,
+      ...(req.note ? { note: req.note } : {}),
+      ...(d.slowSharedFilesystem?.(p.launch, p.model) ? { slowSharedFilesystem: true } : {}),
+      ...(fit ? { vramEstimateMiB: fit.needMiB } : {}),
+      notes: p.warnings.map((w) => `plan: ${w.code}${w.params ? ` ${JSON.stringify(w.params)}` : ''}`),
+    };
+    current.done = runner
+      .run(input, controller.signal)
+      .then(
+        () => undefined,
+        () => undefined, // already published as run.error by the runner
+      )
+      .finally(() => {
+        // start() refuses while a run is active, so the finishing run is always the current one.
+        this.current = undefined;
+      });
+    return { runId };
+  }
+
+  /** Cancels the active run if `runId` is it. The run is still saved (status cancelled). */
+  cancel(runId: string): boolean {
+    if (this.current?.runId !== runId) return false;
+    this.current.controller.abort();
+    return true;
+  }
+
+  active(): ActiveRun | undefined {
+    if (!this.current) return undefined;
+    const { runId, phase, progress } = this.current;
+    return { runId, phase, progress };
+  }
+
+  /** Resolves when no run is active (tests, shutdown). */
+  async whenIdle(): Promise<void> {
+    await this.current?.done;
+  }
+}

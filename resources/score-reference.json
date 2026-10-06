@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "provisional": true,
+  "note": "Placeholder values, to be calibrated so that an RTX 5090 with llama.cpp scores 1000 on the standard profile.",
+  "referenceModel": {
+    "repo": "Qwen/Qwen3-4B-GGUF",
+    "file": "Qwen3-4B-Q4_K_M.gguf"
+  },
+  "D_ref": 250,
+  "P_ref": 12000,
+  "L_ref": 1.5
+}
