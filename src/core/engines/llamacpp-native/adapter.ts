@@ -9,12 +9,23 @@ import type { CoreDeps, ManagedProcess } from '../../deps';
 import type { OwnershipRegistry } from '../../process/ownership';
 import { LOOPBACK } from '../../process/ports';
 import { createProcessInstance, type ClientFactory } from '../instance';
-import type { EngineAdapter, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, ProgressSink } from '../types';
-import { CapsProbe, guessVariant, type LlamaCaps } from './caps';
+import {
+  weightFiles,
+  type EngineAdapter,
+  type EngineInstance,
+  type InstallPlan,
+  type LaunchPlan,
+  type ModelTarget,
+  type PendingPart,
+  type PlanOptions,
+  type ProgressSink,
+} from '../types';
+import { CapsProbe, currentLlamaCaps, guessVariant, type LlamaCaps } from './caps';
 import {
   buildEnv,
   installLlamaBuild,
   listInstalled,
+  llamaRoot,
   removeBuild,
   serverExeName,
   type InstallDeps,
@@ -51,6 +62,8 @@ export interface ResolvedExecutable {
   path: string;
   variant: string;
   managed?: InstalledBuild;
+  /** Plan preview only: the managed build an install will create (not on disk yet), with its tag when known. */
+  planned?: { tag?: string };
 }
 
 const installDataSchema = z.object({
@@ -134,14 +147,23 @@ export class LlamaNativeAdapter implements EngineAdapter {
     return { ...caps, variant: exe.variant };
   }
 
-  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<LaunchPlan> {
-    const exe = await this.resolveExecutable(cfg);
+  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
+    const pending: PendingPart[] = [];
+    let exe: ResolvedExecutable;
+    try {
+      exe = await this.resolveExecutable(cfg);
+    } catch (e) {
+      // A preview before the install shows where the managed build will be; a custom executable
+      // that is missing is the user's to fix (no install brings it back).
+      if (!opts.preview || cfg.executable) throw e;
+      exe = await this.plannedExecutable(cfg);
+      pending.push('engine');
+    }
     const env = this.exeEnv(exe);
-    const caps = await this.caps.probe(this.argvFor(exe), env);
-    const local = model.local;
-    const aux = new Set(local?.auxiliary.map((a) => a.path));
-    // Weights only: mmproj/mtp/draft files are never loaded for benchmarks.
-    const files = (local?.paths ?? []).filter((p) => !aux.has(p));
+    const caps = exe.planned ? currentLlamaCaps() : await this.caps.probe(this.argvFor(exe), env);
+    const weights = weightFiles(model, opts.preview);
+    if (weights.pending) pending.push('model');
+    const files = weights.files;
     const main = files[0];
     if (main === undefined) {
       throw new AppError('MODEL_NOT_FOUND', 'No local GGUF file for this model', {
@@ -174,7 +196,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
 
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', variant: exe.variant, executable: exe.path };
     if (caps.version !== undefined) engine.version = caps.version;
-    const build = caps.build ?? exe.managed?.tag;
+    const build = caps.build ?? exe.managed?.tag ?? exe.planned?.tag;
     if (build !== undefined) engine.build = build;
 
     return {
@@ -188,6 +210,22 @@ export class LlamaNativeAdapter implements EngineAdapter {
       modelFiles: files,
       modelBytes: statBytes > 0 ? statBytes : (model.identity.sizeBytes ?? 0),
       marker: opts.marker,
+      ...(pending.length > 0 ? { pending } : {}),
+    };
+  }
+
+  /**
+   * Where the install will put llama-server: enginesDir/llamacpp/<tag>-<variant>/ of the release it
+   * would pick, or `<build or "latest">` when the releases cannot be read (offline, rate limited).
+   */
+  private async plannedExecutable(cfg: EngineConfig): Promise<ResolvedExecutable> {
+    const plan = await this.planInstall(cfg.build ? { build: cfg.build } : {}).catch(() => undefined);
+    const data = plan ? installDataSchema.parse(plan.data) : undefined;
+    const id = data ? `${data.tag}-${data.selection.variant}` : (cfg.build ?? 'latest');
+    return {
+      path: path.join(llamaRoot(this.o.deps.paths.enginesDir), id, serverExeName(this.o.deps.platform)),
+      variant: data?.selection.variant ?? 'cuda',
+      planned: data ? { tag: data.tag } : {},
     };
   }
 
@@ -314,9 +352,9 @@ export class LlamaNativeAdapter implements EngineAdapter {
     return [...this.prefix, exe.path];
   }
 
-  /** Managed Linux builds load the bundled CUDA runtime through LD_LIBRARY_PATH. */
+  /** Managed Linux builds (installed or planned) load the bundled CUDA runtime through LD_LIBRARY_PATH. */
   private exeEnv(exe: ResolvedExecutable): Record<string, string> {
-    if (!exe.managed) return {};
+    if (!exe.managed && !exe.planned) return {};
     return buildEnv(this.o.deps.platform, path.dirname(exe.path), this.o.deps.env.LD_LIBRARY_PATH);
   }
 }

@@ -107,6 +107,7 @@ export const SYSTEM: SystemResponse = {
   cpu: { model: 'CPU', cores: 8, threads: 16 },
   ramBytes: 64 * 1024 ** 3,
   hostLabel: HOST,
+  hostId: 'host-1',
   nvidiaSmi: { found: true },
   otherGpuUsers: [],
   docker: { state: 'running' },

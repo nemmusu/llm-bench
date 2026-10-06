@@ -2,10 +2,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Settings } from '../../../../src/contract/settings';
+import { DownloadService } from '../../../../src/core/downloads/service';
 import { ModelsService } from '../../../../src/core/models/service';
+import { systemClock } from '../../../../src/core/node-deps';
+import { memoryLogger } from '../telemetry/fakes';
 import { DOWNLOAD_SIDECAR } from '../../../../src/core/models/scanner';
 import type { GpuMem } from '../../../../src/core/models/types';
-import { startFakeHub, type FakeHub } from '../../../fakes/fake-hub';
+import { llamaLikeGguf as hubLlamaLike, startFakeHub, type FakeHub } from '../../../fakes/fake-hub';
 import { llamaLikeGguf, writeGguf, writeSafetensors } from '../../../fixtures/gguf/writer';
 import { GPU_32GB, modelDeps, settingsWith, tempDir } from './helpers';
 
@@ -159,14 +162,143 @@ describe('ModelsService', () => {
     await expect(svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native')).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
   });
 
+  it('serves the repo info of one hub repo, with the hub errors mapped', async () => {
+    const svc = service();
+    const info = await svc.hubModel('ggml-org/Qwen3-0.6B-GGUF');
+    expect(info).toMatchObject({
+      repo: 'ggml-org/Qwen3-0.6B-GGUF',
+      author: 'ggml-org',
+      downloads: 120000,
+      likes: 300,
+      license: 'apache-2.0',
+      pipelineTag: 'text-generation',
+      baseModel: 'Qwen/Qwen3-0.6B',
+      formats: ['gguf'],
+      private: false,
+    });
+    expect((await svc.hubModel('ggml-org/Qwen3-0.6B-GGUF', 'main')).sha).toMatch(/^[0-9a-f]{40}$/);
+    // Like HF: a missing (or private) repo is a bare 401 without a token, a 404 with one.
+    await expect(svc.hubModel('nobody/missing')).rejects.toMatchObject({ code: 'HF_AUTH_REQUIRED' });
+    token = 'hf_test_token';
+    await expect(svc.hubModel('nobody/missing')).rejects.toMatchObject({ code: 'HF_NOT_FOUND' });
+    hub.behavior.rateLimitNext = 1;
+    await expect(svc.hubModel('nobody/other')).rejects.toMatchObject({ code: 'HF_RATE_LIMITED' });
+  });
+
+  it('plans a hub GGUF download with the identity its library copy will have', async () => {
+    const svc = service();
+    const repo = 'ggml-org/Qwen3-0.6B-GGUF';
+    const file = 'Qwen3-0.6B-Q4_K_M.gguf';
+    const planned = await svc.plannedGguf(repo, file);
+    const size = hub.file(repo, file).size;
+    expect(planned).toEqual({
+      identity: expect.objectContaining({
+        displayName: 'Qwen3-0.6B-Q4_K_M',
+        format: 'gguf',
+        source: 'hf',
+        repo,
+        file,
+        files: [file],
+        sizeBytes: size,
+        quant: 'Q4_K_M',
+        sha256: hub.file(repo, file).sha256,
+        weakKey: `${repo}/${file}/Q4_K_M/${size}`,
+      }),
+      file,
+      paths: [path.join(lib(), 'ggml-org', 'Qwen3-0.6B-GGUF', file)],
+      bytes: size,
+    });
+    expect(planned.identity.facts?.blockCount).toBe(4);
+    expect(planned.identity).not.toHaveProperty('revision');
+    expect(await svc.findGguf(repo, file)).toBeUndefined();
+
+    // The real downloader puts it exactly there, and the library then knows it under the same keys.
+    const downloads = new DownloadService({
+      fetch: globalThis.fetch,
+      clock: systemClock,
+      log: memoryLogger(),
+      dataDir: path.join(t.dir, 'data'),
+      modelsDir: () => svc.libraryDir(),
+      hub: svc.hub,
+      publish: () => {},
+      statfs: async () => ({ bavail: 1e12, bsize: 1 }),
+    });
+    await downloads.add({ repo, revision: 'main', files: [file] });
+    await downloads.idle();
+    expect(existsSync(planned.paths[0] as string)).toBe(true);
+    await svc.rescan();
+    const local = await svc.findGguf(repo, file);
+    expect(local?.paths[0]).toBe(planned.paths[0]);
+    expect(local?.identity).toMatchObject({ weakKey: planned.identity.weakKey, sha256: planned.identity.sha256, displayName: planned.identity.displayName });
+  });
+
+  it('plans split GGUFs from any shard (all shards, keyed by the first) and validates the request', async () => {
+    const svc = service();
+    const repo = 'unsloth/Demo-31B-it-GGUF';
+    const second = 'Q4_K_M/Demo-31B-it-Q4_K_M-00002-of-00002.gguf';
+    const first = 'Q4_K_M/Demo-31B-it-Q4_K_M-00001-of-00002.gguf';
+    const planned = await svc.plannedGguf(repo, second, 'main');
+    expect(planned.file).toBe(first);
+    expect(planned.paths).toEqual([path.join(lib(), 'unsloth', 'Demo-31B-it-GGUF', 'Q4_K_M', 'Demo-31B-it-Q4_K_M-00001-of-00002.gguf'), path.join(lib(), 'unsloth', 'Demo-31B-it-GGUF', 'Q4_K_M', 'Demo-31B-it-Q4_K_M-00002-of-00002.gguf')]);
+    expect(planned.bytes).toBe(192 * 1024);
+    expect(planned.identity).toMatchObject({
+      displayName: 'Demo-31B-it-Q4_K_M',
+      file: 'Demo-31B-it-Q4_K_M-00001-of-00002.gguf',
+      revision: 'main',
+      weakKey: `${repo}/Demo-31B-it-Q4_K_M-00001-of-00002.gguf/Q4_K_M/${192 * 1024}`,
+    });
+    // An mmproj file is not part of a quant group: planned on its own.
+    const mm = await svc.plannedGguf(repo, 'mmproj-F16.gguf');
+    expect(mm.paths).toHaveLength(1);
+    // No quant in the file name: the header's file type names it (the weak key keeps the file-name quant, empty).
+    hub.addRepo({ id: 'named/Plain-GGUF', files: [{ path: 'plain.gguf', gguf: { ...hubLlamaLike({ name: 'Plain', sizeLabel: '1B', fileType: 15 }), totalSize: 4096 } }] });
+    const plain = await svc.plannedGguf('named/Plain-GGUF', 'plain.gguf');
+    expect(plain.identity.quant).toBe('Q4_K_M');
+    expect(plain.identity.weakKey).toBe(`named/Plain-GGUF/plain.gguf//${hub.file('named/Plain-GGUF', 'plain.gguf').size}`);
+    await expect(svc.plannedGguf(repo, 'missing.gguf')).rejects.toMatchObject({ code: 'HF_NOT_FOUND' });
+    await expect(svc.plannedGguf('not a repo', 'x.gguf')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(svc.plannedGguf(repo, '../x.gguf')).rejects.toMatchObject({ code: 'VALIDATION' });
+    // A header that cannot be read (or a file named without a quant): still planned, without facts.
+    hub.addRepo({ id: 'broken/Odd-GGUF', files: [{ path: 'model.gguf', size: 100 }] });
+    const odd = await svc.plannedGguf('broken/Odd-GGUF', 'model.gguf');
+    expect(odd.identity).not.toHaveProperty('facts');
+    expect(odd.identity).not.toHaveProperty('quant');
+    expect(odd.identity.weakKey).toBe('broken/Odd-GGUF/model.gguf//100');
+    // Unsigned listings (no LFS sha256): no sha256 in the identity.
+    hub.addRepo({ id: 'plain/Small-GGUF', files: [{ path: 'tiny-Q8_0.gguf', size: 64, lfs: false }] });
+    expect((await svc.plannedGguf('plain/Small-GGUF', 'tiny-Q8_0.gguf')).identity).not.toHaveProperty('sha256');
+  });
+
+  it('finds downloaded hub GGUFs in the library by repo and any shard', async () => {
+    const repoDir = path.join(lib(), 'o', 'r');
+    gguf(path.join(repoDir, 'Q4_K_M', 'x-Q4_K_M-00001-of-00002.gguf'));
+    writeGguf(path.join(repoDir, 'Q4_K_M', 'x-Q4_K_M-00002-of-00002.gguf'), { metadata: {} });
+    gguf(path.join(repoDir, 'single-Q8_0.gguf'));
+    writeFileSync(path.join(repoDir, DOWNLOAD_SIDECAR), JSON.stringify({ repo: 'o/r', files: {} }));
+    gguf(path.join(lib(), 'loose-Q8_0.gguf'));
+    const svc = service();
+    expect((await svc.findGguf('o/r', 'Q4_K_M/x-Q4_K_M-00002-of-00002.gguf'))?.identity.file).toBe('x-Q4_K_M-00001-of-00002.gguf');
+    expect((await svc.findGguf('o/r', 'single-Q8_0.gguf'))?.identity.file).toBe('single-Q8_0.gguf');
+    expect(await svc.findGguf('o/other', 'single-Q8_0.gguf')).toBeUndefined();
+    expect(await svc.findGguf('o/r', 'loose-Q8_0.gguf')).toBeUndefined();
+  });
+
   it('serves the curated list filtered by VRAM (given, from the GPU, or unfiltered)', async () => {
     const svc = service();
     const given = await svc.curated(12);
     expect(given.vramGB).toBe(12);
+    expect(given.tierGB).toBe(12);
     expect(given.models.every((m) => m.tier <= 12)).toBe(true);
     expect(given.reference.repo).toBe('Qwen/Qwen3-4B-GGUF');
+    // A 5090 reports 31.8 GiB: it gets the 32 GB recommendations.
     const fromGpu = await svc.curated();
     expect(fromGpu.vramGB).toBeCloseTo(GPU_32GB.totalMiB / 1024, 3);
+    expect(fromGpu.tierGB).toBe(32);
+    expect(fromGpu.models[0]?.tier).toBe(32);
+    expect((await svc.curated(31.8)).tierGB).toBe(32);
+    const tiny = await svc.curated(4);
+    expect(tiny).not.toHaveProperty('tierGB');
+    expect(tiny.models).toEqual([]);
     gpu = undefined;
     const all = await svc.curated();
     expect(all.vramGB).toBeUndefined();

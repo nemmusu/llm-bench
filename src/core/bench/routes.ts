@@ -1,6 +1,6 @@
 import type { Context, Hono } from 'hono';
 import { z } from 'zod';
-import { startRunRequestSchema } from '../../contract/api';
+import { startRunRequestSchema, type ActiveRunResponse } from '../../contract/api';
 import type { RouteModule } from '../server/app';
 import { parseBody } from '../server/http-error';
 import type { RunsRepo } from '../store/runs-repo';
@@ -17,7 +17,8 @@ function notFound(c: Context, id: string): Response {
  *
  *   GET    /api/runs?model=&gpu=             RunSummary[] (model = weak key or sha256, gpu = uuid or name)
  *   GET    /api/runs/tried?weakKey=&sha256=  RunSummary[] for a model, this PC + GPU first
- *   GET    /api/runs/active                  { active: { runId, phase, progress } | null }
+ *   GET    /api/runs/active                  ActiveRunResponse: { active: { runId, phase, progress, startedAt, profile,
+ *                                             estimatedSeconds, modelName, engineLabel, scenario } | null }
  *   GET    /api/runs/:id                     RunResult
  *   DELETE /api/runs/:id                     { ok: true }
  *   POST   /api/runs                         StartRunRequest → { runId }
@@ -48,7 +49,7 @@ export function createBenchRoutes(svc: BenchService, runs: RunsRepo): RouteModul
       return c.json(await runs.tried({ weakKey, ...(sha256 ? { sha256 } : {}) }, await svc.here()));
     });
 
-    app.get('/api/runs/active', (c) => c.json({ active: svc.active() ?? null }));
+    app.get('/api/runs/active', (c) => c.json<ActiveRunResponse>({ active: svc.active() ?? null }));
 
     app.post('/api/runs/plan', async (c) => c.json(await svc.plan(await parseBody(c, startRunRequestSchema))));
 

@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { CURATED_FILE, CURATED_TIERS, curatedForVram, curatedListSchema, loadCurated } from '../../../../src/core/models/curated';
+import {
+  CURATED_FILE,
+  CURATED_TIERS,
+  curatedForVram,
+  curatedListSchema,
+  loadCurated,
+  snapToTier,
+  TIER_TOLERANCE,
+  tierFor,
+} from '../../../../src/core/models/curated';
 import { tempDir } from './helpers';
 
 const RESOURCES = path.join(process.cwd(), 'resources');
@@ -20,14 +29,35 @@ describe('resources/curated-models.json', () => {
 
   it('filters by VRAM: closest tier first, then larger files', async () => {
     const list = await loadCurated(RESOURCES);
+    // An RTX 5090 reports 31.8 GiB: it is a 32 GB card.
     const for32 = curatedForVram(list, 31.8);
-    expect(for32.every((m) => m.tier <= 31.8)).toBe(true);
-    expect(for32[0]?.tier).toBe(24);
+    expect(for32.every((m) => m.tier <= 32)).toBe(true);
+    expect(for32[0]?.tier).toBe(32);
     const tiers = for32.map((m) => m.tier);
     expect([...tiers].sort((a, b) => b - a)).toEqual(tiers);
+    expect(curatedForVram(list, 23.6)[0]?.tier).toBe(24);
+    expect(curatedForVram(list, 20)[0]?.tier).toBe(16);
     expect(curatedForVram(list, 8, 'vllm').every((m) => m.engine === 'vllm' && m.tier === 8)).toBe(true);
+    expect(curatedForVram(list, 7.6).length).toBeGreaterThan(0);
     expect(curatedForVram(list, 4)).toEqual([]);
     expect(CURATED_TIERS).toContain(80);
+  });
+});
+
+describe('VRAM tiers', () => {
+  it('counts a card reporting a bit less than a tier as that tier', () => {
+    expect([31.8, 23.6, 11.7, 7.6].map(snapToTier)).toEqual([32, 24, 12, 8]);
+    expect([32, 24, 8].map(snapToTier)).toEqual([32, 24, 8]);
+    // More than TIER_TOLERANCE below: kept as is (and recommended from the tier below).
+    expect(snapToTier(20)).toBe(20);
+    expect(snapToTier(32 * (1 - TIER_TOLERANCE) - 0.01)).toBeCloseTo(29.43);
+    // Above the largest tier there is nothing to snap to.
+    expect(snapToTier(96)).toBe(96);
+  });
+
+  it('names the tier a GPU belongs to', () => {
+    expect([31.8, 23.6, 11.7, 7.6, 20, 96].map(tierFor)).toEqual([32, 24, 12, 8, 16, 80]);
+    expect(tierFor(4)).toBeUndefined();
   });
 });
 

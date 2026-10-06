@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { activeRunResponseSchema } from '../../../../src/contract/api';
 import type { ServerEvent } from '../../../../src/contract/events';
 import { createBenchRoutes } from '../../../../src/core/bench/routes';
 import { BenchService } from '../../../../src/core/bench/service';
@@ -86,7 +87,9 @@ describe('bench routes', () => {
     const started = await t.call('POST', '/api/runs', request());
     expect(started.status).toBe(200);
     const runId = (started.body as unknown as { runId: string }).runId;
-    expect((await t.call('GET', '/api/runs/active')).body).toMatchObject({ active: { runId } });
+    const active = (await t.call('GET', '/api/runs/active')).body;
+    expect(active).toMatchObject({ active: { runId, profile: 'quick', engineLabel: expect.stringContaining('llama.cpp') } });
+    expect(activeRunResponseSchema.parse(active)).toEqual(active);
     expect((await t.call('POST', '/api/runs/other/cancel')).status).toBe(404);
     // A second start while one runs is refused with RUN_IN_PROGRESS (409).
     const busy = await t.call('POST', '/api/runs', request());

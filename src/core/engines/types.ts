@@ -37,6 +37,16 @@ export interface EngineCaps {
   fitFlag: boolean;
 }
 
+/** A hub GGUF that is not downloaded yet: what its download will create in the library. */
+export interface PendingDownload {
+  repo: string;
+  /** Path inside the repo of the file llama.cpp opens (first shard of a split model). */
+  file: string;
+  /** Absolute paths the downloader will write, weights only (every shard). */
+  paths: string[];
+  bytes: number;
+}
+
 /** The model as the engine will load it. */
 export interface ModelTarget {
   identity: ModelIdentity;
@@ -46,6 +56,35 @@ export interface ModelTarget {
   repo?: string;
   /** Name to request from an external endpoint. */
   servedName?: string;
+  /** Set instead of `local` for a GGUF still to download: plan previews only, a real start refuses it. */
+  pending?: PendingDownload;
+}
+
+/** Parts of a previewed command that do not exist yet (they are installed/downloaded before the run). */
+export type PendingPart = 'engine' | 'model';
+
+export interface PlanOptions {
+  port: number;
+  marker: string;
+  /**
+   * Plan preview ("Anteprima comando"): a missing engine or model is replaced by where its install
+   * or download will put it, and the plan lists it in `pending`. Never set when starting a run.
+   */
+  preview?: boolean;
+}
+
+/**
+ * GGUF weights to load: the local files (auxiliary mmproj/mtp/draft files are never loaded for
+ * benchmarks), or in a preview the paths a pending download will create. Empty = nothing to load.
+ */
+export function weightFiles(model: ModelTarget, preview = false): { files: string[]; pending: boolean } {
+  const local = model.local;
+  if (local) {
+    const aux = new Set(local.auxiliary.map((a) => a.path));
+    return { files: local.paths.filter((p) => !aux.has(p)), pending: false };
+  }
+  const files = preview ? (model.pending?.paths ?? []) : [];
+  return { files, pending: files.length > 0 };
 }
 
 export interface LaunchPlan {
@@ -63,6 +102,8 @@ export interface LaunchPlan {
   modelBytes: number;
   /** Ownership marker placed in argv (e.g. --alias gpubench-<uuid>) or container label. */
   marker: string;
+  /** Preview only: parts of argv that are placeholders until an install/download (see PlanOptions.preview). */
+  pending?: PendingPart[];
 }
 
 export interface EngineInstance {
@@ -90,8 +131,8 @@ export interface EngineAdapter {
   installPlan?(cfg: EngineConfig): Promise<InstallPlan>;
   install?(plan: InstallPlan, progress: ProgressSink, signal: AbortSignal): Promise<void>;
   capabilities(cfg: EngineConfig): Promise<EngineCaps>;
-  /** Pure: builds the exact command. Used for "Anteprima comando" and by start(). */
-  plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<LaunchPlan>;
+  /** Pure: builds the exact command. Used for "Anteprima comando" (opts.preview) and by start(). */
+  plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan>;
   start(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance>;
 }
 

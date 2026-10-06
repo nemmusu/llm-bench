@@ -64,6 +64,65 @@ describe('resolveModelTarget', () => {
   });
 });
 
+describe('resolveModelTarget: hub GGUF (repo + file)', () => {
+  const lib: LocalModel = {
+    ...local,
+    id: 'lib1',
+    identity: { ...local.identity, source: 'hf', repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', weakKey: 'Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf/Q4_K_M/2500' },
+  };
+  const planned = {
+    identity: { ...lib.identity, source: 'hf' as const },
+    file: 'Qwen3-4B-Q4_K_M.gguf',
+    paths: ['/lib/Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf'],
+    bytes: 2500,
+  };
+  const req = (kind: 'llamacpp-native' | 'llamacpp-docker' | 'vllm-docker' = 'llamacpp-native') => ({
+    ...base,
+    engine: { kind },
+    model: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', revision: 'abc' },
+  });
+
+  it('uses the library copy when it is downloaded', async () => {
+    const seen: string[][] = [];
+    const models = {
+      getLocal: async () => undefined,
+      findGguf: async (repo: string, file: string) => {
+        seen.push([repo, file]);
+        return lib;
+      },
+    };
+    expect(await resolveModelTarget(req('llamacpp-docker'), models)).toEqual({ identity: lib.identity, local: lib });
+    expect(seen).toEqual([['Qwen/Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf']]);
+  });
+
+  it('before the download: only a preview resolves it (to the pending download)', async () => {
+    const calls: unknown[][] = [];
+    const models = {
+      getLocal: async () => undefined,
+      findGguf: async () => undefined,
+      plannedGguf: async (...a: unknown[]) => {
+        calls.push(a);
+        return planned;
+      },
+    };
+    const notYet = { code: 'MODEL_NOT_FOUND', params: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', reason: 'not_downloaded' } };
+    await expect(resolveModelTarget(req(), models)).rejects.toMatchObject(notYet);
+    expect(await resolveModelTarget(req(), models, { preview: true })).toEqual({
+      identity: planned.identity,
+      pending: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', paths: planned.paths, bytes: 2500 },
+    });
+    expect(calls).toEqual([['Qwen/Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf', 'abc']]);
+    // Without the models module (or its hub side) nothing can be planned.
+    await expect(resolveModelTarget(req(), undefined, { preview: true })).rejects.toMatchObject(notYet);
+    await expect(resolveModelTarget(req(), { getLocal: async () => undefined }, { preview: true })).rejects.toMatchObject(notYet);
+  });
+
+  it('vLLM ignores the file and serves the repo', async () => {
+    const t = await resolveModelTarget(req('vllm-docker'), undefined);
+    expect(t).toMatchObject({ repo: 'Qwen/Qwen3-4B-GGUF', identity: { format: 'safetensors', revision: 'abc' } });
+  });
+});
+
 describe('createServices', () => {
   let t: ReturnType<typeof tempDir>;
   beforeEach(() => {
@@ -259,6 +318,30 @@ describe('modelsLookup', () => {
     const missing = modelsLookup({ models: { get: () => Promise.reject(new Error('nope')), hashes } as never });
     expect(await missing.getLocal('x')).toBeUndefined();
   });
+
+  it('finds hub GGUFs in the library (hashed like local picks) and plans their downloads', async () => {
+    const m = gguf();
+    const asked: unknown[][] = [];
+    const models = {
+      get: async () => m,
+      hashes: { enqueue: async () => 'beef' },
+      findGguf: async (...a: unknown[]) => {
+        asked.push(a);
+        return a[0] === 'o/r' ? m : undefined;
+      },
+      plannedGguf: async (...a: unknown[]) => ({ planned: a }),
+    };
+    const lookup = modelsLookup({ models } as never);
+    expect((await lookup.findGguf!('o/r', 'f.gguf'))?.identity.sha256).toBe('beef');
+    expect(await lookup.findGguf!('o/other', 'f.gguf')).toBeUndefined();
+    expect(asked).toEqual([
+      ['o/r', 'f.gguf'],
+      ['o/other', 'f.gguf'],
+    ]);
+    expect(await lookup.plannedGguf!('o/r', 'f.gguf', 'main')).toEqual({ planned: ['o/r', 'f.gguf', 'main'] });
+    const broken = modelsLookup({ models: { findGguf: () => Promise.reject(new Error('scan failed')) } } as never);
+    expect(await broken.findGguf!('o/r', 'f.gguf')).toBeUndefined();
+  });
 });
 
 describe('createServices with the models module', () => {
@@ -298,6 +381,16 @@ describe('createServices with the models module', () => {
     expect(await fit(req, { identity: local.identity, local }, {})).toEqual({ level: 'good' });
     ms.models.fit = () => Promise.reject(new Error('no gpu'));
     expect(await fit(req, { identity: local.identity, local }, { params: {} })).toBeUndefined();
+
+    // A hub GGUF still to download is estimated from its remote header.
+    const asked: unknown[] = [];
+    ms.models.fit = (r) => {
+      asked.push(r);
+      return Promise.resolve({ level: 'tight' } as never);
+    };
+    const pending = { repo: 'o/r', file: 'Q4/x-00001-of-00002.gguf', paths: [], bytes: 1 };
+    expect(await fit(req, { identity: local.identity, pending }, { params: {} })).toEqual({ level: 'tight' });
+    expect(asked).toEqual([{ repo: 'o/r', file: 'Q4/x-00001-of-00002.gguf', engine: 'llamacpp-native', params: {} }]);
 
     // The model and download routes are mounted.
     const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
@@ -414,7 +507,7 @@ describe('composition details', () => {
     expect(s.activeMarker()).toBeUndefined();
     const newMarker = (s.bench as unknown as { deps: Any }).deps.newMarker!;
     const marker = newMarker() as string;
-    s.bench.active = () => ({ runId: 'r', phase: 'decode', progress: 0.5 });
+    s.bench.active = () => ({ runId: 'r', phase: 'decode', progress: 0.5 }) as never;
     expect(s.activeMarker()).toBe(marker);
 
     const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
@@ -504,6 +597,54 @@ describe('vLLM models from the library', () => {
     expect(await needs(vreq)).toEqual([]);
     // No repo (e.g. a local folder picked directly): nothing to download.
     expect(await needs({ ...vreq, model: { localId: 'st1' } })).toEqual([]);
+  });
+
+  it('plans the GGUF download of a llama.cpp run, sized from the resolved pending download', async () => {
+    const quiet: ProcessRunner = {
+      run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+      spawn: () => {
+        throw new Error('no spawn');
+      },
+    };
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    const s = await createServices(ctx, { modelServices: false });
+    const needs = (s.bench as unknown as { deps: { needs: (r: StartRunRequest, m?: unknown) => Promise<unknown> } }).deps.needs;
+    s.llama.detect = () => Promise.resolve({ kind: 'llamacpp-native', available: true, installed: true, problems: [], supported: true });
+    const lreq = { ...base, engine: { kind: 'llamacpp-docker' as const }, model: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf' } };
+    const pending = { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', paths: ['/x'], bytes: 2_500_000_000 };
+    expect(await needs(lreq, { identity: local.identity, pending })).toEqual([
+      { kind: 'model', label: 'Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf', bytes: 2_500_000_000 },
+    ]);
+    expect(await needs(lreq, { identity: local.identity, local })).toEqual([]);
+  });
+
+  it('previews a llama.cpp run of a hub GGUF that is not downloaded yet, end to end', async () => {
+    const quiet: ProcessRunner = {
+      run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+      spawn: () => {
+        throw new Error('no spawn');
+      },
+    };
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    await ctx.settings.update({ scanKnownLocations: false });
+    const s = await createServices(ctx);
+    const ms = s.modelServices!.models;
+    const lib = await ms.libraryDir();
+    const identity = { ...local.identity, source: 'hf' as const, repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf' };
+    const future = path.join(lib, 'Qwen', 'Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf');
+    ms.plannedGguf = async () => ({ identity, file: 'Qwen3-4B-Q4_K_M.gguf', paths: [future], bytes: 2_500_000_000 });
+    // No llama.cpp build and no network: the preview uses the "latest" placeholder.
+    s.llama.planInstall = () => Promise.reject(new Error('offline'));
+    const req = { ...base, engine: { kind: 'llamacpp-native' as const }, model: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf' } };
+    const plan = await s.bench.plan(req);
+    expect(plan.pending).toEqual(['engine', 'model']);
+    expect(plan.command.argv.slice(1, 3)).toEqual(['-m', future]);
+    expect(plan.needs).toEqual([
+      { kind: 'model', label: 'Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf', bytes: 2_500_000_000 },
+      { kind: 'engine', label: 'llama.cpp' },
+    ]);
+    // Starting is refused until the download is done.
+    await expect(s.bench.start(req)).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND', params: { reason: 'not_downloaded' } });
   });
 });
 

@@ -399,6 +399,63 @@ describe('install flow through the adapter', () => {
     expect((await a.listInstalled()).map((b) => b.id)).toEqual(['b11438-cpu']);
   });
 
+  it('previews the command before the install: the build the install would pick, with current flags', async () => {
+    const d = deps({ endpoints: { githubApi: gh.url, huggingface: '', dockerHub: '' } });
+    const a = adapter(d, { cudaVersion: async () => '13.4' });
+    const gguf = path.join(tmp(), 'm.gguf');
+    const plan = await a.plan({ kind: 'llamacpp-native' }, model([gguf], [], 2048), params({ parallel: 4 }), { port: 5, marker: MARK, preview: true });
+    const exe = path.join(d.paths.enginesDir, 'llamacpp', 'b11438-cuda-13.4', 'llama-server.exe');
+    expect(plan.argv).toEqual([
+      exe, '-m', gguf, '--host', '127.0.0.1', '--port', '5', '--alias', MARK, '-c', '4096', '-ngl', 'all', '-fa', 'auto', '-np', '4', '--kv-unified', '--fit', 'off', '--no-webui',
+    ]);
+    expect(plan.pending).toEqual(['engine']);
+    expect(plan.engine).toEqual({ kind: 'llamacpp-native', name: 'llama.cpp', variant: 'cuda-13.4', executable: exe, build: 'b11438' });
+    expect(plan.env).toEqual({});
+    // Nothing was probed or installed: the probe never ran a binary.
+    expect(await a.listInstalled()).toEqual([]);
+    // A real start is never a preview: the missing engine is reported.
+    await expect(a.plan({ kind: 'llamacpp-native' }, model([gguf]), params(), { port: 5, marker: MARK })).rejects.toMatchObject({ code: 'ENGINE_NOT_INSTALLED' });
+  });
+
+  it('previews offline with a "latest" (or requested build) folder; a missing custom executable still fails', async () => {
+    const d = deps({ platform: 'linux', env: { LD_LIBRARY_PATH: '/usr/lib/wsl/lib' } });
+    const a = adapter(d);
+    const gguf = path.join(tmp(), 'm.gguf');
+    const latest = await a.plan({ kind: 'llamacpp-native' }, model([gguf]), params(), { port: 6, marker: MARK, preview: true });
+    const dir = path.join(d.paths.enginesDir, 'llamacpp', 'latest');
+    expect(latest.argv[0]).toBe(path.join(dir, 'llama-server'));
+    expect(latest.engine).toEqual({ kind: 'llamacpp-native', name: 'llama.cpp', variant: 'cuda', executable: path.join(dir, 'llama-server') });
+    // The planned managed build gets the bundled CUDA runtime on Linux, like an installed one.
+    expect(latest.env).toEqual({ LD_LIBRARY_PATH: `${dir}:/usr/lib/wsl/lib` });
+    const pinned = await a.plan({ kind: 'llamacpp-native', build: 'b5' }, model([gguf]), params(), { port: 6, marker: MARK, preview: true });
+    expect(pinned.argv[0]).toBe(path.join(d.paths.enginesDir, 'llamacpp', 'b5', 'llama-server'));
+    await expect(
+      a.plan({ kind: 'llamacpp-native', executable: path.join(tmp(), 'nope') }, model([gguf]), params(), { port: 6, marker: MARK, preview: true }),
+    ).rejects.toMatchObject({ code: 'ENGINE_NOT_INSTALLED' });
+  });
+
+  it('previews a GGUF still to download at its future library path', async () => {
+    const d = deps();
+    const exe = writeBuild(d.paths.enginesDir, 'b300', 'cpu');
+    const a = adapter(d);
+    const future = path.join(d.paths.modelsDir, 'Qwen', 'Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf');
+    const target: ModelTarget = {
+      identity: { displayName: 'Qwen3-4B-Q4_K_M', format: 'gguf', source: 'hf', files: [], weakKey: 'w', sizeBytes: 2_500_000_000 },
+      pending: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', paths: [future], bytes: 2_500_000_000 },
+    };
+    const plan = await a.plan({ kind: 'llamacpp-native' }, target, params(), { port: 7, marker: MARK, preview: true });
+    expect(plan.argv.slice(0, 3)).toEqual([exe, '-m', future]);
+    expect(plan.pending).toEqual(['model']);
+    expect(plan.modelFiles).toEqual([future]);
+    expect(plan.modelBytes).toBe(2_500_000_000);
+    await expect(a.plan({ kind: 'llamacpp-native' }, target, params(), { port: 7, marker: MARK })).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND' });
+    // Neither engine nor model yet: both are pending.
+    const bare = adapter(deps());
+    expect((await bare.plan({ kind: 'llamacpp-native' }, target, params(), { port: 7, marker: MARK, preview: true })).pending).toEqual(['engine', 'model']);
+    // An installed build and a local model: nothing pending.
+    expect((await a.plan({ kind: 'llamacpp-native' }, model([future]), params(), { port: 7, marker: MARK, preview: true })).pending).toBeUndefined();
+  });
+
   it('accepts injected collaborators', () => {
     const d = deps();
     const caps = new CapsProbe(d.proc);

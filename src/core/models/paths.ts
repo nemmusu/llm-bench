@@ -34,6 +34,17 @@ export function parseShard(name: string): { prefix: string; index: number; total
 /** Repo ids as HF accepts them: owner/name with letters, digits, "-", "_", ".". */
 export const REPO_RE = /^[A-Za-z0-9][\w.-]{0,95}\/[A-Za-z0-9][\w.-]{0,95}$/;
 
+/** Library folder of a hub repo, where its downloads go: <modelsDir>/<owner>/<name>. */
+export function repoDir(modelsDir: string, repo: string): string {
+  const [owner, name] = repo.split('/') as [string, string];
+  return path.join(modelsDir, owner, name);
+}
+
+/** Where the downloader puts a file of a hub repo: <modelsDir>/<owner>/<name>/<path in the repo>. */
+export function libraryPath(modelsDir: string, repo: string, file: string): string {
+  return path.join(repoDir(modelsDir, repo), ...file.split('/'));
+}
+
 /** A relative path inside a repo that cannot escape the destination folder. */
 export function safeRepoPath(p: string): boolean {
   if (p.length === 0 || p.length > 512 || p.startsWith('/') || p.includes('\\') || p.includes('\0')) return false;

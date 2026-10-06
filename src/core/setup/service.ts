@@ -72,6 +72,7 @@ export function createSetupService(o: SetupServiceOptions): SetupService {
   const jobs = new Map<SetupJobKind, Running>();
   const now = () => new Date((o.wall ?? Date.now)()).toISOString();
 
+  /** The final event of a job carries its outcome: `result` when done, `error` when failed or cancelled. */
   const emit = (job: SetupJob) =>
     o.publish({
       type: 'engine.install',
@@ -79,6 +80,8 @@ export function createSetupService(o: SetupServiceOptions): SetupService {
       bytesDone: job.bytesDone,
       ...(job.bytesTotal !== undefined ? { bytesTotal: job.bytesTotal } : {}),
       stage: job.stage,
+      ...(job.error ? { error: job.error } : {}),
+      ...(job.result ? { result: { ...job.result } } : {}),
     });
 
   function start<R extends DockerInstallResult | UvInstalled>(

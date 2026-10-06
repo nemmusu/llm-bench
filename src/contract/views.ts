@@ -24,7 +24,7 @@ export type { HubTag } from '../core/docker/hub';
 export type { CuratedResponse, HubFitResult } from '../core/models/service';
 export type { QuantChoice } from '../core/models/fit';
 export type { CuratedList, CuratedModel } from '../core/models/curated';
-export type { RemoteGgufFacts } from '../core/models/hub';
+export type { HubRepoInfo, RemoteGgufFacts } from '../core/models/hub';
 export type { AttentionGroup, KvLayout, ModelFactsEx } from '../core/models/types';
 export type { InstalledBuild } from '../core/engines/llamacpp-native/install';
 export type { ColdCacheStatus } from '../core/cache/routes';

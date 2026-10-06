@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { fileKey, isInside, modelIdFor, normalizePath, parseShard, REPO_RE, safeRepoPath } from '../../../../src/core/models/paths';
+import { fileKey, isInside, libraryPath, modelIdFor, normalizePath, parseShard, REPO_RE, repoDir, safeRepoPath } from '../../../../src/core/models/paths';
 
 describe('paths helpers', () => {
+  it('lays out downloads as <modelsDir>/<owner>/<name>/<path in repo>', () => {
+    const lib = path.resolve('models');
+    expect(repoDir(lib, 'Qwen/Qwen3-4B-GGUF')).toBe(path.join(lib, 'Qwen', 'Qwen3-4B-GGUF'));
+    expect(libraryPath(lib, 'unsloth/Demo-GGUF', 'Q4_K_M/d-00001-of-00002.gguf')).toBe(path.join(lib, 'unsloth', 'Demo-GGUF', 'Q4_K_M', 'd-00001-of-00002.gguf'));
+  });
+
   it('normalizes Windows paths case-insensitively and keeps POSIX paths as is', () => {
     const abs = path.resolve('Some/Dir/File.GGUF');
     expect(normalizePath('Some/Dir/File.GGUF', 'win32')).toBe(abs.replace(/\//g, '\\').toLowerCase());

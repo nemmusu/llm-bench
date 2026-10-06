@@ -72,12 +72,32 @@ export async function loadCurated(resourcesDir: string): Promise<CuratedList> {
   return parsed.data;
 }
 
+/** How far below a tier a GPU may report and still count as that tier. */
+export const TIER_TOLERANCE = 0.08;
+
 /**
- * Entries recommended for a GPU with `vramGB`: every tier up to it, closest tier first (the
- * biggest models that still fit), then larger files first. `engine` narrows to one engine.
+ * VRAM as the tiers see it. Cards report a bit less than their nominal size (an RTX 5090 shows
+ * 31.8 GiB, a 4090 23.6, a 3060 11.7, a 3070 7.6): a value within TIER_TOLERANCE below a tier
+ * counts as that tier; anything else is kept as is.
+ */
+export function snapToTier(vramGB: number): number {
+  const up = CURATED_TIERS.find((t) => t >= vramGB);
+  return up !== undefined && vramGB >= up * (1 - TIER_TOLERANCE) ? up : vramGB;
+}
+
+/** The largest tier a GPU with `vramGB` belongs to (after snapToTier), or undefined below the smallest. */
+export function tierFor(vramGB: number): number | undefined {
+  const gb = snapToTier(vramGB);
+  return [...CURATED_TIERS].reverse().find((t) => t <= gb);
+}
+
+/**
+ * Entries recommended for a GPU with `vramGB`: every tier up to it (see snapToTier), closest tier
+ * first (the biggest models that still fit), then larger files first. `engine` narrows to one engine.
  */
 export function curatedForVram(list: CuratedList, vramGB: number, engine?: CuratedModel['engine']): CuratedModel[] {
+  const gb = snapToTier(vramGB);
   return list.models
-    .filter((m) => m.tier <= vramGB && (!engine || m.engine === engine))
+    .filter((m) => m.tier <= gb && (!engine || m.engine === engine))
     .sort((a, b) => b.tier - a.tier || b.sizeBytes - a.sizeBytes);
 }

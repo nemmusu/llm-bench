@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import { displayCommand, redactArgv, redactEnv } from '../../../../src/core/engines/command-display';
-import { toLaunchRecord, type LaunchPlan } from '../../../../src/core/engines/types';
+import { toLaunchRecord, weightFiles, type LaunchPlan, type ModelTarget } from '../../../../src/core/engines/types';
+
+describe('weightFiles', () => {
+  const identity: ModelTarget['identity'] = { displayName: 'M', format: 'gguf', source: 'hf', files: [], weakKey: 'w' };
+  const local: NonNullable<ModelTarget['local']> = {
+    id: 'm',
+    identity,
+    paths: ['/m/a-00001-of-00002.gguf', '/m/a-00002-of-00002.gguf', '/m/mmproj.gguf'],
+    auxiliary: [{ kind: 'mmproj', path: '/m/mmproj.gguf' }],
+    dir: '/m',
+    origin: 'library',
+    modifiedAt: '',
+  };
+  const pending = { repo: 'o/r', file: 'a.gguf', paths: ['/lib/o/r/a.gguf'], bytes: 10 };
+
+  it('loads the local weights only (never auxiliaries)', () => {
+    expect(weightFiles({ identity, local }, true)).toEqual({ files: ['/m/a-00001-of-00002.gguf', '/m/a-00002-of-00002.gguf'], pending: false });
+  });
+
+  it('uses a pending download only in a preview', () => {
+    expect(weightFiles({ identity, pending }, true)).toEqual({ files: ['/lib/o/r/a.gguf'], pending: true });
+    expect(weightFiles({ identity, pending })).toEqual({ files: [], pending: false });
+    expect(weightFiles({ identity }, true)).toEqual({ files: [], pending: false });
+  });
+});
 
 describe('toLaunchRecord', () => {
   const plan: LaunchPlan = {

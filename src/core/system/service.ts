@@ -99,6 +99,7 @@ export function createSystemService(o: SystemServiceOptions): SystemService {
         cpu: fp.cpu,
         ramBytes: fp.ramBytes,
         hostLabel: fp.hostLabel,
+        hostId: fp.hostId,
         nvidiaSmi: smi,
         otherGpuUsers: users,
         docker,
