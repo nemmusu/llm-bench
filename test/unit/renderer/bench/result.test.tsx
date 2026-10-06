@@ -45,6 +45,17 @@ function withLibrary(runs: RunResult[] = seededRuns()) {
 }
 
 describe('result overview', () => {
+  it('stability counts prompt reading too, like the "unstable" warning (they never disagree)', async () => {
+    const runs = seededRuns().map((r) =>
+      r.id === IDS.full
+        ? { ...r, metrics: { ...r.metrics, latency: r.metrics.latency.map((p) => ({ ...p, decodeTps: { ...p.decodeTps, cv: 0.01 }, prefillTps: { ...p.prefillTps, cv: 0.08 } })) } }
+        : r,
+    );
+    renderApp(`/results/${IDS.full}`, withLibrary(runs));
+    expect(await screen.findByText('Variabile')).toBeTruthy();
+    expect(screen.queryByText('Ottima')).toBeNull();
+  });
+
   it('explains the run: score, sentence, warnings with actions, KPIs and charts', async () => {
     const api = withLibrary();
     const { router } = renderApp(`/results/${IDS.full}`, api);

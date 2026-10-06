@@ -79,7 +79,8 @@ function ScoreCard({ k }: { k: Kpis }) {
 function RunSummaryCard({ run }: { run: RunResult }) {
   const { t, duration, percent } = useI18n();
   const reps = run.scenario.steps.find((s) => s.kind === 'latency');
-  const cvs = run.metrics.latency.map((p) => p.decodeTps.cv);
+  // The same measurements the "unstable" flag looks at (generation and prompt reading), so the two never disagree.
+  const cvs = run.metrics.latency.flatMap((p) => [p.decodeTps, p.prefillTps]).filter((s) => s.n > 1).map((s) => s.cv);
   const worst = cvs.length ? Math.max(...cvs) : undefined;
   const level = worst === undefined ? undefined : worst < 0.02 ? 'Good' : worst < 0.05 ? 'Ok' : 'Bad';
   const items: { label: string; value: ReactNode; help?: string }[] = [

@@ -1016,7 +1016,7 @@ export const en: Messages = {
       stabilityGood: 'Excellent',
       stabilityOk: 'Good',
       stabilityBad: 'Variable',
-      stabilityHelp: 'How similar the repetitions of the same measurement are. Under 2% variation the numbers are reliable.',
+      stabilityHelp: 'How similar the repetitions of the same measurement are (generation and prompt reading; the most variable one counts). Under 2% variation the numbers are reliable.',
     },
     kpis: 'Key numbers',
     variation: 'variation {cv}',

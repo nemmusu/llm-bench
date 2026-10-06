@@ -1017,7 +1017,7 @@ export const it = {
       stabilityGood: 'Ottima',
       stabilityOk: 'Buona',
       stabilityBad: 'Variabile',
-      stabilityHelp: 'Quanto si somigliano le ripetizioni della stessa misura. Sotto il 2% di variazione i numeri sono affidabili.',
+      stabilityHelp: 'Quanto si somigliano le ripetizioni della stessa misura (generazione e lettura del prompt; conta la più variabile). Sotto il 2% di variazione i numeri sono affidabili.',
     },
     kpis: 'Numeri principali',
     variation: 'variazione {cv}',
