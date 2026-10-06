@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+coverage/
+.coverage-raw/
+test-results/
+playwright-report/
+.qa/
+*.log
+.DS_Store
+Thumbs.db

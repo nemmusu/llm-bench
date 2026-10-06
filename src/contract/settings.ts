@@ -1,0 +1,33 @@
+import { z } from 'zod';
+import { engineConfigSchema, launchParamsSchema } from './engines';
+
+export const SETTINGS_SCHEMA_VERSION = 1;
+
+export const settingsSchema = z.object({
+  schema: z.literal(SETTINGS_SCHEMA_VERSION).default(SETTINGS_SCHEMA_VERSION),
+  language: z.enum(['it', 'en']).default('it'),
+  theme: z.enum(['system', 'light', 'dark']).default('system'),
+  density: z.enum(['comfortable', 'compact']).default('comfortable'),
+  expertMode: z.boolean().default(false),
+  onboardingDone: z.boolean().default(false),
+  /** Where run JSON files live; may be a shared/synced folder. Empty = default app data folder. */
+  resultsDir: z.string().default(''),
+  /** Where downloaded models go. Empty = default. */
+  modelsDir: z.string().default(''),
+  /** Extra folders scanned for existing models. */
+  extraModelDirs: z.array(z.string()).default([]),
+  scanKnownLocations: z.boolean().default(true),
+  /** Windows: user opted in to the elevated standby-list purge task for real cold loads. */
+  coldCacheOptIn: z.boolean().default(false),
+  /** Last benchmark choices, restored on the home screen. */
+  lastEngine: engineConfigSchema.optional(),
+  lastModelId: z.string().optional(),
+  lastProfile: z.enum(['quick', 'standard', 'full', 'custom']).default('quick'),
+  lastParams: launchParamsSchema.optional(),
+  /** HF token is never stored here (main process keeps it encrypted with safeStorage). */
+  hasHfToken: z.boolean().default(false),
+  telemetryIntervalMs: z.number().int().min(100).max(5000).default(250),
+});
+export type Settings = z.infer<typeof settingsSchema>;
+
+export const defaultSettings = (): Settings => settingsSchema.parse({});
