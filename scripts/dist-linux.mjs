@@ -6,7 +6,7 @@
 // The committed sources (git archive of HEAD) are copied into the container: no Windows
 // node_modules or build output leaks into the Linux build.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,4 +55,10 @@ run('docker', [
   '-lc',
   script,
 ]);
-console.log(`✔ Linux packages in ${outDir}`);
+// Never report success without the packages (a failing step inside the container must not slip by).
+const built = readdirSync(outDir).filter((f) => f.endsWith('.deb') || f.endsWith('.AppImage'));
+if (built.length < 2) {
+  console.error(`✖ expected a .deb and an AppImage in ${outDir}, found: ${built.join(', ') || 'nothing'}`);
+  process.exit(1);
+}
+console.log(`✔ Linux packages: ${built.join(', ')}`);

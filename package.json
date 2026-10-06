@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Misura le prestazioni della tua GPU con l'inferenza LLM (llama.cpp, vLLM).",
   "author": "GPU Bench",
+  "homepage": "https://gpu-bench.invalid",
   "license": "MIT",
   "private": true,
   "main": "out/main/index.cjs",
