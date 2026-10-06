@@ -84,6 +84,10 @@ interface Prepared {
   warnings: ScenarioWarning[];
 }
 
+/** vLLM's default gpu_memory_utilization, and the VRAM left free when GPU Bench lowers it. */
+const VLLM_DEFAULT_UTILIZATION = 0.9;
+const VLLM_FREE_MARGIN_MIB = 768;
+
 /** Starts, tracks and cancels benchmark runs: one at a time (the GPU is the shared resource). */
 export class BenchService {
   private readonly deps: BenchServiceDeps;
@@ -111,12 +115,32 @@ export class BenchService {
     const adapter = this.deps.getAdapter(req.engine.kind);
     const modelContext = model.identity.facts?.contextLength;
     const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
+    const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const port = await this.deps.pickPort();
     const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
     const launch = await adapter.plan(req.engine, model, params, { port, marker });
     const kvUnified = launch.argv.includes('--kv-unified');
     const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, modelContext, { kvUnified }));
-    return { model, adapter, params, port, marker, launch, scenario: fitted.scenario, warnings: fitted.warnings };
+    const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
+    return { model, adapter, params, port, marker, launch, scenario: fitted.scenario, warnings };
+  }
+
+  /**
+   * vLLM reserves gpu_memory_utilization × total VRAM up front (default 0.9) and refuses to start when
+   * that much is not free. When other programs hold VRAM and the user did not choose a value, use what
+   * is actually free (minus a margin) so the run can still happen; the run notes say so. Below 20 % the
+   * model will not fit anyway and the normal VRAM checks report it.
+   */
+  private async fitVllmMemory(kind: EngineKind, params: LaunchParams): Promise<ScenarioWarning | undefined> {
+    if ((kind !== 'vllm-docker' && kind !== 'vllm-native') || params.gpuMemoryUtilization !== undefined) return undefined;
+    const g = (await this.deps.telemetry.snapshot().catch(() => []))[0];
+    if (!g?.memTotalMiB || g.memUsedMiB === null) return undefined;
+    const free = g.memTotalMiB - g.memUsedMiB;
+    if (free >= VLLM_DEFAULT_UTILIZATION * g.memTotalMiB + VLLM_FREE_MARGIN_MIB) return undefined;
+    const util = Math.floor(((free - VLLM_FREE_MARGIN_MIB) / g.memTotalMiB) * 100) / 100;
+    if (util < 0.2) return undefined;
+    params.gpuMemoryUtilization = util;
+    return { code: 'gpu_memory_reduced', params: { utilization: util, freeMiB: free, totalMiB: g.memTotalMiB } };
   }
 
   /** "This PC + GPU", for ranking past results. Cached once known. */

@@ -41,6 +41,8 @@ export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { mode
   if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
   if (params.threads !== undefined) args.push('-t', String(params.threads));
   if (params.parallel !== undefined) args.push('-np', String(params.parallel));
+  // One KV pool shared by the slots (as in the native adapter): long prompts get the whole context.
+  if (params.parallel !== undefined && params.parallel > 1 && caps.flags.has('--kv-unified')) args.push('--kv-unified');
   // Auto-fit would silently change ctx/ngl: the measured configuration must be the requested one.
   if (caps.fitFlag) args.push('--fit', 'off');
   if (caps.flags.has('--no-webui')) args.push('--no-webui');
