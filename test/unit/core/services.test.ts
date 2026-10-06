@@ -506,3 +506,55 @@ describe('vLLM models from the library', () => {
     expect(await needs({ ...vreq, model: { localId: 'st1' } })).toEqual([]);
   });
 });
+
+describe('Docker model volumes in the composition', () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    t = tempDir();
+  });
+  afterEach(() => t.cleanup());
+
+  const quiet: ProcessRunner = {
+    run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+    spawn: () => {
+      throw new Error('no spawn');
+    },
+  };
+
+  it('uses the volume copy for llama.cpp Docker runs on Windows only', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quiet, platform: 'win32' }));
+    const s = await createServices(ctx, { modelServices: false });
+    const adjust = (s.bench as unknown as { deps: { adjustEngine: (r: StartRunRequest, m: unknown) => Promise<unknown> } }).deps.adjustEngine;
+    const dreq = { ...base, engine: { kind: 'llamacpp-docker' as const }, model: { localId: 'abc' } };
+    const target = { identity: local.identity, local };
+    s.modelVolumes.exists = async () => true;
+    expect(await adjust(dreq, target)).toEqual({ kind: 'llamacpp-docker', modelVolume: 'gpubench-model-abc' });
+    expect(await adjust({ ...dreq, engine: { kind: 'llamacpp-docker', modelVolume: 'mine' } }, target)).toBeUndefined();
+    expect(await adjust({ ...dreq, engine: { kind: 'vllm-docker' } }, target)).toBeUndefined();
+    expect(await adjust(dreq, { identity: local.identity })).toBeUndefined();
+    s.modelVolumes.exists = async () => false;
+    expect(await adjust(dreq, target)).toBeUndefined();
+    s.modelVolumes.exists = () => Promise.reject(new Error('docker down'));
+    expect(await adjust(dreq, target)).toBeUndefined();
+
+    const linux = await createServices(testContext(testDeps(t.dir, { proc: quiet, platform: 'linux' })), { modelServices: false });
+    linux.modelVolumes.exists = async () => true;
+    const adjustLinux = (linux.bench as unknown as { deps: { adjustEngine: (r: StartRunRequest, m: unknown) => Promise<unknown> } }).deps.adjustEngine;
+    expect(await adjustLinux(dreq, target)).toBeUndefined();
+  });
+
+  it('serves the volume routes with the library lookup', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    const s = await createServices(ctx, { modelServices: false, models: { getLocal: async (id) => (id === 'abc' ? local : undefined) } });
+    s.modelVolumes.copy = async () => 'v';
+    s.modelVolumes.list = async () => ['abc'];
+    const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+    const H = { authorization: 'Bearer t', host: '127.0.0.1:1', 'content-type': 'application/json' };
+    expect(await (await app.request('/api/docker/model-volumes', { headers: H })).json()).toEqual({ localIds: ['abc'] });
+    expect((await app.request('/api/docker/model-volumes', { method: 'POST', headers: H, body: JSON.stringify({ localId: 'abc' }) })).status).toBe(200);
+    expect((await app.request('/api/docker/model-volumes', { method: 'POST', headers: H, body: JSON.stringify({ localId: 'zzz' }) })).status).toBe(404);
+    const bare = await createServices(testContext(testDeps(t.dir, { proc: quiet })), { modelServices: false });
+    const app2 = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(bare) });
+    expect((await app2.request('/api/docker/model-volumes', { method: 'POST', headers: H, body: JSON.stringify({ localId: 'abc' }) })).status).toBe(404);
+  });
+});

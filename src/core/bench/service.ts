@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { RunPlan, StartRunRequest } from '../../contract/api';
-import { launchParamsSchema, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
@@ -58,6 +58,8 @@ export interface BenchServiceDeps {
   telemetryIntervalMs?: () => number | Promise<number>;
   /** Core shutdown: cancels the active run (which is then saved as cancelled). */
   shutdown?: AbortSignal;
+  /** Last-minute engine tweaks the user never has to think about (e.g. use the model's Docker volume copy). */
+  adjustEngine?: (req: StartRunRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
   /** Reason a run cannot start right now (e.g. a GPU Bench server holds the GPU), or undefined. */
   blockedBy?: () => AppError | undefined;
 }
@@ -76,6 +78,8 @@ interface Current extends ActiveRun {
 interface Prepared {
   model: ModelTarget;
   adapter: EngineAdapter;
+  /** The engine configuration actually used (adjustEngine may add a Docker model volume…). */
+  engine: EngineConfig;
   params: LaunchParams;
   port: number;
   marker: string;
@@ -118,11 +122,12 @@ export class BenchService {
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const port = await this.deps.pickPort();
     const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
-    const launch = await adapter.plan(req.engine, model, params, { port, marker });
+    const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
+    const launch = await adapter.plan(engine, model, params, { port, marker });
     const kvUnified = launch.argv.includes('--kv-unified');
     const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, modelContext, { kvUnified }));
     const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
-    return { model, adapter, params, port, marker, launch, scenario: fitted.scenario, warnings };
+    return { model, adapter, engine, params, port, marker, launch, scenario: fitted.scenario, warnings };
   }
 
   /**
@@ -264,7 +269,7 @@ export class BenchService {
     });
     const input: RunInput = {
       runId,
-      engineConfig: req.engine,
+      engineConfig: p.engine,
       model: p.model,
       params: p.params,
       scenario: p.scenario,

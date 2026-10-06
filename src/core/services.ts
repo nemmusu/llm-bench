@@ -7,6 +7,8 @@ import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
 import { createCacheRoutes } from './cache/routes';
+import { createModelVolumeRoutes } from './docker/model-volume-routes';
+import { ModelVolumes, modelVolumeName } from './docker/model-volumes';
 import { createDockerRoutes } from './docker/routes';
 import { createDockerServices, type DockerServices } from './docker/services';
 import { LlamaDockerAdapter } from './engines/llamacpp-docker/adapter';
@@ -54,6 +56,9 @@ export interface CoreServices {
   llama: LlamaNativeAdapter;
   docker: DockerServices;
   vllmDocker: VllmDockerAdapter;
+  /** Models copied into Docker volumes (fast loads with Docker Desktop). */
+  modelVolumes: ModelVolumes;
+  models?: ModelsLookup;
   runs: RunsRepo;
   bench: BenchService;
   /** Engines started with "Avvia solo il server così". */
@@ -230,6 +235,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
     new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
   ]);
+  const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
   void docker.env.cleanupOrphans().catch(() => undefined);
 
@@ -340,6 +346,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     getAdapter: (kind) => registry.require(kind),
     resolveModel: (req) => resolveModelTarget(req, models),
     slowSharedFilesystem: (plan) => (plan as Partial<DockerLaunchPlan>).slowSharedFilesystem === true,
+    // Docker Desktop (Windows/macOS) reads host folders slowly: use the model's volume copy when there is one.
+    adjustEngine: async (req, model) =>
+      req.engine.kind === 'llamacpp-docker' && deps.platform !== 'linux' && !req.engine.modelVolume && model.local && (await modelVolumes.exists(model.local.id).catch(() => false))
+        ? { ...req.engine, modelVolume: modelVolumeName(model.local.id) }
+        : undefined,
     newMarker: () => (lastMarker = `gpubench-${randomUUID()}`),
     ...(modelServices
       ? {
@@ -371,6 +382,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     llama,
     docker,
     vllmDocker,
+    modelVolumes,
+    ...(models ? { models } : {}),
     runs,
     bench,
     serve,
@@ -426,6 +439,13 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
+    (app, ctx) =>
+      createModelVolumeRoutes({
+        volumes: s.modelVolumes,
+        getLocal: async (id) => s.models?.getLocal(id),
+        publish: (e) => ctx.hub.publish(e),
+        shutdown: ctx.shutdown,
+      })(app, ctx),
     createServerRoutes(s.serve),
     createSetupRoutes(s.setup),
     createCacheRoutes(s),
