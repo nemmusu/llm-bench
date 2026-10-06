@@ -7,7 +7,7 @@ import { navIdFor, pageTitleKey } from '../../../src/renderer/lib/nav';
 import { applyDocumentTheme, prefersReducedMotion, resolveTheme, TITLE_BAR_COLORS, watchSystemTheme } from '../../../src/renderer/lib/theme';
 import { useTweened } from '../../../src/renderer/lib/use-tweened';
 import { ApiProvider, EventsProvider, useApi, useCoreConnected, useServerEvents } from '../../../src/renderer/lib/api-context';
-import { SettingsProvider, useSettings } from '../../../src/renderer/lib/settings';
+import { SETTINGS_QUERY_KEY, SettingsProvider, useSettings } from '../../../src/renderer/lib/settings';
 import { useHealth, useSystem } from '../../../src/renderer/lib/queries';
 import type { ServerEvent } from '../../../src/contract/events';
 import { fakeApi, newQueryClient } from './helpers';
@@ -255,6 +255,34 @@ describe('SettingsProvider', () => {
     expect(result.current.resolvedTheme).toBe('dark');
     act(() => result.current.update({ density: 'compact' }));
     await waitFor(() => expect(result.current.settings.density).toBe('compact'));
+  });
+
+  it('stores the saved settings as they are when the cache was cleared during the save', async () => {
+    mockMatchMedia({});
+    const api = fakeApi();
+    const qc = newQueryClient();
+    const wrap = ({ children }: { children: React.ReactNode }) => (
+      <ApiProvider api={api}>
+        <QueryClientProvider client={qc}>
+          <SettingsProvider>{children}</SettingsProvider>
+        </QueryClientProvider>
+      </ApiProvider>
+    );
+    const { result } = renderHook(() => useSettings(), { wrapper: wrap });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    let release: (() => void) | undefined;
+    const original = api.put;
+    api.put = vi.fn(async (path: string, body?: unknown) => {
+      await new Promise<void>((r) => (release = r));
+      return original(path, body);
+    }) as typeof api.put;
+    act(() => result.current.update({ theme: 'dark' }));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    // Nothing local is left to keep (e.g. the query cache was reset): the server answer wins as is.
+    qc.removeQueries({ queryKey: SETTINGS_QUERY_KEY });
+    await act(async () => release?.());
+    await waitFor(() => expect(qc.getQueryData(SETTINGS_QUERY_KEY)).toMatchObject({ theme: 'dark' }));
+    expect(api.settings.theme).toBe('dark');
   });
 
   it('useSettings requires a provider', () => {

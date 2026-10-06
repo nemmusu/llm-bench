@@ -41,6 +41,7 @@ function repoParam(c: Context): string {
  *   POST   /api/models/rescan                         -> LocalModel[]
  *   GET    /api/models/search?q=&format=&sort=&limit=&onlyFits= -> HubModel[]
  *   GET    /api/models/curated?vramGB=                -> CuratedResponse
+ *   GET    /api/models/hub/:owner/:name?revision=     -> HubRepoInfo (HubModel + sha, private)
  *   GET    /api/models/hub/:owner/:name/files?revision= -> HubFile[]
  *   GET    /api/models/hub/:owner/:name/readme        -> { text, truncated }
  *   GET    /api/models/hub/:owner/:name/gguf-facts?file=&revision= -> { facts, fileBytes }
@@ -60,6 +61,10 @@ export function createModelsRoutes(svc: ModelsService): RouteModule {
     app.get('/api/models/curated', async (c) => {
       const vram = z.coerce.number().positive().max(4096).optional().parse(c.req.query('vramGB'));
       return c.json(await svc.curated(vram));
+    });
+    app.get('/api/models/hub/:owner/:name', async (c) => {
+      const revision = revisionSchema.parse(c.req.query('revision'));
+      return c.json(await svc.hubModel(repoParam(c), revision));
     });
     app.get('/api/models/hub/:owner/:name/files', async (c) => {
       const revision = revisionSchema.parse(c.req.query('revision'));

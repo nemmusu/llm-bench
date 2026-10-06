@@ -107,7 +107,14 @@ describe('setup routes', () => {
       { type: 'engine.install', kind: 'docker-desktop', bytesDone: 0, stage: 'starting' },
       { type: 'engine.install', kind: 'docker-desktop', bytesDone: 10, bytesTotal: 100, stage: 'download' },
       { type: 'engine.install', kind: 'docker-desktop', bytesDone: 100, bytesTotal: 100, stage: 'verify' },
-      { type: 'engine.install', kind: 'docker-desktop', bytesDone: 100, bytesTotal: 100, stage: 'reboot-maybe-required' },
+      {
+        type: 'engine.install',
+        kind: 'docker-desktop',
+        bytesDone: 100,
+        bytesTotal: 100,
+        stage: 'reboot-maybe-required',
+        result: { kind: 'docker-desktop', outcome: 'reboot-maybe-required', exitCode: 3010 },
+      },
     ]);
     const jobs = (await json(await app.request('/api/setup/jobs'))) as SetupJob[];
     expect(jobs).toEqual([
@@ -140,13 +147,20 @@ describe('setup routes', () => {
     docker.run.reject(new AppError('ENGINE_INSTALL_FAILED', 'Installer signature check failed: status', { params: { reason: 'bad-signature' } }));
     await tick();
     expect(svc.jobs()[0]).toMatchObject({ state: 'failed', stage: 'failed', error: { code: 'ENGINE_INSTALL_FAILED', params: { reason: 'bad-signature' } } });
-    expect(events.at(-1)).toMatchObject({ stage: 'failed' });
+    // The final event carries the error, so the UI can explain it without polling the jobs.
+    expect(events.at(-1)).toEqual({
+      type: 'engine.install',
+      kind: 'docker-desktop',
+      bytesDone: 0,
+      stage: 'failed',
+      error: { code: 'ENGINE_INSTALL_FAILED', message: 'Installer signature check failed: status', params: { reason: 'bad-signature' } },
+    });
     docker.run = deferred();
     expect(await json(await app.request('/api/setup/docker/install', { method: 'POST' }))).toMatchObject({ started: true });
   });
 
   it('cancels a running job through the API', async () => {
-    const { app, docker } = setup();
+    const { app, docker, events } = setup();
     await app.request('/api/setup/docker/install', { method: 'POST' });
     const res = await app.request('/api/setup/jobs/docker-desktop/cancel', { method: 'POST' });
     expect(await json(res)).toMatchObject({ kind: 'docker-desktop', state: 'running' });
@@ -156,6 +170,8 @@ describe('setup routes', () => {
     await tick();
     const job = ((await json(await app.request('/api/setup/jobs'))) as SetupJob[])[0];
     expect(job).toMatchObject({ state: 'cancelled', stage: 'cancelled', error: { code: 'CANCELLED' } });
+    expect(events.at(-1)).toMatchObject({ stage: 'cancelled', error: { code: 'CANCELLED' } });
+    expect(events.at(-1)).not.toHaveProperty('result');
     // Cancelling a finished job is a no-op that returns it.
     expect(await json(await app.request('/api/setup/jobs/docker-desktop/cancel', { method: 'POST' }))).toMatchObject({ state: 'cancelled' });
   });
@@ -192,6 +208,7 @@ describe('setup routes', () => {
     await tick();
     expect(svc.jobs()[0]).toMatchObject({ kind: 'uv', state: 'done', stage: 'installed', result: { version: '0.12.23' } });
     expect(events.map((e) => (e as { stage: string }).stage)).toEqual(['starting', 'download', 'installed']);
+    expect(events.at(-1)).toMatchObject({ result: { version: '0.12.23', path: '/e/uv/0.12.23/uv' } });
     expect(await svc.uvPath()).toBe('/e/uv/0.12.23/uv');
   });
 

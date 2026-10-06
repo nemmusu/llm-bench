@@ -4,7 +4,7 @@ import type { FitEstimate } from '../../../../src/contract/models';
 import { BenchService } from '../../../../src/core/bench/service';
 import { isRunId } from '../../../../src/core/store/runs-id';
 import { hardware, makeRun, modelIdentity } from '../store/fixtures';
-import { deferred } from './fakes';
+import { deferred, modelTarget } from './fakes';
 import { request, serviceSetup, TempDirs } from './service-helpers';
 
 const tmp = new TempDirs();
@@ -42,6 +42,49 @@ describe('BenchService.start', () => {
     expect(run?.launch.argv.some((a) => a.startsWith('gpubench-'))).toBe(true);
     expect(s.ev.ofType('run.done')[0]?.runId).toBe(runId);
     await svc.whenIdle();
+  });
+
+  it('describes the active run for the live screen (GET /api/runs/active)', async () => {
+    const gate = deferred();
+    const s = serviceSetup(tmp, { adapter: { gate: gate.promise } });
+    const svc = new BenchService(s.deps);
+    const wall = s.world.clock.wall();
+    const { runId } = await svc.start(request({ profile: 'standard' }));
+    const active = svc.active();
+    expect(active).toEqual({
+      runId,
+      phase: expect.any(String),
+      progress: expect.any(Number),
+      startedAt: new Date(wall).toISOString(),
+      profile: 'standard',
+      estimatedSeconds: (await svc.plan(request({ profile: 'standard' }))).estimatedSeconds,
+      modelName: modelIdentity().displayName,
+      engineLabel: 'llama.cpp b11438 (CUDA 13.4)',
+      scenario: expect.objectContaining({ profile: 'standard' }),
+    });
+    gate.resolve();
+    await svc.whenIdle();
+    expect(svc.active()).toBeUndefined();
+  });
+
+  it('starts never in preview mode: the engine and the model must exist', async () => {
+    const seen: unknown[] = [];
+    const s = serviceSetup(tmp, {
+      deps: {
+        resolveModel: async (_req, o) => {
+          seen.push(o);
+          return modelTarget();
+        },
+      },
+    });
+    const svc = new BenchService(s.deps);
+    await svc.start(request());
+    await svc.whenIdle();
+    await svc.plan(request());
+    expect(seen).toEqual([{ preview: false }, { preview: true }]);
+    // Only the plan preview asked the adapter for one (the runner re-plans its own instances for real).
+    expect(s.adapter.plans[0]?.preview).toBe(false);
+    expect(s.adapter.plans.map((p) => p.preview === true)).toEqual([...s.adapter.plans.slice(1).map(() => false), true]);
   });
 
   it('reports the current phase and progress while running', async () => {
@@ -232,6 +275,28 @@ describe('BenchService.plan', () => {
     expect(plan.estimatedSeconds).toBeGreaterThan(0);
   });
 
+  it('previews before installs/downloads: placeholders are listed as pending, needs see the resolved model', async () => {
+    const target = modelTarget({ pending: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', paths: ['C:/models/q.gguf'], bytes: 2.5e9 } });
+    const needsSaw: unknown[] = [];
+    const s = serviceSetup(tmp, {
+      deps: {
+        resolveModel: async () => target,
+        needs: async (_req, model) => {
+          needsSaw.push(model);
+          return [{ kind: 'model', label: 'Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf', bytes: 2.5e9 }];
+        },
+      },
+    });
+    const pendingAdapter = Object.assign(Object.create(s.adapter) as typeof s.adapter, {
+      plan: async (...a: Parameters<typeof s.adapter.plan>) => ({ ...(await s.adapter.plan(...a)), ...(a[3].preview ? { pending: ['engine' as const, 'model' as const] } : {}) }),
+    });
+    const svc = new BenchService({ ...s.deps, getAdapter: () => pendingAdapter });
+    const plan = await svc.plan(request());
+    expect(plan.pending).toEqual(['engine', 'model']);
+    expect(needsSaw).toEqual([target]);
+    expect(plan.needs).toEqual([{ kind: 'model', label: 'Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf', bytes: 2.5e9 }]);
+  });
+
   it('the previewed command is redacted like the stored one', async () => {
     const s = serviceSetup(tmp, { deps: { redact: (argv, env) => ({ argv: argv.map((a) => a.replace(/^gpubench-.*/, '<M>')), env }) } });
     const svc = new BenchService(s.deps);
@@ -249,6 +314,7 @@ describe('BenchService.plan', () => {
     const plan = await svc.plan(request());
     expect(plan.needs).toEqual([]);
     expect(plan).not.toHaveProperty('fit');
+    expect(plan).not.toHaveProperty('pending');
     expect(plan.warnings).toEqual([]);
     const t = serviceSetup(tmp, { telemetry: { available: 'throw', users: 'throw' }, deps: { fit: async () => fit({ level: 'partial', maxGpuLayers: 20 }) } });
     expect((await new BenchService(t.deps).plan(request())).warnings).toEqual([{ code: 'partial_offload', params: { maxGpuLayers: 20 } }]);

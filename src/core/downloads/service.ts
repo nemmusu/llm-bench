@@ -8,7 +8,7 @@ import type { ServerEvent } from '../../contract/events';
 import { downloadJobSchema, type DownloadJob, type HubFile } from '../../contract/models';
 import type { Clock, Logger } from '../deps';
 import type { HubClient } from '../models/hub';
-import { REPO_RE, safeRepoPath } from '../models/paths';
+import { REPO_RE, repoDir, safeRepoPath } from '../models/paths';
 import { DOWNLOAD_SIDECAR, readSidecar, type DownloadSidecar } from '../models/scanner';
 import { readJsonFile, writeFileAtomic } from '../store/atomic';
 import { downloadFile } from './downloader';
@@ -83,7 +83,8 @@ export function vllmRepoFiles(files: HubFile[]): string[] {
  * persisted to <dataDir>/downloads.json so jobs survive restarts (a job that was running comes
  * back paused; queued jobs start again).
  *
- * Destination layout (one folder per repo, so the scanner can infer the repo id):
+ * Destination layout (one folder per repo, so the scanner can infer the repo id; see models/paths
+ * repoDir/libraryPath):
  *   GGUF        → <modelsDir>/<owner>/<repo>/<file path in repo>   (split shards side by side)
  *   safetensors → <modelsDir>/<owner>/<repo>/…  the whole repo minus *.gguf, original/, *.pth
  *                 (vllmRepoFiles); vLLM loads that folder directly.
@@ -145,7 +146,6 @@ export class DownloadService {
     );
     if (same) return this.snapshot(same);
 
-    const [owner, name] = req.repo.split('/') as [string, string];
     const files = paths.map((p) => {
       const f = byPath.get(p) as HubFile;
       return { path: p, sizeBytes: f.sizeBytes, ...(f.sha256 ? { sha256: f.sha256 } : {}) };
@@ -155,7 +155,7 @@ export class DownloadService {
       label: req.label ?? (paths.length === 1 ? `${req.repo} · ${path.posix.basename(paths[0] as string)}` : req.repo),
       repo: req.repo,
       files,
-      dest: path.join(await this.opts.modelsDir(), owner, name),
+      dest: repoDir(await this.opts.modelsDir(), req.repo),
       state: 'queued',
       bytesDone: 0,
       bytesTotal: files.reduce((a, f) => a + f.sizeBytes, 0),

@@ -128,6 +128,25 @@ export function capsFromOutputs(versionText: string, helpText: string): LlamaCap
 }
 
 /**
+ * What a current llama-server supports, for previewing the command of a build that is not
+ * installed yet (the install picks the newest release): -fa on|off|auto, -ngl all, --fit,
+ * --kv-unified, --no-webui. The real build is probed once installed.
+ */
+export function currentLlamaCaps(): LlamaCaps {
+  return {
+    flags: new Set(['--flash-attn', '-fa', '--n-gpu-layers', '-ngl', '--cache-type-k', '-ctk', '--cache-type-v', '-ctv', '--fit', '--kv-unified', '--no-webui']),
+    tokenIdsInPrompt: true,
+    timings: true,
+    minTokens: false,
+    fitFlag: true,
+    flashAttn: 'value',
+    nglKeywords: ['auto', 'all'],
+    cacheTypes: ['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'],
+    entries: [],
+  };
+}
+
+/**
  * Variant of a custom build guessed from the files next to the binary (cudart64_13.dll,
  * libggml-cuda.so, ggml-vulkan.dll…). Managed builds know their variant from install.json.
  */

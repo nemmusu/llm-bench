@@ -264,6 +264,14 @@ describe('VllmNativeAdapter: install', () => {
     await b.install(await b.installPlan(), () => {}, new AbortController().signal);
     expect(proc.spawns[2]?.cmd).toBe('uv');
     expect(proc.spawns[3]?.args).toContain('vllm');
+    // uv resolved at install time (the setup module installs it on demand): its binary, else PATH.
+    let uvPath: string | undefined = '/data/engines/uv/uv';
+    const c = new VllmNativeAdapter({ deps: deps(root, proc), createClient: noClient, uv: async () => (uvPath ? [uvPath] : undefined) });
+    await c.install(await c.installPlan(), () => {}, new AbortController().signal);
+    expect(proc.spawns[4]?.cmd).toBe('/data/engines/uv/uv');
+    uvPath = undefined;
+    await c.install(await c.installPlan(), () => {}, new AbortController().signal);
+    expect(proc.spawns[6]?.cmd).toBe('uv');
   });
 });
 

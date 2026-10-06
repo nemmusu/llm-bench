@@ -5,6 +5,7 @@ import { AppError } from '../../contract/errors';
 import {
   RESULT_SCHEMA_VERSION,
   runResultSchema,
+  type EngineIdentity,
   type LatencyPoint,
   type RunResult,
   type RunSummary,
@@ -51,6 +52,12 @@ function headlinePoint(latency: readonly LatencyPoint[]): LatencyPoint | undefin
   return latency.find((p) => p.promptTokens === 512) ?? latency[0];
 }
 
+/** "llama.cpp b10997 (cuda-13.4)": engine name, build (or version) and variant. */
+export function engineLabelOf(e: Pick<EngineIdentity, 'name' | 'build' | 'version' | 'variant'>): string {
+  const release = e.build ?? e.version;
+  return `${e.name}${release ? ` ${release}` : ''}${e.variant ? ` (${e.variant})` : ''}`;
+}
+
 /** Lightweight row for lists and badges. `file` is the file's base name inside the results folder. */
 export function summaryOf(run: RunResult, file: string): RunSummary {
   const m = run.metrics;
@@ -58,8 +65,7 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const largest = [...m.latency].sort((a, b) => b.promptTokens - a.promptTokens)[0];
   const gpu = run.hardware.gpus[0];
   const e = run.engine;
-  const release = e.build ?? e.version;
-  const engineLabel = `${e.name}${release ? ` ${release}` : ''}${e.variant ? ` (${e.variant})` : ''}`;
+  const engineLabel = engineLabelOf(e);
   const prefill = largest ? (largest.prefillTpsEngine ?? largest.prefillTps).median : undefined;
   // The engine's own VRAM when the OS could attribute it; otherwise the total-minus-baseline estimate.
   const vramMiB = m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;

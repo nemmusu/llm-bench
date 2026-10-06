@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RunPlan, StartRunRequest } from '../../contract/api';
+import type { ActiveRun, RunPlan, StartRunRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { RunPhase, ServerEvent } from '../../contract/events';
@@ -9,7 +9,7 @@ import type { Scenario } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { newRunId } from '../store/runs-id';
-import type { HereIdentity, RunsRepo } from '../store/runs-repo';
+import { engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
 import { loadCorpus } from './prompts';
 import { BenchRunner, launchRecordOf, type RunInput, type RunnerDeps } from './runner';
@@ -34,15 +34,18 @@ export interface BenchServiceDeps {
   /** Secret redaction for stored/previewed commands (engines' redactArgv/redactEnv). */
   redact?: RunnerDeps['redact'];
   getAdapter: (kind: EngineKind) => EngineAdapter;
-  /** Local model / HF repo / external name → what the engine loads. Throws AppError (MODEL_NOT_FOUND…). */
-  resolveModel: (req: StartRunRequest) => Promise<ModelTarget>;
+  /**
+   * Local model / HF repo / external name → what the engine loads. Throws AppError (MODEL_NOT_FOUND…).
+   * With `preview`, a hub GGUF that is not downloaded yet resolves to its pending download.
+   */
+  resolveModel: (req: StartRunRequest, opts?: { preview?: boolean }) => Promise<ModelTarget>;
   /** A free 127.0.0.1 port for the engine. */
   pickPort: () => Promise<number>;
   /** Ownership marker for the engine process/container (default gpubench-<uuid>). */
   newMarker?: () => string;
   newRunId?: () => string;
   /** Downloads/installs the run needs first (engine, model, image), for the plan preview. */
-  needs?: (req: StartRunRequest) => Promise<RunPlan['needs']>;
+  needs?: (req: StartRunRequest, model: ModelTarget) => Promise<RunPlan['needs']>;
   /** VRAM fit estimate for the plan preview and the run's VRAM "estimate vs measured". */
   fit?: (req: StartRunRequest, model: ModelTarget, plan: LaunchPlan) => Promise<FitEstimate | undefined>;
   /** true when the model is read through a 9p/drvfs share (Docker Desktop on Windows, WSL /mnt/c). */
@@ -64,15 +67,16 @@ export interface BenchServiceDeps {
   blockedBy?: () => AppError | undefined;
 }
 
-export interface ActiveRun {
+export type { ActiveRun };
+
+interface Current {
   runId: string;
   phase: RunPhase;
   progress: number;
-}
-
-interface Current extends ActiveRun {
   controller: AbortController;
   done: Promise<void>;
+  /** What GET /api/runs/active shows besides phase and progress; set once the run is prepared. */
+  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress'>;
 }
 
 interface Prepared {
@@ -113,9 +117,10 @@ export class BenchService {
     return { ...req.scenario, profile: 'custom' };
   }
 
-  private async prepare(req: StartRunRequest): Promise<Prepared> {
+  /** `preview`: plan before installs/downloads (missing engine/model become their future paths). */
+  private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {
     const scenario = this.scenarioFor(req);
-    const model = await this.deps.resolveModel(req);
+    const model = await this.deps.resolveModel(req, { preview });
     const adapter = this.deps.getAdapter(req.engine.kind);
     const modelContext = model.identity.facts?.contextLength;
     const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
@@ -123,7 +128,7 @@ export class BenchService {
     const port = await this.deps.pickPort();
     const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
     const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
-    const launch = await adapter.plan(engine, model, params, { port, marker });
+    const launch = await adapter.plan(engine, model, params, { port, marker, preview });
     const kvUnified = launch.argv.includes('--kv-unified');
     const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, modelContext, { kvUnified }));
     const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
@@ -177,11 +182,15 @@ export class BenchService {
     }
   }
 
-  /** Preview for "Anteprima comando": exact command, downloads needed, duration, VRAM fit, warnings. */
+  /**
+   * Preview for "Anteprima comando": exact command, downloads needed, duration, VRAM fit, warnings.
+   * Works before the engine is installed or the model downloaded: the command then names where they
+   * will be (`pending`), and `needs` lists them with their sizes.
+   */
   async plan(req: StartRunRequest): Promise<RunPlan> {
-    const p = await this.prepare(req);
+    const p = await this.prepare(req, true);
     const shown = launchRecordOf(p.launch, this.deps.displayCommand, this.deps.redact);
-    const needs = (await this.deps.needs?.(req)) ?? [];
+    const needs = (await this.deps.needs?.(req, p.model)) ?? [];
     const fit = await this.deps.fit?.(req, p.model, p.launch);
     const warnings: RunPlan['warnings'] = [...p.warnings];
     if (await this.deps.telemetry.available().catch(() => false)) {
@@ -200,6 +209,7 @@ export class BenchService {
       scenario: p.scenario,
       command: { argv: shown.argv, ...shown.display },
       needs,
+      ...(p.launch.pending ? { pending: p.launch.pending } : {}),
       estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)),
       ...(fit ? { fit } : {}),
       warnings,
@@ -228,6 +238,7 @@ export class BenchService {
     if (blocked) throw blocked;
     const d = this.deps;
     const runId = d.newRunId?.() ?? newRunId(d.clock.wall());
+    const startedAt = new Date(d.clock.wall()).toISOString();
     const controller = new AbortController();
     // Claimed before the first await so two concurrent starts cannot both pass the check.
     const current: Current = { runId, phase: 'prepare', progress: 0, controller, done: Promise.resolve() };
@@ -236,9 +247,18 @@ export class BenchService {
     let fit: FitEstimate | undefined;
     let interval: number | undefined;
     try {
-      p = await this.prepare(req);
+      // Never a preview: a missing engine or model fails here (ENGINE_NOT_INSTALLED / MODEL_NOT_FOUND).
+      p = await this.prepare(req, false);
       fit = await d.fit?.(req, p.model, p.launch).catch(() => undefined);
       interval = await d.telemetryIntervalMs?.();
+      current.info = {
+        startedAt,
+        profile: p.scenario.profile,
+        estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)),
+        modelName: p.model.identity.displayName,
+        engineLabel: engineLabelOf(p.launch.engine),
+        scenario: p.scenario,
+      };
     } catch (e) {
       this.current = undefined;
       throw e;
@@ -302,10 +322,11 @@ export class BenchService {
     return true;
   }
 
+  /** The run in progress, once it is prepared (start() has returned its id), else undefined. */
   active(): ActiveRun | undefined {
-    if (!this.current) return undefined;
-    const { runId, phase, progress } = this.current;
-    return { runId, phase, progress };
+    const c = this.current;
+    if (!c?.info) return undefined;
+    return { runId: c.runId, phase: c.phase, progress: c.progress, ...c.info };
   }
 
   /** Resolves when no run is active (tests, shutdown). */

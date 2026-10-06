@@ -4,7 +4,7 @@ import type { ServerEvent } from '../../../../src/contract/events';
 import type { GpuSample } from '../../../../src/contract/hardware';
 import { runResultSchema, type RunResult } from '../../../../src/contract/results';
 import type { Clock, ExitInfo, LogLine } from '../../../../src/core/deps';
-import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PhaseMark } from '../../../../src/core/engines/types';
+import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PhaseMark, PlanOptions } from '../../../../src/core/engines/types';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../../../../src/core/inference/types';
 import { ProcessVramRecorder, type GpuMemoryListener, type GpuMemorySource } from '../../../../src/core/telemetry/process-vram';
 import type { GpuProcessMemory, GpuUser, PidSource, ProcessVramSession, TelemetrySampler, TelemetrySession } from '../../../../src/core/telemetry/types';
@@ -270,7 +270,7 @@ export function deferred(): { promise: Promise<void>; resolve: () => void } {
 export class FakeAdapter implements EngineAdapter {
   readonly kind: EngineKind;
   readonly instances: FakeInstance[] = [];
-  readonly plans: { port: number; marker: string; params: LaunchParams }[] = [];
+  readonly plans: (PlanOptions & { params: LaunchParams })[] = [];
   /** One client shared by every instance, so requests can be inspected across loads. */
   readonly client: FakeClient;
   constructor(
@@ -286,7 +286,7 @@ export class FakeAdapter implements EngineAdapter {
   async capabilities(): Promise<EngineCaps> {
     return { flags: new Set(), tokenIdsInPrompt: true, timings: true, minTokens: false, fitFlag: false };
   }
-  async plan(cfg: EngineConfig, _model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<LaunchPlan> {
+  async plan(cfg: EngineConfig, _model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
     if (this.o.failPlan) throw this.o.failPlan;
     this.plans.push({ ...opts, params });
     const { parallel, ...rest } = params;

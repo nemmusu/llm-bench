@@ -172,8 +172,82 @@ describe('engines routes', () => {
     const other = await app.request('/api/engines/vllm-docker/install', { method: 'POST', body: '{}' });
     expect(other.status).toBe(400);
     expect(await other.json()).toMatchObject({ error: { code: 'VALIDATION', params: { kind: 'vllm-docker' } } });
+    const unknown = await app.request('/api/engines/rm-rf/install', { method: 'POST', body: '{}' });
+    expect(await unknown.json()).toMatchObject({ error: { code: 'VALIDATION', params: { kind: 'rm-rf' } } });
     expect((await app.request('/api/engines/llamacpp-native/install', { method: 'POST', body: 'nope' })).status).toBe(400);
     expect((await app.request('/api/engines/llamacpp-native/install', { method: 'POST', body: '{"build":5}' })).status).toBe(400);
+    // An engine that has nothing to install (an external endpoint) is refused too.
+    const ext = setup({}, { registry: new EngineRegistry([fakeAdapter('external', async () => ({ kind: 'external', available: true, installed: true, problems: [], supported: true }))]) });
+    expect((await ext.app.request('/api/engines/external/install', { method: 'POST', body: '{}' })).status).toBe(400);
+  });
+
+  it('installs any engine with an installer: Docker image pulls with the chosen, saved or default image', async () => {
+    const seen: unknown[] = [];
+    const docker: EngineAdapter = {
+      ...fakeAdapter('llamacpp-docker', async () => ({ kind: 'llamacpp-docker', available: false, installed: false, problems: [], supported: true })),
+      installPlan: async (cfg) => {
+        seen.push(cfg);
+        const image = cfg.image ?? 'ghcr.io/ggml-org/llama.cpp:server-cuda';
+        return { kind: 'llamacpp-docker', label: `llama.cpp (${image})`, bytes: 10, items: [{ label: image, bytes: 10 }], data: { image } };
+      },
+      install: async (_plan, progress) => {
+        progress({ stage: 'download', bytesDone: 4, bytesTotal: 10 });
+        progress({ stage: 'done', bytesDone: 10, bytesTotal: 10 });
+      },
+    };
+    const vllm: EngineAdapter = { ...docker, kind: 'vllm-docker' };
+    const configs = async () => ({ 'vllm-docker': { kind: 'vllm-docker' as const, image: 'vllm/vllm-openai:v0.31.0' } });
+    const { app, events } = setup({}, { registry: new EngineRegistry([docker, vllm]), configs });
+    const post = (kind: string, body: unknown) => app.request(`/api/engines/${kind}/install`, { method: 'POST', body: JSON.stringify(body) });
+    expect(await (await post('llamacpp-docker', { image: 'ghcr.io/ggml-org/llama.cpp:server-cuda13' })).json()).toEqual({ ok: true });
+    await until(() => events.some((e) => e.type === 'engine.install' && e.stage === 'done'));
+    expect(events).toEqual([
+      { type: 'engine.install', kind: 'llamacpp-docker', stage: 'resolve', bytesDone: 0 },
+      { type: 'engine.install', kind: 'llamacpp-docker', stage: 'download', bytesDone: 4, bytesTotal: 10, image: 'ghcr.io/ggml-org/llama.cpp:server-cuda13' },
+      { type: 'engine.install', kind: 'llamacpp-docker', stage: 'done', bytesDone: 10, bytesTotal: 10, image: 'ghcr.io/ggml-org/llama.cpp:server-cuda13' },
+    ]);
+    // The previous install has finished (one at a time): the next one is accepted.
+    await new Promise((r) => setTimeout(r, 10));
+    events.length = 0;
+    await post('vllm-docker', {});
+    await until(() => events.some((e) => e.type === 'engine.install' && e.stage === 'done'));
+    expect(seen).toEqual([
+      { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda13' },
+      { kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0' },
+    ]);
+    expect(events.at(-1)).toMatchObject({ kind: 'vllm-docker', stage: 'done', image: 'vllm/vllm-openai:v0.31.0' });
+  });
+
+  it('ends every install with done (vLLM via uv), or with an error event that carries the error', async () => {
+    let fail = false;
+    const native: EngineAdapter = {
+      ...fakeAdapter('vllm-native', async () => ({ kind: 'vllm-native', available: false, installed: false, problems: [], supported: true })),
+      installPlan: async () => {
+        if (fail) throw new AppError('ENGINE_INSTALL_FAILED', 'vLLM native runs on Linux only', { params: { reason: 'unsupported-os' } });
+        return { kind: 'vllm-native', label: 'vLLM (vllm)', bytes: 0, items: [], data: { spec: 'vllm' } };
+      },
+      // An installer whose last progress is not "done": the route closes the install itself.
+      install: async (_plan, progress) => progress({ stage: 'verify', bytesDone: 7 }),
+    };
+    const { app, events } = setup({}, { registry: new EngineRegistry([native]) });
+    await app.request('/api/engines/vllm-native/install', { method: 'POST', body: '{}' });
+    await until(() => events.some((e) => e.type === 'engine.install' && e.stage === 'done'));
+    expect(events.slice(1)).toEqual([
+      { type: 'engine.install', kind: 'vllm-native', stage: 'verify', bytesDone: 7 },
+      { type: 'engine.install', kind: 'vllm-native', stage: 'done', bytesDone: 7 },
+    ]);
+    await new Promise((r) => setTimeout(r, 10));
+    fail = true;
+    events.length = 0;
+    await app.request('/api/engines/vllm-native/install', { method: 'POST', body: '{}' });
+    await until(() => events.some((e) => e.type === 'engine.install' && e.stage === 'error'));
+    expect(events.at(-1)).toEqual({
+      type: 'engine.install',
+      kind: 'vllm-native',
+      stage: 'error',
+      bytesDone: 0,
+      error: { code: 'ENGINE_INSTALL_FAILED', message: 'vLLM native runs on Linux only', params: { reason: 'unsupported-os' } },
+    });
   });
 
   it('core shutdown aborts a running install', async () => {

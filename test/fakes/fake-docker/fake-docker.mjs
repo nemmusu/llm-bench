@@ -6,8 +6,14 @@
 //   [--gpus G] [--ipc=host] [-p [ip:]host:cont] [-v src:dst[:ro]] [-e NAME[=V]] [--entrypoint E]
 //   [--pull P] IMAGE [ARGS…] | logs [-f] [--timestamps] ID | stop [-t N] ID | rm [-f] ID… |
 //   ps [-a] [--no-trunc] [--filter label=K[=V]]… [--format F] | container inspect ID | inspect ID |
-//   image inspect REF | pull REF
+//   image inspect REF | pull REF |
+//   volume create [--label K=V]… NAME | volume inspect NAME… | volume ls [--filter label=K[=V]]… [--format {{.Name}}|-q] |
+//   volume rm [-f] NAME…
 //   internal: __container ID (the "container runtime"), __api --socket PATH (fake Engine API)
+//
+// Named volumes are folders under <state>/volumes/<name> (a `run -v name:/dst` creates one, like the
+// daemon). The busybox helper image (present like every image not in FAKE_DOCKER_MISSING) runs
+// `cp SRC… DST` and `du -sb DIR…` for real on the mounted folders, so model copies into volumes work.
 //
 // Environment:
 //   FAKE_DOCKER_STATE     state dir (containers.json, logs/, daemon.json…); default <tmp>/gpubench-fake-docker
@@ -18,9 +24,24 @@
 //   FAKE_DOCKER_MISSING   comma-separated image refs that are not present locally (until pulled)
 //   FAKE_DOCKER_PULL_FAIL comma-separated image refs whose pull fails (manifest unknown)
 //   FAKE_DOCKER_ENGINE    fake engine CLI (default ../fake-engine/cli.mjs)
+//   FAKE_DOCKER_COPY_MS   busybox cp: pause after each copied file (default 0), so a copy can be observed or cancelled
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -375,6 +396,9 @@ async function cmdRun(args) {
   for (const v of o.volumes) {
     if (!v.named && !existsSync(v.src)) return createdFailure(`invalid mount config for type "bind": bind source path does not exist: ${v.src}`);
   }
+  // Like the daemon: a named volume that does not exist yet is created on first use.
+  for (const v of o.volumes) if (v.named) ensureVolume(v.src, {});
+  if (HELPER_IMAGE.test(repoOf(o.image)) && o.entrypoint === undefined) return runHelper(o);
 
   if (o.entrypoint !== undefined && o.entrypoint !== 'nvidia-smi') {
     return createdFailure(
@@ -408,6 +432,168 @@ async function cmdRun(args) {
   runtime.unref();
   out(id);
   return 0;
+}
+
+// ----------------------------------------------------------------------------- volumes + helper
+
+/** busybox, docker.io/busybox, docker.io/library/busybox (any tag). */
+const HELPER_IMAGE = /^(?:docker\.io\/(?:library\/)?)?busybox$/;
+
+function volumes() {
+  return readJson('volumes.json', []);
+}
+
+function ensureVolume(name, labels) {
+  const all = volumes();
+  if (!all.some((v) => v.name === name)) {
+    all.push({ name, labels, createdAt: nowNano() });
+    writeJson('volumes.json', all);
+  }
+  mkdirSync(p('volumes', name), { recursive: true });
+}
+
+function labelMatches(labels, filter) {
+  const m = /^label=([^=]+)(?:=(.*))?$/.exec(filter);
+  if (!m) return true;
+  return m[2] === undefined ? m[1] in labels : labels[m[1]] === m[2];
+}
+
+function cmdVolume(args) {
+  const [sub, ...rest] = args;
+  if (!requireDaemon()) return 1;
+  if (sub === 'create') {
+    const labels = {};
+    let name;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === '--label' || a === '-l' || a.startsWith('--label=')) {
+        const value = a.startsWith('--label=') ? a.slice('--label='.length) : rest[++i];
+        const k = value.indexOf('=');
+        labels[k < 0 ? value : value.slice(0, k)] = k < 0 ? '' : value.slice(k + 1);
+      } else if (a === '-d' || a === '--driver' || a === '-o' || a === '--opt') i++;
+      else if (a.startsWith('-')) {
+        err(`unknown flag: ${a}\nSee 'docker volume create --help'.`);
+        return 1;
+      } else name = a;
+    }
+    name ??= randomBytes(32).toString('hex');
+    ensureVolume(name, labels);
+    out(name);
+    return 0;
+  }
+  if (sub === 'inspect') {
+    const all = volumes();
+    const found = [];
+    let code = 0;
+    for (const n of rest.filter((a) => !a.startsWith('-'))) {
+      const v = all.find((x) => x.name === n);
+      if (!v) {
+        err(`Error response from daemon: get ${n}: no such volume`);
+        code = 1;
+        continue;
+      }
+      found.push({ CreatedAt: v.createdAt, Driver: 'local', Labels: v.labels, Mountpoint: `/var/lib/docker/volumes/${n}/_data`, Name: n, Options: null, Scope: 'local' });
+    }
+    out(JSON.stringify(found, null, 4));
+    return code;
+  }
+  if (sub === 'ls') {
+    const filters = [];
+    let format;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--filter' || rest[i] === '-f') filters.push(rest[++i]);
+      else if (rest[i] === '--format') format = rest[++i];
+      else if (rest[i] === '-q' || rest[i] === '--quiet') format = '{{.Name}}';
+    }
+    const rows = volumes().filter((v) => filters.every((f) => labelMatches(v.labels, f)));
+    if (format === '{{.Name}}') for (const v of rows) out(v.name);
+    else {
+      out('DRIVER    VOLUME NAME');
+      for (const v of rows) out(`local     ${v.name}`);
+    }
+    return 0;
+  }
+  if (sub === 'rm') {
+    const force = rest.includes('-f') || rest.includes('--force');
+    let code = 0;
+    for (const n of rest.filter((a) => !a.startsWith('-'))) {
+      const all = volumes();
+      if (!all.some((v) => v.name === n)) {
+        // `rm -f` of a volume that is already gone is not an error.
+        if (!force) {
+          err(`Error response from daemon: get ${n}: no such volume`);
+          code = 1;
+        }
+        continue;
+      }
+      writeJson('volumes.json', all.filter((v) => v.name !== n));
+      rmSync(p('volumes', n), { recursive: true, force: true });
+      out(n);
+    }
+    return code;
+  }
+  err(`docker: unknown command: docker volume ${sub ?? ''}\n\nRun 'docker volume --help' for more information`);
+  return 1;
+}
+
+/** Bytes of the files under `dir` (real `du -sb` also counts directory entries; ModelVolumes caps at the total). */
+function treeBytes(dir) {
+  const st = statSync(dir);
+  if (!st.isDirectory()) return st.size;
+  return readdirSync(dir).reduce((n, name) => n + treeBytes(path.join(dir, name)), 0);
+}
+
+/** The busybox helper container: `cp SRC… DST` and `du -sb DIR…` on the mounted folders. */
+async function runHelper(o) {
+  const mounts = [...o.volumes].sort((a, b) => b.dst.length - a.dst.length);
+  const host = (cp) => {
+    const v = mounts.find((m) => cp === m.dst || cp.startsWith(`${m.dst.replace(/\/$/, '')}/`));
+    return v ? { path: path.join(v.hostDir, cp.slice(v.dst.length)), ro: v.ro } : undefined;
+  };
+  const [cmd, ...args] = o.args;
+  const operands = args.filter((a) => !a.startsWith('-'));
+  if (cmd === 'cp') {
+    const dst = operands.pop();
+    if (dst === undefined || operands.length === 0) {
+      err('BusyBox v1.37.0 multi-call binary.\n\nUsage: cp [-arPLHpfinlsTu] SOURCE DEST');
+      return 1;
+    }
+    const d = host(dst);
+    if (!d || d.ro) {
+      err(`cp: can't create '${dst}': ${d ? 'Read-only file system' : 'No such file or directory'}`);
+      return 1;
+    }
+    let code = 0;
+    for (const src of operands) {
+      const s = host(src);
+      if (!s || !existsSync(s.path)) {
+        err(`cp: can't stat '${src}': No such file or directory`);
+        code = 1;
+        continue;
+      }
+      const target = dst.endsWith('/') || (existsSync(d.path) && statSync(d.path).isDirectory()) ? path.join(d.path, path.posix.basename(src)) : d.path;
+      copyFileSync(s.path, target);
+      await sleep(Number(env.FAKE_DOCKER_COPY_MS ?? 0));
+    }
+    return code;
+  }
+  if (cmd === 'du') {
+    let code = 0;
+    for (const dir of operands) {
+      const h = host(dir);
+      if (!h || !existsSync(h.path)) {
+        err(`du: ${dir}: No such file or directory`);
+        code = 1;
+        continue;
+      }
+      out(`${treeBytes(h.path)}\t${dir}`);
+    }
+    return code;
+  }
+  err(
+    `docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "${cmd ?? ''}": executable file not found in $PATH: unknown`,
+  );
+  return 127;
 }
 
 /** The "container runtime": runs the engine and records its timestamped output and exit. */
@@ -746,6 +932,8 @@ async function main(argv) {
       break;
     case 'pull':
       return cmdPull(rest);
+    case 'volume':
+      return cmdVolume(rest);
     case '__container':
       return cmdContainer(rest[0]);
     case '__api':

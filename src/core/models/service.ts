@@ -3,14 +3,14 @@ import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
 import type { EngineKind } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
-import type { FitEstimate, HubFile, HubModel, LocalModel } from '../../contract/models';
+import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity } from '../../contract/models';
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
-import { curatedForVram, loadCurated, type CuratedList, type CuratedModel } from './curated';
+import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
-import { HubClient, type HubFormat, type HubSort, type RemoteGgufFacts } from './hub';
-import { isInside, parseShard } from './paths';
+import { HubClient, type HubFormat, type HubRepoInfo, type HubSort, type RemoteGgufFacts } from './hub';
+import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
 import { quantFromFilename } from './quant';
 import { DOWNLOAD_SIDECAR, ModelScanner } from './scanner';
 import type { GpuInfoFn, GpuMem, ModelFactsEx, TokenFn } from './types';
@@ -42,8 +42,21 @@ export interface HubFitResult {
   facts: ModelFactsEx;
 }
 
+/** A hub GGUF before its download (see ModelsService.plannedGguf). */
+export interface PlannedGguf {
+  identity: ModelIdentity;
+  /** Path inside the repo of the file llama.cpp opens (first shard of a split model). */
+  file: string;
+  /** Where the downloader will write each shard. */
+  paths: string[];
+  bytes: number;
+}
+
 export interface CuratedResponse {
+  /** VRAM the list was chosen for (as asked, or read from the GPU). */
   vramGB?: number;
+  /** The VRAM tier that VRAM counts as (31.8 GiB → 32); absent below the smallest tier. */
+  tierGB?: number;
   reference: CuratedList['reference'];
   models: CuratedModel[];
 }
@@ -138,6 +151,11 @@ export class ModelsService {
     });
   }
 
+  /** Repo card data (downloads, likes, gated, license, formats, params…) of one hub repo. */
+  hubModel(repo: string, revision?: string): Promise<HubRepoInfo> {
+    return this.hub.info(repo, revision);
+  }
+
   hubFiles(repo: string, revision?: string): Promise<HubFile[]> {
     return this.hub.files(repo, revision);
   }
@@ -152,6 +170,55 @@ export class ModelsService {
 
   remoteGgufFacts(repo: string, file: string, revision?: string): Promise<RemoteGgufFacts> {
     return this.hub.ggufFacts(repo, file, revision);
+  }
+
+  /** The library copy of a hub GGUF (`file` = path in the repo; any shard of a split model), when downloaded. */
+  async findGguf(repo: string, file: string): Promise<LocalModel | undefined> {
+    const name = path.posix.basename(file);
+    const shard = parseShard(name);
+    const first = shard ? name.replace(/-\d{5}-of-(\d{5})\.gguf$/i, '-00001-of-$1.gguf') : name;
+    return (await this.list()).find((m) => m.identity.format === 'gguf' && m.identity.repo === repo && m.identity.file === first);
+  }
+
+  /**
+   * A hub GGUF as it will be once downloaded into the library, for plan previews before the
+   * download: the identity its local copy will have (same weak key and sha256, so past results are
+   * found), the paths the downloader will write (every shard) and the bytes to fetch.
+   */
+  async plannedGguf(repo: string, file: string, revision?: string): Promise<PlannedGguf> {
+    if (!REPO_RE.test(repo) || !safeRepoPath(file)) throw new AppError('VALIDATION', 'Invalid repo or file', { params: { repo, file } });
+    const files = await this.hub.files(repo, revision);
+    const target = files.find((f) => f.path === file);
+    if (!target) throw new AppError('HF_NOT_FOUND', `File not in repo: ${file}`, { params: { repo, file } });
+    const group = (target.groupKey ? files.filter((f) => f.groupKey === target.groupKey) : [target]).sort((a, b) => a.path.localeCompare(b.path));
+    const first = group[0] as HubFile;
+    const name = path.posix.basename(first.path);
+    const bytes = group.reduce((a, f) => a + f.sizeBytes, 0);
+    // Facts (context length, layers) make the previewed command exact; without them it still works.
+    const facts = await this.hub.ggufFacts(repo, first.path, revision).then(
+      (r) => r.facts,
+      () => undefined,
+    );
+    const fileQuant = quantFromFilename(name);
+    const shard = parseShard(name);
+    // Same rules as the scanner's identity of the downloaded copy (see ModelScanner.ggufModel).
+    const identity: ModelIdentity = {
+      displayName: shard ? shard.prefix : name.replace(/\.gguf$/i, ''),
+      format: 'gguf',
+      source: 'hf',
+      repo,
+      file: name,
+      files: group.map((f) => path.posix.basename(f.path)),
+      sizeBytes: bytes,
+      weakKey: weakKey({ repo, file: name, quant: fileQuant, sizeBytes: bytes }),
+    };
+    if (revision) identity.revision = revision;
+    const quant = fileQuant ?? facts?.quant;
+    if (quant) identity.quant = quant;
+    if (first.sha256) identity.sha256 = first.sha256;
+    if (facts) identity.facts = facts;
+    const dir = await this.libraryDir();
+    return { identity, file: first.path, paths: group.map((f) => libraryPath(dir, repo, f.path)), bytes };
   }
 
   /** Fit of a local model (localId), a hub GGUF file (repo + file) or a safetensors repo (repo). */
@@ -231,7 +298,8 @@ export class ModelsService {
     });
     const gb = vramGB ?? ((await this.opts.gpuInfo())?.totalMiB ?? 0) / MIB_PER_GB;
     if (gb <= 0) return { reference: list.reference, models: list.models };
-    return { vramGB: gb, reference: list.reference, models: curatedForVram(list, gb) };
+    const tier = tierFor(gb);
+    return { vramGB: gb, ...(tier !== undefined ? { tierGB: tier } : {}), reference: list.reference, models: curatedForVram(list, gb) };
   }
 
   /**

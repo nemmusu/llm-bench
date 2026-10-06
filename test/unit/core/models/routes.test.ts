@@ -19,6 +19,7 @@ function app() {
     search: rec('search', []),
     curated: rec('curated'),
     hubFiles: rec('hubFiles', []),
+    hubModel: rec('hubModel', { repo: 'Qwen/Qwen3-4B-GGUF', downloads: 5 }),
     readme: rec('readme', { text: '# x', truncated: false }),
     remoteGgufFacts: rec('remoteGgufFacts'),
     related: rec('related', []),
@@ -84,6 +85,18 @@ describe('models routes', () => {
     expect((await hono.request('/api/models/hub/-bad/x/files')).status).toBe(400);
     expect((await hono.request('/api/models/hub/a/b/gguf-facts?file=readme.md')).status).toBe(400);
     expect((await hono.request('/api/models/hub/a/b/gguf-facts')).status).toBe(400);
+  });
+
+  it('serves one hub repo info', async () => {
+    const { hono, calls } = app();
+    expect(await (await hono.request('/api/models/hub/Qwen/Qwen3-4B-GGUF')).json()).toEqual({ repo: 'Qwen/Qwen3-4B-GGUF', downloads: 5 });
+    await hono.request('/api/models/hub/Qwen/Qwen3-4B-GGUF?revision=abc');
+    expect(calls.map((c) => [c.fn, ...c.args])).toEqual([
+      ['hubModel', 'Qwen/Qwen3-4B-GGUF', undefined],
+      ['hubModel', 'Qwen/Qwen3-4B-GGUF', 'abc'],
+    ]);
+    expect((await hono.request('/api/models/hub/-bad/x')).status).toBe(400);
+    expect((await hono.request('/api/models/hub/a/b?revision=')).status).toBe(400);
   });
 
   it('fits a hub repo and a request body', async () => {

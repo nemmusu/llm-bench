@@ -32,6 +32,7 @@ export const mockSystem: SystemResponse = {
   cpu: { model: 'AMD Ryzen 9 9950X3D', cores: 16, threads: 32 },
   ramBytes: 64 * GIB,
   hostLabel: 'WORKSTATION',
+  hostId: 'host-mock',
   nvidiaSmi: { found: true, path: 'C:\\Windows\\System32\\nvidia-smi.exe' },
   otherGpuUsers: [{ pid: 18244, name: 'llama-server.exe', knownLlm: true }],
   docker: { state: 'stopped', version: '29.8.0' },

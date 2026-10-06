@@ -112,6 +112,11 @@ describe('llamaServerArgs', () => {
       '-c', '8192', '-ngl', 'all', '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0', '-b', '2048', '-ub', '512', '-t', '8', '-np', '4',
       '--fit', 'off', '--no-webui', '--mlock',
     ]);
+    // Builds with a unified KV pool share it between the slots (as in the native adapter).
+    const unified = { ...caps, flags: new Set(['--kv-unified']) };
+    const args = llamaServerArgs(p, unified, { modelPath: '/models/m.gguf', marker: 'mk' });
+    expect(args.slice(args.indexOf('-np'))).toEqual(['-np', '4', '--kv-unified', '--fit', 'off', '--mlock']);
+    expect(llamaServerArgs({ ...p, parallel: 1 }, unified, { modelPath: 'm', marker: 'k' })).not.toContain('--kv-unified');
   });
 
   it('handles old toggle-style flash attention, explicit layers and auto KV', () => {
@@ -182,6 +187,25 @@ describe('LlamaDockerAdapter', () => {
     expect(bind.slowSharedFilesystem).toBe(true);
     expect(bind.modelFiles).toEqual([file]);
     expect(bind.env).toEqual({});
+  });
+
+  it('previews a GGUF still to download, mounted from where the download will put it', async () => {
+    const h = make({ platform: 'win32' });
+    const a = new LlamaDockerAdapter(h.common);
+    const future = 'C:\\models\\Qwen\\Qwen3-4B-GGUF\\Qwen3-4B-Q4_K_M.gguf';
+    const target: ModelTarget = {
+      identity: { displayName: 'Qwen3-4B-Q4_K_M', format: 'gguf', source: 'hf', files: [], weakKey: 'w', sizeBytes: 2500 },
+      pending: { repo: 'Qwen/Qwen3-4B-GGUF', file: 'Qwen3-4B-Q4_K_M.gguf', paths: [future], bytes: 2500 },
+    };
+    const plan = await a.plan({ kind: 'llamacpp-docker' }, target, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-p', preview: true });
+    expect(plan.argv).toContain('C:\\models\\Qwen\\Qwen3-4B-GGUF:/models:ro');
+    expect(plan.argv).toContain('/models/Qwen3-4B-Q4_K_M.gguf');
+    expect(plan.pending).toEqual(['model']);
+    expect(plan.modelBytes).toBe(2500);
+    // Starting needs the file: without the preview flag the model is missing.
+    await expect(a.plan({ kind: 'llamacpp-docker' }, target, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-p' })).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND' });
+    const { model } = ggufModel();
+    expect((await a.plan({ kind: 'llamacpp-docker' }, model, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-p', preview: true })).pending).toBeUndefined();
   });
 
   it('fails without a local GGUF and validates custom images', async () => {

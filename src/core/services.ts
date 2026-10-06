@@ -17,6 +17,8 @@ import type { DockerLaunchPlan } from './engines/shared/docker-engine';
 import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
 import { VllmNativeAdapter } from './engines/vllm-native/adapter';
 import { createModelServices, type ModelServices } from './models/setup';
+import type { PlannedGguf } from './models/service';
+import type { EngineKind } from '../contract/engines';
 import { createLlamaBench } from './engines/llama-bench/llama-bench';
 import { DockerInstaller } from './setup/docker-installer';
 import { readOsRelease } from './setup/os-release';
@@ -48,7 +50,13 @@ export interface ModelsLookup {
   getLocal(id: string): Promise<LocalModel | undefined>;
   /** A copy of this HF repo downloaded into the library (safetensors folder for vLLM). */
   findByRepo?(repo: string): Promise<LocalModel | undefined>;
+  /** The library copy of a hub GGUF (repo + path of the file in the repo), when downloaded. */
+  findGguf?(repo: string, file: string): Promise<LocalModel | undefined>;
+  /** What the download of a hub GGUF will create (identity, paths, bytes), for plan previews. */
+  plannedGguf?(repo: string, file: string, revision?: string): Promise<PlannedGguf>;
 }
+
+const LLAMA_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
 
 export interface CoreServices {
   ownership: OwnershipRegistry;
@@ -109,23 +117,38 @@ export function parseArgvEnv(value: string | undefined): string[] | undefined {
  * benchmarked, so its results are recognized later, also when the same file shows up on HF.
  */
 export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
+  const getLocal = async (id: string): Promise<LocalModel | undefined> => {
+    const m = await ms.models.get(id).catch(() => undefined);
+    if (!m || m.identity.sha256 || m.identity.format !== 'gguf' || !m.paths[0]) return m;
+    const sha256 = await ms.models.hashes.enqueue(m.paths[0]).catch(() => undefined);
+    if (sha256) m.identity.sha256 = sha256;
+    return m;
+  };
   return {
-    async getLocal(id) {
-      const m = await ms.models.get(id).catch(() => undefined);
-      if (!m || m.identity.sha256 || m.identity.format !== 'gguf' || !m.paths[0]) return m;
-      const sha256 = await ms.models.hashes.enqueue(m.paths[0]).catch(() => undefined);
-      if (sha256) m.identity.sha256 = sha256;
-      return m;
-    },
+    getLocal,
     async findByRepo(repo) {
       const all = await ms.models.list().catch(() => []);
       return all.find((m) => m.identity.repo === repo && m.identity.format === 'safetensors');
     },
+    async findGguf(repo, file) {
+      const m = await ms.models.findGguf(repo, file).catch(() => undefined);
+      // Through getLocal: a GGUF is hashed the first time it is benchmarked.
+      return m ? getLocal(m.id) : undefined;
+    },
+    plannedGguf: (repo, file, revision) => ms.models.plannedGguf(repo, file, revision),
   };
 }
 
-/** What a run benchmarks, resolved from the request. */
-export async function resolveModelTarget(req: StartRunRequest, models: ModelsLookup | undefined): Promise<ModelTarget> {
+/**
+ * What a run benchmarks, resolved from the request. A hub GGUF (`repo` + `file`, llama.cpp engines)
+ * is the library copy; before its download only a preview resolves it (to the pending download),
+ * a real start fails with MODEL_NOT_FOUND so the UI downloads it first.
+ */
+export async function resolveModelTarget(
+  req: StartRunRequest,
+  models: ModelsLookup | undefined,
+  opts: { preview?: boolean } = {},
+): Promise<ModelTarget> {
   if (req.engine.kind === 'external') {
     const name = req.model.name ?? 'default';
     return {
@@ -143,6 +166,16 @@ export async function resolveModelTarget(req: StartRunRequest, models: ModelsLoo
     const local = await models?.getLocal(req.model.localId);
     if (!local) throw new AppError('MODEL_NOT_FOUND', 'Local model not found', { params: { id: req.model.localId } });
     return { identity: local.identity, local };
+  }
+  const { repo, file, revision } = req.model;
+  if (repo && file && LLAMA_KINDS.has(req.engine.kind)) {
+    const local = await models?.findGguf?.(repo, file);
+    if (local) return { identity: local.identity, local };
+    if (!opts.preview || !models?.plannedGguf) {
+      throw new AppError('MODEL_NOT_FOUND', 'The model is not downloaded yet', { params: { repo, file, reason: 'not_downloaded' } });
+    }
+    const planned = await models.plannedGguf(repo, file, revision);
+    return { identity: planned.identity, pending: { repo, file: planned.file, paths: planned.paths, bytes: planned.bytes } };
   }
   if (req.model.repo) {
     // vLLM reads a downloaded copy when there is one: the cold load then measures loading, not downloading.
@@ -261,8 +294,10 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   if (modelServices) await modelServices.init();
   const models: ModelsLookup | undefined = opts.models ?? (modelServices ? modelsLookup(modelServices) : undefined);
 
-  const needs = async (req: StartRunRequest): Promise<RunPlan['needs']> => {
+  const needs = async (req: StartRunRequest, model?: ModelTarget): Promise<RunPlan['needs']> => {
     const out: RunPlan['needs'] = [];
+    // A hub GGUF not downloaded yet (resolved for the preview as its pending download).
+    if (model?.pending) out.push({ kind: 'model', label: `${model.pending.repo}/${model.pending.file}`, bytes: model.pending.bytes });
     if ((req.engine.kind === 'vllm-docker' || req.engine.kind === 'vllm-native') && req.model.repo && modelServices) {
       const local = await models?.findByRepo?.(req.model.repo);
       if (!local) {
@@ -344,7 +379,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     displayCommand,
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
     getAdapter: (kind) => registry.require(kind),
-    resolveModel: (req) => resolveModelTarget(req, models),
+    resolveModel: (req, o) => resolveModelTarget(req, models, o),
     slowSharedFilesystem: (plan) => (plan as Partial<DockerLaunchPlan>).slowSharedFilesystem === true,
     // Docker Desktop (Windows/macOS) reads host folders slowly: use the model's volume copy when there is one.
     adjustEngine: async (req, model) =>
@@ -354,12 +389,12 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     newMarker: () => (lastMarker = `gpubench-${randomUUID()}`),
     ...(modelServices
       ? {
-          fit: async (req: StartRunRequest, model: ModelTarget, plan: { params: StartRunRequest['params'] }) =>
-            model.local
-              ? modelServices.models
-                  .fit({ localId: model.local.id, engine: req.engine.kind, ...(plan.params ? { params: plan.params } : {}) })
-                  .catch(() => undefined)
-              : undefined,
+          // A local model, or a hub GGUF still to download (estimated from its remote header).
+          fit: async (req: StartRunRequest, model: ModelTarget, plan: { params: StartRunRequest['params'] }) => {
+            const which = model.local ? { localId: model.local.id } : model.pending ? { repo: model.pending.repo, file: model.pending.file } : undefined;
+            if (!which) return undefined;
+            return modelServices.models.fit({ ...which, engine: req.engine.kind, ...(plan.params ? { params: plan.params } : {}) }).catch(() => undefined);
+          },
         }
       : {}),
     pickPort: () => pickFreePort(),

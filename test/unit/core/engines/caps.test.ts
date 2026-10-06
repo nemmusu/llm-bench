@@ -1,11 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProcessRunner, RunOutput } from '../../../../src/core/deps';
-import { CapsProbe, capsFromOutputs, guessVariant, parseHelp, parseVersion } from '../../../../src/core/engines/llamacpp-native/caps';
+import { CapsProbe, capsFromOutputs, currentLlamaCaps, guessVariant, parseHelp, parseVersion } from '../../../../src/core/engines/llamacpp-native/caps';
 
 const fixture = (name: string) => readFileSync(new URL(`../../../fixtures/llamacpp/${name}`, import.meta.url), 'utf8');
 const HELP = fixture('help.stdout.txt');
 const VERSION = fixture('version.stderr.txt');
+
+describe('currentLlamaCaps', () => {
+  it('matches what a real current build (b10997 --help) reports, for previews before the install', () => {
+    const real = capsFromOutputs(VERSION, HELP);
+    const assumed = currentLlamaCaps();
+    for (const flag of assumed.flags) expect(real.flags.has(flag), flag).toBe(true);
+    expect(assumed).toMatchObject({ flashAttn: real.flashAttn, fitFlag: real.fitFlag, nglKeywords: real.nglKeywords, tokenIdsInPrompt: true, timings: true });
+    expect(real.cacheTypes).toEqual(expect.arrayContaining(assumed.cacheTypes));
+  });
+});
 
 describe('parseVersion', () => {
   it('reads current builds (b10997 fixture)', () => {

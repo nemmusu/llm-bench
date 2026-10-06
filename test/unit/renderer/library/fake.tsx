@@ -44,6 +44,7 @@ export function system(over: Partial<SystemResponse> = {}): SystemResponse {
     cpu: { model: 'AMD Ryzen 9 9950X3D', cores: 16, threads: 32 },
     ramBytes: 64 * 1024 ** 3,
     hostLabel: 'PC',
+    hostId: 'host-1',
     nvidiaSmi: { found: true },
     otherGpuUsers: [
       { pid: 1234, name: 'llama-server.exe', knownLlm: true, memMiB: 2048, kind: 'llm' },

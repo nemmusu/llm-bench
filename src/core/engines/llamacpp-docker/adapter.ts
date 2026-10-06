@@ -5,7 +5,7 @@ import type { EngineIdentity } from '../../../contract/results';
 import { containerName, dockerRunArgv, startContainer, type DockerEngineInstance } from '../../docker/container';
 import { capsFromOutputs, parseHelp, type LlamaCaps } from '../llamacpp-native/caps';
 import { diagnoseExit, llamaPhaseOf } from '../llamacpp-native/logs';
-import type { LaunchPlan, ModelTarget } from '../types';
+import { weightFiles, type LaunchPlan, type ModelTarget, type PlanOptions } from '../types';
 import type { EngineCompat } from '../shared/compat';
 import { DockerEngineAdapter, type DockerEngineConfig, type DockerLaunchPlan } from '../shared/docker-engine';
 import { modelReadyProbe } from '../shared/probes';
@@ -89,12 +89,10 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
     return capsFromOutputs(`${v.stderr}\n${v.stdout}`, help);
   }
 
-  async plan(cfg: DockerEngineConfig, model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<DockerLaunchPlan> {
+  async plan(cfg: DockerEngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<DockerLaunchPlan> {
     const image = await this.imageFor(cfg);
-    const local = model.local;
-    const aux = new Set(local?.auxiliary.map((a) => a.path));
-    // Weights only: mmproj/mtp/draft files are never loaded for benchmarks.
-    const files = (local?.paths ?? []).filter((p) => !aux.has(p));
+    // In a preview, a GGUF still to download is mounted from where the download will put it.
+    const { files, pending } = weightFiles(model, opts.preview);
     const main = files[0];
     if (main === undefined) {
       throw new AppError('MODEL_NOT_FOUND', 'No local GGUF file for this model', { params: { model: model.identity.displayName } });
@@ -136,6 +134,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       image,
       containerName: containerName(opts.marker),
       slowSharedFilesystem: this.slowShare(volume === undefined),
+      ...(pending ? { pending: ['model' as const] } : {}),
     };
   }
 

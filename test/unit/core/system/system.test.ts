@@ -108,6 +108,7 @@ describe('SystemService', () => {
       cpu: FP.cpu,
       ramBytes: FP.ramBytes,
       hostLabel: 'DESKTOP-DHTKFJ0',
+      hostId: FP.hostId,
       nvidiaSmi: { found: true, path: 'C:\\Windows\\System32\\nvidia-smi.exe' },
       otherGpuUsers: [
         { pid: 4321, name: 'llama-server.exe', knownLlm: true, kind: 'llm', memMiB: 9000 },
