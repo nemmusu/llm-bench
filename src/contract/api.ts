@@ -45,7 +45,17 @@ export const systemResponseSchema = z.object({
   hostLabel: z.string(),
   nvidiaSmi: z.object({ found: z.boolean(), path: z.string().optional() }),
   /** Known LLM servers using the GPU right now (never ours). */
-  otherGpuUsers: z.array(z.object({ pid: z.number(), name: z.string(), knownLlm: z.boolean() })),
+  otherGpuUsers: z.array(
+    z.object({
+      pid: z.number(),
+      name: z.string(),
+      knownLlm: z.boolean(),
+      /** Dedicated VRAM held by the process, when the OS can tell (Windows GPU counters, Linux nvidia-smi). */
+      memMiB: z.number().optional(),
+      /** 'vm' = WSL / Hyper-V / Docker Desktop VM (vmwp, vmmem): its GPU use belongs to programs inside it. */
+      kind: z.enum(['llm', 'vm', 'system', 'app']).optional(),
+    }),
+  ),
   docker: z.object({
     state: z.enum(['not-installed', 'stopped', 'starting', 'running', 'no-permission', 'no-gpu', 'unsupported', 'unknown']),
     version: z.string().optional(),

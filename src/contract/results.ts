@@ -120,6 +120,10 @@ export const metricsSchema = z.object({
     peakMiB: z.number().optional(),
     deltaMiB: z.number().optional(),
     estimateMiB: z.number().optional(),
+    /** Peak dedicated VRAM of the engine process itself (Windows GPU counters / nvidia-smi per process). */
+    processPeakMiB: z.number().optional(),
+    /** How the headline VRAM figure was measured: per process (exact) or total-minus-baseline (approximate). */
+    method: z.enum(['process', 'total-delta']).optional(),
   }),
   energy: z.object({
     avgPowerW: z.number().optional(),
