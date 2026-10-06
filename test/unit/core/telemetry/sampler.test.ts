@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GpuSample } from '../../../../src/contract/hardware';
 import type { NvidiaSmiLocation } from '../../../../src/core/telemetry/nvidia-smi';
-import { DEFAULT_MAX_SAMPLES, NvidiaSmiTelemetry, TELEMETRY_OWNER } from '../../../../src/core/telemetry/sampler';
+import { parseMonitorLine, type GpuMemoryListener, type GpuMemorySource } from '../../../../src/core/telemetry/process-vram';
+import { DEFAULT_MAX_SAMPLES, mergeGpuUsers, NvidiaSmiTelemetry, TELEMETRY_OWNER } from '../../../../src/core/telemetry/sampler';
+import type { GpuProcessMemory } from '../../../../src/core/telemetry/types';
 import { FakeClock, FakeRunner, fixture, memoryLogger, nvidiaSmiHandler, ok, tick, type RunHandler } from './fakes';
 
 const loc: NvidiaSmiLocation = { argv: ['C:\\Windows\\System32\\nvidia-smi.exe'], path: 'C:\\Windows\\System32\\nvidia-smi.exe', source: 'known' };
@@ -95,19 +97,81 @@ describe('NvidiaSmiTelemetry.otherGpuUsers', () => {
     const users = await smi.otherGpuUsers([14064]);
     expect(users).toHaveLength(22);
     expect(users.some((u) => u.pid === 14064)).toBe(false);
-    expect(users[0]).toEqual({ pid: 14824, name: 'CrossDeviceResume.exe', knownLlm: false });
-    expect(users.every((u) => !u.knownLlm)).toBe(true);
+    // WDDM: no memory per process from nvidia-smi.
+    expect(users[0]).toEqual({ pid: 14824, name: 'CrossDeviceResume.exe', knownLlm: false, kind: 'system' });
+    expect(users.every((u) => !u.knownLlm && u.memMiB === undefined)).toBe(true);
   });
 
-  it('dedupes multi-GPU processes and flags known LLM servers', async () => {
+  it('sums memory of multi-GPU processes, classifies them and flags known LLM servers', async () => {
     const { smi, runner } = setup(nvidiaSmiHandler({ apps: ok(fixture('nvidia-smi/handmade/compute-apps-edge.csv')) }));
     expect(await smi.otherGpuUsers([])).toEqual([
-      { pid: 4242, name: 'llama-server', knownLlm: true },
-      { pid: 5151, name: 'LM Studio.exe', knownLlm: true },
-      { pid: 6161, name: '[Insufficient Permissions]', knownLlm: false },
-      { pid: 7171, name: 'python3', knownLlm: false },
+      { pid: 4242, name: 'llama-server', knownLlm: true, kind: 'llm', memMiB: 19456 },
+      { pid: 5151, name: 'LM Studio.exe', knownLlm: true, kind: 'llm' },
+      { pid: 6161, name: '[Insufficient Permissions]', knownLlm: false, kind: 'app' },
+      { pid: 7171, name: 'python3', knownLlm: false, kind: 'app', memMiB: 9000 },
     ]);
     expect(runner.calls[0]!.args).toEqual(['--query-compute-apps=pid,process_name,used_memory', '--format=csv,noheader,nounits']);
+  });
+
+  it('native Linux: MiB per process straight from nvidia-smi (vLLM process titles are LLM servers)', async () => {
+    const { smi } = setup(nvidiaSmiHandler({ apps: ok(fixture('process-vram/linux-compute-apps.csv')) }));
+    const users = await smi.otherGpuUsers([41077]);
+    expect(users.map((u) => [u.name, u.kind, u.memMiB])).toEqual([
+      ['VLLM::EngineCore', 'llm', 1024],
+      ['VLLM::Worker_TP1', 'llm', 30180],
+      ['ollama', 'llm', 4800],
+      ['python3', 'app', 768],
+      ['viewer', 'app', undefined],
+    ]);
+  });
+
+  it('Windows: memory from the GPU counters; counter-only processes above 64 MiB are added, largest first', async () => {
+    const clock = new FakeClock();
+    const runner = new FakeRunner(nvidiaSmiHandler({ apps: ok(fixture('process-vram/win-compute-apps.csv', { crlf: true })) }), clock);
+    const reading = parseMonitorLine(fixture('process-vram/win-monitor.txt').split(/\r?\n/).find((l) => l.startsWith('S '))!);
+    const names = new Map(
+      fixture('process-vram/win-monitor.txt')
+        .split(/\r?\n/)
+        .filter((l) => l.startsWith('N '))
+        .map((l) => [Number(l.split(' ')[1]), l.split(' ').slice(2).join(' ')] as const),
+    );
+    if (reading?.kind !== 'sample') throw new Error('fixture');
+    const counted: GpuProcessMemory[] = [...reading.bytes].map(([pid, b]) => ({ pid, mib: b / 1024 ** 2, ...(names.has(pid) ? { name: names.get(pid)! } : {}) }));
+    counted.push({ pid: 999, mib: 500 }); // gone before its name was read: not listed
+    const userMemory = { read: () => Promise.resolve(counted), watch: () => ({ stop: () => Promise.resolve() }) };
+    const smi = new NvidiaSmiTelemetry({ clock, proc: runner, location: loc, userMemory });
+    const users = await smi.otherGpuUsers([53916]);
+    // 23 listed by nvidia-smi (one is ours) + vmwp, dwm, csrss (only in the counters, > 64 MiB).
+    expect(users).toHaveLength(22 + 2);
+    const byName = Object.fromEntries(users.map((u) => [u.name, u]));
+    expect(byName.vmwp).toEqual({ pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm', memMiB: 23298 });
+    expect(byName.dwm).toEqual({ pid: 2260, name: 'dwm', knownLlm: false, kind: 'system', memMiB: 3329 });
+    expect(users.slice(-2).map((u) => u.name)).toEqual(['vmwp', 'dwm']);
+    expect(users.find((u) => u.pid === 33864)).toMatchObject({ name: 'firefox.exe', kind: 'app', memMiB: 2932 });
+    expect(users.find((u) => u.pid === 35328)).toMatchObject({ memMiB: 0 }); // 264 KiB
+    expect(users.some((u) => u.pid === 53916 || u.pid === 999 || u.name === 'csrss')).toBe(false);
+  });
+
+  it('mergeGpuUsers: counters win over nvidia-smi; absent from them = 0; own PIDs never listed', () => {
+    const apps = [
+      { pid: 1, processName: 'C:\\x\\a.exe', usedMiB: null },
+      { pid: 1, processName: 'C:\\x\\a.exe', usedMiB: null },
+      { pid: 2, processName: 'C:\\x\\b.exe', usedMiB: 300 },
+    ];
+    expect(mergeGpuUsers(apps, [{ pid: 2, mib: 99.6 }], [])).toEqual([
+      { pid: 1, name: 'a.exe', knownLlm: false, kind: 'app', memMiB: 0 },
+      { pid: 2, name: 'b.exe', knownLlm: false, kind: 'app', memMiB: 100 },
+    ]);
+    expect(mergeGpuUsers([], [{ pid: 5, mib: 9000, name: 'llama-server' }, { pid: 6, mib: 64, name: 'tiny' }, { pid: 7, mib: 65, name: 'app' }], [5])).toEqual([
+      { pid: 7, name: 'app', knownLlm: false, kind: 'app', memMiB: 65 },
+    ]);
+    expect(mergeGpuUsers([], undefined, [])).toEqual([]);
+    // One GPU without a reading, another with one: the known part is kept.
+    const mixed = [
+      { pid: 3, processName: '/usr/bin/python3', usedMiB: null },
+      { pid: 3, processName: '/usr/bin/python3', usedMiB: 50 },
+    ];
+    expect(mergeGpuUsers(mixed, undefined, [])).toEqual([{ pid: 3, name: 'python3', knownLlm: false, kind: 'app', memMiB: 50 }]);
   });
 
   it('returns [] for the empty WSL list and without GPUs; throws when the driver is gone', async () => {
@@ -269,5 +333,51 @@ describe('NvidiaSmiTelemetry.start (streaming session)', () => {
     for (let i = 0; i < 5; i++) runner.spawned[0]!.emit(`0, ${i}, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x0`);
     await tick();
     expect((await session.stop()).map((s) => s.utilPct)).toEqual([2, 3, 4]);
+  });
+});
+
+describe('NvidiaSmiTelemetry.startProcessVram', () => {
+  /** Warm source: answers watch() with one reading at once, records the interval asked. */
+  function warmSource(procs: GpuProcessMemory[]) {
+    const intervals: number[] = [];
+    const source: GpuMemorySource = {
+      read: () => Promise.resolve(procs),
+      watch: (ms: number, onTick: GpuMemoryListener) => {
+        intervals.push(ms);
+        onTick(1, procs);
+        return { stop: () => Promise.resolve() };
+      },
+    };
+    return { source, intervals };
+  }
+
+  it('undefined without a per-process source (macOS, stand-in nvidia-smi on Windows)', async () => {
+    const { smi } = setup(nvidiaSmiHandler({}));
+    expect(await smi.startProcessVram([1])).toBeUndefined();
+  });
+
+  it('records the engine PIDs (descendants added on Linux), resolving after the first reading', async () => {
+    const clock = new FakeClock();
+    const { source, intervals } = warmSource([
+      { pid: 10, mib: 100 },
+      { pid: 11, mib: 4000 },
+    ]);
+    const expanded: number[][] = [];
+    const smi = new NvidiaSmiTelemetry({
+      clock,
+      proc: new FakeRunner(),
+      location: loc,
+      processMemory: source,
+      expandPids: async (p) => (expanded.push(p), [...p, 11]),
+    });
+    const rec = await smi.startProcessVram([10], 10);
+    expect(intervals).toEqual([250]);
+    expect(rec?.latestMiB()).toBe(100);
+    expect(expanded).toEqual([[10]]);
+    await rec?.stop();
+
+    const plain = new NvidiaSmiTelemetry({ clock, proc: new FakeRunner(), location: loc, processMemory: warmSource([{ pid: 10, mib: 7 }]).source });
+    const r2 = await plain.startProcessVram(() => [10]);
+    expect(r2?.peakMiB()).toBe(7);
   });
 });

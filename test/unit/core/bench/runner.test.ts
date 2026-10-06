@@ -175,7 +175,7 @@ describe('BenchRunner — happy paths', () => {
     expect(result.engine).toMatchObject({ name: 'llama.cpp', build: 'b11438' });
     expect(result.hardware.hostId).toBe('host-a');
     expect(result.validity).toEqual([]);
-    expect(result.metrics.vram).toEqual({ baselineMiB: 1600, peakMiB: 5600, deltaMiB: 4000 });
+    expect(result.metrics.vram).toEqual({ baselineMiB: 1600, peakMiB: 5600, deltaMiB: 4000, method: 'total-delta' });
     expect(result.metrics.energy.avgPowerW).toBeCloseTo(450);
     expect(result.metrics.energy.tokensPerJoule).toBeGreaterThan(0);
     expect(result.metrics.thermals).toEqual({ maxTempC: 60, throttleReasons: [] });
@@ -290,7 +290,8 @@ describe('BenchRunner — happy paths', () => {
     expect(result.metrics.latency[0]?.itlPerChunk).toBe(true);
     expect(result.metrics.firstTokenAfterLoadMs).toBeGreaterThan(0);
     expect(result.metrics.concurrency).toHaveLength(1);
-    expect(result.validity).toEqual(['output_not_exact', 'tokens_approximate', 'slow_shared_filesystem', 'energy_unavailable', 'vram_approximate']);
+    // No VRAM measured at all (no telemetry): nothing to qualify.
+    expect(result.validity).toEqual(['output_not_exact', 'tokens_approximate', 'slow_shared_filesystem', 'energy_unavailable']);
     expect(result.logExcerpt).toContain('tokenize unsupported');
     expect(result.telemetry).toBeUndefined();
     expect(result.metrics.vram).toEqual({});
@@ -372,6 +373,145 @@ describe('BenchRunner — shared GPU', () => {
     const result = await s.runner.run(input({ allowSharedGpu: true }), new AbortController().signal);
     expect(result.status).toBe('completed');
     expect(result.validity).toContain('gpu_shared');
+    expect(result.logExcerpt).toContain('GPU shared with llama-server.exe (LLM server, PID 1234)');
+  });
+
+  const users = [
+    { pid: 2260, name: 'dwm', knownLlm: false, kind: 'system' as const, memMiB: 3300 },
+    { pid: 33864, name: 'firefox.exe', knownLlm: false, kind: 'app' as const, memMiB: 2900 },
+    { pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm' as const, memMiB: 18000 },
+  ];
+
+  it('refuses when VMs/apps hold the VRAM the model needs (free 6607 < need 9000), naming only what must close', async () => {
+    const s = setup({ telemetry: { users } });
+    s.world.baselineMiB = 26_000;
+    const result = await s.runner.run(input({ vramEstimateMiB: 9000 }), new AbortController().signal);
+    expect(result.status).toBe('failed');
+    expect(result.error).toEqual({
+      code: 'VRAM_BUSY',
+      message: 'Other processes hold the VRAM this model needs',
+      params: { names: 'vmwp', pids: '29192', freeMiB: 6607, needMiB: 9000 },
+    });
+    expect(s.adapter.instances).toHaveLength(0);
+    expect(result.logExcerpt).toContain('GPU shared with firefox.exe (PID 33864) 2.8 GB, vmwp (WSL/VM, PID 29192) 17.6 GB');
+  });
+
+  it('runs when allowed, when it fits, or when closing them would not be enough', async () => {
+    for (const [need, allow] of [
+      [9000, true],
+      [6000, false],
+      [40_000, false],
+    ] as const) {
+      const s = setup({ telemetry: { users } });
+      s.world.baselineMiB = 26_000;
+      const result = await s.runner.run(input({ vramEstimateMiB: need, allowSharedGpu: allow }), new AbortController().signal);
+      expect(result.status, `need ${need}`).toBe('completed');
+      expect(result.validity).toContain('gpu_shared');
+    }
+    // Without memory readings the free VRAM is unknown: no refusal.
+    const blind = setup({ telemetry: { users, memNull: true } });
+    expect((await blind.runner.run(input({ vramEstimateMiB: 90_000 }), new AbortController().signal)).status).toBe('completed');
+  });
+});
+
+describe('BenchRunner — per-process VRAM', () => {
+  const vmwpUser = (memMiB: number) => ({ pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm' as const, memMiB });
+  const dwm = { pid: 2260, mib: 3300, name: 'dwm' };
+
+  it('native llama.cpp: the engine\'s own peak is the headline while a WSL server grows meanwhile', async () => {
+    let t0 = 0;
+    const grown = (t: number) => t - t0 > 1500;
+    const s = setup({
+      telemetry: {
+        users: [vmwpUser(18000), { pid: 1, name: 'vmmem', knownLlm: false, kind: 'vm' }],
+        processVram: { engineMiB: 4100.4, others: (t) => [{ pid: 29192, mib: grown(t) ? 28000 : 18000, name: 'vmwp' }, dwm] },
+      },
+    });
+    t0 = s.world.clock.now();
+    s.world.othersGrowthMiB = (t) => (grown(t) ? 10_000 : 0);
+    const result = await s.runner.run(input({ vramEstimateMiB: 4274 }), new AbortController().signal);
+    expect(result.status).toBe('completed');
+    expect(result.metrics.vram).toEqual({
+      baselineMiB: 1600,
+      peakMiB: 15_600,
+      deltaMiB: 14_000,
+      estimateMiB: 4274,
+      processPeakMiB: 4100,
+      method: 'process',
+    });
+    expect(result.validity).toEqual(['gpu_shared']);
+    expect(result.logExcerpt).toContain('GPU shared with vmwp (WSL/VM, PID 29192) 17.6 GB');
+    expect(result.logExcerpt).toContain('other GPU processes changed their VRAM by up to 10000 MiB during the run');
+    // The PID source follows the running instance: before/after the run there is none.
+    const pids = s.telemetry.processVramPids[0] as () => number[];
+    expect(pids()).toEqual([]);
+    const ticks = s.telemetry.recorders[0]!.samples;
+    expect(ticks[0]!.engine).toEqual([]);
+    expect(ticks.some((t) => t.engine[0] === 7001 && Math.round(t.engineMiB) === 4100)).toBe(true);
+  });
+
+  it('native engine the OS does not list (WSL): total-delta, not flagged without evidence of drift', async () => {
+    const s = setup({ telemetry: { processVram: { engineMiB: null } } });
+    const result = await s.runner.run(input(), new AbortController().signal);
+    expect(result.metrics.vram).toMatchObject({ deltaMiB: 4000, method: 'total-delta' });
+    expect(result.metrics.vram.processPeakMiB).toBeUndefined();
+    expect(result.validity).toEqual([]);
+  });
+
+  it('native engine listed with no memory while others grow: total-delta flagged approximate', async () => {
+    let t0 = 0;
+    const s = setup({ telemetry: { processVram: { engineMiB: 0, others: (t) => [{ pid: 29192, mib: t - t0 > 1500 ? 28000 : 18000, name: 'vmwp' }] } } });
+    t0 = s.world.clock.now();
+    s.world.othersGrowthMiB = (t) => (t - t0 > 1500 ? 10_000 : 0);
+    const result = await s.runner.run(input(), new AbortController().signal);
+    expect(result.metrics.vram).toMatchObject({ deltaMiB: 14_000, method: 'total-delta' });
+    expect(result.validity).toEqual(['vram_approximate']);
+    expect(result.logExcerpt).toContain('changed their VRAM by up to 10000 MiB');
+  });
+
+  it('Docker: the helper PID is never the engine; exact enough with a clean VM, approximate when the VM is shared', async () => {
+    const docker = { adapter: { kind: 'llamacpp-docker' as const } };
+    const clean = setup({ ...docker, telemetry: { processVram: { others: () => [{ pid: 29192, mib: 300, name: 'vmwp' }, dwm] } } });
+    const r1 = await clean.runner.run(input({ engineConfig: { kind: 'llamacpp-docker' } }), new AbortController().signal);
+    expect(r1.metrics.vram).toMatchObject({ deltaMiB: 4000, method: 'total-delta' });
+    expect(r1.metrics.vram.processPeakMiB).toBeUndefined();
+    expect(clean.telemetry.recorders[0]!.samples.every((t) => t.engine.length === 0)).toBe(true);
+    expect(r1.validity).toEqual([]);
+
+    const shared = setup({ ...docker, telemetry: { users: [vmwpUser(18000)], processVram: {} } });
+    const r2 = await shared.runner.run(input({ engineConfig: { kind: 'llamacpp-docker' } }), new AbortController().signal);
+    expect(r2.validity).toEqual(['gpu_shared', 'vram_approximate']);
+
+    const unknown = setup(docker);
+    const r3 = await unknown.runner.run(input({ engineConfig: { kind: 'llamacpp-docker' } }), new AbortController().signal);
+    expect(r3.validity).toEqual(['vram_approximate']);
+  });
+
+  it('external endpoints with telemetry: always approximate (loaded before the baseline)', async () => {
+    const s = setup({ adapter: { kind: 'external', noPid: true }, telemetry: { processVram: {} } });
+    const result = await s.runner.run(input({ engineConfig: { kind: 'external', baseUrl: 'http://127.0.0.1:9999' } }), new AbortController().signal);
+    expect(result.metrics.vram.method).toBe('total-delta');
+    expect(result.validity).toEqual(['vram_approximate']);
+  });
+
+  it('a sampler without per-process support: total-delta', async () => {
+    const s = setup({ telemetry: { processVram: {} } });
+    (s.telemetry as { startProcessVram?: unknown }).startProcessVram = undefined;
+    const result = await s.runner.run(input(), new AbortController().signal);
+    expect(result.metrics.vram).toMatchObject({ deltaMiB: 4000, method: 'total-delta' });
+    expect(s.telemetry.recorders).toEqual([]);
+  });
+
+  it('a failing per-process sampler never fails the run', async () => {
+    const broken = setup({ telemetry: { processVram: { startThrows: true } } });
+    const r1 = await broken.runner.run(input(), new AbortController().signal);
+    expect(r1.status).toBe('completed');
+    expect(r1.metrics.vram.method).toBe('total-delta');
+
+    const stuck = setup({ telemetry: { processVram: { stopThrows: true } } });
+    const r2 = await stuck.runner.run(input(), new AbortController().signal);
+    expect(r2.status).toBe('completed');
+    expect(r2.metrics.vram).toMatchObject({ processPeakMiB: 4000, method: 'process' });
   });
 });
 

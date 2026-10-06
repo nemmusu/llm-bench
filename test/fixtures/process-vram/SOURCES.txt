@@ -1,0 +1,28 @@
+Per-process VRAM fixtures. Real captures from the dev PC on 2026-10-06 (Windows 11 Pro 26300, Italian locale,
+RTX 5090, driver 617.14), read-only commands; the user name in one path was replaced by "user".
+
+win-monitor.txt               Raw stdout of OUR monitor (src/core/telemetry/process-vram.ts windowsMonitorScript,
+                              intervalMs 1000) spawned through the real ProcessRunner, stopped after 3 readings:
+                              "N <pid> <name>" lines, then one "S <pid>=<bytes> …" line per reading. First reading
+                              ~1.1 s after spawn, then one per second. vmwp = the WSL 2 VM (the user's own WSL llama
+                              server lives in it), dwm/firefox = desktop.
+win-get-counter.tsv           Get-Counter '\GPU Process Memory(*)\Dedicated Usage', CounterSamples as
+                              "<InstanceName>\t<RawValue>", captured right before win-monitor.txt. Note the SAME
+                              instance name repeated for one pid (vmwp: 4 instances, two LUIDs): the monitor sums them.
+win-typeperf-pid.csv          typeperf "\GPU Process Memory(pid_29192*)\Dedicated Usage" -sc 2 -si 1: the English
+                              counter name works on Italian Windows; the pid wildcard expands to the instances that
+                              exist at start ("…phys_0#3" appeared since the Get-Counter capture); trailing localized
+                              status lines.
+win-typeperf-no-counters.txt  Same for a pid with no GPU instance (a just-spawned engine before it opens the GPU):
+                              "Errore: nessun contatore valido." and exit code != 0 (OEM code page text).
+win-typeperf-all.csv          typeperf "\GPU Process Memory(*)\Dedicated Usage" -si 1 -sc 6 while llama-server
+                              --list-devices (a new CUDA process) ran: the CSV header is fixed at start, the new
+                              process never appears. Why the monitor uses ReadCategory() instead of typeperf.
+win-compute-apps.csv          nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits
+                              under WDDM: every used_memory is [N/A]; vmwp and dwm are not listed at all.
+
+Hand-made (NOT captured: no native Linux NVIDIA box here; WSL lists no compute apps, see
+../nvidia-smi/wsl-compute-apps.csv):
+linux-compute-apps.csv        Same query on native Linux (MiB per process): a vLLM tree whose processes rename
+                              themselves (VLLM::EngineCore + two tensor-parallel workers), an ollama server, a process
+                              on two GPUs (listed twice) and an [N/A] row.

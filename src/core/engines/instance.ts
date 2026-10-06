@@ -116,6 +116,7 @@ export function createProcessInstance(o: ProcessInstanceOptions): EngineInstance
 
   return {
     baseUrl: o.baseUrl,
+    pid: o.mp.pid,
     t0: o.mp.startedAt,
     logs,
     waitReady(signal) {

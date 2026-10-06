@@ -1,0 +1,9 @@
+
+Uscita in corso. Attendere...                             
+Errore: nessun contatore valido.
+
+Nota: 
+  Per utilizzare typeperf, Š necessario essere membri del gruppo 
+  Performance Log Users locale o eseguire il comando da una
+  finestra dei comandi con privilegi elevati.
+

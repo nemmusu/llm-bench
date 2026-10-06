@@ -148,7 +148,7 @@ for (const dir of ['cov-e2e', 'cov-renderer']) {
 
 // 3. Reports.
 const map = libCoverage.createCoverageMap({});
-for (const [abs, data] of canonical) map.addFileCoverage(data);
+for (const data of canonical.values()) map.addFileCoverage(data);
 const outDir = path.join(qa, 'coverage');
 mkdirSync(outDir, { recursive: true });
 const context = libReport.createContext({ dir: outDir, coverageMap: map, defaultSummarizer: 'nested' });

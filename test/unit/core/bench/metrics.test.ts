@@ -11,6 +11,7 @@ import {
   energyOverWindows,
   fromStream,
   maxTemp,
+  othersDriftMiB,
   primaryGpu,
   throttling,
   toLoadPhases,
@@ -18,6 +19,7 @@ import {
   type RequestMetrics,
 } from '../../../../src/core/bench/metrics';
 import type { StreamEvent } from '../../../../src/core/inference/types';
+import type { GpuProcessMemory, ProcessVramTick } from '../../../../src/core/telemetry/types';
 
 export function sample(t: number, over: Partial<GpuSample> = {}): GpuSample {
   return {
@@ -322,5 +324,47 @@ describe('downsampleTelemetry', () => {
     const t = downsampleTelemetry([], []);
     expect(t.t).toEqual([]);
     expect(t.marks).toEqual([]);
+  });
+});
+
+describe('othersDriftMiB', () => {
+  const tick = (t: number, engine: number[], procs: GpuProcessMemory[]): ProcessVramTick => ({
+    t,
+    engine,
+    engineMiB: procs.filter((p) => engine.includes(p.pid)).reduce((n, p) => n + p.mib, 0),
+    procs,
+  });
+  const vmwp = (mib: number) => ({ pid: 29192, mib, name: 'vmwp' });
+  const dwm = { pid: 2260, mib: 3300, name: 'dwm' };
+
+  it('nothing known: no readings, or readings that never list a process (WSL)', () => {
+    expect(othersDriftMiB([], { engineHasPid: true })).toBeUndefined();
+    expect(othersDriftMiB([tick(0, [], []), tick(1, [7], [])], { engineHasPid: true })).toBeUndefined();
+  });
+
+  it('native engine: every non-engine process counts, new ones included; engine PIDs of any instance are left out', () => {
+    const ticks = [
+      tick(0, [], [vmwp(18_000), dwm]),
+      tick(1, [7001], [vmwp(18_000), dwm, { pid: 7001, mib: 4000 }]),
+      // The first instance stopped (still listed while it frees memory), the next one runs.
+      tick(2, [7002], [vmwp(28_000.4), dwm, { pid: 7001, mib: 2000 }, { pid: 7002, mib: 4000 }]),
+      tick(3, [], [vmwp(18_500), dwm, { pid: 9000, mib: 700 }]),
+    ];
+    expect(othersDriftMiB(ticks, { engineHasPid: true })).toBe(10_000);
+    expect(othersDriftMiB([ticks[0]!, ticks[3]!], { engineHasPid: true })).toBe(1200);
+  });
+
+  it('a process that exits during the run is a drift too', () => {
+    expect(othersDriftMiB([tick(0, [], [vmwp(18_000), dwm]), tick(1, [], [dwm])], { engineHasPid: true })).toBe(18_000);
+  });
+
+  it('engine without PID (Docker): VMs and processes that appear during the run are the engine, not others', () => {
+    const ticks = [
+      tick(0, [], [vmwp(300), dwm, { pid: 5, mib: 100 }]),
+      tick(1, [], [vmwp(4300), dwm, { pid: 5, mib: 100 }, { pid: 31337, mib: 4000, name: 'llama-server' }]),
+      tick(2, [], [vmwp(4300), { ...dwm, mib: 3800 }, { pid: 5, mib: 100 }]),
+    ];
+    expect(othersDriftMiB(ticks, { engineHasPid: false })).toBe(500);
+    expect(othersDriftMiB(ticks, { engineHasPid: true })).toBe(8000);
   });
 });

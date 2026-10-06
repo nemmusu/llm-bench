@@ -1,0 +1,20 @@
+Docker fixtures. REAL = captured read-only on the dev PC on 2026-10-06 (Windows 11, Docker Desktop 29.8.0
+installed per user, daemon STOPPED, context desktop-linux). SYNTHETIC = hand-written from the documented
+formats (Docker was not started in this task).
+
+REAL
+  win-version-daemon-down.stdout.json   docker version --format json   (exit 1, Server null)
+  win-version-daemon-down.stderr.txt    its stderr: "failed to connect to the docker API at npipe:… " (Italian
+                                        Windows: the OS part of the message is localized)
+  win-desktop-status-stopped.txt        docker desktop status (exit 1) "Could not retrieve status…"
+  wsl-shim.stdout.txt                   `docker version --format json` inside WSL Ubuntu-24.04 without Docker Desktop
+                                        WSL integration: the Windows shim script prints this on STDOUT and exits 0
+  context-desktop-linux.meta.json       ~/.docker/contexts/meta/<sha256("desktop-linux")>/meta.json
+  config.json                           ~/.docker/config.json (no credentials in it: auths {}, credsStore desktop)
+  hub-tags-vllm.json                    https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags?page_size=100&name=v
+                                        trimmed to v0.31.0 variants, v0.30.0, v0.29.0 + v0.9.2/v0.9.0 entries; next=null
+
+SYNTHETIC
+  pull-vllm.jsonl                       POST /images/create progress stream (classic image store format): one layer
+                                        already present, two downloaded, a retry, digest and final status
+  pull-manifest-unknown.jsonl           in-stream error (errorDetail) for a tag that does not exist

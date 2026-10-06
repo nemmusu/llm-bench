@@ -13,7 +13,7 @@ import {
   withoutField,
   type FieldSpec,
 } from '../../../../src/core/telemetry/fields';
-import { isKnownLlm, processBaseName } from '../../../../src/core/telemetry/known-llm';
+import { gpuUserKind, isKnownLlm, processBaseName } from '../../../../src/core/telemetry/known-llm';
 import {
   PROBE_FIELDS,
   SAMPLE_FIELDS,
@@ -125,9 +125,24 @@ describe('known LLM servers', () => {
       'tabbyAPI',
       'sglang',
       '/usr/local/bin/vllm',
+      'VLLM::EngineCore',
+      'VLLM::Worker_TP1',
     ]) {
       expect(isKnownLlm(n), n).toBe(true);
     }
+  });
+
+  it('classifies GPU users: llm, vm, system desktop, app', () => {
+    expect(gpuUserKind('C:\\llama\\llama-server.exe')).toBe('llm');
+    expect(gpuUserKind('VLLM::Worker_TP0')).toBe('llm');
+    for (const n of ['vmwp', 'vmmem', 'vmmemWSL', 'C:\\Windows\\System32\\vmwp.exe', 'Docker Desktop.exe']) expect(gpuUserKind(n), n).toBe('vm');
+    for (const n of ['dwm', 'csrss.exe', 'C:\\Windows\\explorer.exe', 'SearchHost.exe', 'TextInputHost', 'ShellExperienceHost', 'System', '/usr/lib/xorg/Xorg', 'gnome-shell']) {
+      expect(gpuUserKind(n), n).toBe('system');
+    }
+    for (const n of ['firefox', 'ChatGPT.exe', 'C:\\Program Files\\Mozilla Firefox\\firefox.exe', '/usr/bin/python3', 'electron']) expect(gpuUserKind(n), n).toBe('app');
+    // Every process of the real WDDM list classifies (desktop shell parts as system, the rest as apps).
+    const kinds = parseComputeApps(fixture('process-vram/win-compute-apps.csv')).map((a) => [processBaseName(a.processName), gpuUserKind(a.processName)]);
+    expect(Object.fromEntries(kinds)).toMatchObject({ 'explorer.exe': 'system', 'firefox.exe': 'app', 'StartMenuExperienceHost.exe': 'system', 'claude.exe': 'app' });
   });
 
   it('never flags desktop apps or unresolvable interpreters', () => {

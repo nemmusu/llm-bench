@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { EngineConfig, LaunchParams } from '../../contract/engines';
+import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
 import { AppError, isAppError, toAppErrorData, type AppErrorData } from '../../contract/errors';
 import type { RunPhase, ServerEvent } from '../../contract/events';
 import type { GpuSample, HardwareFingerprint } from '../../contract/hardware';
@@ -20,7 +20,8 @@ import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPla
 import type { GenerateRequest, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
 import { summaryOf } from '../store/runs-repo';
-import type { GpuUser, TelemetrySampler, TelemetrySession } from '../telemetry/types';
+import { PROCESS_VRAM_INTERVAL_MS } from '../telemetry/process-vram';
+import type { GpuUser, ProcessVramSession, ProcessVramTick, TelemetrySampler, TelemetrySession } from '../telemetry/types';
 import {
   aggregateConcurrency,
   aggregateLatency,
@@ -29,6 +30,7 @@ import {
   energyOverWindows,
   fromStream,
   maxTemp,
+  othersDriftMiB,
   primaryGpu,
   throttling,
   toLoadPhases,
@@ -41,7 +43,7 @@ import { buildPrompt, buildTextPrompt, getCorpusTokens } from './prompts';
 import { DEFAULT_EXPECTATIONS, isLlamaCpp, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
-import { computeValidity } from './validity';
+import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
 
@@ -124,6 +126,13 @@ const LOG_DRAIN_MS = 1000;
 const VRAM_SETTLE_SLACK_MIB = 512;
 /** First-token probe: ~16 tokens of text. */
 const FIRST_TOKEN_PROMPT_CHARS = 64;
+/** Engines in containers: an instance PID (if any) is a docker CLI helper, never the engine. */
+const CONTAINER_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker']);
+
+/** The engine process is ours and visible to the OS (native llama.cpp / vLLM): its VRAM can be read per process. */
+function pidAttributable(kind: EngineKind): boolean {
+  return kind !== 'external' && !CONTAINER_KINDS.has(kind);
+}
 
 const UNKNOWN_HARDWARE: HardwareFingerprint = {
   hostId: 'unknown',
@@ -152,6 +161,12 @@ interface RunState {
   launch?: LaunchRecord;
   session?: TelemetrySession;
   samples: GpuSample[];
+  /** Per-process VRAM of the engine (absent when the OS cannot attribute it). */
+  procVram?: ProcessVramSession;
+  procTicks: ProcessVramTick[];
+  procPeakMiB?: number;
+  /** An engine instance with an attributable PID was started. */
+  enginePidSeen: boolean;
   marks: { t: number; label: string }[];
   instance?: EngineInstance;
   instanceLabel: string;
@@ -255,6 +270,8 @@ export class BenchRunner {
       baseline: [],
       otherUsers: [],
       samples: [],
+      procTicks: [],
+      enginePidSeen: false,
       marks: [],
       instanceLabel: '',
       logBuffer: [],
@@ -314,16 +331,25 @@ export class BenchRunner {
     if (s.telemetryOn) {
       s.baseline = await d.telemetry.snapshot().catch(() => []);
       s.otherUsers = await d.telemetry.otherGpuUsers(d.ownPids()).catch(() => []);
-      const llms = s.otherUsers.filter((u) => u.knownLlm);
-      if (llms.length > 0 && !input.allowSharedGpu) {
-        throw new AppError('VRAM_BUSY', 'Other LLM servers are using the GPU', {
-          params: { names: llms.map((u) => u.name).join(', '), pids: llms.map((u) => u.pid).join(', ') },
-        });
+      const shared = sharedGpuUsers(s.otherUsers);
+      if (shared.length > 0) s.notes.push(`GPU shared with ${shared.map(describeGpuUser).join(', ')}`);
+      const busy = input.allowSharedGpu ? undefined : vramBusy(s.otherUsers, s.baseline, input.vramEstimateMiB);
+      if (busy) {
+        const params = { names: busy.users.map((u) => u.name).join(', '), pids: busy.users.map((u) => u.pid).join(', ') };
+        throw busy.reason === 'llm'
+          ? new AppError('VRAM_BUSY', 'Other LLM servers are using the GPU', { params })
+          : new AppError('VRAM_BUSY', 'Other processes hold the VRAM this model needs', {
+              params: { ...params, freeMiB: busy.freeMiB, needMiB: busy.needMiB },
+            });
       }
     }
     s.corpus = await d.corpus();
     if (s.telemetryOn) {
       s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => d.publish({ type: 'telemetry', samples }));
+      // Started before the first load: its first reading is the reference for other processes' drift.
+      s.procVram = d.telemetry.startProcessVram
+        ? await d.telemetry.startProcessVram(() => this.enginePids(s), PROCESS_VRAM_INTERVAL_MS).catch(() => undefined)
+        : undefined;
     }
     this.advance(s, 1);
     checkAbort(signal);
@@ -529,10 +555,17 @@ export class BenchRunner {
 
   // ---- instances, logs, telemetry ---------------------------------------------------------
 
+  /** PIDs whose VRAM is the engine's: the running instance, if its process is ours and attributable. */
+  private enginePids(s: RunState): number[] {
+    const pid = s.instance?.pid;
+    return pid !== undefined && pidAttributable(s.input.engineConfig.kind) ? [pid] : [];
+  }
+
   private attach(s: RunState, inst: EngineInstance, label: string): void {
     s.instance = inst;
     s.instanceLabel = label;
     s.instanceExit = undefined;
+    if (this.enginePids(s).length > 0) s.enginePidSeen = true;
     inst.exited.then(
       (info) => {
         if (s.instance === inst) s.instanceExit = info;
@@ -595,6 +628,10 @@ export class BenchRunner {
     this.setPhase(s, 'cleanup');
     await this.stopInstance(s);
     if (s.session) s.samples = await s.session.stop().catch(() => [] as GpuSample[]);
+    if (s.procVram) {
+      s.procTicks = await s.procVram.stop().catch(() => [] as ProcessVramTick[]);
+      s.procPeakMiB = s.procVram.peakMiB();
+    }
     // Stopped engines close their log streams: let the pumps drain (bounded) so run.log precedes run.done.
     await Promise.race([Promise.allSettled(s.pumps), this.deps.clock.sleep(LOG_DRAIN_MS)]);
     this.flushLogs(s);
@@ -681,6 +718,12 @@ export class BenchRunner {
       // Cold phases are recorded together with the first cold load time.
       coldMs && s.plan ? coldReadSpeed(s.plan.modelBytes, s.coldPhases as LoadPhase[], coldMs.median) : undefined;
     const latency = [...s.latency].sort((a, b) => a.promptTokens - b.promptTokens);
+    const kind = input.engineConfig.kind;
+    // Headline VRAM: the engine's own peak when the OS attributes it, else peak total − baseline.
+    const processPeakMiB = s.procPeakMiB;
+    const method = processPeakMiB !== undefined ? 'process' : vr.deltaMiB !== undefined ? 'total-delta' : undefined;
+    const drift = othersDriftMiB(s.procTicks, { engineHasPid: s.enginePidSeen });
+    if (drift !== undefined && drift >= VRAM_DRIFT_MIN_MIB) s.notes.push(`other GPU processes changed their VRAM by up to ${drift} MiB during the run`);
 
     const metrics: Metrics = {
       formulaVersion: METRICS_FORMULA_VERSION,
@@ -694,7 +737,12 @@ export class BenchRunner {
       latency,
       concurrency: s.concurrency,
       llamaBench: s.llamaBench,
-      vram: { ...vr, ...(input.vramEstimateMiB !== undefined ? { estimateMiB: input.vramEstimateMiB } : {}) },
+      vram: {
+        ...vr,
+        ...(input.vramEstimateMiB !== undefined ? { estimateMiB: input.vramEstimateMiB } : {}),
+        ...(processPeakMiB !== undefined ? { processPeakMiB } : {}),
+        ...(method ? { method } : {}),
+      },
       energy: {
         ...(en.avgPowerW !== undefined ? { avgPowerW: en.avgPowerW } : {}),
         ...(en.maxPowerW !== undefined ? { maxPowerW: en.maxPowerW } : {}),
@@ -708,7 +756,6 @@ export class BenchRunner {
       if (score) metrics.score = score;
     }
 
-    const kind = input.engineConfig.kind;
     const validity = computeValidity({
       otherGpuUsers: s.otherUsers,
       ...(vr.baselineMiB !== undefined ? { baselineVramMiB: vr.baselineMiB } : {}),
@@ -722,7 +769,14 @@ export class BenchRunner {
       tokensApproximate: s.tokensApproximate,
       energyAvailable: en.available,
       keyStats: latency.flatMap((p) => [p.decodeTps, p.prefillTps]),
-      vramApproximate: kind === 'llamacpp-docker' || kind === 'vllm-docker' || kind === 'external',
+      vramApproximate: isVramApproximate({
+        method,
+        external: kind === 'external',
+        containerized: CONTAINER_KINDS.has(kind),
+        deltaMiB: vr.deltaMiB,
+        othersDriftMiB: drift,
+        vmBaselineMiB: s.otherUsers.reduce((n, u) => n + (u.kind === 'vm' ? (u.memMiB ?? 0) : 0), 0),
+      }),
       slowSharedFilesystem: input.slowSharedFilesystem ?? false,
     });
 

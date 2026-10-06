@@ -1,0 +1,1 @@
+{"Name":"desktop-linux","Metadata":{"Description":"Docker Desktop","GODEBUG":"x509negativeserial=1","otel":{"OTEL_EXPORTER_OTLP_ENDPOINT":"unix:////./c:/Users/nemm0s0/AppData/Local/Docker/run/userAnalyticsOtlpHttp.sock"}},"Endpoints":{"docker":{"Host":"npipe:////./pipe/dockerDesktopLinuxEngine","SkipTLSVerify":false}}}

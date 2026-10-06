@@ -2,11 +2,18 @@ import { isAppError } from '../../contract/errors';
 import type { GpuInfo, GpuSample } from '../../contract/hardware';
 import type { Clock, Logger, ProcessRunner } from '../deps';
 import type { FieldChoice } from './fields';
-import { isKnownLlm, processBaseName } from './known-llm';
+import { gpuUserKind, isKnownLlm, processBaseName } from './known-llm';
 import { NvidiaSmiCli, type DriverInfo, type NvidiaSmiLocation } from './nvidia-smi';
-import { PROBE_FIELDS, SAMPLE_FIELDS, parseComputeApps, parseProbe, parseSamples } from './parse';
+import { PROBE_FIELDS, SAMPLE_FIELDS, parseComputeApps, parseProbe, parseSamples, type ComputeApp } from './parse';
+import {
+  COMPUTE_APPS_ARGS,
+  MIN_PROCESS_VRAM_INTERVAL_MS,
+  PROCESS_VRAM_INTERVAL_MS,
+  ProcessVramRecorder,
+  type ProcessMemorySetup,
+} from './process-vram';
 import { StreamSession, type StreamSetup } from './session';
-import type { GpuUser, TelemetrySampler, TelemetrySession } from './types';
+import type { GpuProcessMemory, GpuUser, PidSource, ProcessVramSession, TelemetrySampler, TelemetrySession } from './types';
 
 export const DEFAULT_MAX_SAMPLES = 200_000;
 /** nvidia-smi itself needs a few ms per query; below this the stream only burns CPU. */
@@ -14,7 +21,7 @@ export const MIN_INTERVAL_MS = 50;
 /** Owner recorded in the process registry for every telemetry child. */
 export const TELEMETRY_OWNER = { runId: 'telemetry', marker: 'nvidia-smi' } as const;
 
-export interface NvidiaSmiTelemetryOptions {
+export interface NvidiaSmiTelemetryOptions extends ProcessMemorySetup {
   clock: Clock;
   proc: ProcessRunner;
   location: NvidiaSmiLocation;
@@ -23,6 +30,46 @@ export interface NvidiaSmiTelemetryOptions {
   log?: Logger;
   timeoutMs?: number;
   maxSamples?: number;
+}
+
+/** Processes seen only by the OS counters are listed from this size up (the desktop has dozens of tiny ones). */
+export const EXTRA_USER_MIN_MIB = 64;
+
+function gpuUser(pid: number, processName: string, memMiB: number | undefined): GpuUser {
+  return {
+    pid,
+    name: processBaseName(processName),
+    knownLlm: isKnownLlm(processName),
+    kind: gpuUserKind(processName),
+    ...(memMiB !== undefined ? { memMiB: Math.round(memMiB) } : {}),
+  };
+}
+
+/**
+ * Other GPU users: the nvidia-smi compute-apps list (memory summed over GPUs; "[N/A]" under WDDM),
+ * with memory from the OS counters when given (a listed process absent from them holds 0), plus
+ * counter-only processes above EXTRA_USER_MIN_MIB (vmwp, dwm… never appear in compute-apps), largest
+ * first. Our own PIDs are never listed.
+ */
+export function mergeGpuUsers(apps: readonly ComputeApp[], counted: readonly GpuProcessMemory[] | undefined, ownPids: readonly number[]): GpuUser[] {
+  const own = new Set(ownPids);
+  const mem = new Map((counted ?? []).map((c) => [c.pid, c.mib]));
+  const users = new Map<number, GpuUser>();
+  for (const app of apps) {
+    if (own.has(app.pid)) continue;
+    const prev = users.get(app.pid);
+    if (!prev) {
+      users.set(app.pid, gpuUser(app.pid, app.processName, counted ? (mem.get(app.pid) ?? 0) : (app.usedMiB ?? undefined)));
+    } else if (!counted && app.usedMiB !== null) {
+      // A process using several GPUs is listed once per GPU.
+      prev.memMiB = (prev.memMiB ?? 0) + Math.round(app.usedMiB);
+    }
+  }
+  for (const c of [...(counted ?? [])].sort((a, b) => b.mib - a.mib)) {
+    if (own.has(c.pid) || users.has(c.pid) || c.mib <= EXTRA_USER_MIN_MIB || !c.name) continue;
+    users.set(c.pid, gpuUser(c.pid, c.name, c.mib));
+  }
+  return [...users.values()];
 }
 
 /** "No devices were found" is a normal answer for lists, not an error. */
@@ -74,20 +121,27 @@ export class NvidiaSmiTelemetry implements TelemetrySampler {
     return emptyWhenNoGpu(async () => (await this.querySamples()).samples);
   }
 
-  otherGpuUsers(ownPids: number[]): Promise<GpuUser[]> {
-    return emptyWhenNoGpu(async () => {
-      const stdout = await this.cli.text(['--query-compute-apps=pid,process_name,used_memory', '--format=csv,noheader,nounits']);
-      const own = new Set(ownPids);
-      const seen = new Set<number>();
-      const out: GpuUser[] = [];
-      // A process using several GPUs is listed once per GPU.
-      for (const app of parseComputeApps(stdout)) {
-        if (own.has(app.pid) || seen.has(app.pid)) continue;
-        seen.add(app.pid);
-        out.push({ pid: app.pid, name: processBaseName(app.processName), knownLlm: isKnownLlm(app.processName) });
-      }
-      return out;
+  async otherGpuUsers(ownPids: number[]): Promise<GpuUser[]> {
+    const [apps, counted] = await Promise.all([
+      emptyWhenNoGpu(async () => parseComputeApps(await this.cli.text(COMPUTE_APPS_ARGS))),
+      this.o.userMemory?.read(),
+    ]);
+    return mergeGpuUsers(apps, counted, ownPids);
+  }
+
+  /** Engine VRAM per process (Windows GPU counters, nvidia-smi on Linux); undefined without a source. */
+  async startProcessVram(pids: PidSource, intervalMs = PROCESS_VRAM_INTERVAL_MS): Promise<ProcessVramSession | undefined> {
+    const source = this.o.processMemory;
+    if (!source) return undefined;
+    const recorder = new ProcessVramRecorder({
+      source,
+      clock: this.o.clock,
+      pids,
+      intervalMs: Math.max(MIN_PROCESS_VRAM_INTERVAL_MS, intervalMs),
+      ...(this.o.expandPids ? { expand: this.o.expandPids } : {}),
     });
+    await recorder.ready;
+    return recorder;
   }
 
   start(intervalMs: number, onSamples?: (samples: GpuSample[]) => void): TelemetrySession {

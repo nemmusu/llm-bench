@@ -61,8 +61,9 @@ class StubTelemetry implements TelemetrySampler {
     return this.fail.users
       ? Promise.reject(new Error('boom'))
       : Promise.resolve([
-          { pid: 4321, name: 'llama-server.exe', knownLlm: true },
-          { pid: 14064, name: 'explorer.exe', knownLlm: false },
+          { pid: 4321, name: 'llama-server.exe', knownLlm: true, kind: 'llm', memMiB: 9000 },
+          { pid: 14064, name: 'explorer.exe', knownLlm: false, kind: 'system', memMiB: 216 },
+          { pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm', memMiB: 23298 },
         ]);
   }
   start() {
@@ -109,8 +110,9 @@ describe('SystemService', () => {
       hostLabel: 'DESKTOP-DHTKFJ0',
       nvidiaSmi: { found: true, path: 'C:\\Windows\\System32\\nvidia-smi.exe' },
       otherGpuUsers: [
-        { pid: 4321, name: 'llama-server.exe', knownLlm: true },
-        { pid: 14064, name: 'explorer.exe', knownLlm: false },
+        { pid: 4321, name: 'llama-server.exe', knownLlm: true, kind: 'llm', memMiB: 9000 },
+        { pid: 14064, name: 'explorer.exe', knownLlm: false, kind: 'system', memMiB: 216 },
+        { pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm', memMiB: 23298 },
       ],
       docker: { state: 'running', version: '29.8.0' },
       paths: { dataDir: 'D:\\data', resultsDir: '\\\\nas\\gpubench', modelsDir: 'C:\\models', enginesDir: 'D:\\data\\engines' },
@@ -145,6 +147,30 @@ describe('SystemService', () => {
     expect((await quiet.svc.system()).gpus).toEqual(FP.gpus);
     const noPath = service({ telemetry: Object.assign(new StubTelemetry(), { status: () => Promise.resolve({ found: false }) }) });
     expect((await noPath.svc.system()).nvidiaSmi).toEqual({ found: false });
+  });
+
+  it('GPU users: concurrent polls share one query, reused for 2.5 s unless our PIDs change; failures not cached', async () => {
+    let own = [1];
+    const telemetry = new StubTelemetry();
+    const { svc, clock } = service({ telemetry, ownPids: () => own });
+    const [a, b] = await Promise.all([svc.system(), svc.system()]);
+    expect(a.otherGpuUsers).toHaveLength(3);
+    expect(b.otherGpuUsers).toBe(a.otherGpuUsers);
+    clock.advance(2499);
+    await svc.system();
+    expect(telemetry.ownSeen).toEqual([[1]]);
+    own = [1, 2];
+    await svc.system();
+    expect(telemetry.ownSeen).toEqual([[1], [1, 2]]);
+    clock.advance(2500);
+    await svc.system();
+    expect(telemetry.ownSeen).toHaveLength(3);
+
+    const flaky = Object.assign(new StubTelemetry({ users: true }), {});
+    const f = service({ telemetry: flaky, usersMaxAgeMs: 10_000 });
+    expect((await f.svc.system()).otherGpuUsers).toEqual([]);
+    expect((await f.svc.system()).otherGpuUsers).toEqual([]);
+    expect(flaky.ownSeen).toHaveLength(2);
   });
 
   it('serves snapshots through LiveTelemetry (coalesced, 500 ms reuse)', async () => {
@@ -218,9 +244,38 @@ describe('system routes', () => {
     const sys = systemResponseSchema.parse(await (await app.request('/api/system')).json());
     expect(sys.nvidiaSmi).toEqual({ found: true, path: 'C:\\Windows\\System32\\nvidia-smi.exe' });
     expect(sys.gpus[0]).toMatchObject({ name: 'NVIDIA GeForce RTX 5090', cudaVersion: '13.4', driverVersion: '617.14' });
+    // The GPU-counter monitor gave no reading in time (fake clock): users without memory.
     expect(sys.otherGpuUsers).toHaveLength(23);
     expect(sys.otherGpuUsers.filter((u) => u.knownLlm)).toEqual([]);
+    expect(sys.otherGpuUsers.every((u) => u.memMiB === undefined && u.kind !== undefined)).toBe(true);
     const samples = gpuSampleSchema.array().parse(await (await app.request('/api/telemetry/snapshot')).json());
     expect(samples[0]).toMatchObject({ memUsedMiB: 1800, throttle: ['reliability'] });
+  });
+
+  it('end to end on Windows with the real GPU-counter monitor capture: memory and kind per user', async () => {
+    // Timers only fire when aborted: the monitor's reading always beats its timeout.
+    const clock = Object.assign(new FakeClock(), {
+      sleep: (_ms: number, signal?: AbortSignal) => new Promise<void>((_r, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+    });
+    const monitorLines = fixture('process-vram/win-monitor.txt').split(/\r?\n/).filter((l) => l !== '');
+    const proc = new FakeRunner(
+      nvidiaSmiHandler({
+        version: ok(fixture('nvidia-smi/win-version.txt')),
+        probe: ok(fixture('nvidia-smi/win-probe.csv')),
+        apps: ok(fixture('process-vram/win-compute-apps.csv')),
+      }),
+      clock,
+      (p) => {
+        if (p.spec.cmd.endsWith('powershell.exe')) for (const l of monitorLines) p.emit(l);
+      },
+    );
+    const telemetry = createTelemetry({ clock, proc, platform: 'win32', env: {}, endpoints: {} }, { fileExists: (p) => Promise.resolve(p === 'C:\\Windows\\System32\\nvidia-smi.exe') });
+    const sys = systemResponseSchema.parse(await (await plainApp(service({ telemetry, ownPids: () => [53916] }).svc).request('/api/system')).json());
+    const by = new Map(sys.otherGpuUsers.map((u) => [u.pid, u]));
+    expect(by.get(29192)).toEqual({ pid: 29192, name: 'vmwp', knownLlm: false, kind: 'vm', memMiB: 23298 });
+    expect(by.get(2260)).toMatchObject({ name: 'dwm', kind: 'system', memMiB: 3329 });
+    expect(by.get(33864)).toMatchObject({ name: 'firefox.exe', kind: 'app', memMiB: 2932 });
+    expect(by.has(53916)).toBe(false);
+    expect(sys.otherGpuUsers).toHaveLength(24);
   });
 });

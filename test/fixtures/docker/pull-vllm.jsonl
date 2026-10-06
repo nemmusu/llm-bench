@@ -1,0 +1,19 @@
+{"status":"Pulling from vllm/vllm-openai","id":"v0.31.0"}
+{"status":"Already exists","progressDetail":{},"id":"9cb31e2e37ea"}
+{"status":"Pulling fs layer","progressDetail":{},"id":"0e3a1b9c4d21"}
+{"status":"Pulling fs layer","progressDetail":{},"id":"7f2c5d8e1a90"}
+{"status":"Waiting","progressDetail":{},"id":"7f2c5d8e1a90"}
+{"status":"Downloading","progressDetail":{"current":1048576,"total":4194304},"progress":"[============>                                      ]  1.049MB/4.194MB","id":"0e3a1b9c4d21"}
+{"status":"Downloading","progressDetail":{"current":4194304,"total":4194304},"progress":"[==================================================>]  4.194MB/4.194MB","id":"0e3a1b9c4d21"}
+{"status":"Verifying Checksum","progressDetail":{},"id":"0e3a1b9c4d21"}
+{"status":"Download complete","progressDetail":{},"id":"0e3a1b9c4d21"}
+{"status":"Downloading","progressDetail":{"current":2097152,"total":8388608},"progress":"[============>                                      ]  2.097MB/8.389MB","id":"7f2c5d8e1a90"}
+{"status":"Retrying in 5 seconds","progressDetail":{},"id":"7f2c5d8e1a90"}
+{"status":"Downloading","progressDetail":{"current":8388608,"total":8388608},"progress":"[==================================================>]  8.389MB/8.389MB","id":"7f2c5d8e1a90"}
+{"status":"Download complete","progressDetail":{},"id":"7f2c5d8e1a90"}
+{"status":"Extracting","progressDetail":{"current":4194304,"total":4194304},"progress":"[==================================================>]  4.194MB/4.194MB","id":"0e3a1b9c4d21"}
+{"status":"Pull complete","progressDetail":{},"id":"0e3a1b9c4d21"}
+{"status":"Extracting","progressDetail":{"current":8388608,"total":8388608},"progress":"[==================================================>]  8.389MB/8.389MB","id":"7f2c5d8e1a90"}
+{"status":"Pull complete","progressDetail":{},"id":"7f2c5d8e1a90"}
+{"status":"Digest: sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3"}
+{"status":"Status: Downloaded newer image for vllm/vllm-openai:v0.31.0"}

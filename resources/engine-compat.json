@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "updated": "2026-10-06",
+  "vllm": {
+    "image": "vllm/vllm-openai",
+    "recommendedTag": "v0.31.0",
+    "minTagBySm": {
+      "sm_120": "v0.9.2",
+      "sm_121": "v0.9.2"
+    },
+    "maxTagBySm": {
+      "sm_70": "v0.19.1"
+    },
+    "positionalModelFromTag": "v0.12.0",
+    "cudaByTag": [
+      { "fromTag": "v0.9.2", "cuda": "12.8" },
+      { "fromTag": "v0.12.0", "cuda": "12.9" },
+      { "fromTag": "v0.20.0", "cuda": "13.0" }
+    ],
+    "notes": [
+      "sm_120 (RTX 50xx / RTX PRO Blackwell): the Dockerfile adds 12.0 to torch_cuda_arch_list from v0.9.2 (PR #19794, milestone v0.9.2); v0.9.0 and v0.9.0.1 fail with 'no kernel image is available'.",
+      "sm_121 (GB10 / DGX Spark) is listed with the sm_120 minimum by CUDA binary compatibility within the same major architecture: not verified on hardware.",
+      "Kernel coverage on sm_120 kept improving after v0.9.2 (FP8/NVFP4 MoE, FlashInfer): prefer the recommended tag; very old tags may run a model but miss fast kernels.",
+      "Default image CUDA: 12.8 up to v0.11.x, 12.9 from v0.12.0, 13.0 from v0.20.0 (needs driver >= 580). '-cu129' variants of newer tags exist for CUDA 12.9 drivers.",
+      "The image entrypoint is 'python3 -m vllm.entrypoints.openai.api_server' up to v0.11.x and 'vllm serve' from v0.12.0: newer tags take the model as a positional argument (--model is deprecated there).",
+      "sm_70 (V100) left the default arch list in v0.20.0; maxTagBySm is the last tag known to include it.",
+      "recommendedTag is the newest stable release on Docker Hub when this file was updated; it is still to be verified on the RTX 5090 in the real-hardware run."
+    ]
+  },
+  "llamacpp": {
+    "dockerImage": "ghcr.io/ggml-org/llama.cpp:server-cuda",
+    "dockerImageCuda13": "ghcr.io/ggml-org/llama.cpp:server-cuda13",
+    "notes": [
+      "server-cuda is built with CUDA 12.8.1 (covers sm_120); server-cuda13 uses CUDA 13. Entrypoint is /app/llama-server, default port 8080.",
+      "Some users report server-cuda13 falling back to CPU where server-cuda works: server-cuda stays the default.",
+      "ghcr.io gives no anonymous size API: the download size is shown as unknown."
+    ]
+  },
+  "minDriverByCuda": {
+    "12.8": { "linux": "570.26", "windows": "570.65" },
+    "12.9": { "linux": "575.51.03", "windows": "576.02" },
+    "13.0": { "linux": "580", "windows": "580" }
+  },
+  "sources": [
+    {
+      "url": "https://github.com/vllm-project/vllm/pull/19794",
+      "fact": "[CI] Add SM120 to the Dockerfile, merged 2025-06-25, milestone v0.9.2",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://github.com/vllm-project/vllm/releases/tag/v0.9.2",
+      "fact": "Release notes: 'NVIDIA Blackwell - SM120: CUTLASS W8A8/FP8 kernels and related tuning, added to Dockerfile'",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://discuss.vllm.ai/t/docker-image-vllm-vllm-openai-v0-9-0-doesnt-work-on-5090/761",
+      "fact": "v0.9.0 / v0.9.0.1 images fail on RTX 5090 with 'no kernel image is available'",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/v0.9.1/docker/Dockerfile",
+      "fact": "torch_cuda_arch_list='7.0 7.5 8.0 8.9 9.0 10.0+PTX' (no 12.0); v0.9.2 and v0.10.0 list '... 10.0 12.0', CUDA_VERSION=12.8.1",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/v0.12.0/docker/Dockerfile",
+      "fact": "ENTRYPOINT [\"vllm\", \"serve\"] and CUDA_VERSION=12.9.1 (v0.11.0: python3 -m vllm.entrypoints.openai.api_server, CUDA 12.8.1)",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/v0.20.0/docker/Dockerfile",
+      "fact": "CUDA_VERSION=13.0.2, torch_cuda_arch_list starts at 7.5 (v0.19.1 still lists 7.0)",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/v0.31.0/docker/Dockerfile",
+      "fact": "CUDA_VERSION=13.0.3, torch_cuda_arch_list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0'",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags?page_size=100&name=v0.31.0",
+      "fact": "v0.31.0 published 2026-10-04 (amd64 9,035,211,086 bytes compressed), with -cu129 variants",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://docs.vllm.ai/en/stable/api/vllm/utils/argparse_utils/",
+      "fact": "'With vllm serve, you should provide the model as a positional argument ... The --model option will be removed in a future version.'",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/HEAD/docs/docker.md",
+      "fact": "server-cuda (CUDA 12, default 12.8.1) and server-cuda13 tags; entrypoint llama-server",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://github.com/ggml-org/llama.cpp/issues/22561",
+      "fact": "report of server-cuda13 running on CPU where server-cuda uses the GPU",
+      "checked": "2026-10-06"
+    },
+    {
+      "url": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html",
+      "fact": "Minimum drivers: CUDA 12.8 GA 570.26/570.65, 12.9 GA 575.51.03/576.02, 13.x >= 580",
+      "checked": "2026-10-06"
+    }
+  ]
+}

@@ -3,8 +3,9 @@ import type { GpuInfo, GpuSample } from '../../contract/hardware';
 import type { CoreDeps } from '../deps';
 import { NullTelemetry } from './null';
 import { NvidiaSmiCli, locateNvidiaSmi, parseDriverInfo, type DriverInfo, type FileExists, type NvidiaSmiLocation } from './nvidia-smi';
+import { createProcessMemory, type ProcessMemoryDeps } from './process-vram';
 import { NvidiaSmiTelemetry } from './sampler';
-import type { GpuUser, TelemetrySampler, TelemetrySession } from './types';
+import type { GpuUser, PidSource, ProcessVramSession, TelemetrySampler, TelemetrySession } from './types';
 
 export interface TelemetryStatus {
   /** nvidia-smi binary located (or overridden). */
@@ -25,6 +26,8 @@ export interface Telemetry extends TelemetrySampler {
   status(): Promise<TelemetryStatus>;
   /** Forgets the detection (e.g. after a driver install) so the next call detects again. */
   refresh(): void;
+  /** Always present here: undefined result when the detected sampler cannot attribute VRAM per process. */
+  startProcessVram(pids: PidSource, intervalMs?: number): Promise<ProcessVramSession | undefined>;
 }
 
 export type TelemetryDeps = Pick<CoreDeps, 'clock' | 'proc' | 'platform' | 'env'> & {
@@ -38,6 +41,8 @@ export interface CreateTelemetryOptions {
   maxSamples?: number;
   /** A failed detection is retried after this long, so a freshly installed driver is picked up (default 10 s). */
   retryMs?: number;
+  /** Per-process VRAM tuning (tests): Windows monitor timings, Linux /proc reader. */
+  processMemory?: Pick<ProcessMemoryDeps, 'windows' | 'procFs' | 'procRoot'>;
 }
 
 export interface Detection {
@@ -65,7 +70,8 @@ export async function detectTelemetry(deps: TelemetryDeps, opts: CreateTelemetry
     });
     if (!location) return { sampler: new NullTelemetry(), status };
     status = { ...status, found: true, path: location.path, source: location.source };
-    const driver = await readDriverInfo(new NvidiaSmiCli(deps.proc, location, opts.timeoutMs));
+    const cli = new NvidiaSmiCli(deps.proc, location, opts.timeoutMs);
+    const driver = await readDriverInfo(cli);
     status = { ...status, ...driver };
     const sampler = new NvidiaSmiTelemetry({
       clock: deps.clock,
@@ -75,6 +81,16 @@ export async function detectTelemetry(deps: TelemetryDeps, opts: CreateTelemetry
       ...(deps.log ? { log: deps.log } : {}),
       ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
       ...(opts.maxSamples ? { maxSamples: opts.maxSamples } : {}),
+      ...createProcessMemory({
+        platform: deps.platform,
+        proc: deps.proc,
+        clock: deps.clock,
+        env: deps.env,
+        ...(deps.log ? { log: deps.log } : {}),
+        cli,
+        overridden: location.source === 'override',
+        ...opts.processMemory,
+      }),
     });
     const gpus = await sampler.probe();
     if (gpus.length === 0) throw new AppError('GPU_NOT_FOUND', 'nvidia-smi found no NVIDIA GPU');
@@ -161,6 +177,11 @@ class AutoTelemetry implements Telemetry {
 
   async otherGpuUsers(ownPids: number[]): Promise<GpuUser[]> {
     return (await this.detect()).sampler.otherGpuUsers(ownPids);
+  }
+
+  async startProcessVram(pids: PidSource, intervalMs?: number): Promise<ProcessVramSession | undefined> {
+    const sampler = (await this.detect()).sampler;
+    return sampler.startProcessVram ? sampler.startProcessVram(pids, intervalMs) : undefined;
   }
 
   start(intervalMs: number, onSamples?: (samples: GpuSample[]) => void): TelemetrySession {

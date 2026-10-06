@@ -183,6 +183,50 @@ describe('createTelemetry (lazy auto-detection)', () => {
   });
 });
 
+describe('createTelemetry: per-process VRAM wiring', () => {
+  it('Windows: the GPU-counter monitor serves startProcessVram and enriches otherGpuUsers', async () => {
+    // Timers never fire on their own: the monitor's first reading arrives before its timeout.
+    const patient = Object.assign(new FakeClock(), {
+      sleep: (_ms: number, signal?: AbortSignal) => new Promise<void>((_r, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+    });
+    const { d, proc } = deps(WORKING, { log: memoryLogger(), clock: patient });
+    const t = createTelemetry(d, { fileExists: onlySys32, processMemory: { windows: { parentPid: 42 } } });
+    const users = t.otherGpuUsers([4242]);
+    await tick(10);
+    const monitor = proc.spawned.find((p) => p.spec.cmd.endsWith('powershell.exe'))!;
+    expect(monitor.spec.args.at(-1)).toContain('GetProcessById(42)');
+    monitor.emit('N 29192 vmwp');
+    monitor.emit('S 29192=19456000000 5151=2147483648');
+    expect((await users).map((u) => [u.pid, u.kind, u.memMiB])).toEqual([
+      [5151, 'llm', 2048],
+      [6161, 'app', 0],
+      [7171, 'app', 0],
+      [29192, 'vm', 18555],
+    ]);
+    const rec = await t.startProcessVram([5151], 1000);
+    expect(rec?.latestMiB()).toBe(2048);
+    await rec?.stop();
+  });
+
+  it('a stand-in nvidia-smi (tests) never reads the real Windows counters', async () => {
+    const { d, proc } = deps(WORKING, { endpoints: { nvidiaSmi: ['node', 'fake.mjs'] } });
+    const t = createTelemetry(d);
+    expect(await t.startProcessVram([1])).toBeUndefined();
+    await t.otherGpuUsers([]);
+    expect(proc.spawned).toHaveLength(0);
+  });
+
+  it('Linux: nvidia-smi per process; without NVIDIA nothing to sample', async () => {
+    const { d } = deps(WORKING, { platform: 'linux' });
+    const t = createTelemetry(d, { fileExists: (p) => Promise.resolve(p === '/usr/bin/nvidia-smi'), processMemory: { procRoot: '/nonexistent' } });
+    const rec = await t.startProcessVram([4242]);
+    expect(rec?.peakMiB()).toBe(19456);
+    await rec?.stop();
+    const none = createTelemetry(deps(WORKING).d, { fileExists: () => Promise.resolve(false) });
+    expect(await none.startProcessVram([1])).toBeUndefined();
+  });
+});
+
 describe('NullTelemetry', () => {
   it('is never available and returns empty readings', async () => {
     const n = new NullTelemetry();

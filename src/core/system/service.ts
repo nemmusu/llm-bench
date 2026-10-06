@@ -23,7 +23,11 @@ export interface SystemServiceOptions {
   log?: Logger;
   /** Snapshot reuse window for the polling monitor (default 500 ms). */
   liveMaxAgeMs?: number;
+  /** GPU users reuse window (default 2.5 s): the UI polls /api/system, the list changes slowly. */
+  usersMaxAgeMs?: number;
 }
+
+export const USERS_MAX_AGE_MS = 2500;
 
 export interface SystemService {
   /** GET /api/system */
@@ -34,6 +38,29 @@ export interface SystemService {
 
 export function createSystemService(o: SystemServiceOptions): SystemService {
   const live = new LiveTelemetry(o.telemetry, o.clock, o.liveMaxAgeMs);
+
+  // Other GPU users (nvidia-smi + Windows GPU counters): concurrent requests share one query, and a
+  // result is reused for usersMaxAgeMs unless our own PIDs changed (a run started or ended).
+  let usersCache: { at: number; own: string; users: GpuUser[] } | undefined;
+  let usersInflight: Promise<GpuUser[]> | undefined;
+  const otherUsers = (): Promise<GpuUser[]> => {
+    const ownPids = o.ownPids?.() ?? [];
+    const own = ownPids.join(',');
+    const c = usersCache;
+    if (c && c.own === own && o.clock.now() - c.at < (o.usersMaxAgeMs ?? USERS_MAX_AGE_MS)) return Promise.resolve(c.users);
+    usersInflight ??= o.telemetry.otherGpuUsers(ownPids).then(
+      (users) => {
+        usersCache = { at: o.clock.now(), own, users };
+        usersInflight = undefined;
+        return users;
+      },
+      (e: unknown) => {
+        usersInflight = undefined;
+        throw e;
+      },
+    );
+    return usersInflight;
+  };
 
   // The system page must render even when one source fails: each part degrades on its own.
   const soft = async <T>(what: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
@@ -58,7 +85,7 @@ export function createSystemService(o: SystemServiceOptions): SystemService {
       const [fp, liveGpus, users, docker, smi, settings] = await Promise.all([
         o.sysinfo.getFingerprint(),
         soft<GpuInfo[] | undefined>('probe', () => o.telemetry.probe(), undefined),
-        soft<GpuUser[]>('otherGpuUsers', () => o.telemetry.otherGpuUsers(o.ownPids?.() ?? []), []),
+        soft<GpuUser[]>('otherGpuUsers', otherUsers, []),
         soft<DockerStatus>('docker', () => (o.dockerStatus ? o.dockerStatus() : Promise.resolve({ state: 'unknown' as const })), {
           state: 'unknown',
         }),

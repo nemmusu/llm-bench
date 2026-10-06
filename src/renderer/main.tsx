@@ -5,10 +5,11 @@ import { App } from './app';
 import { resolveConnection } from './lib/connection';
 import { createApiClient } from './lib/api';
 
-async function boot() {
+/** Finds the core (Electron bridge or ?token= in browser mode) and mounts the app. */
+export async function boot(doc: Document = document): Promise<void> {
   const conn = await resolveConnection();
   const api = createApiClient(conn);
-  const root = document.getElementById('root');
+  const root = doc.getElementById('root');
   if (!root) throw new Error('#root missing');
   createRoot(root).render(
     <StrictMode>

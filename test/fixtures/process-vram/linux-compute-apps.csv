@@ -1,0 +1,7 @@
+41000, VLLM::EngineCore, 1024
+41077, VLLM::Worker_TP0, 30180
+41078, VLLM::Worker_TP1, 30180
+5150, /usr/local/bin/ollama, 4800
+7171, /usr/bin/python3, 512
+7171, /usr/bin/python3, 256
+8080, /opt/tools/viewer, [N/A]

@@ -1,0 +1,24 @@
+SYNTHETIC vLLM logs, hand-written on 2026-10-06 to model real vLLM v0.9.0 / v0.11.0 output (upstream
+issues, the vLLM forum, release notes). They are NOT captures from this PC: Docker was stopped during this
+task and no vLLM ran. Re-capture them in the real-hardware run (M4) and replace.
+
+Line formats modelled:
+  "INFO MM-DD HH:MM:SS [file.py:NNN] msg"                          (vLLM logger, v0.9)
+  "(APIServer pid=1) INFO …" / "(EngineCore_DP0 pid=255) INFO …"   (process prefixes, v0.10+)
+  tqdm progress lines ("Loading safetensors checkpoint shards: …", "Capturing CUDA graphs (…)"),
+  sometimes several updates on one line (carriage-return separated in the real stream).
+
+ready-download.log    cold start, weights downloaded ("Time spent downloading weights"), torch.compile, CUDA graphs
+ready-cached.log      warm start: compile cache hit ("Directly load the compiled graph(s)"), "GiB memory and" variant
+no-kernel-image.log   v0.9.0 image on RTX 5090 (sm_120): PyTorch capability warning + "no kernel image is available"
+oom.log               torch.OutOfMemoryError while loading weights
+no-cache-blocks.log   "No available memory for the cache blocks"
+vram-busy.log         "Free memory on device (…) on startup is less than desired GPU memory utilization (…)"
+kv-too-small.log      "… KV cache is needed, which is larger than the available KV cache memory …"
+max-model-len.log     "User-specified max_model_len (65536) is greater than the derived max_model_len …"
+gated-401.log         GatedRepoError 401 (no token)
+gated-403.log         GatedRepoError 403 (license not accepted)
+repo-not-found.log    RepositoryNotFoundError (HF answers 401 + "Invalid username or password" for unknown repos)
+bad-flag.log          argparse "unrecognized arguments"
+invalid-choice.log    argparse "invalid choice"
+port-in-use.log       uvicorn "[Errno 98] … address already in use" (native)

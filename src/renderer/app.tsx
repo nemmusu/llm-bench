@@ -1,29 +1,48 @@
-import { useEffect, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider } from '@tanstack/react-router';
+import { useState, type ReactNode } from 'react';
+import { Toaster } from './components/ui/toaster';
+import { TooltipProvider } from './components/ui/tooltip';
+import { I18nProvider } from './i18n';
 import type { ApiClient } from './lib/api';
-import { I18nProvider, useI18n } from './i18n';
+import { ApiProvider, EventsProvider } from './lib/api-context';
+import { SettingsProvider, useSettings } from './lib/settings';
+import { createAppRouter, type AppRouter } from './routes/router';
 
-/** Temporary shell: replaced by the design-system shell (sidebar, title bar, routes). */
-function Placeholder({ api }: { api: ApiClient }) {
-  const { t } = useI18n();
-  const [version, setVersion] = useState<string>();
-  useEffect(() => {
-    void api.get<{ version: string }>('/api/health').then((h) => setVersion(h.version));
-  }, [api]);
+/** Language and toasts depend on settings, so they sit inside the settings provider. */
+function Themed({ children }: { children: ReactNode }) {
+  const { settings, resolvedTheme } = useSettings();
   return (
-    <main className="grid h-full place-items-center">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold">{t('app.name')}</h1>
-        <p>{t('app.tagline')}</p>
-        {version && <p aria-label="version">v{version}</p>}
-      </div>
-    </main>
+    <I18nProvider lang={settings.language}>
+      <TooltipProvider delayDuration={250} skipDelayDuration={150}>
+        {children}
+        <Toaster theme={resolvedTheme} />
+      </TooltipProvider>
+    </I18nProvider>
   );
 }
 
-export function App({ api }: { api: ApiClient }) {
+export interface AppProps {
+  api: ApiClient;
+  /** Tests inject a memory-history router; the app uses hash history. */
+  router?: AppRouter;
+  queryClient?: QueryClient;
+}
+
+export function App({ api, router, queryClient }: AppProps) {
+  const [client] = useState(() => queryClient ?? new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } }));
+  const [appRouter] = useState(() => router ?? createAppRouter());
   return (
-    <I18nProvider lang="it">
-      <Placeholder api={api} />
-    </I18nProvider>
+    <ApiProvider api={api}>
+      <QueryClientProvider client={client}>
+        <EventsProvider>
+          <SettingsProvider>
+            <Themed>
+              <RouterProvider router={appRouter} />
+            </Themed>
+          </SettingsProvider>
+        </EventsProvider>
+      </QueryClientProvider>
+    </ApiProvider>
   );
 }

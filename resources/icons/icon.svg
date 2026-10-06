@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32">
+  <!-- GPU Bench mark: a gauge needle on the brand gradient (same drawing as components/brand/logo.tsx). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8576ff"/>
+      <stop offset="1" stop-color="#4b3bd6"/>
+    </linearGradient>
+    <linearGradient id="needle" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#7ff3ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8.5" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="none" stroke="#ffffff" stroke-opacity="0.18"/>
+  <path d="M8.2 21.4a8 8 0 1 1 15.6 0" fill="none" stroke="#ffffff" stroke-opacity="0.38" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M8.2 21.4a8 8 0 0 1 11.6-9.9" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M16 20.2 L21.4 12.6" stroke="url(#needle)" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="16" cy="20.4" r="2.3" fill="#ffffff"/>
+</svg>

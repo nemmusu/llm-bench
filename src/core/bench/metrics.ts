@@ -3,6 +3,8 @@ import type { GpuSample } from '../../contract/hardware';
 import type { ConcurrencyPoint, LatencyPoint, TelemetrySeries } from '../../contract/results';
 import type { PhaseMark } from '../engines/types';
 import type { StreamEvent } from '../inference/types';
+import { gpuUserKind } from '../telemetry/known-llm';
+import type { GpuProcessMemory, ProcessVramTick } from '../telemetry/types';
 import { mean, percentile, summarize } from './stats';
 
 /** Everything measured on one streamed request. Times are monotonic ms (Clock.now). */
@@ -295,7 +297,8 @@ function peakByGpu(samples: readonly GpuSample[]): Map<number, number> {
 
 /**
  * VRAM used by the run: peak total used memory minus the baseline taken before launch, per GPU
- * then summed. Total-memory deltas are used because per-process memory is "N/A" under WDDM.
+ * then summed. This is the "total-delta" method: it also counts what other processes allocated
+ * meanwhile, so the engine's own per-process peak (processPeakMiB) is preferred when available.
  */
 export function vram(baselineSamples: readonly GpuSample[], runSamples: readonly GpuSample[]): VramResult {
   const base = lastByGpu(baselineSamples);
@@ -310,6 +313,27 @@ export function vram(baselineSamples: readonly GpuSample[], runSamples: readonly
     out.deltaMiB = delta;
   }
   return out;
+}
+
+/**
+ * Largest change (MiB) of the VRAM held by OTHER processes during the run, relative to the first
+ * per-process reading (taken before the first load). Left out: every PID ever attributed to the
+ * engine and, when the engine has no PID of its own (Docker), also VMs (on Windows containers run
+ * inside the WSL VM, vmwp) and processes that appear during the run (on Linux a container's
+ * processes are new host processes). undefined when no reading listed any process (WSL, counters
+ * unavailable): nothing is known about the others.
+ */
+export function othersDriftMiB(ticks: readonly ProcessVramTick[], opts: { engineHasPid: boolean }): number | undefined {
+  const first = ticks[0];
+  if (!first || !ticks.some((t) => t.procs.length > 0)) return undefined;
+  const engine = new Set(ticks.flatMap((t) => t.engine));
+  const counts = (p: GpuProcessMemory) =>
+    !engine.has(p.pid) && (opts.engineHasPid || p.name === undefined || gpuUserKind(p.name) !== 'vm');
+  const before = new Set(first.procs.filter(counts).map((p) => p.pid));
+  const others = (t: ProcessVramTick) =>
+    t.procs.reduce((sum, p) => sum + (counts(p) && (opts.engineHasPid || before.has(p.pid)) ? p.mib : 0), 0);
+  const base = others(first);
+  return Math.round(ticks.reduce((max, t) => Math.max(max, Math.abs(others(t) - base)), 0));
 }
 
 function lowestGpu(samples: readonly GpuSample[]): number | undefined {

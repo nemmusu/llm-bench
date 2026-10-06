@@ -1,4 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import type { ErrorCode } from '../../contract/errors';
+import type { RunPhase } from '../../contract/events';
+import type { ValidityFlag } from '../../contract/results';
 import { en } from './en';
 import { it, type Messages } from './it';
 
@@ -108,4 +111,16 @@ export function I18nProvider({ lang, children }: { lang: Lang; children: ReactNo
 
 export function useI18n(): Formatters {
   return useContext(I18nContext);
+}
+
+// Compile-time guarantees that the catalogs cover every code/flag from the contract, and nothing else.
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Assert<T extends true> = T;
+export type ErrorCatalogIsExhaustive = Assert<Exact<keyof Messages['errors'], ErrorCode>>;
+export type ValidityCatalogIsExhaustive = Assert<Exact<keyof Messages['validity'], ValidityFlag>>;
+export type PhaseCatalogIsExhaustive = Assert<Exact<Exclude<keyof Messages['phases'], 'state'>, RunPhase>>;
+
+/** Localized "what happened / what to do" for an error code from the core. */
+export function errorText(f: Pick<Formatters, 't'>, code: ErrorCode): { title: string; what: string } {
+  return { title: f.t(`errors.${code}.title`), what: f.t(`errors.${code}.what`) };
 }

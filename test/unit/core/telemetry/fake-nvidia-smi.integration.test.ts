@@ -70,7 +70,7 @@ describe('fake nvidia-smi through the real ProcessRunner', () => {
   it('streams samples while another process raises VRAM in the state file, and stop() ends the child', async () => {
     const file = stateFile({ gpus: [{ memUsedMiB: 1600 }], apps: [{ pid: 4321, name: 'C:\\llama\\llama-server.exe' }] });
     const t = telemetry({ FAKE_NVIDIA_SMI_STATE: file });
-    expect(await t.otherGpuUsers([])).toEqual([{ pid: 4321, name: 'llama-server.exe', knownLlm: true }]);
+    expect(await t.otherGpuUsers([])).toEqual([{ pid: 4321, name: 'llama-server.exe', knownLlm: true, kind: 'llm' }]);
     const batches: GpuSample[][] = [];
     const session = t.start(50, (b) => batches.push(b));
     sessions.push(session);

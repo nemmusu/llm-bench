@@ -67,6 +67,11 @@ export interface LaunchPlan {
 
 export interface EngineInstance {
   baseUrl: string;
+  /**
+   * PID of the engine process we spawned (per-process VRAM attribution). Absent for engines whose
+   * process is not ours or not visible as such: Docker containers, external endpoints.
+   */
+  pid?: number;
   /** Monotonic ms when the process/container was started (t0 of load time). */
   t0: number;
   logs: AsyncIterable<LogLine>;

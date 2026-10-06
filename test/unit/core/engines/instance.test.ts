@@ -55,6 +55,8 @@ describe('createProcessInstance', () => {
     f.push('last', 21);
     const ready = inst.waitReady();
     expect(inst.waitReady()).toBe(ready);
+    // The engine process is ours: its PID is exposed for per-process VRAM.
+    expect(inst.pid).toBe(4321);
     const r = await ready;
     expect(r.phases).toEqual([
       { name: 'load_tensors', t: 10 },
