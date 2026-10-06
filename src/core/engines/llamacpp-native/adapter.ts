@@ -164,6 +164,9 @@ export class LlamaNativeAdapter implements EngineAdapter {
     if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
     if (params.threads !== undefined) args.push('-t', String(params.threads));
     if (params.parallel !== undefined) args.push('-np', String(params.parallel));
+    // One KV pool shared by all slots: a single long prompt can use the whole context, and the
+    // behaviour no longer depends on the build's default.
+    if (params.parallel !== undefined && params.parallel > 1 && caps.flags.has('--kv-unified')) args.push('--kv-unified');
     // Auto-fit would silently change ctx/ngl to fit memory: the measured config must be the requested one.
     if (caps.fitFlag) args.push('--fit', 'off');
     if (caps.flags.has('--no-webui')) args.push('--no-webui');

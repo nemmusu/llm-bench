@@ -109,12 +109,13 @@ describe('bench routes', () => {
 
   it('POST /api/runs/plan previews the run', async () => {
     const t = setup();
-    const plan = await t.call('POST', '/api/runs/plan', request({ profile: 'standard' }));
+    // An explicit single slot (expert setting) cannot serve 4 users: the level is skipped and reported.
+    const plan = await t.call('POST', '/api/runs/plan', request({ profile: 'standard', params: { parallel: 1, extraArgs: [], env: {} } }));
     expect(plan.status).toBe(200);
     expect(plan.body).toMatchObject({
       command: { argv: expect.arrayContaining(['llama-server']) },
       needs: [],
-      warnings: [{ code: 'concurrency_level_skipped', params: { level: 4, parallel: 1 } }],
+      warnings: expect.arrayContaining([{ code: 'concurrency_level_skipped', params: { level: 4, parallel: 1 } }]),
     });
   });
 

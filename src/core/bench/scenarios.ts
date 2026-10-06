@@ -49,13 +49,64 @@ export interface ScenarioLimits {
  * (unless the KV cache is unified, which we cannot know from the flags alone), so the per-request
  * context is taken conservatively as ctx / parallel; its concurrency is capped by the slots.
  */
-export function limitsFor(kind: EngineKind, params: LaunchParams, modelContext?: number): ScenarioLimits {
+export function limitsFor(
+  kind: EngineKind,
+  params: LaunchParams,
+  modelContext?: number,
+  opts: { kvUnified?: boolean } = {},
+): ScenarioLimits {
   const ctx = params.contextSize ?? params.maxModelLen ?? modelContext;
   if (isLlamaCpp(kind)) {
     const parallel = params.parallel ?? 1;
-    return { engineKind: kind, ...(ctx ? { contextSize: Math.floor(ctx / parallel) } : {}), maxConcurrency: parallel };
+    const perRequest = ctx === undefined ? undefined : opts.kvUnified ? ctx : Math.floor(ctx / parallel);
+    return { engineKind: kind, ...(perRequest ? { contextSize: perRequest } : {}), maxConcurrency: parallel };
   }
   return { engineKind: kind, ...(ctx ? { contextSize: ctx } : {}) };
+}
+
+const roundUp = (n: number, step: number): number => Math.ceil(n / step) * step;
+
+/**
+ * Launch parameters the scenario needs, for whatever the user did not set: the context must hold
+ * the longest prompt + output (and, with a unified KV pool, all concurrent requests at once), and
+ * llama.cpp needs one slot per concurrent request. Values are rounded to 1024 tokens and capped by
+ * the model's native context (longer prompts are then dropped by fitScenario, with a warning).
+ */
+export function autoLaunchParams(
+  kind: EngineKind,
+  scenario: Scenario,
+  params: LaunchParams,
+  modelContext?: number,
+  opts: { kvUnified?: boolean } = {},
+): LaunchParams {
+  let single = 0;
+  let concurrency = 0;
+  let perConcurrent = 0;
+  for (const step of scenario.steps) {
+    if (step.kind === 'latency') single = Math.max(single, Math.max(...step.promptTokens) + step.outputTokens + CONTEXT_MARGIN);
+    if (step.kind === 'concurrency') {
+      concurrency = Math.max(concurrency, ...step.levels);
+      perConcurrent = Math.max(perConcurrent, step.promptTokens + step.outputTokens + CONTEXT_MARGIN);
+    }
+  }
+  if (kind === 'external') return params;
+  // Round first, then cap: the context must never exceed what the model was trained for.
+  const sized = (n: number) => (modelContext ? Math.min(roundUp(n, 1024), modelContext) : roundUp(n, 1024));
+  const out: LaunchParams = { ...params };
+  if (isLlamaCpp(kind)) {
+    const parallel = params.parallel ?? Math.max(1, concurrency);
+    if (params.parallel === undefined && parallel > 1) out.parallel = parallel;
+    if (params.contextSize === undefined && (single > 0 || perConcurrent > 0)) {
+      const unified = opts.kvUnified ?? true;
+      const perSlot = Math.max(single, perConcurrent);
+      const total = unified ? Math.max(single, perConcurrent * Math.min(parallel, concurrency || 1)) : perSlot * parallel;
+      out.contextSize = unified ? sized(total) : sized(perSlot) * parallel;
+    }
+    return out;
+  }
+  if (params.maxModelLen === undefined && single > 0) out.maxModelLen = sized(Math.max(single, perConcurrent));
+  if (params.parallel === undefined && concurrency > 1) out.parallel = concurrency;
+  return out;
 }
 
 /** Planning warning (code + params), localized by the renderer. */

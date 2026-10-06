@@ -126,7 +126,11 @@ describe('BenchService.start', () => {
     const t = serviceSetup(tmp);
     const svc2 = new BenchService(t.deps);
     const b = await svc2.start(
-      request({ profile: 'custom', scenario: { profile: 'custom', steps: [{ kind: 'concurrency', levels: [1, 4], promptTokens: 8, outputTokens: 2, requestsPerWorker: 1 }] } }),
+      request({
+        profile: 'custom',
+        params: { parallel: 1, extraArgs: [], env: {} },
+        scenario: { profile: 'custom', steps: [{ kind: 'concurrency', levels: [1, 4], promptTokens: 8, outputTokens: 2, requestsPerWorker: 1 }] },
+      }),
     );
     await svc2.whenIdle();
     expect((await t.runs.get(b.runId))?.logExcerpt).toContain('plan: concurrency_level_skipped {"level":4,"parallel":1}');

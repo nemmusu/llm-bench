@@ -194,7 +194,7 @@ describe('plan', () => {
     );
     expect(plan.argv).toEqual([
       exe, '-m', gguf, '--host', '127.0.0.1', '--port', '8123', '--alias', MARK, '-c', '8192', '-ngl', '99', '-fa', 'on',
-      '-ctk', 'q8_0', '-ctv', 'q8_0', '-b', '2048', '-ub', '512', '-t', '8', '-np', '4', '--fit', 'off', '--no-webui', '--metrics',
+      '-ctk', 'q8_0', '-ctv', 'q8_0', '-b', '2048', '-ub', '512', '-t', '8', '-np', '4', '--kv-unified', '--fit', 'off', '--no-webui', '--metrics',
     ]);
     expect(plan.env).toEqual({ LD_LIBRARY_PATH: `${path.dirname(exe)}:/usr/lib/wsl/lib`, CUDA_VISIBLE_DEVICES: '0' });
     expect(plan).toMatchObject({ kind: 'llamacpp-native', host: '127.0.0.1', port: 8123, marker: MARK, modelFiles: [gguf], modelBytes: 1234 });

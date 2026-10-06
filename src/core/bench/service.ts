@@ -14,6 +14,7 @@ import type { TelemetrySampler } from '../telemetry/types';
 import { loadCorpus } from './prompts';
 import { BenchRunner, launchRecordOf, type RunInput, type RunnerDeps } from './runner';
 import {
+  autoLaunchParams,
   buildScenario,
   estimateSeconds,
   fitScenario,
@@ -106,11 +107,13 @@ export class BenchService {
     const scenario = this.scenarioFor(req);
     const model = await this.deps.resolveModel(req);
     const adapter = this.deps.getAdapter(req.engine.kind);
-    const params = req.params ?? launchParamsSchema.parse({});
+    const modelContext = model.identity.facts?.contextLength;
+    const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
     const port = await this.deps.pickPort();
     const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
     const launch = await adapter.plan(req.engine, model, params, { port, marker });
-    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, model.identity.facts?.contextLength));
+    const kvUnified = launch.argv.includes('--kv-unified');
+    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, modelContext, { kvUnified }));
     return { model, adapter, params, port, marker, launch, scenario: fitted.scenario, warnings: fitted.warnings };
   }
 
