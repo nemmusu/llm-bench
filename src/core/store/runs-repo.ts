@@ -59,6 +59,17 @@ export function engineLabelOf(e: Pick<EngineIdentity, 'name' | 'build' | 'versio
 }
 
 /** Lightweight row for lists and badges. `file` is the file's base name inside the results folder. */
+const CONTEXT_FLAGS = new Set(['-c', '--ctx-size', '--max-model-len']);
+
+/** The context a run's engine was started with: its params, else the flag on its command line. */
+export function contextOf(launch: RunResult['launch']): number | undefined {
+  const fromParams = launch.params.contextSize ?? launch.params.maxModelLen;
+  if (fromParams !== undefined) return fromParams;
+  const at = launch.argv.findIndex((a) => CONTEXT_FLAGS.has(a));
+  const n = at >= 0 ? Number(launch.argv[at + 1]) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
 export function summaryOf(run: RunResult, file: string): RunSummary {
   const m = run.metrics;
   const head = headlinePoint(m.latency);
@@ -69,6 +80,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const prefill = largest ? (largest.prefillTpsEngine ?? largest.prefillTps).median : undefined;
   // The engine's own VRAM when the OS could attribute it; otherwise the total-minus-baseline estimate.
   const vramMiB = m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
+  const context = contextOf(run.launch);
+  const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
   return {
     id: run.id,
     createdAt: run.createdAt,
@@ -91,6 +104,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(m.load.warmMs ? { warmLoadMs: m.load.warmMs.median } : {}),
     ...(vramMiB !== undefined ? { vramPeakMiB: vramMiB } : {}),
     ...(m.score ? { score: m.score.value } : {}),
+    ...(context !== undefined ? { contextSize: context } : {}),
+    ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps } : {}),
     validity: run.validity,
     file,
   };

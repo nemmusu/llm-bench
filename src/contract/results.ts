@@ -238,6 +238,11 @@ export const runSummarySchema = z.object({
   warmLoadMs: z.number().optional(),
   vramPeakMiB: z.number().optional(),
   score: z.number().optional(),
+  /** Context the engine was started with (llama.cpp --ctx-size, vLLM --max-model-len), when known. */
+  contextSize: z.number().int().optional(),
+  /** Most users served at once in the test (concurrency above 1) and their combined generation speed. */
+  parallelUsers: z.number().int().optional(),
+  parallelTps: z.number().optional(),
   validity: z.array(validityFlagSchema).default([]),
   /** Which file this summary came from (results folder may be shared). */
   file: z.string(),

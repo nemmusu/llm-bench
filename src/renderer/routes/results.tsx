@@ -30,6 +30,11 @@ const col = columnHelper<RunSummary>();
 const statusTone = { completed: 'success', failed: 'danger', cancelled: 'neutral' } as const;
 
 /** History of every saved run: filters, sorting, compare two, import/export and delete. */
+/** A unit after a number: smaller and quieter, so the figures line up and stay readable. */
+function Unit({ children }: { children: string }) {
+  return <span className="text-xs font-normal text-fg-3">{children}</span>;
+}
+
 export function ResultsPage() {
   const f = useI18n();
   const { t, number, integer, dateTime } = f;
@@ -124,7 +129,9 @@ export function ResultsPage() {
           return (
             <span className="inline-flex items-center justify-end gap-3">
               {history.length > 1 && <Sparkline values={history} width={44} height={18} endDot={false} />}
-              <span className="w-12 font-semibold">{number(v, 1)}</span>
+              <span className="whitespace-nowrap">
+                <b className="font-semibold">{number(v, 1)}</b> <Unit>tok/s</Unit>
+              </span>
             </span>
           );
         },
@@ -135,7 +142,44 @@ export function ResultsPage() {
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          return v === undefined ? '–' : integer(v);
+          return v === undefined ? (
+            '–'
+          ) : (
+            <span className="whitespace-nowrap">
+              {integer(v)} <Unit>tok/s</Unit>
+            </span>
+          );
+        },
+      }),
+      col.accessor('contextSize', {
+        header: t('results.columns.context'),
+        meta: { numeric: true },
+        sortUndefined: 'last',
+        cell: (c) => {
+          const v = c.getValue();
+          return v === undefined ? (
+            <span className="text-fg-3">–</span>
+          ) : (
+            <span className="whitespace-nowrap">
+              {integer(v)} <Unit>{t('results.tokens')}</Unit>
+            </span>
+          );
+        },
+      }),
+      col.accessor('parallelUsers', {
+        header: t('results.columns.parallel'),
+        meta: { numeric: true },
+        sortUndefined: 'last',
+        cell: (c) => {
+          const v = c.getValue();
+          const tps = c.row.original.parallelTps;
+          if (v === undefined) return <span className="text-fg-3">–</span>;
+          return (
+            <span className="flex flex-col items-end leading-5 whitespace-nowrap">
+              <span>{t('results.users', { n: v })}</span>
+              {tps !== undefined && <span className="text-xs text-fg-3">{t('results.usersTotal', { tps: integer(tps) })}</span>}
+            </span>
+          );
         },
       }),
       col.accessor('vramPeakMiB', {

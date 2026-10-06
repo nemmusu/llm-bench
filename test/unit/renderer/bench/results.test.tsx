@@ -34,10 +34,23 @@ describe('results list', () => {
   it('lists, filters and opens runs', async () => {
     const older = { ...seeded(IDS.full), id: '01K6A00000000000000000000A', createdAt: '2026-09-01T10:00:00.000Z' };
     older.metrics.latency = older.metrics.latency.map((p) => ({ ...p, decodeTps: { ...p.decodeTps, median: p.decodeTps.median * 0.9 } }));
+    // Started with the engine's default context: nothing to show.
+    older.launch = { ...older.launch, argv: ['llama-server'], params: { extraArgs: [], env: {} } };
     const api = benchApi({ runs: [...seededRuns(), older] });
     const { router } = renderApp('/results', api);
     expect(await screen.findByText('10 risultati')).toBeTruthy();
     expect(screen.getByText('Altro PC')).toBeTruthy();
+    // Speeds with their unit, the context of each test, and the most users served at once (when measured).
+    expect(screen.getByRole('columnheader', { name: /Contesto/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /Utenti paralleli/ })).toBeTruthy();
+    const mistral = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
+    expect(within(mistral).getAllByText('tok/s').length).toBe(2);
+    expect(within(mistral).getByText('1024')).toBeTruthy();
+    expect(within(mistral).getAllByText('–').length).toBeGreaterThan(0);
+    const gemma = screen.getByRole('link', { name: /Gemma 4 31B/ }).closest('tr')!;
+    expect(within(gemma).getByText('8192')).toBeTruthy();
+    expect(within(gemma).getByText('4 utenti')).toBeTruthy();
+    expect(within(gemma).getByText(/^[\d.]+ tok\/s in tutto$/)).toBeTruthy();
     expect(screen.getAllByText('Annullato').length).toBeGreaterThan(0);
     await userEvent.type(screen.getByRole('textbox', { name: 'Cerca' }), 'gemma');
     expect(screen.getByText('1 risultato')).toBeTruthy();

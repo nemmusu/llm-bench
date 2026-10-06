@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppError } from '../../../../src/contract/errors';
-import { fileStamp, parseRun, RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
+import { contextOf, fileStamp, parseRun, RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
 import { hardware, latencyPoint, makeRun, modelIdentity, stat } from './fixtures';
 
 const dirs: string[] = [];
@@ -34,6 +34,30 @@ describe('fileStamp', () => {
   it('UTC stamp, epoch for invalid dates', () => {
     expect(fileStamp('2026-10-06T09:08:07.000+02:00')).toBe('2026-10-06_07-08-07');
     expect(fileStamp('garbage')).toBe('1970-01-01_00-00-00');
+  });
+});
+
+describe('context and parallel users in the summary', () => {
+  const launch = (argv: string[], params: Record<string, number> = {}) => ({ ...makeRun().launch, argv, params: { ...makeRun().launch.params, ...params } });
+
+  it('the context from the params (llama.cpp or vLLM), else from the command line', () => {
+    expect(contextOf(launch(['llama-server'], { contextSize: 8192 }))).toBe(8192);
+    expect(contextOf(launch(['vllm'], { maxModelLen: 4096 }))).toBe(4096);
+    expect(contextOf(launch(['llama-server', '-m', 'x.gguf', '-c', '16384']))).toBe(16384);
+    expect(contextOf(launch(['llama-server', '--ctx-size', '2048']))).toBe(2048);
+    expect(contextOf(launch(['docker', 'run', 'img', '--max-model-len', '32768']))).toBe(32768);
+    expect(contextOf(launch(['llama-server', '-c']))).toBeUndefined();
+    expect(contextOf(launch(['llama-server', '-c', 'big']))).toBeUndefined();
+    expect(contextOf(launch(['llama-server']))).toBeUndefined();
+  });
+
+  it('the most users served at once, with their combined speed; nothing for single-user tests', () => {
+    const point = (level: number, aggregateTps: number) => ({ level, requests: level * 4, aggregateTps, perRequestDecodeTpsP50: 90, ttftP50Ms: 40, ttftP95Ms: 80, errors: 0 });
+    const run = makeRun({ launch: launch(['llama-server'], { contextSize: 6144 }), metrics: { ...makeRun().metrics, concurrency: [point(1, 210), point(4, 640), point(2, 380)] } });
+    expect(summaryOf(run, 'f')).toMatchObject({ contextSize: 6144, parallelUsers: 4, parallelTps: 640 });
+    const single = summaryOf(makeRun({ metrics: { ...makeRun().metrics, concurrency: [point(1, 210)] } }), 'f');
+    expect(single).not.toHaveProperty('parallelUsers');
+    expect(single).not.toHaveProperty('contextSize');
   });
 });
 
