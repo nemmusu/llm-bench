@@ -1,0 +1,7 @@
+(APIServer pid=1) INFO 10-06 09:40:11 [api_server.py:1839] vLLM API server version 0.11.0
+(EngineCore_DP0 pid=255) INFO 10-06 09:40:20 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='Qwen/Qwen3-0.6B', max_seq_len=4096, served_model_name=gpubench-5e6f7a8b
+(EngineCore_DP0 pid=255) ERROR 10-06 09:40:22 [core.py:708] EngineCore failed to start.
+(EngineCore_DP0 pid=255) ERROR 10-06 09:40:22 [core.py:708] Traceback (most recent call last):
+(EngineCore_DP0 pid=255) ERROR 10-06 09:40:22 [core.py:708]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py", line 187, in init_device
+(EngineCore_DP0 pid=255) ERROR 10-06 09:40:22 [core.py:708] ValueError: Free memory on device (12.61/31.37 GiB) on startup is less than desired GPU memory utilization (0.9, 28.23 GiB). Decrease GPU memory utilization or reduce GPU memory used by other processes.
+(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

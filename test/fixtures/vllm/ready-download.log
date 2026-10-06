@@ -1,0 +1,46 @@
+INFO 10-06 09:12:31 [__init__.py:216] Automatically detected platform cuda.
+(APIServer pid=1) INFO 10-06 09:12:35 [api_server.py:1839] vLLM API server version 0.11.0
+(APIServer pid=1) INFO 10-06 09:12:35 [utils.py:233] non-default args: {'model_tag': 'Qwen/Qwen3-0.6B', 'host': '0.0.0.0', 'model': 'Qwen/Qwen3-0.6B', 'seed': 0, 'max_model_len': 4096, 'served_model_name': ['gpubench-3f2a9c1e'], 'gpu_memory_utilization': 0.9}
+(APIServer pid=1) INFO 10-06 09:12:44 [model.py:547] Resolved architecture: Qwen3ForCausalLM
+(APIServer pid=1) `torch_dtype` is deprecated! Use `dtype` instead!
+(APIServer pid=1) INFO 10-06 09:12:44 [model.py:1510] Using max model len 4096
+(APIServer pid=1) INFO 10-06 09:12:45 [scheduler.py:205] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 10-06 09:12:51 [__init__.py:216] Automatically detected platform cuda.
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:54 [core.py:644] Waiting for init message from front-end.
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:54 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='Qwen/Qwen3-0.6B', speculative_config=None, tokenizer='Qwen/Qwen3-0.6B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, seed=0, served_model_name=gpubench-3f2a9c1e, enable_prefix_caching=True, chunked_prefill_enabled=True
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:56 [parallel_state.py:1208] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, TP rank 0, EP rank 0
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:56 [topk_topp_sampler.py:55] Using FlashInfer for top-p & top-k sampling.
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:56 [gpu_model_runner.py:2602] Starting to load model Qwen/Qwen3-0.6B...
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:56 [gpu_model_runner.py:2634] Loading model from scratch...
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:56 [cuda.py:366] Using Flash Attention backend on V1 engine.
+(EngineCore_DP0 pid=255) INFO 10-06 09:12:57 [weight_utils.py:392] Using model weights format ['*.safetensors']
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:04 [weight_utils.py:413] Time spent downloading weights for Qwen/Qwen3-0.6B: 6.523419 seconds
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:04 [weight_utils.py:450] No model.safetensors.index.json found in remote.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  2.10it/s]
+(EngineCore_DP0 pid=255)
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:05 [default_loader.py:267] Loading weights took 0.51 seconds
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:05 [gpu_model_runner.py:2653] Model loading took 1.1201 GiB and 8.127893 seconds
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:11 [backends.py:548] Using cache directory: /root/.cache/vllm/torch_compile_cache/1f0a5b3c4d/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:11 [backends.py:559] Dynamo bytecode transform time: 5.73 s
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:15 [backends.py:197] Cache the graph for dynamic shape for later use
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:32 [backends.py:218] Compiling a graph for dynamic shape takes 20.31 s
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:37 [monitor.py:34] torch.compile takes 26.04 s in total
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:38 [gpu_worker.py:298] Available KV cache memory: 24.12 GiB
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:39 [kv_cache_utils.py:1087] GPU KV cache size: 225,744 tokens
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:39 [kv_cache_utils.py:1091] Maximum concurrency for 4,096 tokens per request: 55.11x
+Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 67/67 [00:03<00:00, 18.91it/s]
+Capturing CUDA graphs (decode, FULL): 100%|██████████| 35/35 [00:01<00:00, 22.40it/s]
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:45 [gpu_model_runner.py:3480] Graph capturing finished in 6 secs, took 0.84 GiB
+(EngineCore_DP0 pid=255) INFO 10-06 09:13:45 [core.py:210] init engine (profile, create kv cache, warmup model) took 39.88 seconds
+(APIServer pid=1) INFO 10-06 09:13:46 [loggers.py:147] Engine 000: vllm cache_config_info with initialization after num_gpu_blocks is: 14109
+(APIServer pid=1) INFO 10-06 09:13:46 [api_server.py:1634] Supported_tasks: ['generate']
+(APIServer pid=1) INFO 10-06 09:13:46 [api_server.py:1912] Starting vLLM API server 0 on http://0.0.0.0:8000
+(APIServer pid=1) INFO 10-06 09:13:46 [launcher.py:34] Available routes are:
+(APIServer pid=1) INFO 10-06 09:13:46 [launcher.py:42] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1) INFO 10-06 09:13:46 [launcher.py:42] Route: /health, Methods: GET
+(APIServer pid=1) INFO 10-06 09:13:46 [launcher.py:42] Route: /v1/models, Methods: GET
+(APIServer pid=1) INFO 10-06 09:13:46 [launcher.py:42] Route: /v1/completions, Methods: POST
+(APIServer pid=1) INFO:     Started server process [1]
+(APIServer pid=1) INFO:     Waiting for application startup.
+(APIServer pid=1) INFO:     Application startup complete.

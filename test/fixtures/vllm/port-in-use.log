@@ -1,0 +1,2 @@
+(APIServer pid=4121) INFO 10-06 10:15:22 [api_server.py:1912] Starting vLLM API server 0 on http://127.0.0.1:8000
+(APIServer pid=4121) ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 8000): address already in use

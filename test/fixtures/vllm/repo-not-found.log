@@ -1,0 +1,7 @@
+(APIServer pid=1) INFO 10-06 10:06:30 [api_server.py:1839] vLLM API server version 0.11.0
+(APIServer pid=1) huggingface_hub.errors.RepositoryNotFoundError: 401 Client Error. (Request ID: Root=1-68e39c05-4b5c6d7e8f9a0b1c2d3e4f5a;1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e)
+(APIServer pid=1)
+(APIServer pid=1) Repository Not Found for url: https://huggingface.co/api/models/nobody/does-not-exist/revision/main.
+(APIServer pid=1) Please make sure you specified the correct `repo_id` and `repo_type`.
+(APIServer pid=1) If you are trying to access a private or gated repo, make sure you are authenticated. For more details, see https://huggingface.co/docs/huggingface_hub/authentication
+(APIServer pid=1) Invalid username or password.

@@ -1,0 +1,11 @@
+(APIServer pid=1) INFO 10-06 10:02:11 [api_server.py:1839] vLLM API server version 0.11.0
+(APIServer pid=1) Traceback (most recent call last):
+(APIServer pid=1)   File "/usr/local/lib/python3.12/dist-packages/huggingface_hub/utils/_http.py", line 409, in hf_raise_for_status
+(APIServer pid=1)     response.raise_for_status()
+(APIServer pid=1) requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct/resolve/main/config.json
+(APIServer pid=1)
+(APIServer pid=1) The above exception was the direct cause of the following exception:
+(APIServer pid=1) huggingface_hub.errors.GatedRepoError: 401 Client Error. (Request ID: Root=1-68e39a1b-2f0c4a7b1d3e5f6a7b8c9d0e;5a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d)
+(APIServer pid=1)
+(APIServer pid=1) Cannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct/resolve/main/config.json.
+(APIServer pid=1) Access to model meta-llama/Llama-3.2-1B-Instruct is restricted. You must have access to it and be authenticated to access it. Please log in.

@@ -1,0 +1,5 @@
+(APIServer pid=1) INFO 10-06 09:45:02 [api_server.py:1839] vLLM API server version 0.11.0
+(EngineCore_DP0 pid=255) INFO 10-06 09:45:44 [gpu_worker.py:298] Available KV cache memory: 1.02 GiB
+(EngineCore_DP0 pid=255) ERROR 10-06 09:45:44 [core.py:708] EngineCore failed to start.
+(EngineCore_DP0 pid=255) ERROR 10-06 09:45:44 [core.py:708] ValueError: To serve at least one request with the models's max seq len (40960), (4.38 GiB KV cache is needed, which is larger than the available KV cache memory (1.02 GiB). Based on the available memory, the estimated maximum model length is 9536. Try increasing `gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine.
+(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

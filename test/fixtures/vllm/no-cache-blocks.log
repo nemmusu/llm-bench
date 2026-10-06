@@ -1,0 +1,5 @@
+(APIServer pid=1) INFO 10-06 09:33:05 [api_server.py:1839] vLLM API server version 0.11.0
+(EngineCore_DP0 pid=255) INFO 10-06 09:33:40 [gpu_model_runner.py:2653] Model loading took 29.8812 GiB and 31.004113 seconds
+(EngineCore_DP0 pid=255) ERROR 10-06 09:34:02 [core.py:708] EngineCore failed to start.
+(EngineCore_DP0 pid=255) ERROR 10-06 09:34:02 [core.py:708] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine.
+(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

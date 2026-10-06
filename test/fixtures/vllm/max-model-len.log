@@ -1,0 +1,6 @@
+(APIServer pid=1) INFO 10-06 09:50:01 [api_server.py:1839] vLLM API server version 0.11.0
+(APIServer pid=1) Traceback (most recent call last):
+(APIServer pid=1)   File "/usr/local/bin/vllm", line 10, in <module>
+(APIServer pid=1)     sys.exit(main())
+(APIServer pid=1) pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+(APIServer pid=1)   Value error, User-specified max_model_len (65536) is greater than the derived max_model_len (max_position_embeddings=40960 or model_max_length=None in model's config.json). To allow overriding this maximum, set the env var VLLM_ALLOW_LONG_MAX_MODEL_LEN=1. VLLM_ALLOW_LONG_MAX_MODEL_LEN must be used with extreme caution. [type=value_error, input_value=ArgsKwargs((), {'model': ...rocessor_plugin': None}), input_type=ArgsKwargs]

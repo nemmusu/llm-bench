@@ -1,0 +1,27 @@
+INFO 06-02 14:03:11 [__init__.py:243] Automatically detected platform cuda.
+INFO 06-02 14:03:15 [api_server.py:1289] vLLM API server version 0.9.0
+INFO 06-02 14:03:15 [cli_args.py:300] non-default args: {'host': '0.0.0.0', 'model': 'Qwen/Qwen3-0.6B', 'max_model_len': 4096, 'served_model_name': ['gpubench-0c9d1e22']}
+/usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py:262: UserWarning:
+NVIDIA GeForce RTX 5090 with CUDA capability sm_120 is not compatible with the current PyTorch installation.
+The current PyTorch install supports CUDA capabilities sm_50 sm_60 sm_70 sm_75 sm_80 sm_86 sm_90 sm_100.
+If you want to use the NVIDIA GeForce RTX 5090 GPU with PyTorch, please check the instructions at https://pytorch.org/get-started/locally/
+
+  warnings.warn(
+INFO 06-02 14:03:24 [core.py:455] Waiting for init message from front-end.
+INFO 06-02 14:03:24 [core.py:70] Initializing a V1 LLM engine (v0.9.0) with config: model='Qwen/Qwen3-0.6B', speculative_config=None, tokenizer='Qwen/Qwen3-0.6B', max_seq_len=4096, seed=None, served_model_name=gpubench-0c9d1e22
+ERROR 06-02 14:03:26 [core.py:515] EngineCore failed to start.
+ERROR 06-02 14:03:26 [core.py:515] Traceback (most recent call last):
+ERROR 06-02 14:03:26 [core.py:515]   File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core.py", line 506, in run_engine_core
+ERROR 06-02 14:03:26 [core.py:515]     engine_core = EngineCoreProc(*args, **kwargs)
+ERROR 06-02 14:03:26 [core.py:515]   File "/usr/local/lib/python3.12/dist-packages/vllm/worker/worker_base.py", line 606, in init_device
+ERROR 06-02 14:03:26 [core.py:515]     torch.cuda.set_device(self.device)
+ERROR 06-02 14:03:26 [core.py:515] RuntimeError: CUDA error: no kernel image is available for execution on the device
+ERROR 06-02 14:03:26 [core.py:515] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+ERROR 06-02 14:03:26 [core.py:515] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+ERROR 06-02 14:03:26 [core.py:515] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+Process EngineCore_0:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+RuntimeError: CUDA error: no kernel image is available for execution on the device
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

@@ -1,0 +1,3 @@
+INFO 10-06 10:10:02 [__init__.py:216] Automatically detected platform cuda.
+usage: vllm serve [model_tag] [options]
+vllm serve: error: unrecognized arguments: --bogus-flag 3

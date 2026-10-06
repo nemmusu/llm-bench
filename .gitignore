@@ -10,3 +10,4 @@ playwright-report/
 .DS_Store
 Thumbs.db
 .claude/
+!test/fixtures/**/*.log
