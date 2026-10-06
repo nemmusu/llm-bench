@@ -6,6 +6,13 @@ import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
 import { createModelServices, type ModelServices } from './models/setup';
+import { createLlamaBench } from './engines/llama-bench/llama-bench';
+import { DockerInstaller } from './setup/docker-installer';
+import { readOsRelease } from './setup/os-release';
+import { createSetupRoutes } from './setup/routes';
+import { createSetupService, type SetupService } from './setup/service';
+import { SystemCheck } from './setup/system-check';
+import { UvInstaller } from './setup/uv';
 import { WindowsStandbyEvictor } from './cache/windows-standby';
 import type { CoreContext } from './context';
 import { displayCommand, redactArgv, redactEnv } from './engines/command-display';
@@ -34,6 +41,8 @@ export interface CoreServices {
   llama: LlamaNativeAdapter;
   runs: RunsRepo;
   bench: BenchService;
+  /** "Controllo sistema" checklist and guided installs (Docker, uv). */
+  setup: SetupService;
   /** Local library, HF hub, fit estimates and downloads (absent only in narrow unit tests). */
   modelServices?: ModelServices;
   evictor: CacheEvictor;
@@ -197,6 +206,46 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     return out;
   };
 
+  const llamaBench = createLlamaBench({
+    proc: deps.proc,
+    platform: deps.platform,
+    ...(opts.llamaLauncherPrefix ? { launcherPrefix: opts.llamaLauncherPrefix } : {}),
+  });
+
+  const osRelease = () => readOsRelease();
+  const docker = new DockerInstaller({
+    ...deps,
+    cacheDir: deps.paths.cacheDir,
+    osRelease,
+    ...(deps.endpoints.dockerInstaller ? { installerUrl: deps.endpoints.dockerInstaller } : {}),
+  });
+  const uv = new UvInstaller({ ...deps, enginesDir: deps.paths.enginesDir, githubApi: deps.endpoints.githubApi });
+  const systemCheck = new SystemCheck({
+    platform: deps.platform,
+    arch: deps.arch,
+    telemetryStatus: () => ctx.telemetry.status(),
+    probeGpus: () => ctx.telemetry.probe(),
+    isWsl: async () => (await ctx.sysinfo.getFingerprint()).os.isWsl,
+    osRelease,
+    llamacpp: () => llama.detect(),
+    llamacppInstallBytes: async () => (await llama.planInstall({})).bytes,
+    localModels: () => modelServices?.models.list() ?? Promise.resolve([]),
+    modelsDir: () => modelServices?.models.libraryDir() ?? Promise.resolve(deps.paths.modelsDir),
+    dockerInstallBytes: () => docker.installerSize(),
+    uvPath: () => uv.uvPath(),
+    uvInstallBytes: async () => (await uv.plan()).sizeBytes,
+    refresh: () => ctx.telemetry.refresh(),
+  });
+  const setup = createSetupService({
+    platform: deps.platform,
+    systemCheck,
+    docker,
+    uv,
+    publish: (e) => ctx.hub.publish(e),
+    shutdown: ctx.shutdown,
+    log: deps.log,
+  });
+
   const bench = new BenchService({
     clock: deps.clock,
     runs,
@@ -220,6 +269,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     pickPort: () => pickFreePort(),
     needs,
     evictCache: async (files) => evictor.evict(files),
+    llamaBench,
     appVersion: deps.appVersion,
     cacheDir: deps.paths.cacheDir,
     resourcesDir: deps.paths.resourcesDir,
@@ -234,6 +284,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     llama,
     runs,
     bench,
+    setup,
     ...(modelServices ? { modelServices } : {}),
     evictor,
     ...(windowsStandby ? { windowsStandby } : {}),
@@ -267,6 +318,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
+    createSetupRoutes(s.setup),
     ...(s.modelServices?.routes ?? []),
   ];
 }

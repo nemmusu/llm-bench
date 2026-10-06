@@ -1,0 +1,1 @@
+{"Status":"Valid","StatusMessage":"Firma verificata.","Subject":"CN=Docker Inc, O=Docker Inc, L=Palo Alto, S=California, C=US, SERIALNUMBER=4817464, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.2=Delaware, OID.1.3.6.1.4.1.311.60.2.1.3=US","Thumbprint":"B6BD29272B07AD4D0F1322A739499D67CA3BAC3F"}

@@ -1,0 +1,7 @@
+Versione WSL: 2.7.14.0
+Versione kernel: 6.18.33.2-2
+Versione WSLg: 1.0.73.2
+Versione MSRDC: 1.2.7214
+Versione Direct3D: 1.611.1-81528511
+Versione DXCore: 10.0.26100.1-240331-1435.ge-release
+Versione di Windows: 10.0.26300.9457

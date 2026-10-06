@@ -72,6 +72,7 @@ async function main(): Promise<void> {
       nvidiaSmi: toolOverride(env.GPUBENCH_NVIDIA_SMI),
       docker: toolOverride(env.GPUBENCH_DOCKER),
       dockerHost: env.GPUBENCH_DOCKER_HOST,
+      dockerInstaller: env.GPUBENCH_DOCKER_INSTALLER_URL,
     },
     platform,
     arch: process.arch,

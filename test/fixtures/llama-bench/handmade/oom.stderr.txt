@@ -1,0 +1,7 @@
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 3070, compute capability 8.6, VMM: yes
+ggml_backend_cuda_buffer_type_alloc_buffer: allocating 19456.00 MiB on device 0: cudaMalloc failed: out of memory
+alloc_tensor_range: failed to allocate CUDA0 buffer of size 20401094656
+llama_model_load: error loading model: unable to allocate CUDA0 buffer
+llama_model_load_from_file_impl: failed to load model
+main: error: failed to load model 'C:\models\big.gguf'

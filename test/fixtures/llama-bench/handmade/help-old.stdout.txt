@@ -1,0 +1,11 @@
+usage: ./llama-bench [options]
+
+options:
+  -h, --help
+  -m, --model <filename>                    (default: models/7B/ggml-model-q4_0.gguf)
+  -p, --n-prompt <n>                        (default: 512)
+  -n, --n-gen <n>                           (default: 128)
+  -ngl, --n-gpu-layers <n>                  (default: 99)
+  -fa, --flash-attn <0|1>                   (default: 0)
+  -r, --repetitions <n>                     (default: 5)
+  -o, --output <csv|json|jsonl|md|sql>      (default: md)

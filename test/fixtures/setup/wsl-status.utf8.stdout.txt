@@ -1,0 +1,4 @@
+Distribuzione predefinita: podman-machine-default
+Versione predefinita: 2
+WSL1 non è supportato con la configurazione del computer corrente.
+Per usare WSL1, è necessario abilitare il componente facoltativo "Sottosistema Windows per Linux".

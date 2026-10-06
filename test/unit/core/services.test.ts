@@ -307,3 +307,43 @@ describe('createServices with the models module', () => {
     expect(loc.status).toBe(200);
   });
 });
+
+describe('setup wiring', () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    t = tempDir();
+  });
+  afterEach(() => t.cleanup());
+
+  it('serves the system check from every source, with and without the models module', async () => {
+    const proc: ProcessRunner = {
+      run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+      spawn: () => {
+        throw new Error('no spawn');
+      },
+    };
+    for (const [modelServices, platform] of [
+      [undefined, 'linux'],
+      [false, 'win32'],
+    ] as const) {
+      const deps = testDeps(t.dir, { proc, platform });
+      deps.endpoints.dockerInstaller = 'http://127.0.0.1:9/DockerInstaller.exe';
+      const ctx = testContext(deps);
+      await ctx.settings.update({ scanKnownLocations: false });
+      const s = await createServices(ctx, modelServices === false ? { modelServices } : {});
+      const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+      const res = await app.request('/api/setup/check?fresh=1', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+      expect(res.status).toBe(200);
+      const report = (await res.json()) as { items: { id: string; state: string }[]; canBenchmark: boolean };
+      expect(report.canBenchmark).toBe(false);
+      expect(report.items.map((i) => i.id)).toEqual(expect.arrayContaining(['driver', 'gpu', 'llamacpp', 'models', 'disk']));
+      // A guided install runs as a background job and reports through the event hub.
+      const events: string[] = [];
+      ctx.hub.subscribe((e) => events.push(e.type));
+      const inst = await app.request('/api/setup/uv/install', { method: 'POST', headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+      expect(inst.status).toBeLessThan(500);
+      for (let i = 0; i < 50 && !events.includes('engine.install'); i++) await new Promise((r) => setTimeout(r, 20));
+      expect(events).toContain('engine.install');
+    }
+  });
+});

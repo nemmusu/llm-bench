@@ -101,6 +101,8 @@ export interface CoreEndpoints {
   docker?: string[];
   /** Docker Engine API endpoint override (named pipe or unix socket path, or tcp URL). */
   dockerHost?: string;
+  /** Docker Desktop installer URL override (tests/E2E point it at a local server). */
+  dockerInstaller?: string;
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

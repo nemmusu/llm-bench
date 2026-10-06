@@ -1,0 +1,76 @@
+{
+  "$comment": "Minimum NVIDIA driver versions used by the setup checks (src/core/setup/driver.ts). Versions are compared segment by segment. CUDA 13.1+ toolkits no longer bundle a Windows driver, so NVIDIA only publishes the driver branch for them: the branch floor (e.g. R615 -> 615.00) is used, which is what every driver of that branch satisfies. Checked on 2026-10-06.",
+  "schema": 1,
+  "sources": [
+    {
+      "id": "cuda-release-notes",
+      "title": "CUDA Toolkit Release Notes (13.4 Update 1), Table 2/3: CUDA Toolkit and Corresponding Driver Versions; CUDA minor version compatibility",
+      "url": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+    },
+    {
+      "id": "cuda-13.3-release-notes",
+      "title": "CUDA Toolkit 13.3 Release Notes (exact Linux minimums for CUDA 13.0-13.3)",
+      "url": "https://docs.nvidia.com/cuda/archive/13.3.0/cuda-toolkit-release-notes/index.html"
+    },
+    {
+      "id": "rtx50-windows",
+      "title": "GeForce Game Ready Driver 572.16: launch support for GeForce RTX 5090 / 5080 (2025-01-30)",
+      "url": "https://www.igorslab.de/en/nvidia-releases-geforce-game-ready-572-16-drivers-with-support-for-rtx-5090-5080/"
+    },
+    {
+      "id": "rtx50-linux",
+      "title": "NVIDIA 570.86.16 Linux driver: GeForce RTX 5080 / RTX 5090 support (2025-01-30)",
+      "url": "https://www.phoronix.com/news/NVIDIA-570.86.16-Linux-Driver"
+    }
+  ],
+  "cudaDrivers": [
+    { "cuda": "13.4", "linux": "615.00", "win32": "615.00", "source": "cuda-release-notes", "note": "branch R615 only" },
+    { "cuda": "13.3", "linux": "610.43.02", "win32": "610.00", "source": "cuda-13.3-release-notes", "note": "Windows: branch R610" },
+    { "cuda": "13.2", "linux": "595.45.04", "win32": "595.00", "source": "cuda-13.3-release-notes", "note": "Windows: branch R595" },
+    { "cuda": "13.1", "linux": "590.44.01", "win32": "590.00", "source": "cuda-13.3-release-notes", "note": "Windows: branch R590" },
+    { "cuda": "13.0", "linux": "580.65.06", "win32": "580.00", "source": "cuda-13.3-release-notes", "note": "Windows: branch R580" },
+    { "cuda": "12.9", "linux": "575.51.03", "win32": "576.02", "source": "cuda-release-notes" },
+    { "cuda": "12.8", "linux": "570.26", "win32": "570.65", "source": "cuda-release-notes" },
+    { "cuda": "12.6", "linux": "560.28.03", "win32": "560.76", "source": "cuda-release-notes" },
+    { "cuda": "12.5", "linux": "555.42.02", "win32": "555.85", "source": "cuda-release-notes" },
+    { "cuda": "12.4", "linux": "550.54.14", "win32": "551.61", "source": "cuda-release-notes" },
+    { "cuda": "12.3", "linux": "545.23.06", "win32": "545.84", "source": "cuda-release-notes" },
+    { "cuda": "12.2", "linux": "535.54.03", "win32": "536.25", "source": "cuda-release-notes" },
+    { "cuda": "12.1", "linux": "530.30.02", "win32": "531.14", "source": "cuda-release-notes" },
+    { "cuda": "12.0", "linux": "525.60.13", "win32": "527.41", "source": "cuda-release-notes" }
+  ],
+  "minorVersionCompatibility": [
+    { "cudaMajor": 13, "linux": "580.00", "win32": "580.00", "source": "cuda-release-notes" },
+    { "cudaMajor": 12, "linux": "525.60.13", "win32": "527.41", "source": "cuda-release-notes" }
+  ],
+  "$appMinimumCuda": "Oldest CUDA build of llama.cpp GPU Bench can install per OS (release assets win-cuda-12.4 and ubuntu-cuda-12.8): below its driver minimum no managed llama.cpp CUDA build runs.",
+  "appMinimumCuda": { "win32": "12.4", "linux": "12.8" },
+  "architectures": [
+    {
+      "id": "blackwell-rtx",
+      "computeCapability": ["12.0"],
+      "namePattern": "RTX\\s*50\\d\\d|RTX PRO \\d+ Blackwell",
+      "minCuda": "12.8",
+      "linux": "570.86.16",
+      "win32": "572.16",
+      "sources": ["rtx50-windows", "rtx50-linux"]
+    },
+    {
+      "id": "blackwell-datacenter",
+      "computeCapability": ["10.0", "10.3"],
+      "namePattern": "\\bG?B(200|300)\\b",
+      "minCuda": "12.8",
+      "linux": "570.26",
+      "win32": "570.65",
+      "sources": ["cuda-release-notes"]
+    }
+  ],
+  "links": {
+    "driverPage": "https://www.nvidia.com/en-us/drivers/",
+    "nvidiaApp": "https://www.nvidia.com/en-us/software/nvidia-app/",
+    "ubuntu": "https://ubuntu.com/server/docs/how-to/graphics/install-nvidia-drivers/",
+    "debian": "https://wiki.debian.org/NvidiaGraphicsDrivers",
+    "fedora": "https://rpmfusion.org/Howto/NVIDIA",
+    "nvidiaLinux": "https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/latest/index.html"
+  }
+}
