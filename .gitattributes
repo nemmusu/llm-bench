@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.gguf binary
+# Captured tool outputs must keep their exact bytes (CRLF on Windows captures).
+test/fixtures/** -text
