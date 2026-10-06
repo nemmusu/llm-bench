@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from '@tanstack/react-router';
-import { Check, ChevronsUpDown, Download, HardDrive, Play, Timer, TriangleAlert } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, HardDrive, Play, Server, Timer, TriangleAlert } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { StartRunRequest } from '../../contract/api';
+import type { Settings } from '../../contract/settings';
 import type { EngineKind } from '../../contract/engines';
 import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
@@ -233,20 +234,28 @@ function BenchmarkScreen() {
   const profileTime = planData ? `≈ ${duration(planData.estimatedSeconds * 1000)}` : t(`benchmark.profileTime.${effProfile}`);
   const list = new Intl.ListFormat(f.locale, { type: 'conjunction' });
 
+  /** Remembers these choices for next time (once the run or the server really started). */
+  const remember = (more: Partial<Settings> = {}) =>
+    update({
+      lastEngine: savableEngine(config),
+      ...(option ? { lastModelId: savedModelId(option) } : {}),
+      ...(expert ? { lastParams: parsedParams.params } : {}),
+      ...more,
+    });
+
   const start = () => {
     flow.start(base, {
       needs,
       ...(currentPlan ? { plan: currentPlan } : {}),
       modelLabel,
       engineLabel,
-      onStarted: () =>
-        update({
-          lastEngine: savableEngine(config),
-          ...(option ? { lastModelId: savedModelId(option) } : {}),
-          lastProfile: effProfile,
-          ...(expert ? { lastParams: parsedParams.params } : {}),
-        }),
+      onStarted: () => remember({ lastProfile: effProfile }),
     });
+  };
+
+  /** The same engine, model and expert parameters, without a test: the core fills in the rest for this card. */
+  const serve = () => {
+    flow.serve({ engine: base.engine, model: base.model, params: base.params }, { modelLabel, engineLabel, onStarted: () => remember() });
   };
 
   const engineFooter = (() => {
@@ -334,6 +343,16 @@ function BenchmarkScreen() {
                   <Play aria-hidden className="fill-current" />
                   {t('benchmark.start')}
                 </Button>
+                {/* The other thing people want: the model running for their own programs, no test. */}
+                {!external && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Button size="lg" onClick={serve} disabled={!valid}>
+                      <Server aria-hidden />
+                      {t('benchmark.serve')}
+                    </Button>
+                    <HelpTip term={t('benchmark.serve')}>{t('benchmark.serveHelp')}</HelpTip>
+                  </span>
+                )}
                 <span className="flex flex-col text-sm text-fg-3">
                   <span className="inline-flex items-center gap-1.5 font-medium text-fg-2">
                     <Timer aria-hidden className="size-4" />

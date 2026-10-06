@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { LocalModel } from '../../../../src/contract/models';
@@ -96,7 +96,8 @@ describe('ModelVolumes', () => {
     });
     const progress: number[] = [];
     const p = v.copy(model, (x) => progress.push(x.bytesDone), new AbortController().signal);
-    await new Promise((r) => setTimeout(r, 30));
+    // At least one poll of the copied size before the copy ends (a fixed delay is flaky on a busy machine).
+    await vi.waitFor(() => expect(progress).toContain(1000));
     f.finishCopy(0);
     expect(await p).toBe('gpubench-model-abc123');
     expect(pulled).toBe(HELPER_IMAGE);

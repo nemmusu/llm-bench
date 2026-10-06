@@ -1,9 +1,9 @@
 /**
- * What has to be installed or downloaded before a run can start. The core's plan preview says it
+ * What has to be installed or downloaded before a run (or a server) can start. The core's plan preview says it
  * exactly (with sizes); until it arrives, or when it cannot be made, the Benchmark page guesses
  * from the engine status and the chosen model so the screen never says "nothing to fetch" by mistake.
  */
-import type { RunPlan, StartRunRequest } from '../../../contract/api';
+import type { RunPlan, StartServerRequest } from '../../../contract/api';
 import type { EngineConfig, EngineStatus } from '../../../contract/engines';
 import type { ModelOption } from './model-options';
 
@@ -23,8 +23,11 @@ const sized = (bytes: number | undefined) => (bytes === undefined ? {} : { bytes
 /** The engine first: if it cannot be installed, nobody waited for a model download in vain. */
 const ORDER: Record<Need['kind'], number> = { engine: 0, image: 1, model: 2 };
 
-/** The needs of `request` as its plan lists them (engine first); `modelLabel` names the model download. */
-export function needsFromPlan(request: StartRunRequest, plan: RunPlan, modelLabel: string): Need[] {
+/**
+ * The needs of `request` (a run or a server) as its plan lists them (engine first); `modelLabel`
+ * names the model download.
+ */
+export function needsFromPlan(request: StartServerRequest, plan: Pick<RunPlan, 'needs'>, modelLabel: string): Need[] {
   const out: Need[] = [];
   for (const n of plan.needs) {
     if (n.kind === 'engine') out.push({ kind: 'engine', label: n.label, ...sized(n.bytes) });

@@ -1,7 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bridge, curated, fail, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
+import { serveEngineFor } from '../../../../src/renderer/components/library/local-models';
+import { bridge, curated, ENGINES, fail, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -126,6 +127,39 @@ describe('models: on your PC', () => {
     renderLib('/models', libApi(world({ system: system({ os: { platform: 'linux', release: '6', arch: 'x64', name: 'Ubuntu', isWsl: false } }) })));
     await screen.findByText('Model m1');
     expect(screen.queryByRole('button', { name: /Copia nello spazio Docker/ })).toBeNull();
+  });
+});
+
+describe('models: start a server', () => {
+  const planned = (api: ReturnType<typeof libApi>) => api.calls.filter((c) => c.method === 'POST' && c.path === '/api/servers/plan').map((c) => c.body);
+
+  it('starts a local model with the recommended settings, with the llama.cpp used last', async () => {
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' } } }));
+    renderLib('/models', api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server: Model m1' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Avvia il server' });
+    expect(await within(dialog).findByText('32.768 token')).toBeTruthy();
+    expect(within(dialog).getByText('Model m1 con llama.cpp (Docker). Altri programmi potranno usarlo finché non lo fermi.')).toBeTruthy();
+    expect(planned(api)).toEqual([{ engine: { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }, model: { localId: 'm1' } }]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Avvia server' }));
+    const done = await screen.findByRole('dialog', { name: 'Il server è pronto' });
+    expect(within(done).getByText('http://127.0.0.1:5123/v1')).toBeTruthy();
+    await userEvent.click(within(done).getByRole('button', { name: 'Ferma' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/api/servers/gpubench-srv')).toBe(true);
+  });
+
+  it('picks the engine from the file: GGUF with llama.cpp, safetensors with vLLM', () => {
+    const gguf = localModel('g');
+    const st = localModel('s', { identity: { format: 'safetensors', quant: undefined } });
+    const engines = ENGINES();
+    const linux = engines.map((e) => (e.kind === 'vllm-native' ? { ...e, available: true, installed: true, supported: true } : e));
+    expect(serveEngineFor(gguf, undefined, engines)).toEqual({ kind: 'llamacpp-native' });
+    expect(serveEngineFor(gguf, { kind: 'vllm-docker' }, engines)).toEqual({ kind: 'llamacpp-native' });
+    expect(serveEngineFor(gguf, { kind: 'llamacpp-native', executable: 'D:/llama/llama-server.exe' }, engines)).toEqual({ kind: 'llamacpp-native', executable: 'D:/llama/llama-server.exe' });
+    expect(serveEngineFor(st, { kind: 'llamacpp-native' }, engines)).toEqual({ kind: 'vllm-docker' });
+    expect(serveEngineFor(st, undefined, undefined)).toEqual({ kind: 'vllm-docker' });
+    expect(serveEngineFor(st, undefined, linux)).toEqual({ kind: 'vllm-native' });
   });
 });
 

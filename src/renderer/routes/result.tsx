@@ -82,6 +82,9 @@ function ResultView({ run }: { run: RunResult }) {
     }
     flow.start({ ...rerun.request, allowSharedGpu }, { needs: [], modelLabel, engineLabel });
   };
+  // The launch tab only offers this once the library is loaded (rerun known) and the model is there.
+  // The run's exact parameters: the core only fills in what they leave unset.
+  const serve = () => flow.serve({ engine: rerun!.request.engine, model: rerun!.request.model, params: run.launch.params }, { modelLabel, engineLabel });
   // The launch tab only enables this once the library is loaded (rerun known).
   const useSettingsHere = () => {
     saveDraft(qc, rerun!.draft);
@@ -152,7 +155,7 @@ function ResultView({ run }: { run: RunResult }) {
           <Details run={run} />
         </TabsContent>
         <TabsContent value="launch">
-          <Launch run={run} rerun={rerun} onRerun={() => doRerun()} onUseSettings={useSettingsHere} />
+          <Launch run={run} rerun={rerun} onRerun={() => doRerun()} onUseSettings={useSettingsHere} onServe={serve} />
         </TabsContent>
         <TabsContent value="log">
           <Card className="overflow-hidden">

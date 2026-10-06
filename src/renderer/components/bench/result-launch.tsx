@@ -9,7 +9,6 @@ import { Card, CardContent } from '../ui/card';
 import { CodeBlock } from '../ui/code-block';
 import { prettyVariant } from './format';
 import type { Rerun } from './rerun';
-import { ServeDialog } from './servers';
 import { launchSummaryParts } from './summary';
 
 function KeyValue({ label, children }: { label: string; children: ReactNode }) {
@@ -26,14 +25,15 @@ export interface LaunchProps {
   rerun: Rerun | undefined;
   onRerun: () => void;
   onUseSettings: () => void;
+  /** "Avvia solo il server così": the engine with this run's exact settings, no test. */
+  onServe: () => void;
 }
 
 /** "Come è stato avviato": the sentence for everyone, the exact command, and three ways to reuse it. */
-export function Launch({ run, rerun, onRerun, onUseSettings }: LaunchProps) {
+export function Launch({ run, rerun, onRerun, onUseSettings, onServe }: LaunchProps) {
   const f = useI18n();
   const { t } = f;
   const [showCommand, setShowCommand] = useState(false);
-  const [serveOpen, setServeOpen] = useState(false);
   const parts = launchSummaryParts(run, f);
   const e = run.engine;
   const canServe = e.kind !== 'external' && rerun !== undefined && !rerun.modelMissing;
@@ -61,7 +61,7 @@ export function Launch({ run, rerun, onRerun, onUseSettings }: LaunchProps) {
               {t('result.launch.useSettings')}
             </Button>
             {canServe && (
-              <Button variant="outline" onClick={() => setServeOpen(true)}>
+              <Button variant="outline" onClick={onServe}>
                 <Server aria-hidden />
                 {t('result.launch.serveOnly')}
               </Button>
@@ -126,14 +126,6 @@ export function Launch({ run, rerun, onRerun, onUseSettings }: LaunchProps) {
           <KeyValue label={t('result.details.app')}>GPU Bench {run.app.version}</KeyValue>
         </dl>
       </Card>
-
-      {canServe && (
-        <ServeDialog
-          open={serveOpen}
-          onOpenChange={setServeOpen}
-          request={{ engine: rerun.request.engine, model: rerun.request.model, params: run.launch.params }}
-        />
-      )}
     </div>
   );
 }

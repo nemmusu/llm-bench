@@ -21,6 +21,8 @@ import { createAppRouter } from '../../../../src/renderer/routes/router';
 import { newQueryClient } from '../helpers';
 
 MotionGlobalConfig.skipAnimations = true;
+// Whole-app renders are slow under coverage with many test files in parallel.
+vi.setConfig({ testTimeout: 30_000 });
 
 export const GPU = {
   index: 0,
@@ -407,6 +409,26 @@ export function libApi(w: World = world()): LibApi {
       w.volumes = w.volumes.filter((v) => v !== decodeURIComponent(p.split('/').pop() as string));
       return { ok: true };
     },
+    // "Avvia server": a llama.cpp server with 32.768 tokens of context, ready at once.
+    'POST /api/servers/plan': (b) => ({
+      command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' },
+      needs: [],
+      params: { contextSize: 32768, extraArgs: [], env: {}, ...(b as { params?: object }).params },
+      contextSize: 32768,
+      fit: fit(),
+      warnings: [],
+    }),
+    'POST /api/servers': () => ({
+      id: 'gpubench-srv',
+      baseUrl: 'http://127.0.0.1:5123',
+      openaiUrl: 'http://127.0.0.1:5123/v1',
+      modelName: 'Model m1',
+      engineLabel: 'llama.cpp b10997',
+      startedAt: '2026-10-06T10:00:00.000Z',
+      command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' },
+      contextSize: 32768,
+    }),
+    'DELETE /api/servers/*': () => ({ ok: true }),
     'GET /api/cache/cold': () => w.cold,
     'POST /api/cache/windows-task': () => ({ ...w.cold, windowsTaskInstalled: true }),
     'DELETE /api/cache/windows-task': () => ({ ...w.cold, windowsTaskInstalled: false }),

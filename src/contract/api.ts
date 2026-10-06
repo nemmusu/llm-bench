@@ -35,7 +35,8 @@ import { profileSchema, scenarioSchema } from './results';
  *   POST   /api/runs/plan                    (StartRunRequest) -> RunPlan (preview: command, downloads, duration)
  *   GET    /api/runs/active                  -> ActiveRunResponse
  *   GET    /api/runs/tried?weakKey=&sha256=  -> RunSummary[] (results for a model, this GPU first)
- *   GET    /api/servers                      -> ServerInfo[] ("Avvia solo il server così")
+ *   GET    /api/servers                      -> ServerInfo[] ("Avvia solo il server", "Avvia solo il server così")
+ *   POST   /api/servers/plan                 (StartServerRequest) -> ServerPlan (preview: command, downloads, context, fit)
  *   POST   /api/servers                      (StartServerRequest) -> ServerInfo (when ready)
  *   DELETE /api/servers/:id                  -> { ok: true }
  *
@@ -182,8 +183,28 @@ export const apiSchemas = {
   hubFile: hubFileSchema,
 };
 
+/**
+ * A server outside a benchmark. `params` are what the user chose: whatever is left unset gets the
+ * recommended value for this card (see ServerPlan.params).
+ */
 export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true });
 export type StartServerRequest = z.infer<typeof startServerRequestSchema>;
+
+/** Preview of "Avvia solo il server": what will run, what is fetched first, and how much text it takes. */
+export const serverPlanSchema = z.object({
+  /** The exact command that will be executed. */
+  command: runPlanSchema.shape.command,
+  /** Installs and downloads to do first, as in RunPlan. POST /api/servers needs them done. */
+  needs: runPlanSchema.shape.needs,
+  pending: runPlanSchema.shape.pending,
+  /** The launch parameters that will be used: the request's, plus the ones chosen for this card. */
+  params: launchParamsSchema,
+  /** Tokens the server can take at once (prompt + answer): llama.cpp ctx-size, vLLM max-model-len. */
+  contextSize: z.number().int().optional(),
+  fit: fitEstimateSchema.optional(),
+  warnings: runPlanSchema.shape.warnings,
+});
+export type ServerPlan = z.infer<typeof serverPlanSchema>;
 
 /** An engine started by GPU Bench outside a benchmark, kept running until the user stops it. */
 export const serverInfoSchema = z.object({
@@ -195,5 +216,7 @@ export const serverInfoSchema = z.object({
   engineLabel: z.string(),
   startedAt: z.string(),
   command: z.object({ argv: z.array(z.string()), powershell: z.string(), bash: z.string() }),
+  /** Tokens the server takes at once (as in ServerPlan.contextSize), when known. */
+  contextSize: z.number().int().optional(),
 });
 export type ServerInfo = z.infer<typeof serverInfoSchema>;

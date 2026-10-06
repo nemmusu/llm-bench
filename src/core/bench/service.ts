@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ActiveRun, RunPlan, StartRunRequest } from '../../contract/api';
+import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { RunPhase, ServerEvent } from '../../contract/events';
@@ -37,17 +37,18 @@ export interface BenchServiceDeps {
   /**
    * Local model / HF repo / external name → what the engine loads. Throws AppError (MODEL_NOT_FOUND…).
    * With `preview`, a hub GGUF that is not downloaded yet resolves to its pending download.
+   * Runs and servers share these helpers: they only read the engine, the model and the params.
    */
-  resolveModel: (req: StartRunRequest, opts?: { preview?: boolean }) => Promise<ModelTarget>;
+  resolveModel: (req: StartServerRequest, opts?: { preview?: boolean }) => Promise<ModelTarget>;
   /** A free 127.0.0.1 port for the engine. */
   pickPort: () => Promise<number>;
-  /** Ownership marker for the engine process/container (default gpubench-<uuid>). */
+  /** Ownership marker for the engine process/container of a run (default gpubench-<uuid>). */
   newMarker?: () => string;
   newRunId?: () => string;
   /** Downloads/installs the run needs first (engine, model, image), for the plan preview. */
-  needs?: (req: StartRunRequest, model: ModelTarget) => Promise<RunPlan['needs']>;
-  /** VRAM fit estimate for the plan preview and the run's VRAM "estimate vs measured". */
-  fit?: (req: StartRunRequest, model: ModelTarget, plan: LaunchPlan) => Promise<FitEstimate | undefined>;
+  needs?: (req: StartServerRequest, model: ModelTarget) => Promise<RunPlan['needs']>;
+  /** VRAM fit estimate (FREE VRAM) of the model with these params: plan previews, server settings, the run's "estimate vs measured". */
+  fit?: (req: StartServerRequest, model: ModelTarget, plan: Pick<LaunchPlan, 'params'>) => Promise<FitEstimate | undefined>;
   /** true when the model is read through a 9p/drvfs share (Docker Desktop on Windows, WSL /mnt/c). */
   slowSharedFilesystem?: (plan: LaunchPlan, model: ModelTarget) => boolean;
   evictCache?: RunnerDeps['evictCache'];
@@ -62,7 +63,7 @@ export interface BenchServiceDeps {
   /** Core shutdown: cancels the active run (which is then saved as cancelled). */
   shutdown?: AbortSignal;
   /** Last-minute engine tweaks the user never has to think about (e.g. use the model's Docker volume copy). */
-  adjustEngine?: (req: StartRunRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
+  adjustEngine?: (req: StartServerRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
   /** Reason a run cannot start right now (e.g. a GPU Bench server holds the GPU), or undefined. */
   blockedBy?: () => AppError | undefined;
 }
@@ -79,7 +80,8 @@ interface Current {
   info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress'>;
 }
 
-interface Prepared {
+/** A request resolved down to the exact command (runs and servers alike). */
+interface Launched {
   model: ModelTarget;
   adapter: EngineAdapter;
   /** The engine configuration actually used (adjustEngine may add a Docker model volume…). */
@@ -88,13 +90,39 @@ interface Prepared {
   port: number;
   marker: string;
   launch: LaunchPlan;
-  scenario: Scenario;
   warnings: ScenarioWarning[];
 }
+
+interface Prepared extends Launched {
+  scenario: Scenario;
+}
+
+/** A server ready to start ("Avvia solo il server"): the command plus the context it will offer. */
+export interface PreparedServer extends Launched {
+  /** Tokens the server takes at once: llama.cpp ctx-size, vLLM max-model-len. */
+  contextSize: number;
+}
+
+/** Plan fields shared by runs and servers. */
+type Preview = Pick<RunPlan, 'command' | 'needs' | 'pending' | 'fit' | 'warnings'>;
 
 /** vLLM's default gpu_memory_utilization, and the VRAM left free when GPU Bench lowers it. */
 const VLLM_DEFAULT_UTILIZATION = 0.9;
 const VLLM_FREE_MARGIN_MIB = 768;
+
+/**
+ * Contexts tried for a server, largest first: the largest that fits the card well wins. Capped at
+ * the model's trained context; without a fit estimate the fallback is used.
+ */
+export const SERVER_CONTEXTS = [32768, 16384, 8192, 4096] as const;
+export const SERVER_FALLBACK_CONTEXT = 8192;
+
+const isVllm = (kind: EngineKind): boolean => kind === 'vllm-docker' || kind === 'vllm-native';
+
+/** The context a server offers with these params: llama.cpp ctx-size, vLLM max-model-len (or ctx-size). */
+export function serverContextOf(kind: EngineKind, params: LaunchParams): number | undefined {
+  return isVllm(kind) ? (params.maxModelLen ?? params.contextSize) : params.contextSize;
+}
 
 /** Starts, tracks and cancels benchmark runs: one at a time (the GPU is the shared resource). */
 export class BenchService {
@@ -117,7 +145,24 @@ export class BenchService {
     return { ...req.scenario, profile: 'custom' };
   }
 
-  /** `preview`: plan before installs/downloads (missing engine/model become their future paths). */
+  /**
+   * The exact command for `params`: a free port, the ownership marker, last-minute engine tweaks.
+   * `preview`: plan before installs/downloads (missing engine/model become their future paths).
+   */
+  private async command(
+    req: StartServerRequest,
+    model: ModelTarget,
+    adapter: EngineAdapter,
+    params: LaunchParams,
+    o: { preview: boolean; marker: () => string },
+  ): Promise<Pick<Launched, 'engine' | 'port' | 'marker' | 'launch'>> {
+    const port = await this.deps.pickPort();
+    const marker = o.marker();
+    const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
+    const launch = await adapter.plan(engine, model, params, { port, marker, preview: o.preview });
+    return { engine, port, marker, launch };
+  }
+
   private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {
     const scenario = this.scenarioFor(req);
     const model = await this.deps.resolveModel(req, { preview });
@@ -125,14 +170,60 @@ export class BenchService {
     const modelContext = model.identity.facts?.contextLength;
     const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
-    const port = await this.deps.pickPort();
-    const marker = this.deps.newMarker?.() ?? `gpubench-${randomUUID()}`;
-    const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
-    const launch = await adapter.plan(engine, model, params, { port, marker, preview });
-    const kvUnified = launch.argv.includes('--kv-unified');
-    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, launch.params, modelContext, { kvUnified }));
+    const c = await this.command(req, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
+    const kvUnified = c.launch.argv.includes('--kv-unified');
+    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, c.launch.params, modelContext, { kvUnified }));
     const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
-    return { model, adapter, engine, params, port, marker, launch, scenario: fitted.scenario, warnings };
+    return { model, adapter, params, ...c, scenario: fitted.scenario, warnings };
+  }
+
+  /**
+   * "Avvia solo il server": the request's params, and the recommended value of whatever the user left
+   * unset — the context that fits this card (see recommendedContext), vLLM's memory share lowered to
+   * the free VRAM (fitVllmMemory). Everything else (parallel 1, Docker model volume…) as for runs.
+   * Without `preview` a missing engine or model fails (ENGINE_NOT_INSTALLED / MODEL_NOT_FOUND).
+   */
+  async prepareServer(req: StartServerRequest, opts: { preview: boolean; marker: string }): Promise<PreparedServer> {
+    if (req.engine.kind === 'external') throw new AppError('VALIDATION', 'External endpoints are already running', { params: { reason: 'external' } });
+    const model = await this.deps.resolveModel(req, { preview: opts.preview });
+    const adapter = this.deps.getAdapter(req.engine.kind);
+    const params: LaunchParams = { ...(req.params ?? launchParamsSchema.parse({})) };
+    const memWarning = await this.fitVllmMemory(req.engine.kind, params);
+    const contextSize = await this.fillServerContext(req, model, params);
+    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker });
+    return { model, adapter, params, ...c, contextSize, warnings: memWarning ? [memWarning] : [] };
+  }
+
+  /** Sets the context the user left unset to the recommended one; returns the context the server will offer. */
+  private async fillServerContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
+    const chosen = serverContextOf(req.engine.kind, params);
+    if (chosen !== undefined) return chosen;
+    const ctx = await this.recommendedContext(req, model, params);
+    if (isVllm(req.engine.kind)) params.maxModelLen = ctx;
+    else params.contextSize = ctx;
+    return ctx;
+  }
+
+  /**
+   * The largest of SERVER_CONTEXTS (capped at the model's trained context) whose fit on the FREE VRAM
+   * is perfect or good; else the largest that is tight; else the smallest (the fit then reports the
+   * partial offload). Without a fit estimate (no fit service, a vLLM repo not downloaded yet), the
+   * fallback capped at the model's context.
+   */
+  private async recommendedContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
+    const max = model.identity.facts?.contextLength;
+    const cap = (n: number) => (max ? Math.min(n, max) : n);
+    const candidates = [...new Set(SERVER_CONTEXTS.map(cap))];
+    const vllm = isVllm(req.engine.kind);
+    let tight: number | undefined;
+    for (const ctx of candidates) {
+      const withCtx: LaunchParams = vllm ? { ...params, maxModelLen: ctx } : { ...params, contextSize: ctx };
+      const fit = await this.deps.fit?.(req, model, { params: withCtx }).catch(() => undefined);
+      if (!fit) return cap(SERVER_FALLBACK_CONTEXT);
+      if (fit.level === 'perfect' || fit.level === 'good') return ctx;
+      if (fit.level === 'tight') tight ??= ctx;
+    }
+    return tight ?? (candidates.at(-1) as number);
   }
 
   /**
@@ -142,7 +233,7 @@ export class BenchService {
    * model will not fit anyway and the normal VRAM checks report it.
    */
   private async fitVllmMemory(kind: EngineKind, params: LaunchParams): Promise<ScenarioWarning | undefined> {
-    if ((kind !== 'vllm-docker' && kind !== 'vllm-native') || params.gpuMemoryUtilization !== undefined) return undefined;
+    if (!isVllm(kind) || params.gpuMemoryUtilization !== undefined) return undefined;
     const g = (await this.deps.telemetry.snapshot().catch(() => []))[0];
     if (!g?.memTotalMiB || g.memUsedMiB === null) return undefined;
     const free = g.memTotalMiB - g.memUsedMiB;
@@ -189,9 +280,26 @@ export class BenchService {
    */
   async plan(req: StartRunRequest): Promise<RunPlan> {
     const p = await this.prepare(req, true);
+    const preview = await this.preview(req, p);
+    return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)) };
+  }
+
+  /**
+   * Preview of "Avvia solo il server" (POST /api/servers/plan): exact command, downloads needed, the
+   * effective params with the context chosen for this card, VRAM fit and warnings.
+   */
+  async planServer(req: StartServerRequest): Promise<ServerPlan> {
+    const p = await this.prepareServer(req, { preview: true, marker: `gpubench-${randomUUID()}` });
+    const preview = await this.preview(req, p);
+    return { ...preview, params: p.launch.params, contextSize: p.contextSize };
+  }
+
+  /** What runs and servers show before starting: redacted command, needs, fit and the warnings about this PC. */
+  private async preview(req: StartServerRequest, p: Launched): Promise<Preview> {
     const shown = launchRecordOf(p.launch, this.deps.displayCommand, this.deps.redact);
     const needs = (await this.deps.needs?.(req, p.model)) ?? [];
-    const fit = await this.deps.fit?.(req, p.model, p.launch);
+    // A fit that cannot be estimated never blocks the preview.
+    const fit = await this.deps.fit?.(req, p.model, p.launch).catch(() => undefined);
     const warnings: RunPlan['warnings'] = [...p.warnings];
     if (await this.deps.telemetry.available().catch(() => false)) {
       const llms = (await this.deps.telemetry.otherGpuUsers(this.deps.ownPids()).catch(() => [])).filter((u) => u.knownLlm);
@@ -206,11 +314,9 @@ export class BenchService {
     if (fit?.level === 'partial') warnings.push({ code: 'partial_offload', params: { maxGpuLayers: fit.maxGpuLayers } });
     if (this.deps.slowSharedFilesystem?.(p.launch, p.model)) warnings.push({ code: 'slow_shared_filesystem' });
     return {
-      scenario: p.scenario,
       command: { argv: shown.argv, ...shown.display },
       needs,
       ...(p.launch.pending ? { pending: p.launch.pending } : {}),
-      estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)),
       ...(fit ? { fit } : {}),
       warnings,
     };

@@ -471,7 +471,7 @@ describe('results and result: odd data', () => {
     await h1(/Qwen3 8B/);
     await userEvent.click(screen.getByRole('tab', { name: 'Come è stato avviato' }));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Avvia il server' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Lascia acceso' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });

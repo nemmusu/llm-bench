@@ -4,7 +4,7 @@
  */
 import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
-import type { ActiveRun, RunPlan, ServerInfo, StartRunRequest, SystemResponse } from '../../../../src/contract/api';
+import type { ActiveRun, RunPlan, ServerInfo, ServerPlan, StartServerRequest, SystemResponse } from '../../../../src/contract/api';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
@@ -89,6 +89,34 @@ export function planFor(over: Partial<RunPlan> = {}): RunPlan {
   };
 }
 
+/** POST /api/servers/plan of a llama.cpp server with 32.768 tokens of context. */
+export function serverPlanFor(over: Partial<ServerPlan> = {}): ServerPlan {
+  return {
+    command: { argv: ['llama-server', '-m', 'm.gguf', '-c', '32768'], powershell: 'llama-server -m m.gguf -c 32768', bash: 'llama-server -m m.gguf -c 32768' },
+    needs: [],
+    params: { contextSize: 32768, extraArgs: [], env: {} },
+    contextSize: 32768,
+    fit: FIT,
+    warnings: [],
+    ...over,
+  };
+}
+
+/** A server GPU Bench started (GET/POST /api/servers). */
+export function serverInfo(id: string, over: Partial<ServerInfo> = {}): ServerInfo {
+  return {
+    id,
+    baseUrl: 'http://127.0.0.1:5123',
+    openaiUrl: 'http://127.0.0.1:5123/v1',
+    modelName: 'Qwen3 8B',
+    engineLabel: 'llama.cpp b11438',
+    startedAt: new Date().toISOString(),
+    command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' },
+    contextSize: 32768,
+    ...over,
+  };
+}
+
 export const SYSTEM: SystemResponse = {
   gpus: [
     {
@@ -136,6 +164,8 @@ export interface World {
   installBytes: number | null;
   /** POST /api/runs/plan; by default planFor() with the needs the core would list for this world (see coreNeeds). */
   plan: (body: unknown) => RunPlan;
+  /** POST /api/servers/plan; by default serverPlanFor() with the needs of coreNeeds. */
+  serverPlan: (body: unknown) => ServerPlan;
   fit: FitEstimate;
   /** Overrides by "METHOD /path" (exact) or "METHOD /prefix*" (prefix); throw an ApiError to fail. */
   routes: Record<string, Handler>;
@@ -156,6 +186,7 @@ export function defaultWorld(): World {
     active: null,
     installBytes: 480 * 1024 * 1024,
     plan: () => planFor(),
+    serverPlan: () => serverPlanFor(),
     fit: FIT,
     routes: {},
   };
@@ -190,6 +221,12 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
   }
   if (method === 'POST') {
     if (bare === '/api/runs/plan') return world.plan(body);
+    if (bare === '/api/servers/plan') return world.serverPlan(body);
+    if (bare === '/api/servers') {
+      const info = serverInfo(`srv${world.servers.length + 1}`);
+      world.servers = [...world.servers, info];
+      return info;
+    }
     if (bare === '/api/models/fit') return world.fit;
     if (bare === '/api/runs') {
       world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
@@ -198,6 +235,11 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/models/rescan') return world.local;
   }
   if (method === 'DELETE') {
+    const server = /^\/api\/servers\/([^/]+)$/.exec(bare);
+    if (server) {
+      world.servers = world.servers.filter((x) => x.id !== decodeURIComponent(server[1]!));
+      return { ok: true };
+    }
     const run = /^\/api\/runs\/([^/]+)$/.exec(bare);
     if (run) {
       world.runs = world.runs.filter((r) => r.id !== decodeURIComponent(run[1]!));
@@ -212,7 +254,7 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
  * a Docker image the status says is missing, a hub GGUF / vLLM repo that is not in the library
  * (sized like its suggestion). `pending` marks the placeholders in the command.
  */
-export function coreNeeds(world: World, body: StartRunRequest): Pick<RunPlan, 'needs' | 'pending'> {
+export function coreNeeds(world: World, body: StartServerRequest): Pick<RunPlan, 'needs' | 'pending'> {
   const needs: RunPlan['needs'] = [];
   const pending: NonNullable<RunPlan['pending']> = [];
   const { repo, file } = body.model;
@@ -236,7 +278,8 @@ export function coreNeeds(world: World, body: StartRunRequest): Pick<RunPlan, 'n
 export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof fakeApi>[0] = { onboardingDone: true }): BenchApi {
   const base = fakeApi(settings);
   const world: World = { ...defaultWorld(), ...patch };
-  if (!patch.plan) world.plan = (body) => planFor(coreNeeds(world, body as StartRunRequest));
+  if (!patch.plan) world.plan = (body) => planFor(coreNeeds(world, body as StartServerRequest));
+  if (!patch.serverPlan) world.serverPlan = (body) => serverPlanFor(coreNeeds(world, body as StartServerRequest));
   const api = base as BenchApi;
   api.world = world;
   const baseGet = base.get;
