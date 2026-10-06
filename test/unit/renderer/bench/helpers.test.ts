@@ -325,7 +325,9 @@ describe('model options', () => {
     expect(modelOptions('external', [gguf], list)).toEqual([]);
     const llama = modelOptions('llamacpp-native', [gguf, st], list);
     expect(llama.map((o) => o.key)).toEqual(['local:a', 'curated:b']);
-    expect(llama[0]).toMatchObject({ name: 'Model A', quant: 'Q4_K_M', sizeBytes: 5, paramsB: 8 });
+    // A downloaded suggestion keeps the suggestion's name; any other model its GGUF name.
+    expect(llama[0]).toMatchObject({ name: 'Curated a', quant: 'Q4_K_M', sizeBytes: 5, paramsB: 8 });
+    expect(modelOptions('llamacpp-native', [gguf], [])[0]).toMatchObject({ name: 'Model A' });
     const bare = modelOptions('llamacpp-native', [local('z')], [])[0]!;
     expect(bare).toMatchObject({ name: 'Model z' });
     expect('quant' in bare).toBe(false);
@@ -343,6 +345,9 @@ describe('model options', () => {
     expect(initialModelKey(opts, 'nope')).toBe('local:s');
     expect(initialModelKey(opts.slice(1), undefined)).toBe('curated:w');
     expect(initialModelKey([], 'x')).toBeUndefined();
+    // Nothing on the PC and nothing saved: the reference model (small and quick to download) first.
+    const fresh = modelOptions('llamacpp-native', [], [curated('big'), curated('ref', { reference: true })]);
+    expect(initialModelKey(fresh, undefined)).toBe('curated:ref');
     // A suggestion chosen (and saved) before its download is found as the library copy afterwards.
     const later = modelOptions('llamacpp-native', [local('z'), local('b', { file: 'b.gguf' })], [curated('b')]);
     expect(later.map((o) => o.key)).toEqual(['local:z', 'local:b']);

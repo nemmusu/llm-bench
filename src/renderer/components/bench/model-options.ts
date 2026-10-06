@@ -15,12 +15,14 @@ export function engineFamily(kind: EngineKind): 'llamacpp' | 'vllm' | 'external'
   return kind === 'external' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
 }
 
-function localOption(m: LocalModel): ModelOption {
+function localOption(m: LocalModel, curated: readonly CuratedModel[]): ModelOption {
   const id = m.identity;
+  // A downloaded suggestion keeps its curated name: GGUF metadata names can be odd ("Qwen3 4B Instruct Awq").
+  const known = curated.find((c) => sameModel(c, m));
   return {
     key: `local:${m.id}`,
     source: 'local',
-    name: id.facts?.name ?? id.displayName,
+    name: known ? curatedName(known) : (id.facts?.name ?? id.displayName),
     ...(id.quant ? { quant: id.quant } : {}),
     ...(id.sizeBytes !== undefined ? { sizeBytes: id.sizeBytes } : {}),
     ...(id.facts?.paramsB ? { paramsB: id.facts.paramsB } : {}),
@@ -28,8 +30,13 @@ function localOption(m: LocalModel): ModelOption {
   };
 }
 
+/** "Qwen3 4B · Q4_K_M" → "Qwen3 4B" (the quant is shown on its own). */
+function curatedName(c: CuratedModel): string {
+  return c.label.split(' · ')[0]!;
+}
+
 function curatedOption(c: CuratedModel): ModelOption {
-  return { key: `curated:${c.id}`, source: 'curated', name: c.label.split(' · ')[0]!, quant: c.quant, sizeBytes: c.sizeBytes, paramsB: c.paramsB, curated: c };
+  return { key: `curated:${c.id}`, source: 'curated', name: curatedName(c), quant: c.quant, sizeBytes: c.sizeBytes, paramsB: c.paramsB, curated: c };
 }
 
 /** True when a library model is this curated entry (same file hash, file name or repo). */
@@ -47,12 +54,13 @@ export function modelOptions(kind: EngineKind, local: readonly LocalModel[], cur
   if (family === 'external') return [];
   const format = family === 'llamacpp' ? 'gguf' : 'safetensors';
   const mine = local.filter((m) => m.identity.format === format);
-  return [...mine.map(localOption), ...curated.filter((c) => c.engine === family && !isLocal(c, mine)).map(curatedOption)];
+  return [...mine.map((m) => localOption(m, curated)), ...curated.filter((c) => c.engine === family && !isLocal(c, mine)).map(curatedOption)];
 }
 
 /**
  * The saved choice (a local id, "curated:<id>", a bare curated id or a HF repo), else the first
- * local model, else the first suggestion. A suggestion downloaded since it was saved is found as
+ * local model, else the reference model (small, quick to download, and it gives the score), else
+ * the first suggestion. A suggestion downloaded since it was saved is found as
  * its library copy (`curated` is the suggestion list, where it still is).
  */
 export function initialModelKey(options: readonly ModelOption[], saved: string | undefined, curated: readonly CuratedModel[] = []): string | undefined {
@@ -67,7 +75,7 @@ export function initialModelKey(options: readonly ModelOption[], saved: string |
     );
     if (hit) return hit.key;
   }
-  return (options.find((o) => o.source === 'local') ?? options[0])?.key;
+  return (options.find((o) => o.source === 'local') ?? options.find((o) => o.source === 'curated' && o.curated.reference === true) ?? options[0])?.key;
 }
 
 /** What settings.lastModelId stores for an option. */
