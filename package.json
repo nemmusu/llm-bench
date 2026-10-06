@@ -1,7 +1,7 @@
 {
   "name": "gpu-bench",
   "productName": "GPU Bench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Misura le prestazioni della tua GPU con l'inferenza LLM (llama.cpp, vLLM).",
   "author": "GPU Bench",
   "desktopName": "gpu-bench.desktop",
