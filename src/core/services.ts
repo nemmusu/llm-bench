@@ -44,6 +44,8 @@ import { createSystemService } from './system/service';
 /** Lookup of local models (the models module plugs in here). */
 export interface ModelsLookup {
   getLocal(id: string): Promise<LocalModel | undefined>;
+  /** A copy of this HF repo downloaded into the library (safetensors folder for vLLM). */
+  findByRepo?(repo: string): Promise<LocalModel | undefined>;
 }
 
 export interface CoreServices {
@@ -110,6 +112,10 @@ export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
       if (sha256) m.identity.sha256 = sha256;
       return m;
     },
+    async findByRepo(repo) {
+      const all = await ms.models.list().catch(() => []);
+      return all.find((m) => m.identity.repo === repo && m.identity.format === 'safetensors');
+    },
   };
 }
 
@@ -134,6 +140,9 @@ export async function resolveModelTarget(req: StartRunRequest, models: ModelsLoo
     return { identity: local.identity, local };
   }
   if (req.model.repo) {
+    // vLLM reads a downloaded copy when there is one: the cold load then measures loading, not downloading.
+    const local = await models?.findByRepo?.(req.model.repo);
+    if (local) return { identity: local.identity, local, repo: req.model.repo };
     const revision = req.model.revision ?? 'main';
     return {
       identity: {
@@ -248,6 +257,14 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
 
   const needs = async (req: StartRunRequest): Promise<RunPlan['needs']> => {
     const out: RunPlan['needs'] = [];
+    if ((req.engine.kind === 'vllm-docker' || req.engine.kind === 'vllm-native') && req.model.repo && modelServices) {
+      const local = await models?.findByRepo?.(req.model.repo);
+      if (!local) {
+        const files = await modelServices.models.hubFiles(req.model.repo, req.model.revision).catch(() => []);
+        const bytes = files.filter((f) => !/\.(gguf|pth|pt|bin)$/i.test(f.path) && !f.path.startsWith('original/')).reduce((n, f) => n + f.sizeBytes, 0);
+        out.push({ kind: 'model', label: req.model.repo, ...(bytes > 0 ? { bytes } : {}) });
+      }
+    }
     if (req.engine.kind === 'llamacpp-native' && !req.engine.executable) {
       const status = await llama.detect(req.engine);
       if (!status.installed) {

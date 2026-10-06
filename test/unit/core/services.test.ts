@@ -442,12 +442,67 @@ describe('composition details', () => {
     // Pull progress goes to the event hub.
     const events: string[] = [];
     ctx.hub.subscribe((e) => events.push(e.type));
-    s.docker.images.pull = (_ref: string, onProgress: (p: unknown) => void) => {
-      onProgress({ bytesDone: 1, bytesTotal: 2, layersDone: 0, layersTotal: 1, status: 'Downloading' });
-      return Promise.resolve();
+    s.docker.images.pull = (_ref, onProgress) => {
+      onProgress({ bytesDone: 1, bytesTotal: 2, layersDone: 0, layersTotal: 1, status: 'Downloading' } as never);
+      return Promise.resolve({});
     };
     await app.request('/api/docker/pull', { method: 'POST', headers: H, body: JSON.stringify({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }) });
     for (let i = 0; i < 50 && !events.includes('engine.install'); i++) await new Promise((r) => setTimeout(r, 10));
     expect(events).toContain('engine.install');
+  });
+});
+
+describe('vLLM models from the library', () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    t = tempDir();
+  });
+  afterEach(() => t.cleanup());
+
+  const st: LocalModel = {
+    ...local,
+    id: 'st1',
+    identity: { displayName: 'Qwen/Qwen3-0.6B', format: 'safetensors', source: 'hf', repo: 'Qwen/Qwen3-0.6B', files: [], weakKey: 'w' },
+  };
+
+  it('serves a downloaded repo from disk', async () => {
+    const t1 = await resolveModelTarget(
+      { ...base, engine: { kind: 'vllm-docker' }, model: { repo: 'Qwen/Qwen3-0.6B' } },
+      { getLocal: async () => undefined, findByRepo: async () => st },
+    );
+    expect(t1).toEqual({ identity: st.identity, local: st, repo: 'Qwen/Qwen3-0.6B' });
+    const lookup = modelsLookup({ models: { list: async () => [local, st] } as never });
+    expect(await lookup.findByRepo!('Qwen/Qwen3-0.6B')).toBe(st);
+    expect(await lookup.findByRepo!('other/repo')).toBeUndefined();
+    const broken = modelsLookup({ models: { list: () => Promise.reject(new Error('scan failed')) } as never });
+    expect(await broken.findByRepo!('Qwen/Qwen3-0.6B')).toBeUndefined();
+  });
+
+  it('plans the repo download before a vLLM run, sized from the hub listing', async () => {
+    const quiet: ProcessRunner = {
+      run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+      spawn: () => {
+        throw new Error('no spawn');
+      },
+    };
+    const ctx = testContext(testDeps(t.dir, { proc: quiet }));
+    await ctx.settings.update({ scanKnownLocations: false });
+    const s = await createServices(ctx);
+    const needs = (s.bench as unknown as { deps: { needs: (r: StartRunRequest) => Promise<unknown> } }).deps.needs;
+    const vreq = { ...base, engine: { kind: 'vllm-docker' as const }, model: { repo: 'Qwen/Qwen3-0.6B' } };
+    s.modelServices!.models.hubFiles = async () =>
+      [
+        { path: 'model.safetensors', sizeBytes: 1000, kind: 'weights' },
+        { path: 'config.json', sizeBytes: 10, kind: 'config' },
+        { path: 'model.gguf', sizeBytes: 5000, kind: 'weights' },
+        { path: 'original/consolidated.pth', sizeBytes: 9000, kind: 'other' },
+      ] as never;
+    expect(await needs(vreq)).toEqual([{ kind: 'model', label: 'Qwen/Qwen3-0.6B', bytes: 1010 }]);
+    s.modelServices!.models.hubFiles = () => Promise.reject(new Error('offline'));
+    expect(await needs(vreq)).toEqual([{ kind: 'model', label: 'Qwen/Qwen3-0.6B' }]);
+    s.modelServices!.models.list = async () => [st];
+    expect(await needs(vreq)).toEqual([]);
+    // No repo (e.g. a local folder picked directly): nothing to download.
+    expect(await needs({ ...vreq, model: { localId: 'st1' } })).toEqual([]);
   });
 });
