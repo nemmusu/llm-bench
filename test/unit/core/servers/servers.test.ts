@@ -31,7 +31,7 @@ function fakeInstance(opts: { failReady?: boolean; stopFails?: boolean } = {}) {
   return { instance, stopped: () => stopped, crash: () => resolveExit({ code: 1, signal: null }) };
 }
 
-function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string; blocked?: AppError; contextSize?: number } = {}) {
+function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string; blocked?: AppError; contextSize?: number; apiName?: string } = {}) {
   const made: ReturnType<typeof fakeInstance>[] = [];
   const markers: string[] = [];
   let changes = 0;
@@ -66,6 +66,7 @@ function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string;
         adapter,
         launch: plan,
         ...(opts.contextSize ? { contextSize: opts.contextSize } : {}),
+        ...(opts.apiName ? { apiName: opts.apiName } : {}),
       };
     },
     plan: async () => ({ command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' }, needs: [], params: { contextSize: 32768, extraArgs: [], env: {} }, contextSize: 32768, warnings: [] }),
@@ -94,6 +95,9 @@ describe('ServeService', () => {
     });
     // The server's id is the ownership marker its engine was prepared with.
     expect(info.id).toMatch(/^gpubench-/);
+    // Other programs see the model's own name when the engine was given one.
+    const named = await setup({ build: 'b11438', apiName: 'Qwen3-4B-Q4_K_M' }).svc.start(req, new AbortController().signal);
+    expect(named.modelName).toBe('Qwen3-4B-Q4_K_M');
     expect(markers).toEqual([info.id]);
     expect(svc.busy()).toBe(true);
     expect(svc.list()).toEqual([info]);

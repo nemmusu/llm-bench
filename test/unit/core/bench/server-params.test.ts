@@ -1,5 +1,6 @@
 /** "Avvia solo il server": the recommended settings for this card, and the server preview. */
 import { afterEach, describe, expect, it } from 'vitest';
+import { serverApiName } from '../../../../src/core/engines/types';
 import type { StartServerRequest } from '../../../../src/contract/api';
 import type { LaunchParams } from '../../../../src/contract/engines';
 import type { FitEstimate, FitLevel } from '../../../../src/contract/models';
@@ -66,7 +67,7 @@ const withContext = (contextLength: number) => modelTarget({ identity: modelIden
 
 describe('recommended server context', () => {
   it('the largest context that fits the card well (perfect or good)', async () => {
-    const { svc, contexts } = withFit(() => 'perfect');
+    const { svc, contexts, s } = withFit(() => 'perfect');
     const plan = await svc.planServer(llama());
     expect(plan.contextSize).toBe(32768);
     expect(plan.params.contextSize).toBe(32768);
@@ -75,6 +76,8 @@ describe('recommended server context', () => {
     // One try, then the preview's own fit with the chosen settings.
     expect(contexts).toEqual([32768, 32768]);
     expect(plan.fit?.level).toBe('perfect');
+    // The engine is asked to show other programs the model's own name.
+    expect(s.adapter.plans.at(-1)?.apiName).toBe(serverApiName('llamacpp-native', modelTarget()));
 
     const good = withFit((ctx) => (ctx > 8192 ? 'no' : ctx > 4096 ? 'good' : 'perfect'));
     expect((await good.svc.planServer(llama())).contextSize).toBe(8192);

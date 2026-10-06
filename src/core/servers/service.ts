@@ -11,6 +11,8 @@ export interface ServerLaunch {
   launch: LaunchPlan;
   /** Tokens the server takes at once (llama.cpp ctx-size, vLLM max-model-len). */
   contextSize?: number;
+  /** The model name other programs use (what the server's API reports). */
+  apiName?: string;
 }
 
 export interface ServeServiceDeps {
@@ -63,7 +65,7 @@ export class ServeService {
     const blocked = this.deps.blockedBy();
     if (blocked) throw blocked;
     const marker = `gpubench-${randomUUID()}`;
-    const { model, adapter, launch: plan, contextSize } = await this.deps.prepare(req, marker);
+    const { model, adapter, launch: plan, contextSize, apiName } = await this.deps.prepare(req, marker);
     const instance = await adapter.start(plan, signal);
     try {
       await instance.waitReady(signal);
@@ -76,7 +78,7 @@ export class ServeService {
       id: marker,
       baseUrl: instance.baseUrl,
       openaiUrl: `${instance.baseUrl}/v1`,
-      modelName: model.identity.displayName,
+      modelName: apiName ?? model.identity.displayName,
       engineLabel: [plan.engine.name, plan.engine.build ?? plan.engine.version].filter(Boolean).join(' '),
       startedAt: new Date(this.deps.clock.wall()).toISOString(),
       command: { argv: shown.argv, ...this.deps.displayCommand(shown.argv, shown.env) },

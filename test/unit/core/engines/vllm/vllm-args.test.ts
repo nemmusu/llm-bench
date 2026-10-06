@@ -74,6 +74,11 @@ describe('vllmServeArgs', () => {
     ]);
   });
 
+  it('a server for other programs answers to the model name first, the marker second', () => {
+    const args = vllmServeArgs(launchParamsSchema.parse({}), { model: 'Qwen/Qwen3-0.6B', positional: true, host: 'h', port: 1, servedName: 'gpubench-x', apiName: 'Qwen/Qwen3-0.6B' });
+    expect(args.slice(1, 4)).toEqual(['--served-model-name', 'Qwen/Qwen3-0.6B', 'gpubench-x']);
+  });
+
   it('maps every launch parameter, legacy --model and revision', () => {
     const p = launchParamsSchema.parse({
       contextSize: 8192,

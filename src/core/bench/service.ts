@@ -8,6 +8,7 @@ import type { FitEstimate } from '../../contract/models';
 import type { Scenario } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
+import { serverApiName } from '../engines/types';
 import { newRunId } from '../store/runs-id';
 import { engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
@@ -101,6 +102,8 @@ interface Prepared extends Launched {
 export interface PreparedServer extends Launched {
   /** Tokens the server takes at once: llama.cpp ctx-size, vLLM max-model-len. */
   contextSize: number;
+  /** The model name other programs use with this server. */
+  apiName: string;
 }
 
 /** Plan fields shared by runs and servers. */
@@ -154,12 +157,12 @@ export class BenchService {
     model: ModelTarget,
     adapter: EngineAdapter,
     params: LaunchParams,
-    o: { preview: boolean; marker: () => string },
+    o: { preview: boolean; marker: () => string; apiName?: string },
   ): Promise<Pick<Launched, 'engine' | 'port' | 'marker' | 'launch'>> {
     const port = await this.deps.pickPort();
     const marker = o.marker();
     const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
-    const launch = await adapter.plan(engine, model, params, { port, marker, preview: o.preview });
+    const launch = await adapter.plan(engine, model, params, { port, marker, preview: o.preview, ...(o.apiName !== undefined ? { apiName: o.apiName } : {}) });
     return { engine, port, marker, launch };
   }
 
@@ -190,8 +193,9 @@ export class BenchService {
     const params: LaunchParams = { ...(req.params ?? launchParamsSchema.parse({})) };
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const contextSize = await this.fillServerContext(req, model, params);
-    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker });
-    return { model, adapter, params, ...c, contextSize, warnings: memWarning ? [memWarning] : [] };
+    const apiName = serverApiName(req.engine.kind, model);
+    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
+    return { model, adapter, params, ...c, contextSize, apiName, warnings: memWarning ? [memWarning] : [] };
   }
 
   /** Sets the context the user left unset to the recommended one; returns the context the server will offer. */

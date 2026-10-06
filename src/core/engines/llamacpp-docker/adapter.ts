@@ -3,7 +3,7 @@ import type { EngineConfig, LaunchParams } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 import type { EngineIdentity } from '../../../contract/results';
 import { containerName, dockerRunArgv, startContainer, type DockerEngineInstance } from '../../docker/container';
-import { capsFromOutputs, parseHelp, type LlamaCaps } from '../llamacpp-native/caps';
+import { aliasArg, capsFromOutputs, parseHelp, type LlamaCaps } from '../llamacpp-native/caps';
 import { diagnoseExit, llamaPhaseOf } from '../llamacpp-native/logs';
 import { weightFiles, type LaunchPlan, type ModelTarget, type PlanOptions } from '../types';
 import type { EngineCompat } from '../shared/compat';
@@ -24,13 +24,15 @@ export function defaultLlamaCaps(): LlamaCaps {
     flashAttn: 'value',
     nglKeywords: [],
     cacheTypes: [],
+    // Unknown build: one alias (the marker) is safe everywhere.
+    aliasList: false,
     entries: [],
   };
 }
 
 /** llama-server arguments inside the container; same rules as the native adapter. */
-export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { modelPath: string; marker: string }): string[] {
-  const args = ['-m', o.modelPath, '--host', '0.0.0.0', '--port', String(LLAMA_CONTAINER_PORT), '--alias', o.marker];
+export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { modelPath: string; marker: string; apiName?: string | undefined }): string[] {
+  const args = ['-m', o.modelPath, '--host', '0.0.0.0', '--port', String(LLAMA_CONTAINER_PORT), '--alias', aliasArg(caps, o.marker, o.apiName)];
   args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
   args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
   const fa = params.flashAttention ?? 'auto';
@@ -112,7 +114,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       volumes: [mount],
       envNames: Object.keys(env),
       image,
-      args: llamaServerArgs(params, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker }),
+      args: llamaServerArgs(params, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker, apiName: opts.apiName }),
     });
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', image, variant: /cuda13/.test(image) ? 'cuda13' : 'cuda' };
     const digest = await this.imageDigest(image);

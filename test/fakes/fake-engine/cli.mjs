@@ -87,7 +87,8 @@ async function main() {
     o.model = get('-m', '--model') ?? 'models/7B/ggml-model-f16.gguf';
     o.host = get('--host') ?? '127.0.0.1';
     o.port = Number(get('--port') ?? 8080);
-    o.alias = get('-a', '--alias') ?? o.model;
+    // Like current llama-server: comma-separated aliases, the first one is the model's id.
+    o.aliases = (get('-a', '--alias') ?? o.model).split(',');
     o.ctx = Number(get('-c', '--ctx-size') ?? 4096) || 4096;
     o.np = Number(get('-np', '--parallel') ?? -1);
     o.flashAttn = fa ?? 'auto';
@@ -96,6 +97,7 @@ async function main() {
     const rest = argv[0] === 'serve' ? argv.slice(1) : argv;
     let model = rest[0] && !rest[0].startsWith('-') ? rest[0] : undefined;
     const val = {};
+    const names = [];
     for (let i = model ? 1 : 0; i < rest.length; i++) {
       const a = rest[i];
       if (!a.startsWith('--')) continue;
@@ -103,13 +105,16 @@ async function main() {
       if (next !== undefined && !next.startsWith('--')) {
         val[a] = next;
         i++;
+        // --served-model-name takes several names (nargs="+").
+        while (a === '--served-model-name' && rest[i + 1] !== undefined && !rest[i + 1].startsWith('--')) names.push(rest[++i]);
+        if (a === '--served-model-name') names.unshift(next);
       } else val[a] = 'true';
     }
     model ??= val['--model'] ?? 'facebook/opt-125m';
     o.model = model;
     o.host = val['--host'] ?? '0.0.0.0';
     o.port = Number(val['--port'] ?? 8000);
-    o.alias = val['--served-model-name'] ?? model;
+    o.aliases = names.length > 0 ? names : [model];
     o.ctx = Number(val['--max-model-len'] ?? 4096);
   }
   if (env.FAKE_NVIDIA_SMI_STATE) o.stateFile = env.FAKE_NVIDIA_SMI_STATE;

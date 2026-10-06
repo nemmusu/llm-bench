@@ -59,13 +59,16 @@ export interface VllmServeOptions {
   host: string;
   port: number;
   servedName: string;
+  /** Servers for other programs: listed first, so responses carry the model's own name. */
+  apiName?: string | undefined;
   revision?: string;
 }
 
 /** Server arguments shared by vLLM Docker and native: everything explicit, so the record is exact. */
 export function vllmServeArgs(params: LaunchParams, o: VllmServeOptions): string[] {
   const args = o.positional ? [o.model] : ['--model', o.model];
-  args.push('--served-model-name', o.servedName, '--host', o.host, '--port', String(o.port));
+  // Several names are all accepted; the first one is what responses report.
+  args.push('--served-model-name', ...(o.apiName !== undefined ? [o.apiName] : []), o.servedName, '--host', o.host, '--port', String(o.port));
   if (o.revision !== undefined) args.push('--revision', o.revision);
   args.push('--max-model-len', String(params.maxModelLen ?? params.contextSize ?? VLLM_DEFAULT_MAX_MODEL_LEN));
   args.push('--gpu-memory-utilization', String(params.gpuMemoryUtilization ?? VLLM_DEFAULT_GPU_MEMORY_UTILIZATION));

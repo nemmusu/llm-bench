@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProcessRunner, RunOutput } from '../../../../src/core/deps';
-import { CapsProbe, capsFromOutputs, currentLlamaCaps, guessVariant, parseHelp, parseVersion } from '../../../../src/core/engines/llamacpp-native/caps';
+import { aliasArg, capsFromOutputs, CapsProbe, currentLlamaCaps, guessVariant, parseHelp, parseVersion } from '../../../../src/core/engines/llamacpp-native/caps';
 
 const fixture = (name: string) => readFileSync(new URL(`../../../fixtures/llamacpp/${name}`, import.meta.url), 'utf8');
 const HELP = fixture('help.stdout.txt');
@@ -57,6 +57,19 @@ describe('parseHelp (real b10997 --help)', () => {
     expect(byName('--cache-type-k-draft')?.desc).toMatch(/^KV cache data type/);
     expect(byName('--version')?.placeholder).toBeUndefined();
     expect(byName('-ngl')?.desc).toContain("'auto', or 'all'");
+  });
+
+  it('several model names for servers when the build takes them (--alias a,b)', () => {
+    const caps = capsFromOutputs(VERSION, HELP);
+    expect(caps.aliasList).toBe(true);
+    expect(aliasArg(caps, 'gpubench-1', 'Qwen3-4B-Q4_K_M')).toBe('Qwen3-4B-Q4_K_M,gpubench-1');
+    expect(aliasArg(caps, 'gpubench-1', undefined)).toBe('gpubench-1');
+    // An older build with a single alias keeps the marker only.
+    const old = capsFromOutputs(VERSION, '-a,    --alias STRING                   set alias for model name (to be used by REST API)\n');
+    expect(old.aliasList).toBe(false);
+    expect(aliasArg(old, 'gpubench-1', 'Qwen3')).toBe('gpubench-1');
+    expect(capsFromOutputs(VERSION, '-m,    --model FNAME                    model path\n').aliasList).toBe(false);
+    expect(currentLlamaCaps().aliasList).toBe(true);
   });
 
   it('derives the capabilities used by the planner', () => {

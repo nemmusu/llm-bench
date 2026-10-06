@@ -102,7 +102,8 @@ function sendJson(res, status, body) {
  * @property {string} [host]
  * @property {number} [port]            0 = any free port.
  * @property {string} [model]           Model path (llama.cpp) or repo id (vLLM).
- * @property {string} [alias]           llama.cpp --alias / vLLM --served-model-name.
+ * @property {string} [alias]           one model name (shorthand for `aliases: [alias]`).
+ * @property {string[]} [aliases]       llama.cpp --alias a,b / vLLM --served-model-name a b (the first one is reported).
  * @property {number} [ctx]
  * @property {number} [np]              llama.cpp slots (-np); -1/undefined = auto (4).
  * @property {string} [flashAttn]
@@ -129,7 +130,8 @@ export async function startFakeEngine(o = {}) {
   const out = (lines) => lines.forEach((l) => log(l));
   const host = o.host ?? '127.0.0.1';
   const model = o.model ?? 'model.gguf';
-  const alias = o.alias ?? model;
+  const aliases = o.aliases ?? [o.alias ?? model];
+  const alias = aliases[0];
   const ctx = o.ctx ?? 4096;
   const np = o.np && o.np > 0 ? o.np : 4;
   const vramMiB = p.vramMiB ?? 4500;
@@ -248,7 +250,7 @@ export async function startFakeEngine(o = {}) {
       return sendJson(res, 200, {
         models: [{ name: alias, model: alias, type: 'model', capabilities: ['completion'] }],
         object: 'list',
-        data: [{ id: alias, object: 'model', created: 1_760_000_000, owned_by: 'llamacpp', meta: { n_ctx_train: 131072, size: vramMiB * 1048576 } }],
+        data: [{ id: alias, aliases, object: 'model', created: 1_760_000_000, owned_by: 'llamacpp', meta: { n_ctx_train: 131072, size: vramMiB * 1048576 } }],
       });
     }
     if (req.method !== 'POST') return sendJson(res, 404, errorJson(404, 'File Not Found', 'not_found_error'));
@@ -342,13 +344,13 @@ export async function startFakeEngine(o = {}) {
     if (url.pathname === '/v1/models') {
       return sendJson(res, 200, {
         object: 'list',
-        data: [{ id: alias, object: 'model', created: 1_760_000_000, owned_by: 'vllm', root: model, parent: null, max_model_len: ctx }],
+        data: aliases.map((id) => ({ id, object: 'model', created: 1_760_000_000, owned_by: 'vllm', root: model, parent: null, max_model_len: ctx })),
       });
     }
     if (req.method !== 'POST') return sendJson(res, 404, { detail: 'Not Found' });
     const body = await readBody(req);
     if (body === undefined) return sendJson(res, 400, { object: 'error', message: 'Invalid JSON', type: 'BadRequestError', code: 400 });
-    if (body.model !== undefined && body.model !== alias) {
+    if (body.model !== undefined && !aliases.includes(body.model)) {
       return sendJson(res, 404, { object: 'error', message: `The model \`${body.model}\` does not exist.`, type: 'NotFoundError', code: 404 });
     }
     if (url.pathname === '/tokenize') {

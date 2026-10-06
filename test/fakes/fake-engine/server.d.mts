@@ -23,7 +23,10 @@ export interface FakeEngineOptions {
   host?: string;
   port?: number;
   model?: string;
+  /** One model name (shorthand for `aliases: [alias]`). */
   alias?: string;
+  /** llama.cpp `--alias a,b` / vLLM `--served-model-name a b`: all accepted, the first one reported. */
+  aliases?: string[];
   ctx?: number;
   np?: number;
   flashAttn?: string;

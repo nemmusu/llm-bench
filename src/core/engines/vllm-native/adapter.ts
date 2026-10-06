@@ -9,7 +9,7 @@ import type { OwnershipRegistry } from '../../process/ownership';
 import { LOOPBACK } from '../../process/ports';
 import { HF_PLACEHOLDER } from '../command-display';
 import { createProcessInstance } from '../instance';
-import type { EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, ProgressSink } from '../types';
+import type { EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, PlanOptions, ProgressSink } from '../types';
 import type { ModelClientFactory } from '../shared/client';
 import { modelReadyProbe } from '../shared/probes';
 import { vllmModelSource, vllmServeArgs } from '../shared/vllm-args';
@@ -109,7 +109,7 @@ export class VllmNativeAdapter implements EngineAdapter {
     return { ...(v.version !== undefined ? { version: v.version } : {}), flags: new Set(), tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false };
   }
 
-  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<VllmNativeLaunchPlan> {
+  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<VllmNativeLaunchPlan> {
     if (!this.supported()) {
       throw new AppError('ENGINE_NOT_INSTALLED', 'vLLM native runs on Linux only', { params: { reason: 'unsupported-os', kind: this.kind } });
     }
@@ -125,6 +125,7 @@ export class VllmNativeAdapter implements EngineAdapter {
       host: LOOPBACK,
       port: opts.port,
       servedName: opts.marker,
+      apiName: opts.apiName,
       ...(src.kind === 'repo' && src.revision !== undefined ? { revision: src.revision } : {}),
     });
     const engine: EngineIdentity = { kind: this.kind, name: 'vLLM', executable: exe };

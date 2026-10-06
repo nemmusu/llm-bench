@@ -5,7 +5,7 @@ import { containerName, dockerRunArgv, startContainer, type DockerEngineInstance
 import type { DockerApiProvider } from '../../docker/api-provider';
 import type { DockerHubClient } from '../../docker/hub';
 import { HF_PLACEHOLDER } from '../command-display';
-import type { EngineCaps, LaunchPlan, ModelTarget } from '../types';
+import type { EngineCaps, LaunchPlan, ModelTarget, PlanOptions } from '../types';
 import {
   parseVllmTag,
   suggestVllmTag,
@@ -83,7 +83,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
     };
   }
 
-  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: { port: number; marker: string }): Promise<VllmDockerLaunchPlan> {
+  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<VllmDockerLaunchPlan> {
     const compat = await this.compat();
     const image = await this.imageFor(cfg);
     const tag = vllmTagOf(image, compat);
@@ -115,6 +115,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
         host: '0.0.0.0',
         port: VLLM_CONTAINER_PORT,
         servedName: opts.marker,
+        apiName: opts.apiName,
         ...(src.kind === 'repo' && src.revision !== undefined ? { revision: src.revision } : {}),
       }),
     });

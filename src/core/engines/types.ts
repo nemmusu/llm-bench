@@ -71,6 +71,20 @@ export interface PlanOptions {
    * or download will put it, and the plan lists it in `pending`. Never set when starting a run.
    */
   preview?: boolean;
+  /**
+   * Servers for other programs: the model name the API shows (e.g. "Qwen3-4B-Q4_K_M"). The marker
+   * stays as a second name, so ownership checks and readiness probes keep working. Benchmarks leave
+   * it unset (the API then only knows the marker).
+   */
+  apiName?: string;
+}
+
+/** The model name a GPU Bench server shows to other programs: the HF repo for vLLM, else the model's own name. */
+export function serverApiName(kind: EngineKind, model: ModelTarget): string {
+  const vllm = kind === 'vllm-docker' || kind === 'vllm-native';
+  const name = (vllm ? (model.repo ?? model.identity.repo) : undefined) ?? model.identity.displayName;
+  // llama.cpp splits --alias at commas; spaces are awkward in client settings.
+  return name.replace(/[,\s]+/g, '-');
 }
 
 /**

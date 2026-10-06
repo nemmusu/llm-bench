@@ -97,6 +97,8 @@ export interface LlamaCaps extends EngineCaps {
   nglKeywords: string[];
   /** Allowed -ctk/-ctv values. */
   cacheTypes: string[];
+  /** `--alias a,b` gives the model several names (current builds); older ones take one name. */
+  aliasList: boolean;
   entries: HelpEntry[];
 }
 
@@ -108,6 +110,7 @@ export function capsFromOutputs(versionText: string, helpText: string): LlamaCap
   const fa = entry('--flash-attn');
   const ngl = entry('--n-gpu-layers');
   const ctk = entry('--cache-type-k');
+  const alias = entry('--alias');
   const caps: LlamaCaps = {
     flags,
     // llama.cpp /completion accepts token-id prompts and reports `timings`; it has no min_tokens
@@ -119,6 +122,7 @@ export function capsFromOutputs(versionText: string, helpText: string): LlamaCap
     flashAttn: fa ? (fa.values ? 'value' : 'toggle') : 'none',
     nglKeywords: ngl ? [...ngl.desc.matchAll(/'(auto|all)'/g)].map((m) => m[1] as string) : [],
     cacheTypes: ctk ? (/allowed values:\s*([^()]+?)(?:\s*\(|$)/.exec(ctk.desc)?.[1]?.split(/,\s*/) ?? []) : [],
+    aliasList: alias !== undefined && /comma-separated/.test(alias.desc),
     entries,
   };
   if (v.version !== undefined) caps.version = v.version;
@@ -143,8 +147,17 @@ export function currentLlamaCaps(): LlamaCaps {
     flashAttn: 'value',
     nglKeywords: ['auto', 'all'],
     cacheTypes: ['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'],
+    aliasList: true,
     entries: [],
   };
+}
+
+/**
+ * `--alias` value: the marker (benchmarks), or "<apiName>,<marker>" for servers so other programs
+ * see the model's name first. A build that takes a single alias keeps the marker only.
+ */
+export function aliasArg(caps: Pick<LlamaCaps, 'aliasList'>, marker: string, apiName: string | undefined): string {
+  return apiName !== undefined && caps.aliasList ? `${apiName},${marker}` : marker;
 }
 
 /**

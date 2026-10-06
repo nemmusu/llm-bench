@@ -21,7 +21,7 @@ import {
   type PlanOptions,
   type ProgressSink,
 } from '../types';
-import { CapsProbe, currentLlamaCaps, guessVariant, type LlamaCaps } from './caps';
+import { aliasArg, CapsProbe, currentLlamaCaps, guessVariant, type LlamaCaps } from './caps';
 import {
   buildEnv,
   installLlamaBuild,
@@ -176,7 +176,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
     const sizes = await Promise.all(files.map((f) => fs.stat(f).then((s) => s.size, () => 0)));
     const statBytes = sizes.reduce((a, b) => a + b, 0);
 
-    const args = ['-m', main, '--host', LOOPBACK, '--port', String(opts.port), '--alias', opts.marker];
+    const args = ['-m', main, '--host', LOOPBACK, '--port', String(opts.port), '--alias', aliasArg(caps, opts.marker, opts.apiName)];
     args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
     args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
     const fa = params.flashAttention ?? 'auto';
