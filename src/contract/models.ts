@@ -114,6 +114,19 @@ export const hubFileSchema = z.object({
 });
 export type HubFile = z.infer<typeof hubFileSchema>;
 
+/**
+ * VRAM verdict of a search result from its parameter count alone (no file reads), at the quant a
+ * download would typically pick: Q4_K_M for GGUF repos, the repo's own precision for safetensors.
+ */
+export const quickFitSchema = z.object({
+  level: fitLevelSchema,
+  needMiB: z.number(),
+  availableMiB: z.number(),
+  quant: z.string(),
+  engine: z.enum(['llamacpp', 'vllm']),
+});
+export type QuickFit = z.infer<typeof quickFitSchema>;
+
 export const hubModelSchema = z.object({
   repo: z.string(),
   author: z.string(),
@@ -128,8 +141,17 @@ export const hubModelSchema = z.object({
   pipelineTag: z.string().optional(),
   baseModel: z.string().optional(),
   tags: z.array(z.string()).default([]),
+  /** Search results only, when the GPU and the parameter count are known. */
+  fit: quickFitSchema.optional(),
 });
 export type HubModel = z.infer<typeof hubModelSchema>;
+
+export const hubSearchPageSchema = z.object({
+  models: z.array(hubModelSchema),
+  /** Pass back as `cursor` for the next page; absent on the last one. */
+  nextCursor: z.string().optional(),
+});
+export type HubSearchPage = z.infer<typeof hubSearchPageSchema>;
 
 export const downloadStateSchema = z.enum(['queued', 'running', 'paused', 'verifying', 'done', 'failed', 'cancelled']);
 export type DownloadState = z.infer<typeof downloadStateSchema>;

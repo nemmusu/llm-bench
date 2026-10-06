@@ -13,11 +13,25 @@ const flag = z
   .optional()
   .transform((v) => v === 'true' || v === '1');
 
+const paramsB = z.coerce.number().min(0).max(100_000).optional();
+
 const searchQuerySchema = z.object({
   q: z.string().max(200).default(''),
   format: z.enum(['gguf', 'safetensors', 'any']).default('any'),
-  sort: z.enum(['downloads', 'likes', 'lastModified', 'trendingScore']).default('downloads'),
+  sort: z.enum(['downloads', 'likes', 'lastModified', 'createdAt', 'trendingScore']).default('downloads'),
   limit: z.coerce.number().int().min(1).max(100).default(30),
+  author: z
+    .string()
+    .regex(/^[A-Za-z0-9][\w.-]{0,95}$/)
+    .optional(),
+  minParamsB: paramsB,
+  maxParamsB: paramsB,
+  /** Opaque, from the previous page's nextCursor. */
+  cursor: z
+    .string()
+    .max(4096)
+    .regex(/^[\w%=+/.-]+$/)
+    .optional(),
   onlyFits: flag,
 });
 
@@ -39,7 +53,7 @@ function repoParam(c: Context): string {
 /**
  *   GET    /api/models/local                          -> LocalModel[]
  *   POST   /api/models/rescan                         -> LocalModel[]
- *   GET    /api/models/search?q=&format=&sort=&limit=&onlyFits= -> HubModel[]
+ *   GET    /api/models/search?q=&format=&sort=&limit=&author=&minParamsB=&maxParamsB=&onlyFits=&cursor= -> HubSearchPage
  *   GET    /api/models/curated?vramGB=                -> CuratedResponse
  *   GET    /api/models/hub/:owner/:name?revision=     -> HubRepoInfo (HubModel + sha, private)
  *   GET    /api/models/hub/:owner/:name/files?revision= -> HubFile[]

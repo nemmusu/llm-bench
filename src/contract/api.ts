@@ -20,7 +20,7 @@ import { profileSchema, scenarioSchema } from './results';
  *   GET    /api/engines/llamacpp/releases    -> LlamaRelease[]
  *   GET    /api/models/local                 -> LocalModel[]
  *   POST   /api/models/rescan                -> LocalModel[]
- *   GET    /api/models/search?q=&format=&sort= -> HubModel[]
+ *   GET    /api/models/search?q=&format=&sort=&author=&minParamsB=&maxParamsB=&onlyFits=&cursor= -> HubSearchPage
  *   GET    /api/models/hub/:owner/:name      -> HubRepoInfo (HubModel + sha, private)
  *   GET    /api/models/hub/:owner/:name/files -> HubFile[]
  *   POST   /api/models/fit                   (FitRequest) -> FitEstimate

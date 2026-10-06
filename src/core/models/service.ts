@@ -3,15 +3,16 @@ import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
 import type { EngineKind } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
-import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity } from '../../contract/models';
+import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFit } from '../../contract/models';
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
-import { HubClient, type HubFormat, type HubRepoInfo, type HubSort, type RemoteGgufFacts } from './hub';
+import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
 import { quantFromFilename } from './quant';
+import { curatedFit, isLanguageModel, maxFittingParamsB, quickFit, quickFits } from './quick-fit';
 import { DOWNLOAD_SIDECAR, ModelScanner } from './scanner';
 import type { GpuInfoFn, GpuMem, ModelFactsEx, TokenFn } from './types';
 
@@ -26,10 +27,7 @@ export interface ModelsServiceOptions {
   hub?: HubClient;
 }
 
-export interface ModelSearchOptions {
-  format?: HubFormat;
-  sort?: HubSort;
-  limit?: number;
+export interface ModelSearchOptions extends SearchOptions {
   /** Keep only repos whose parameter count fits the free VRAM at a typical quant. */
   onlyFits?: boolean;
 }
@@ -58,7 +56,8 @@ export interface CuratedResponse {
   /** The VRAM tier that VRAM counts as (31.8 GiB → 32); absent below the smallest tier. */
   tierGB?: number;
   reference: CuratedList['reference'];
-  models: CuratedModel[];
+  /** Each with a VRAM verdict from its exact file size, when there is a GPU. */
+  models: (CuratedModel & { fit?: QuickFit })[];
 }
 
 const MIB_PER_GB = 1024;
@@ -137,18 +136,26 @@ export class ModelsService {
     return gpu;
   }
 
-  async search(q: string, opts: ModelSearchOptions = {}): Promise<HubModel[]> {
-    const found = await this.hub.search(q, opts);
-    if (!opts.onlyFits) return found;
+  /**
+   * One page of hub results, each with a quick VRAM verdict. "Only what fits" also bounds the
+   * parameter count sent to the hub, so its pages stay full instead of being filtered to nothing.
+   */
+  async search(q: string, opts: ModelSearchOptions = {}): Promise<HubPage> {
     const gpu = await this.opts.gpuInfo();
-    if (!gpu) return found;
-    // Without the files we judge from the parameter count: Q4_K_M for GGUF, BF16 for safetensors.
-    return found.filter((m) => {
-      if (m.paramsB === undefined) return false;
-      const gguf = opts.format === 'gguf' || (opts.format !== 'safetensors' && m.formats.includes('gguf'));
-      const fit = estimateFit({ facts: { paramsB: m.paramsB, quant: gguf ? 'Q4_K_M' : 'BF16' }, gpu, engine: gguf ? 'llamacpp-native' : 'vllm-docker' });
-      return fit.level !== 'no' && fit.level !== 'partial';
-    });
+    const onlyFits = opts.onlyFits === true && gpu !== undefined;
+    const { onlyFits: _, ...hubOpts } = opts;
+    if (onlyFits) hubOpts.maxParamsB = Math.min(opts.maxParamsB ?? Infinity, maxFittingParamsB(gpu, opts.format ?? 'any'));
+    const page = await this.hub.search(q, hubOpts);
+    const models: HubModel[] = [];
+    for (const m of page.models) {
+      if (!isLanguageModel(m)) continue;
+      // HF counts parameters its own way (for GGUF, often from one file); cards show ours, so the size filter follows ours.
+      if (m.paramsB !== undefined && (m.paramsB < (opts.minParamsB ?? 0) || m.paramsB > (opts.maxParamsB ?? Infinity))) continue;
+      const fit = gpu && quickFit(m, gpu, opts.format);
+      if (onlyFits && !quickFits(fit)) continue;
+      models.push(fit ? { ...m, fit } : m);
+    }
+    return page.nextCursor ? { models, nextCursor: page.nextCursor } : { models };
   }
 
   /** Repo card data (downloads, likes, gated, license, formats, params…) of one hub repo. */
@@ -296,10 +303,12 @@ export class ModelsService {
       this.curatedList = undefined;
       throw e;
     });
-    const gb = vramGB ?? ((await this.opts.gpuInfo())?.totalMiB ?? 0) / MIB_PER_GB;
-    if (gb <= 0) return { reference: list.reference, models: list.models };
+    const gpu = await this.opts.gpuInfo();
+    const withFit = (models: CuratedModel[]) => (gpu ? models.map((m) => ({ ...m, fit: curatedFit(m, gpu) })) : models);
+    const gb = vramGB ?? (gpu?.totalMiB ?? 0) / MIB_PER_GB;
+    if (gb <= 0) return { reference: list.reference, models: withFit(list.models) };
     const tier = tierFor(gb);
-    return { vramGB: gb, ...(tier !== undefined ? { tierGB: tier } : {}), reference: list.reference, models: curatedForVram(list, gb) };
+    return { vramGB: gb, ...(tier !== undefined ? { tierGB: tier } : {}), reference: list.reference, models: withFit(curatedForVram(list, gb)) };
   }
 
   /**

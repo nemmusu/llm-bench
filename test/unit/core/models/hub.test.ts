@@ -7,6 +7,8 @@ import {
   groupKeyFor,
   HubClient,
   hubHttpError,
+  nextPageCursor,
+  paramsRange,
   readCapped,
   README_MAX_BYTES,
   requestedRange,
@@ -16,6 +18,16 @@ import {
 import { startFakeHub, type FakeHub } from '../../../fakes/fake-hub';
 
 const fixture = (name: string): unknown => JSON.parse(readFileSync(path.join('test', 'fixtures', 'hf', name), 'utf8'));
+
+describe('parameter counts of search results', () => {
+  it('trusts safetensors metadata, then the size in the name, then the GGUF count', () => {
+    expect(toHubModel({ id: 'a/Model-8B', safetensors: { total: 8_190_000_000 } }).paramsB).toBe(8.19);
+    // HF counted a small MTP file of this repo: the name knows better.
+    expect(toHubModel({ id: 'a/Big-27B-MTP-GGUF', gguf: { total: 1_863_907_840 } }).paramsB).toBe(27);
+    expect(toHubModel({ id: 'a/Flash-Next-GGUF', gguf: { total: 176_943_899_520 } }).paramsB).toBe(176.944);
+    expect(toHubModel({ id: 'a/Flash-Next-GGUF', gguf: { total: 0 } }).paramsB).toBeUndefined();
+  });
+});
 
 describe('parsing real Hugging Face responses', () => {
   it('maps search results (GGUF and safetensors)', () => {
@@ -102,7 +114,8 @@ describe('HubClient against the fake hub', () => {
 
   it('searches with filter, sort, limit and expand fields', async () => {
     const res = await client.search(' qwen ', { format: 'gguf', sort: 'likes', limit: 500 });
-    expect(res.map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    expect(res.models.map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    expect(res.nextCursor).toBeUndefined();
     const url = new URL(hub.requests[0]?.url as string, hub.url);
     expect(url.searchParams.get('search')).toBe('qwen');
     expect(url.searchParams.getAll('filter')).toEqual(['gguf']);
@@ -111,12 +124,51 @@ describe('HubClient against the fake hub', () => {
     expect(url.searchParams.get('limit')).toBe('100');
     expect(url.searchParams.getAll('expand[]')).toContain('cardData');
     const one = await client.search('', { format: 'any', limit: 0 });
-    expect(one).toHaveLength(1);
+    expect(one.models).toHaveLength(1);
     expect(new URL(hub.requests[1]?.url as string, hub.url).searchParams.get('limit')).toBe('1');
     const st = await client.search('', { format: 'safetensors' });
-    expect(st.map((m) => m.repo)).toEqual(['Qwen/Qwen3-0.6B']);
+    expect(st.models.map((m) => m.repo)).toEqual(['Qwen/Qwen3-0.6B']);
     const trending = await client.search('');
-    expect(trending[0]?.repo).toBe('Qwen/Qwen3-0.6B');
+    expect(trending.models[0]?.repo).toBe('Qwen/Qwen3-0.6B');
+  });
+
+  it('pages through results with the cursor of the Link header', async () => {
+    const first = await client.search('', { limit: 2, sort: 'downloads' });
+    expect(first.models.map((m) => m.repo)).toEqual(['Qwen/Qwen3-0.6B', 'ggml-org/Qwen3-0.6B-GGUF']);
+    expect(first.nextCursor).toBe('2');
+    const second = await client.search('', { limit: 2, sort: 'downloads', cursor: first.nextCursor as string });
+    expect(second.models.map((m) => m.repo)).toEqual(['unsloth/Demo-31B-it-GGUF', 'google/gated-demo-it']);
+    expect(second.nextCursor).toBeUndefined();
+    expect(new URL(hub.requests[1]?.url as string, hub.url).searchParams.get('cursor')).toBe('2');
+  });
+
+  it('filters by author and parameter count', async () => {
+    const unsloth = await client.search('', { author: 'unsloth' });
+    expect(unsloth.models.map((m) => m.repo)).toEqual(['unsloth/Demo-31B-it-GGUF']);
+    const small = await client.search('', { minParamsB: 0.5, maxParamsB: 4.5, sort: 'downloads' });
+    expect(small.models.map((m) => m.repo)).toEqual(['Qwen/Qwen3-0.6B', 'ggml-org/Qwen3-0.6B-GGUF']);
+    const urls = hub.requests.map((r) => new URL(r.url, hub.url).searchParams);
+    expect(urls[0]?.get('author')).toBe('unsloth');
+    expect(urls[1]?.get('num_parameters')).toBe('min:500M,max:4500M');
+  });
+
+  it('builds the num_parameters filter and reads next-page cursors', () => {
+    expect(paramsRange(undefined, undefined)).toBeUndefined();
+    expect(paramsRange(0, Infinity)).toBeUndefined();
+    expect(paramsRange(15, undefined)).toBe('min:15000M');
+    expect(paramsRange(undefined, 0.0001)).toBe('max:1M');
+    const base = 'https://huggingface.co';
+    expect(nextPageCursor(null, base)).toBeUndefined();
+    expect(nextPageCursor('<https://huggingface.co/api/models?cursor=abc%3D>; rel="next"', base)).toBe('abc=');
+    expect(nextPageCursor('</api/models?cursor=rel>; rel="next"', base)).toBe('rel');
+    expect(nextPageCursor('<https://evil.example/api/models?cursor=x>; rel="next"', base)).toBeUndefined();
+    expect(nextPageCursor('<https://huggingface.co/api/models?limit=3>; rel="next"', base)).toBeUndefined();
+    expect(nextPageCursor('<https://huggingface.co/api/models?cursor=p>; rel="prev"', base)).toBeUndefined();
+  });
+
+  it('maps an unreadable search body to NETWORK', async () => {
+    const broken = new HubClient({ fetch: (async () => new Response('{', { status: 200 })) as typeof fetch, baseUrl: hub.url, getToken: () => undefined });
+    await expect(broken.search('x')).rejects.toMatchObject({ code: 'NETWORK', message: expect.stringContaining('invalid JSON') });
   });
 
   it('finds GGUF conversions of a base model, by tag or by name', async () => {
@@ -238,7 +290,7 @@ describe('HubClient against the fake hub', () => {
     hub.behavior.failNext = { status: 503, times: 1 };
     await expect(client.search('zzz-none')).rejects.toMatchObject({ code: 'NETWORK', params: { status: 503 } });
     // Failures are not cached.
-    expect(await client.search('zzz-none')).toEqual([]);
+    expect((await client.search('zzz-none')).models).toEqual([]);
 
     const garbage = new HubClient({ fetch: (async () => new Response('<html>', { status: 200 })) as typeof fetch, baseUrl: hub.url, getToken: () => undefined });
     await expect(garbage.search('x')).rejects.toMatchObject({ code: 'NETWORK' });
@@ -251,7 +303,7 @@ describe('HubClient against the fake hub', () => {
     const weirdTree = new HubClient({ fetch: (async () => Response.json([null, { type: 'file' }, { type: 'directory', path: 'd' }, { type: 'file', path: 'x.gguf', size: 1 }])) as typeof fetch, baseUrl: hub.url, getToken: () => undefined });
     expect((await weirdTree.files('a/b')).map((f) => f.path)).toEqual(['x.gguf']);
     const searchJunk = new HubClient({ fetch: (async () => Response.json([null, { id: 'noslash' }, { id: 'o/n' }])) as typeof fetch, baseUrl: hub.url, getToken: () => undefined });
-    expect((await searchJunk.search('')).map((m) => m.repo)).toEqual(['o/n']);
+    expect((await searchJunk.search('')).models.map((m) => m.repo)).toEqual(['o/n']);
 
     const offline = new HubClient({ fetch: globalThis.fetch, baseUrl: 'http://127.0.0.1:9', getToken: () => undefined });
     await expect(offline.search('x')).rejects.toMatchObject({ code: 'NETWORK' });

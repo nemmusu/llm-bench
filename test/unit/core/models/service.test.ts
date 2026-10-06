@@ -85,22 +85,62 @@ describe('ModelsService', () => {
     expect(deps.log.entries.some((e) => e.msg === 'background hash failed')).toBe(true);
   });
 
-  it('searches the hub, optionally keeping only models that fit', async () => {
+  it('searches the hub with a quick VRAM verdict per result, optionally keeping only models that fit', async () => {
     const svc = service();
-    expect((await svc.search('qwen', { format: 'gguf' })).map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    const page = await svc.search('qwen', { format: 'gguf' });
+    expect(page.models.map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    expect(page.models[0]?.fit).toMatchObject({ level: 'perfect', quant: 'Q4_K_M', engine: 'llamacpp' });
     hub.addRepo({ id: 'huge/Giant-400B-GGUF', tags: ['gguf'], files: [] });
     hub.addRepo({ id: 'nosize/Mystery-GGUF', tags: ['gguf'], files: [] });
-    const fits = (await svc.search('', { onlyFits: true })).map((m) => m.repo);
+    // Not hidden by default: shown with their verdict (or none when the size is unknown).
+    const all = (await svc.search('', {})).models;
+    expect(all.find((m) => m.repo === 'huge/Giant-400B-GGUF')?.fit?.level).toBe('partial');
+    expect(all.find((m) => m.repo === 'nosize/Mystery-GGUF')?.fit).toBeUndefined();
+    expect(all.find((m) => m.repo === 'Qwen/Qwen3-0.6B')?.fit).toMatchObject({ quant: 'BF16', engine: 'vllm' });
+    const fits = (await svc.search('', { onlyFits: true })).models.map((m) => m.repo);
     expect(fits).toContain('ggml-org/Qwen3-0.6B-GGUF');
     expect(fits).toContain('Qwen/Qwen3-0.6B');
     expect(fits).not.toContain('huge/Giant-400B-GGUF');
     expect(fits).not.toContain('nosize/Mystery-GGUF');
-    const st = (await svc.search('', { onlyFits: true, format: 'safetensors' })).map((m) => m.repo);
+    const st = (await svc.search('', { onlyFits: true, format: 'safetensors' })).models.map((m) => m.repo);
     expect(st).toEqual(['Qwen/Qwen3-0.6B']);
-    const gg = await svc.search('', { onlyFits: true, format: 'gguf' });
+    const gg = (await svc.search('', { onlyFits: true, format: 'gguf', maxParamsB: 100 })).models;
     expect(gg.every((m) => m.formats.includes('gguf'))).toBe(true);
     gpu = undefined;
-    expect((await svc.search('', { onlyFits: true })).map((m) => m.repo)).toContain('huge/Giant-400B-GGUF');
+    const noGpu = (await svc.search('', { onlyFits: true })).models;
+    expect(noGpu.map((m) => m.repo)).toContain('huge/Giant-400B-GGUF');
+    expect(noGpu.every((m) => m.fit === undefined)).toBe(true);
+  });
+
+  it('keeps language models only (image generators, speech, embeddings cannot be benchmarked)', async () => {
+    hub.addRepo({ id: 'art/Image-Maker-12B-GGUF', tags: ['gguf'], pipelineTag: 'text-to-image', files: [] });
+    hub.addRepo({ id: 'lab/Vision-Chat-8B-GGUF', tags: ['gguf'], pipelineTag: 'image-text-to-text', files: [] });
+    const repos = (await service().search('', { format: 'gguf' })).models.map((m) => m.repo);
+    expect(repos).not.toContain('art/Image-Maker-12B-GGUF');
+    expect(repos).toContain('lab/Vision-Chat-8B-GGUF');
+    expect(repos).toContain('ggml-org/Qwen3-0.6B-GGUF');
+  });
+
+  it('applies the size range to the parameter count the cards show, and passes the cursor on', async () => {
+    const svc = service();
+    // The hub thinks this repo is small (its first file), but its name says 70B.
+    hub.addRepo({ id: 'odd/Big-70B-GGUF', tags: ['gguf'], numParameters: 1e9, downloads: 1, files: [] });
+    const small = (await svc.search('', { minParamsB: 0.5, maxParamsB: 4.5 })).models.map((m) => m.repo);
+    expect(small).toContain('ggml-org/Qwen3-0.6B-GGUF');
+    expect(small).not.toContain('odd/Big-70B-GGUF');
+    // Same for "only what fits": the hub's size bound lets it through, our own verdict does not.
+    expect((await svc.search('', { onlyFits: true })).models.map((m) => m.repo)).not.toContain('odd/Big-70B-GGUF');
+    const big = (await svc.search('', { minParamsB: 15 })).models.map((m) => m.repo);
+    expect(big).not.toContain('ggml-org/Qwen3-0.6B-GGUF');
+    const first = await svc.search('', { limit: 1, sort: 'downloads' });
+    expect(first.nextCursor).toBe('1');
+    const second = await svc.search('', { limit: 1, sort: 'downloads', cursor: first.nextCursor as string });
+    expect(second.models[0]?.repo).not.toBe(first.models[0]?.repo);
+  });
+
+  it('finds nothing that fits when the GPU has no free VRAM', async () => {
+    gpu = { totalMiB: 8192, freeMiB: 0 };
+    expect((await service().search('', { onlyFits: true })).models).toEqual([]);
   });
 
   it('proxies hub files, readme, related and remote facts', async () => {
@@ -291,6 +331,8 @@ describe('ModelsService', () => {
     expect(given.models.every((m) => m.tier <= 12)).toBe(true);
     expect(given.reference.repo).toBe('Qwen/Qwen3-4B-GGUF');
     // A 5090 reports 31.8 GiB: it gets the 32 GB recommendations.
+    expect(given.models[0]?.fit).toMatchObject({ level: expect.any(String), quant: given.models[0]?.quant, engine: given.models[0]?.engine });
+    expect(given.models.some((m) => m.engine === 'vllm')).toBe(true);
     const fromGpu = await svc.curated();
     expect(fromGpu.vramGB).toBeCloseTo(GPU_32GB.totalMiB / 1024, 3);
     expect(fromGpu.tierGB).toBe(32);
@@ -302,6 +344,7 @@ describe('ModelsService', () => {
     gpu = undefined;
     const all = await svc.curated();
     expect(all.vramGB).toBeUndefined();
+    expect(all.models.every((m) => m.fit === undefined)).toBe(true);
     expect(all.models.length).toBeGreaterThan(given.models.length);
     const broken = new ModelsService({
       deps: modelDeps(t.dir, { paths: { ...modelDeps(t.dir).paths, resourcesDir: path.join(t.dir, 'none') } }),

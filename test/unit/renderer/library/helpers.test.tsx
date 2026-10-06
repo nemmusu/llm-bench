@@ -4,14 +4,13 @@ import type { DownloadJob, LocalModel } from '../../../../src/contract/models';
 import { destinationOf } from '../../../../src/renderer/components/library/download-dialog';
 import {
   bestRunHere,
+  bucketRange,
   curatedWeakKey,
   fileName,
-  groupByBase,
   groupFiles,
-  inBucket,
   remoteWeakKey,
   repoUrl,
-  triedRepos,
+  triedModels,
 } from '../../../../src/renderer/components/library/helpers';
 import { modelFromJob } from '../../../../src/renderer/components/library/library-events';
 import { appendSample } from '../../../../src/renderer/components/monitor/use-gpu-history';
@@ -20,7 +19,7 @@ import { itemDetail } from '../../../../src/renderer/components/setup/system-che
 import { createFormatters } from '../../../../src/renderer/i18n';
 import { ApiError } from '../../../../src/renderer/lib/api';
 import { activeEvent, errorData, handleLibraryEvent, installKey, isDownloadActive, libKeys } from '../../../../src/renderer/lib/queries-library';
-import { GPU, HUB_FILES, hubModel, item, job, libApi, localModel, REFERENCE, run, sample } from './fake';
+import { GPU, HUB_FILES, item, job, libApi, localModel, REFERENCE, run, sample } from './fake';
 
 const it_ = createFormatters('it');
 
@@ -48,20 +47,29 @@ describe('library helpers', () => {
     expect(bestRunHere(undefined, GPU)).toBeUndefined();
   });
 
-  it('tried repos come from weak keys of runs on this GPU', () => {
-    const runs = [run('1'), run('2', { modelWeakKey: 'local/x.gguf/Q4/1' }), run('3', { gpuUuid: 'x', gpuName: 'other', modelWeakKey: 'z/y/f/q/1' })];
-    expect([...triedRepos(runs, GPU)]).toEqual(['org/Model-GGUF']);
-    expect(triedRepos(runs, undefined).size).toBe(0);
-    expect(triedRepos(undefined, GPU).size).toBe(0);
+  it('tried models come from weak keys of runs on this GPU: one per repo, best speed, latest date', () => {
+    const runs = [
+      run('1', { decodeTps: 100, quant: 'Q8_0', createdAt: '2026-09-01T00:00:00.000Z' }),
+      run('2', { modelWeakKey: 'local/x.gguf/Q4/1' }),
+      run('3', { gpuUuid: 'x', gpuName: 'other', modelWeakKey: 'z/y/f/q/1' }),
+      run('4', { decodeTps: 150, quant: 'Q4_K_M', createdAt: '2026-08-01T00:00:00.000Z' }),
+      run('5', { status: 'failed', decodeTps: 999, createdAt: '2026-09-20T00:00:00.000Z' }),
+      run('6', { decodeTps: 120, createdAt: '2026-07-01T00:00:00.000Z' }),
+      run('7', { status: 'failed', modelWeakKey: 'new/Other-GGUF/o.gguf/Q4_K_M/1', createdAt: '2026-10-01T00:00:00.000Z' }),
+    ];
+    expect(triedModels(runs, GPU)).toEqual([
+      { repo: 'new/Other-GGUF', owner: 'new', name: 'Other-GGUF', quant: undefined, tps: undefined, date: '2026-10-01T00:00:00.000Z', runs: 1 },
+      { repo: 'org/Model-GGUF', owner: 'org', name: 'Model-GGUF', quant: 'Q4_K_M', tps: 150, date: '2026-09-20T00:00:00.000Z', runs: 4 },
+    ]);
+    expect(triedModels(runs, undefined)).toEqual([]);
+    expect(triedModels(undefined, GPU)).toEqual([]);
   });
 
-  it('size buckets', () => {
-    expect(inBucket(undefined, 'any')).toBe(true);
-    expect(inBucket(undefined, 'small')).toBe(false);
-    expect(inBucket(4, 'small')).toBe(true);
-    expect(inBucket(8, 'medium')).toBe(true);
-    expect(inBucket(8, 'large')).toBe(false);
-    expect(inBucket(70, 'huge')).toBe(true);
+  it('size buckets as catalog parameter ranges', () => {
+    expect(bucketRange('any')).toEqual({});
+    expect(bucketRange('small')).toEqual({ maxParamsB: 4.5 });
+    expect(bucketRange('medium')).toEqual({ minParamsB: 4.5, maxParamsB: 15 });
+    expect(bucketRange('huge')).toEqual({ minParamsB: 40 });
   });
 
   it('groups files by quant (split parts together), extras last', () => {
@@ -72,20 +80,6 @@ describe('library helpers', () => {
       ['loose.gguf', 1, 'weights'],
       ['mmproj', 2, 'mmproj'],
       ['other', 1, 'other'],
-    ]);
-  });
-
-  it('groups search hits under their base model', () => {
-    const groups = groupByBase([
-      hubModel('a/X-GGUF', { baseModel: 'base/X' }),
-      hubModel('b/Y'),
-      hubModel('c/X-GGUF', { baseModel: 'base/X' }),
-      hubModel('base/X', { baseModel: 'base/X' }),
-    ]);
-    expect(groups.map((g) => [g.base, g.models.map((m) => m.repo)])).toEqual([
-      ['base/X', ['a/X-GGUF', 'c/X-GGUF']],
-      [undefined, ['b/Y']],
-      [undefined, ['base/X']],
     ]);
   });
 

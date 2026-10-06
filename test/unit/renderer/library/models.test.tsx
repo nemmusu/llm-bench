@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bridge, curated, fail, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, system, world } from './fake';
+import { bridge, curated, fail, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -143,6 +143,8 @@ describe('models: download', () => {
     expect(api.calls.some((c) => c.path === '/api/models/curated?vramGB=32')).toBe(true);
     const list = screen.getByRole('list', { name: 'Consigliati per la tua GPU' });
     expect(within(list).getByText('Modello di riferimento')).toBeTruthy();
+    // The core sends a verdict with the list: no waiting for each badge.
+    expect(within(list).getAllByText('Entra perfettamente')).toHaveLength(1);
     expect(within(list).getAllByText('Sul tuo PC')).toHaveLength(1);
     expect(within(list).getAllByRole('listitem')).toHaveLength(6);
     await userEvent.click(screen.getByRole('button', { name: 'Mostra tutti (7)' }));
@@ -214,58 +216,193 @@ describe('models: download', () => {
     expect(await screen.findByText('Si è verificato un errore imprevisto')).toBeTruthy();
   });
 
-  it('Hugging Face search with filters, groups and tried badges', async () => {
+  it('catalog: browse without typing, every model marked with its fit, search, sort, sizes, author, only what fits', async () => {
+    const quick = (level: 'perfect' | 'no') => ({ level, needMiB: level === 'no' ? 40_000 : 5_000, availableMiB: 30_000, quant: 'Q4_K_M', engine: 'llamacpp' as const });
     const api = libApi(
       world({
-        runs: [run('r1', { modelWeakKey: 'org/Model-GGUF/Model-Q8_0.gguf/Q8_0/1' })],
+        runs: [run('r1', { modelWeakKey: 'org/Model-GGUF/Model-Q8_0.gguf/Q8_0/1', decodeTps: 88 })],
         search: [
-          hubModel('org/Model-GGUF', { baseModel: 'base/Model', gated: 'manual' }),
-          hubModel('bart/Model-GGUF', { baseModel: 'base/Model', paramsB: 30, formats: ['gguf', 'other'], updatedAt: undefined }),
+          hubModel('org/Model-GGUF', { gated: 'manual', fit: quick('perfect') }),
+          hubModel('bart/Big-Model-GGUF', { paramsB: 70, formats: ['gguf', 'other'], updatedAt: undefined, fit: quick('no') }),
           hubModel('solo/Model-st', { formats: ['safetensors'], paramsB: undefined }),
         ],
       }),
     );
     renderLib('/models?tab=download', api);
-    const box = await screen.findByRole('searchbox', { name: 'Cerca un modello su Hugging Face' });
-    expect(screen.getByRole('heading', { name: 'Cerca tra migliaia di modelli' })).toBeTruthy();
-    await userEvent.type(box, 'm');
-    await new Promise((r) => setTimeout(r, 400));
-    expect(api.calls.some((c) => c.path.startsWith('/api/models/search'))).toBe(false);
-    await userEvent.type(box, 'odel');
-    expect(await screen.findByText('Versioni di base/Model')).toBeTruthy();
-    expect(screen.getByRole('list', { name: 'Versioni di base/Model' })).toBeTruthy();
-    expect(screen.getByText('Licenza da accettare')).toBeTruthy();
-    expect(screen.getAllByText('Provato su questa GPU')).toHaveLength(1);
-    const q = api.calls.find((c) => c.path.startsWith('/api/models/search?q=model'));
-    expect(q?.path).toContain('format=gguf');
+    expect(await screen.findByRole('heading', { name: 'Trova un modello da provare' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Consigliati per la tua GPU' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'I più scaricati su Hugging Face' })).toBeTruthy();
+    const list = await screen.findByRole('list', { name: 'Modelli trovati' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    // Models that do not fit are shown, marked; unknown sizes say so.
+    expect(within(list).getByText('Entra perfettamente')).toBeTruthy();
+    expect(within(list).getByText('Non entra')).toBeTruthy();
+    expect(within(list).getByText('Dimensione non indicata')).toBeTruthy();
+    expect(within(list).getByText('Licenza da accettare')).toBeTruthy();
+    expect(within(list).getByText('Provato · 88 tok/s')).toBeTruthy();
+    expect(screen.getByText('3 modelli')).toBeTruthy();
+    expect(screen.getByText('Hai visto tutti i risultati.')).toBeTruthy();
+    const last = () => api.calls.filter((c) => c.path.startsWith('/api/models/search')).at(-1)?.path ?? '';
+    expect(last()).toBe('/api/models/search?q=&format=gguf&sort=downloads&limit=30&onlyFits=false');
+
+    const box = screen.getByRole('searchbox', { name: 'Cerca un modello su Hugging Face' });
+    await userEvent.type(box, 'big');
+    expect(await screen.findByRole('heading', { name: 'Risultati per «big»' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Consigliati per la tua GPU' })).toBeNull();
+    expect(await screen.findByText('1 modello')).toBeTruthy();
+    await userEvent.clear(box);
     await pick('Ordina per', 'Più apprezzati');
-    await waitFor(() => expect(api.calls.some((c) => c.path.includes('sort=likes'))).toBe(true));
-    await userEvent.click(screen.getByRole('switch', { name: 'Solo quelli che entrano' }));
-    await waitFor(() => expect(api.calls.some((c) => c.path.includes('onlyFits=true'))).toBe(true));
-    await pick('Dimensione', 'Grandi (15–40B)');
-    await waitFor(() => expect(screen.queryByText('org')).toBeNull());
-    expect(screen.getByText('bart')).toBeTruthy();
-    await pick('Dimensione', 'Qualsiasi');
-    await userEvent.click(screen.getByRole('switch', { name: 'Solo già provati' }));
-    await waitFor(() => expect(screen.queryByText('bart')).toBeNull());
-    await userEvent.click(screen.getByRole('switch', { name: 'Solo già provati' }));
-    await userEvent.click(screen.getByRole('radio', { name: 'Tutti' }));
-    expect(await screen.findByText('solo')).toBeTruthy();
-    expect(screen.getByRole('list', { name: 'Risultati della ricerca' })).toBeTruthy();
-    for (const sort of ['Più recenti', 'Di tendenza', 'Più scaricati']) await pick('Ordina per', sort);
-    for (const size of ['Piccoli (fino a 4B)', 'Medi (4–15B)', 'Enormi (oltre 40B)']) await pick('Dimensione', size);
+    expect(await screen.findByRole('heading', { name: 'I più apprezzati su Hugging Face' })).toBeTruthy();
+    expect(last()).toContain('sort=likes');
+    for (const [sort, heading] of [
+      ['Più recenti', 'Appena pubblicati su Hugging Face'],
+      ['Aggiornati di recente', 'Aggiornati di recente su Hugging Face'],
+      ['Di tendenza', 'Di tendenza su Hugging Face'],
+      ['Più scaricati', 'I più scaricati su Hugging Face'],
+    ] as const) {
+      await pick('Ordina per', sort);
+      expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
+    }
+
+    await userEvent.click(screen.getByRole('radio', { name: '15–40B' }));
+    await waitFor(() => expect(last()).toContain('minParamsB=15&maxParamsB=40'));
+    await userEvent.click(screen.getByRole('radio', { name: 'Oltre 40B' }));
+    await waitFor(() => expect(last()).toMatch(/minParamsB=40$/));
+    await userEvent.click(screen.getByRole('radio', { name: 'Fino a 4B' }));
+    await waitFor(() => expect(last()).toMatch(/onlyFits=false&maxParamsB=4.5$/));
+    await userEvent.click(screen.getByRole('radio', { name: 'Tutte' }));
+    const fits = screen.getByRole('button', { name: 'Entra nella mia GPU' });
+    expect(fits.getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(fits);
+    expect(fits.getAttribute('aria-pressed')).toBe('true');
+    await waitFor(() => expect(last()).toContain('onlyFits=true'));
+
+    // An author from a card becomes the author filter; the list offers the usual ones too.
+    await userEvent.click(await screen.findByRole('button', { name: 'Altri modelli di bart' }));
+    await waitFor(() => expect(last()).toContain('author=bart'));
+    expect(await screen.findByText('1 modello')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Autore' }).textContent).toBe('bart');
+    await pick('Autore', 'unsloth');
+    await waitFor(() => expect(last()).toContain('author=unsloth'));
+    // Nothing found with filters on: one click clears them.
     expect(await screen.findByRole('heading', { name: 'Nessun modello trovato' })).toBeTruthy();
+    await userEvent.click(within(screen.getByRole('heading', { name: 'Nessun modello trovato' }).parentElement as HTMLElement).getByRole('button', { name: 'Togli i filtri' }));
+    // The sort is not a filter: it stays.
+    expect(await within(await screen.findByRole('list', { name: 'Modelli trovati' })).findAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByRole('combobox', { name: 'Autore' }).textContent).toBe('Tutti gli autori');
+    expect(screen.getByRole('button', { name: 'Entra nella mia GPU' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('combobox', { name: 'Ordina per' }).textContent).toBe('Più scaricati');
+    expect(screen.queryByRole('button', { name: 'Togli i filtri' })).toBeNull();
+    await pick('Autore', 'bartowski');
+    await waitFor(() => expect(last()).toContain('author=bartowski'));
+    await pick('Autore', 'Tutti gli autori');
+    expect(screen.getByRole('combobox', { name: 'Autore' }).textContent).toBe('Tutti gli autori');
+    await userEvent.click(screen.getByRole('radio', { name: 'vLLM (safetensors)' }));
+    await waitFor(() => expect(last()).toContain('format=safetensors'));
+    await pick('Autore', 'meta-llama');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Togli i filtri' })[0]!);
+    await userEvent.click(screen.getByRole('radio', { name: 'Tutti' }));
+    await waitFor(() => expect(last()).toContain('format=any'));
+    await pick('Autore', 'openai');
+    await waitFor(() => expect(last()).toContain('author=openai'));
+  });
+
+  it('catalog: models already tried on this GPU, without asking Hugging Face', async () => {
+    const api = libApi(world({ runs: [run('r1', { decodeTps: 88, quant: 'Q8_0' }), run('r2', { modelWeakKey: 'lab/Other-GGUF/o.gguf/Q4_K_M/1', status: 'failed', createdAt: '2026-09-01T00:00:00.000Z' })] }));
+    renderLib('/models?tab=download', api);
+    await screen.findByRole('list', { name: 'Modelli trovati' });
+    const calls = api.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Già provati' }));
+    const list = await screen.findByRole('list', { name: 'Modelli che hai già provato' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getByText('Provato · 88 tok/s')).toBeTruthy();
+    expect(within(list).getByText('Q8_0')).toBeTruthy();
+    expect(within(list).getAllByText(/^Test fatti: 1 · l’ultimo/)).toHaveLength(2);
+    expect(screen.getByText('2 modelli')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Consigliati per la tua GPU' })).toBeNull();
+    expect((screen.getByRole('combobox', { name: 'Ordina per' }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(screen.getByRole('searchbox'), 'other');
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Modelli che hai già provato' })).getAllByRole('listitem')).toHaveLength(1));
+    expect(await screen.findByText('1 modello')).toBeTruthy();
+    await userEvent.click(within(screen.getByRole('list', { name: 'Modelli che hai già provato' })).getByRole('link', { name: 'Other-GGUF' }));
+    expect(api.calls.slice(calls).some((c) => c.path.startsWith('/api/models/search'))).toBe(false);
+  });
+
+  it('catalog: nothing tried yet, no results without filters, VRAM held by other programs explained', async () => {
+    const api = libApi(world({ runs: [], search: [], snapshot: [sample(1000, { memUsedMiB: 17_000 })] }));
+    renderLib('/models?tab=download', api);
+    expect(await screen.findByRole('heading', { name: 'Nessun modello trovato' })).toBeTruthy();
+    expect(await screen.findByText(/^Altri programmi stanno usando .+ della scheda video$/)).toBeTruthy();
+    expect(screen.getByText(/^Entra \/ non entra si riferisce ai .+ liberi adesso/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Togli i filtri' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Già provati' }));
+    expect(await screen.findByRole('heading', { name: 'Non hai ancora provato modelli di Hugging Face' })).toBeTruthy();
+    expect(screen.getByText('0 modelli')).toBeTruthy();
+    expect(screen.queryByText(/^Altri programmi stanno usando/)).toBeNull();
+  });
+
+  it('catalog: pages load as you scroll, or with the button; a failing page can be retried', async () => {
+    const observers: { cb: IntersectionObserverCallback; disconnect: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        disconnect = vi.fn();
+        constructor(cb: IntersectionObserverCallback) {
+          observers.push({ cb, disconnect: this.disconnect });
+        }
+        observe() {}
+      },
+    );
+    const many = Array.from({ length: 95 }, (_, i) => hubModel(`org/Model-${String(i).padStart(2, '0')}-GGUF`));
+    const api = libApi(world({ search: many }));
+    renderLib('/models?tab=download', api);
+    const list = await screen.findByRole('list', { name: 'Modelli trovati' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(30);
+    expect(screen.getByText('30 modelli · scorri per vederne altri')).toBeTruthy();
+    const page = (q: URLSearchParams) => {
+      const at = Number(q.get('cursor') ?? 0);
+      return at + 30 < many.length ? { models: many.slice(at, at + 30), nextCursor: String(at + 30) } : { models: many.slice(at, at + 30) };
+    };
+    let release: () => void = () => undefined;
+    api.on('GET /api/models/search', (_b, q) => new Promise((resolve) => (release = () => resolve(page(q)))));
+    await userEvent.click(screen.getByRole('button', { name: 'Carica altri modelli' }));
+    expect(((await screen.findByRole('button', { name: 'Carico altri modelli…' })) as HTMLButtonElement).disabled).toBe(true);
+    api.on('GET /api/models/search', (_b, q) => page(q));
+    act(() => release());
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(60));
+    expect(api.calls.at(-1)?.path).toContain('cursor=30');
+    // The end of the grid comes into view: the next page loads by itself.
+    const observer = observers.at(-1) as (typeof observers)[number];
+    act(() => observer.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(90));
+    // Still in view after it arrived: keeps going; then a page fails.
+    let failNext = true;
+    api.on('GET /api/models/search', (_b, q) => {
+      if (failNext && q.get('cursor') === '90') {
+        failNext = false;
+        return fail('HF_RATE_LIMITED', 429);
+      }
+      return { models: many.slice(Number(q.get('cursor') ?? 0), Number(q.get('cursor') ?? 0) + 30) };
+    });
+    act(() => observer.cb([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
+    act(() => observer.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+    expect(await screen.findByText('Hugging Face ha limitato le richieste')).toBeTruthy();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(90);
+    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(95));
+    expect(screen.getByText('95 modelli')).toBeTruthy();
+    expect(screen.getByText('Hai visto tutti i risultati.')).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 
   it('search errors offer a retry; results link to the model page', async () => {
     const api = libApi();
     let n = 0;
-    api.on('GET /api/models/search', () => (n++ === 0 ? fail('HF_RATE_LIMITED', 429) : [hubModel('org/Model-GGUF')]));
+    api.on('GET /api/models/search', () => (n++ === 0 ? fail('HF_RATE_LIMITED', 429) : { models: [hubModel('org/Model-GGUF')] }));
     const { router } = renderLib('/models?tab=download', api);
-    await userEvent.type(await screen.findByRole('searchbox'), 'qwen');
     expect(await screen.findByText('Hugging Face ha limitato le richieste')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
-    await userEvent.click(await screen.findByRole('link', { name: /Model-GGUF/ }));
+    await userEvent.click(await screen.findByRole('link', { name: 'Model-GGUF' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/models/hub/org/Model-GGUF'));
   });
 

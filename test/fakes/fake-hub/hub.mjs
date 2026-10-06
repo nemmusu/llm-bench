@@ -1,6 +1,6 @@
 // Fake Hugging Face Hub + CDN for offline tests (vitest via index.ts, E2E via fake-hub.mjs).
 //
-// Emulates: GET /api/models (search/filter/sort/limit), /api/models/{repo}[/revision/{rev}],
+// Emulates: GET /api/models (search/author/filter/num_parameters/sort/limit + cursor pages), /api/models/{repo}[/revision/{rev}],
 // /api/models/{repo}/tree/{rev}?recursive=true (sizes, git oid, lfs sha256, optional paging),
 // /{repo}/raw/{rev}/{path}, /{repo}/resolve/{rev}/{path} (302 to a signed URL on a second
 // server = another origin, like HF → cdn), and the CDN with Range, throttling, dropped
@@ -55,6 +55,8 @@ function prepareRepo(spec) {
     likes: spec.likes ?? 0,
     trendingScore: spec.trendingScore ?? 0,
     lastModified: spec.lastModified ?? '2026-01-01T00:00:00.000Z',
+    createdAt: spec.createdAt ?? spec.lastModified ?? '2026-01-01T00:00:00.000Z',
+    numParameters: spec.numParameters ?? spec.safetensorsTotal ?? paramsFromId(spec.id),
     pipelineTag: spec.pipelineTag,
     license: spec.license,
     baseModel: spec.baseModel,
@@ -62,6 +64,25 @@ function prepareRepo(spec) {
     tags,
     files,
   };
+}
+
+/** "Qwen3-0.6B-GGUF" → 6e8, like HF's numParameters for repos without safetensors metadata. */
+function paramsFromId(id) {
+  const m = /(\d+(?:\.\d+)?)([MB])(?![a-z])/i.exec(id);
+  if (!m) return undefined;
+  return Number(m[1]) * (m[2].toUpperCase() === 'B' ? 1e9 : 1e6);
+}
+
+/** HF's `num_parameters=min:1B,max:9B` filter as [min, max] parameter counts. */
+function paramsRange(v) {
+  const out = [0, Infinity];
+  for (const part of (v ?? '').split(',')) {
+    const m = /^(min|max):(\d+(?:\.\d+)?)([KMBT]?)$/i.exec(part.trim());
+    if (!m) continue;
+    const scale = { '': 1, K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[m[3].toUpperCase()];
+    out[m[1].toLowerCase() === 'min' ? 0 : 1] = Number(m[2]) * scale;
+  }
+  return out;
 }
 
 /** Real-looking demo catalogue: GGUF repos (single + split + mmproj/mtp), safetensors, gated, private. */
@@ -361,13 +382,26 @@ export async function startFakeHub(opts = {}) {
         const filters = url.searchParams.getAll('filter');
         const sort = url.searchParams.get('sort') ?? 'downloads';
         const limit = Number(url.searchParams.get('limit') ?? 50);
+        const cursor = Number(url.searchParams.get('cursor') ?? 0);
         let list = [...repos.values()].filter((r) => !r.private);
         if (search) list = list.filter((r) => r.id.toLowerCase().includes(search));
         if (author) list = list.filter((r) => r.id.startsWith(`${author}/`));
         for (const f of filters) list = list.filter((r) => r.tags.includes(f));
-        const key = { downloads: 'downloads', likes: 'likes', lastModified: 'lastModified', trendingScore: 'trendingScore' }[sort] ?? 'downloads';
-        list.sort((a, b) => (a[key] < b[key] ? 1 : a[key] > b[key] ? -1 : 0));
-        sendJson(res, 200, list.slice(0, limit).map(summary));
+        if (url.searchParams.has('num_parameters')) {
+          // Like HF: repos without a known parameter count never match a size filter.
+          const [min, max] = paramsRange(url.searchParams.get('num_parameters'));
+          list = list.filter((r) => r.numParameters !== undefined && r.numParameters >= min && r.numParameters <= max);
+        }
+        const key = { downloads: 'downloads', likes: 'likes', lastModified: 'lastModified', createdAt: 'createdAt', trendingScore: 'trendingScore' }[sort] ?? 'downloads';
+        list.sort((a, b) => (a[key] < b[key] ? 1 : a[key] > b[key] ? -1 : a.id.localeCompare(b.id)));
+        const headers = {};
+        if (cursor + limit < list.length) {
+          // HF's cursor is opaque; an offset is enough here.
+          const next = new URL(url);
+          next.searchParams.set('cursor', String(cursor + limit));
+          headers.link = `<${next.toString()}>; rel="next"`;
+        }
+        sendJson(res, 200, list.slice(cursor, cursor + limit).map(summary), headers);
         return;
       }
       const repoId = `${parts[2]}/${parts[3]}`;

@@ -60,6 +60,16 @@ describe('models routes', () => {
     expect((await hono.request('/api/models/search?onlyFits=maybe')).status).toBe(400);
   });
 
+  it('passes catalog filters and the page cursor', async () => {
+    const { hono, calls } = app();
+    const cursor = 'eyJkb3dubG9hZHMiOjF9_-%3D';
+    expect((await hono.request(`/api/models/search?sort=createdAt&author=bartowski&minParamsB=4.5&maxParamsB=15&cursor=${encodeURIComponent(cursor)}`)).status).toBe(200);
+    expect(calls[0]?.args[1]).toMatchObject({ sort: 'createdAt', author: 'bartowski', minParamsB: 4.5, maxParamsB: 15, cursor });
+    for (const bad of ['author=../x', 'author=', 'minParamsB=-1', 'maxParamsB=abc', 'cursor=a%20b', `cursor=${'a'.repeat(5000)}`]) {
+      expect((await hono.request(`/api/models/search?${bad}`)).status, bad).toBe(400);
+    }
+  });
+
   it('serves the curated list with an optional VRAM', async () => {
     const { hono, calls } = app();
     await hono.request('/api/models/curated?vramGB=24');

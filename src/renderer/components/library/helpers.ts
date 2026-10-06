@@ -1,5 +1,5 @@
 import type { GpuInfo } from '../../../contract/hardware';
-import type { HubFile, HubModel } from '../../../contract/models';
+import type { HubFile } from '../../../contract/models';
 import type { RunSummary } from '../../../contract/results';
 import type { CuratedModel } from '../../../contract/views';
 
@@ -36,15 +36,39 @@ export function bestRunHere(runs: readonly RunSummary[] | undefined, gpu: Pick<G
   return best ? { tps: best.decodeTps as number, date: best.createdAt, runId: best.id } : undefined;
 }
 
-/** Repos already benchmarked on this GPU (weak keys start with the repo id). */
-export function triedRepos(runs: readonly RunSummary[] | undefined, gpu: Pick<GpuInfo, 'uuid' | 'name'> | undefined): Set<string> {
-  const out = new Set<string>();
+export interface TriedModel {
+  repo: string;
+  owner: string;
+  name: string;
+  quant: string | undefined;
+  /** Best generation speed on this GPU, when a run completed. */
+  tps: number | undefined;
+  /** Latest run. */
+  date: string;
+  runs: number;
+}
+
+/** Hub models benchmarked on this GPU, one per repo, most recent first (weak keys start with the repo id). */
+export function triedModels(runs: readonly RunSummary[] | undefined, gpu: Pick<GpuInfo, 'uuid' | 'name'> | undefined): TriedModel[] {
+  const out = new Map<string, TriedModel>();
   for (const r of runs ?? []) {
-    if (!gpu || (r.gpuUuid !== gpu.uuid && r.gpuName !== gpu.name)) continue;
     const parts = r.modelWeakKey.split('/');
-    if (parts.length >= 5) out.add(`${parts[0]}/${parts[1]}`);
+    if (!gpu || parts.length < 5 || (r.gpuUuid !== gpu.uuid && r.gpuName !== gpu.name)) continue;
+    const repo = `${parts[0]}/${parts[1]}`;
+    const tps = r.status === 'completed' ? r.decodeTps : undefined;
+    const seen = out.get(repo);
+    if (!seen) {
+      out.set(repo, { repo, owner: parts[0] as string, name: parts[1] as string, quant: r.quant, tps, date: r.createdAt, runs: 1 });
+      continue;
+    }
+    seen.runs++;
+    if (r.createdAt > seen.date) seen.date = r.createdAt;
+    if (tps !== undefined && (seen.tps === undefined || tps > seen.tps)) {
+      seen.tps = tps;
+      seen.quant = r.quant;
+    }
   }
-  return out;
+  return [...out.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export type SizeBucket = 'any' | 'small' | 'medium' | 'large' | 'huge';
@@ -57,11 +81,11 @@ export const SIZE_BUCKETS: Record<Exclude<SizeBucket, 'any'>, [number, number]> 
   huge: [40, Infinity],
 };
 
-export function inBucket(paramsB: number | undefined, bucket: SizeBucket): boolean {
-  if (bucket === 'any') return true;
-  if (paramsB === undefined) return false;
+/** A size bucket as the catalog's parameter range (open ends left out). */
+export function bucketRange(bucket: SizeBucket): { minParamsB?: number; maxParamsB?: number } {
+  if (bucket === 'any') return {};
   const [lo, hi] = SIZE_BUCKETS[bucket];
-  return paramsB >= lo && paramsB < hi;
+  return { ...(lo > 0 ? { minParamsB: lo } : {}), ...(Number.isFinite(hi) ? { maxParamsB: hi } : {}) };
 }
 
 export interface FileGroup {
@@ -85,22 +109,6 @@ export function groupFiles(files: readonly HubFile[]): FileGroup[] {
     groups.set(key, g);
   }
   return [...groups.values()].sort((a, b) => Number(a.kind !== 'weights') - Number(b.kind !== 'weights') || b.sizeBytes - a.sizeBytes);
-}
-
-/** Search hits that are conversions of the same base model sit together under it. */
-export function groupByBase(models: readonly HubModel[]): { base: string | undefined; models: HubModel[] }[] {
-  const out: { base: string | undefined; models: HubModel[] }[] = [];
-  const index = new Map<string, number>();
-  for (const m of models) {
-    const base = m.baseModel && m.baseModel !== m.repo ? m.baseModel : undefined;
-    const at = base === undefined ? undefined : index.get(base);
-    if (at !== undefined) (out[at] as { models: HubModel[] }).models.push(m);
-    else {
-      if (base !== undefined) index.set(base, out.length);
-      out.push({ base, models: [m] });
-    }
-  }
-  return out;
 }
 
 /** "Q4_K_M/Demo-Q4_K_M-00001-of-00002.gguf" → "Demo-Q4_K_M-00001-of-00002.gguf". */

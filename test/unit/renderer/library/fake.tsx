@@ -138,7 +138,7 @@ export function curated(models = 8): CuratedResponse {
     vramGB: 32,
     reference: REFERENCE,
     models: [
-      { ...REFERENCE, id: 'qwen3-4b-q4km', tier: 8, reference: true },
+      { ...REFERENCE, id: 'qwen3-4b-q4km', tier: 8, reference: true, fit: { level: 'perfect', needMiB: 3_400, availableMiB: 30_000, quant: 'Q4_K_M', engine: 'llamacpp' } },
       { id: 'vllm-qwen3-0.6b', label: 'Qwen3 0.6B', engine: 'vllm', tier: 8, repo: 'Qwen/Qwen3-0.6B', revision: 'c'.repeat(40), sizeBytes: 1.4e9, quant: 'BF16', paramsB: 0.6, license: 'apache-2.0' },
       ...Array.from({ length: Math.max(0, models - 2) }, (_, i) => ({
         id: `extra-${i}`,
@@ -354,7 +354,17 @@ export function libApi(w: World = world()): LibApi {
     'GET /api/runs': () => w.runs,
     'POST /api/runs/export': () => ({ format: 'gpubench', version: 1, runs: [] }),
     'POST /api/runs/import': () => ({ imported: 2, skipped: 1 }),
-    'GET /api/models/search': (_b, q) => w.search.filter((m) => m.repo.toLowerCase().includes((q.get('q') ?? '').toLowerCase())),
+    'GET /api/models/search': (_b, q) => {
+      const all = w.search.filter((m) => m.repo.toLowerCase().includes((q.get('q') ?? '').toLowerCase()) && (!q.get('author') || m.author === q.get('author')));
+      const limit = Number(q.get('limit') ?? 30);
+      const at = Number(q.get('cursor') ?? 0);
+      const models = all.slice(at, at + limit);
+      return at + limit < all.length ? { models, nextCursor: String(at + limit) } : { models };
+    },
+    'GET /api/models/hub/*/*': (_b, _q, p) => {
+      const repo = p.split('/').slice(4).map(decodeURIComponent).join('/');
+      return w.search.find((m) => m.repo === repo) ?? fail('HF_NOT_FOUND', 404);
+    },
     'GET /api/models/hub/*/*/files': () => w.files,
     'GET /api/models/hub/*/*/readme': () => w.readme,
     'GET /api/models/hub/*/*/related': () => w.related,

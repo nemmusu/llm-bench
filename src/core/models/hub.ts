@@ -8,12 +8,25 @@ import { paramsFromLabel, quantFromFilename, round3 } from './quant';
 import type { ModelFactsEx, TokenFn } from './types';
 
 export type HubFormat = 'gguf' | 'safetensors' | 'any';
-export type HubSort = 'downloads' | 'likes' | 'lastModified' | 'trendingScore';
+export type HubSort = 'downloads' | 'likes' | 'lastModified' | 'createdAt' | 'trendingScore';
 
 export interface SearchOptions {
   format?: HubFormat;
   sort?: HubSort;
   limit?: number;
+  /** Only repos of this user or organization. */
+  author?: string;
+  /** Parameter-count range in billions (HF's `num_parameters` filter). */
+  minParamsB?: number;
+  maxParamsB?: number;
+  /** `nextCursor` of the previous page. */
+  cursor?: string;
+}
+
+/** One page of a hub listing; `nextCursor` asks for the following one. */
+export interface HubPage {
+  models: HubModel[];
+  nextCursor?: string;
 }
 
 export interface HubRepoInfo extends HubModel {
@@ -41,7 +54,7 @@ export interface HubClientOptions {
 /** Model card size cap: enough for any real README, bounded against hostile repos. */
 export const README_MAX_BYTES = 256 * 1024;
 
-const SEARCH_EXPAND = ['downloads', 'likes', 'lastModified', 'gated', 'cardData', 'safetensors', 'pipeline_tag', 'tags'];
+const SEARCH_EXPAND = ['downloads', 'likes', 'lastModified', 'gated', 'cardData', 'safetensors', 'gguf', 'pipeline_tag', 'tags'];
 
 /**
  * Maps an HF error response to an AppError. HF sends `X-Error-Code` (GatedRepo, RepoNotFound,
@@ -122,8 +135,11 @@ export function toHubModel(raw: Record<string, unknown>): HubModel {
   if (tags.includes('gguf') || obj(raw.gguf)) formats.push('gguf');
   if (tags.includes('safetensors') || obj(raw.safetensors)) formats.push('safetensors');
   const name = repo.slice(slash + 1);
-  const totalParams = Number(obj(raw.safetensors)?.total ?? obj(raw.gguf)?.total ?? 0);
-  const paramsB = totalParams > 0 ? round3(totalParams / 1e9) : paramsFromLabel(name);
+  // safetensors metadata counts every tensor; a GGUF repo's count comes from one of its files
+  // (sometimes a small MTP or mmproj file), so the size in the name wins over it.
+  const safetensors = Number(obj(raw.safetensors)?.total ?? 0);
+  const gguf = Number(obj(raw.gguf)?.total ?? 0);
+  const paramsB = safetensors > 0 ? round3(safetensors / 1e9) : (paramsFromLabel(name) ?? (gguf > 0 ? round3(gguf / 1e9) : undefined));
   const baseCard = Array.isArray(card.base_model) ? strs(card.base_model)[0] : card.base_model;
   const baseTag = tags.find((t) => t.startsWith('base_model:') && t.split(':').length === 2)?.slice('base_model:'.length);
   const license = (typeof card.license === 'string' ? card.license : undefined) ?? tags.find((t) => t.startsWith('license:'))?.slice('license:'.length);
@@ -145,6 +161,32 @@ export function toHubModel(raw: Record<string, unknown>): HubModel {
   const baseModel = typeof baseCard === 'string' ? baseCard : baseTag;
   if (baseModel) model.baseModel = baseModel;
   return model;
+}
+
+/** HF's `num_parameters` value for a range in billions ("min:4500M,max:15000M"); undefined when open. */
+export function paramsRange(minB: number | undefined, maxB: number | undefined): string | undefined {
+  // Whole millions: HF reads "4500M" reliably, decimals like "4.5B" are not.
+  const parts: string[] = [];
+  if (minB !== undefined && minB > 0) parts.push(`min:${Math.round(minB * 1000)}M`);
+  if (maxB !== undefined && Number.isFinite(maxB)) parts.push(`max:${Math.max(1, Math.round(maxB * 1000))}M`);
+  return parts.length > 0 ? parts.join(',') : undefined;
+}
+
+/** The `cursor` of a `Link: <…>; rel="next"` header, only when that link points at the hub itself. */
+export function nextPageCursor(link: string | null, baseUrl: string): string | undefined {
+  const next = /<([^>]+)>;\s*rel="next"/.exec(link ?? '')?.[1];
+  if (!next) return undefined;
+  const url = new URL(next, baseUrl);
+  if (url.origin !== new URL(baseUrl).origin) return undefined;
+  return url.searchParams.get('cursor') ?? undefined;
+}
+
+async function readJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch (e) {
+    throw new AppError('NETWORK', `Hugging Face sent invalid JSON: ${errorMessage(e)}`, { cause: e });
+  }
 }
 
 interface CacheEntry {
@@ -200,12 +242,7 @@ export class HubClient {
   }
 
   private async getJson(url: string, repo?: string): Promise<unknown> {
-    const res = await this.request(url, repo);
-    try {
-      return await res.json();
-    } catch (e) {
-      throw new AppError('NETWORK', `Hugging Face sent invalid JSON: ${errorMessage(e)}`, { cause: e });
-    }
+    return readJson(await this.request(url, repo));
   }
 
   private cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {
@@ -220,10 +257,15 @@ export class HubClient {
     return value;
   }
 
-  search(q: string, opts: SearchOptions = {}): Promise<HubModel[]> {
+  /** One page of a hub search; follow `nextCursor` for more (HF pages with an opaque cursor). */
+  search(q: string, opts: SearchOptions = {}): Promise<HubPage> {
     const p = new URLSearchParams();
     if (q.trim()) p.set('search', q.trim());
+    if (opts.author) p.set('author', opts.author);
     if (opts.format === 'gguf' || opts.format === 'safetensors') p.append('filter', opts.format);
+    const range = paramsRange(opts.minParamsB, opts.maxParamsB);
+    if (range) p.set('num_parameters', range);
+    if (opts.cursor) p.set('cursor', opts.cursor);
     return this.listModels(p, opts);
   }
 
@@ -236,23 +278,26 @@ export class HubClient {
     const p = new URLSearchParams();
     p.append('filter', `base_model:quantized:${baseRepo}`);
     p.append('filter', 'gguf');
-    const tagged = await this.listModels(p, opts);
+    const tagged = (await this.listModels(p, opts)).models;
     if (tagged.length > 0) return tagged;
     const name = baseRepo.slice(baseRepo.indexOf('/') + 1);
     const found = await this.search(name, { ...opts, format: 'gguf' });
-    return found.filter((m) => m.repo !== baseRepo);
+    return found.models.filter((m) => m.repo !== baseRepo);
   }
 
-  private listModels(p: URLSearchParams, opts: SearchOptions): Promise<HubModel[]> {
+  private listModels(p: URLSearchParams, opts: SearchOptions): Promise<HubPage> {
     p.set('sort', opts.sort ?? 'downloads');
     p.set('direction', '-1');
     p.set('limit', String(Math.min(100, Math.max(1, Math.floor(opts.limit ?? 30)))));
     for (const e of SEARCH_EXPAND) p.append('expand[]', e);
     const url = `${this.baseUrl}/api/models?${p.toString()}`;
     return this.cached(url, this.ttl, async () => {
-      const raw = await this.getJson(url);
+      const res = await this.request(url);
+      const raw = await readJson(res);
       if (!Array.isArray(raw)) throw new AppError('NETWORK', 'Unexpected search response from Hugging Face');
-      return raw.map((r) => toHubModel(obj(r) ?? {})).filter((m) => m.repo.includes('/'));
+      const models = raw.map((r) => toHubModel(obj(r) ?? {})).filter((m) => m.repo.includes('/'));
+      const nextCursor = nextPageCursor(res.headers.get('link'), this.baseUrl);
+      return nextCursor ? { models, nextCursor } : { models };
     });
   }
 

@@ -25,6 +25,10 @@ export interface FakeRepoSpec {
   likes?: number;
   trendingScore?: number;
   lastModified?: string;
+  /** Sort key of "newest" (default lastModified). */
+  createdAt?: string;
+  /** Parameter count for `num_parameters` filters (default safetensorsTotal, else the size in the id). */
+  numParameters?: number;
   pipelineTag?: string;
   license?: string;
   baseModel?: string | string[];

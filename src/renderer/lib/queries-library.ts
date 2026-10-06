@@ -6,14 +6,14 @@
  *
  * Keys live under 'lib' so they never collide with the benchmark screens' hooks (lib/queries.ts).
  */
-import { skipToken, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { skipToken, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { DownloadRequest, FitRequest, HealthResponse, LlamaRelease, SystemResponse } from '../../contract/api';
 import type { EngineKind, EngineStatus } from '../../contract/engines';
 import type { AppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import type { GpuInfo, GpuSample } from '../../contract/hardware';
-import type { DownloadJob, FitEstimate, HubFile, HubModel, LocalModel } from '../../contract/models';
+import type { DownloadJob, FitEstimate, HubFile, HubModel, HubSearchPage, LocalModel } from '../../contract/models';
 import type { RunSummary } from '../../contract/results';
 import type { Settings } from '../../contract/settings';
 import type {
@@ -42,12 +42,23 @@ export interface VllmTag extends HubTag {
   cuda?: string;
 }
 
-export interface HubSearchParams {
+export type CatalogSort = 'trendingScore' | 'downloads' | 'likes' | 'createdAt' | 'lastModified';
+
+/** Filters of the model catalog (Modelli → Scarica). */
+export interface CatalogParams {
   q: string;
   format: 'gguf' | 'safetensors' | 'any';
-  sort: 'downloads' | 'likes' | 'lastModified' | 'trendingScore';
+  sort: CatalogSort;
+  /** Parameter-count range in billions; undefined ends are open. */
+  minParamsB?: number | undefined;
+  maxParamsB?: number | undefined;
+  /** '' = every author. */
+  author: string;
   onlyFits: boolean;
 }
+
+/** Results per catalog page (HF allows up to 100; 30 keeps the first paint quick). */
+export const CATALOG_PAGE_SIZE = 30;
 
 export const libKeys = {
   system: ['lib', 'system'] as const,
@@ -271,27 +282,36 @@ export function useAllRuns() {
   return useQuery({ queryKey: libKeys.runs, queryFn: () => api.get<RunSummary[]>('/api/runs'), staleTime: 60_000 });
 }
 
-export function useHubSearch(p: HubSearchParams, enabled: boolean) {
+/** The search query string of one catalog page. */
+export function catalogQuery(p: CatalogParams, cursor: string): string {
+  const qs = new URLSearchParams({ q: p.q, format: p.format, sort: p.sort, limit: String(CATALOG_PAGE_SIZE), onlyFits: String(p.onlyFits) });
+  if (p.author) qs.set('author', p.author);
+  if (p.minParamsB !== undefined) qs.set('minParamsB', String(p.minParamsB));
+  if (p.maxParamsB !== undefined) qs.set('maxParamsB', String(p.maxParamsB));
+  if (cursor) qs.set('cursor', cursor);
+  return qs.toString();
+}
+
+/** Hugging Face catalog, page after page (each page carries the cursor of the next). */
+export function useHubCatalog(p: CatalogParams, enabled: boolean) {
   const api = useApi();
-  const qs = new URLSearchParams({ q: p.q, format: p.format, sort: p.sort, limit: '40', onlyFits: String(p.onlyFits) });
-  return useQuery({
-    queryKey: [...libKeys.hub, 'search', p],
-    queryFn: ({ signal }) => api.get<HubModel[]>(`/api/models/search?${qs.toString()}`, signal),
+  return useInfiniteQuery({
+    queryKey: [...libKeys.hub, 'catalog', p],
+    queryFn: ({ pageParam, signal }) => api.get<HubSearchPage>(`/api/models/search?${catalogQuery(p, pageParam)}`, signal),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextCursor,
     enabled,
     staleTime: 5 * 60_000,
     retry: false,
   });
 }
 
-/** Repo card data (downloads, likes, license…): found through the search route. */
+/** Repo card data (downloads, likes, license…) of one hub repo. */
 export function useHubModel(repo: string) {
   const api = useApi();
   return useQuery({
     queryKey: [...libKeys.hub, 'model', repo],
-    queryFn: async () => {
-      const found = await api.get<HubModel[]>(`/api/models/search?${new URLSearchParams({ q: repo, limit: '10' }).toString()}`);
-      return found.find((m) => m.repo.toLowerCase() === repo.toLowerCase()) ?? null;
-    },
+    queryFn: () => api.get<HubModel>(`/api/models/hub/${repoPath(repo)}`),
     staleTime: 5 * 60_000,
     retry: false,
   });
