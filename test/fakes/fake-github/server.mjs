@@ -18,6 +18,7 @@ const FIXTURE = new URL('../../fixtures/github/llamacpp-releases.json', import.m
  * @property {boolean} [noDigest]        Drop the `digest` field (older releases had none).
  * @property {number} [downloadStatus]   Force this HTTP status on downloads.
  * @property {boolean} [noServerBinary]  Generate main archives without llama-server.
+ * @property {string} [serverBinaryData]  Content of the llama-server entry (E2E: a Node stub that runs the fake engine).
  */
 
 /**
@@ -47,7 +48,7 @@ export function buildAsset(name, opts = {}) {
           { name: 'LICENSE', data: 'cudart license' },
         ]
       : [
-          ...(opts.noServerBinary ? [] : [{ name: 'llama-server.exe', data: `fake llama-server ${tag} ${backend}` }]),
+          ...(opts.noServerBinary ? [] : [{ name: 'llama-server.exe', data: opts.serverBinaryData ?? `fake llama-server ${tag} ${backend}` }]),
           { name: 'llama-bench.exe', data: 'fake llama-bench' },
           { name: 'llama.dll', data: 'fake llama.dll' },
           { name: 'ggml-base.dll', data: 'fake ggml-base' },
@@ -64,7 +65,9 @@ export function buildAsset(name, opts = {}) {
         ]
       : [
           { name: `${top}/`, type: 'dir' },
-          ...(opts.noServerBinary ? [] : [{ name: `${top}/llama-server`, data: `fake llama-server ${tag} ${backend}`, mode: 0o755 }]),
+          ...(opts.noServerBinary
+            ? []
+            : [{ name: `${top}/llama-server`, data: opts.serverBinaryData ?? `fake llama-server ${tag} ${backend}`, mode: 0o755 }]),
           { name: `${top}/llama-bench`, data: 'fake llama-bench', mode: 0o644 },
           { name: `${top}/libllama.so`, data: 'fake libllama' },
           { name: `${top}/libggml-${backend}.so`, data: `fake libggml-${backend}` },
@@ -94,7 +97,7 @@ export async function startFakeGithub(initial = {}) {
   const requests = [];
 
   const asset = (name) => {
-    const key = `${name}|${opts.layout}|${opts.evil}|${opts.noServerBinary}`;
+    const key = `${name}|${opts.layout}|${opts.evil}|${opts.noServerBinary}|${opts.serverBinaryData ?? ''}`;
     let buf = assets.get(key);
     if (!buf) {
       buf = buildAsset(name, opts);

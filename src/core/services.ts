@@ -5,6 +5,7 @@ import type { LocalModel } from '../contract/models';
 import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
+import { createModelServices, type ModelServices } from './models/setup';
 import { WindowsStandbyEvictor } from './cache/windows-standby';
 import type { CoreContext } from './context';
 import { displayCommand, redactArgv, redactEnv } from './engines/command-display';
@@ -33,6 +34,8 @@ export interface CoreServices {
   llama: LlamaNativeAdapter;
   runs: RunsRepo;
   bench: BenchService;
+  /** Local library, HF hub, fit estimates and downloads (absent only in narrow unit tests). */
+  modelServices?: ModelServices;
   evictor: CacheEvictor;
   windowsStandby?: WindowsStandbyEvictor;
   /** PIDs of engine processes GPU Bench started (kept fresh for "other GPU users" checks). */
@@ -40,7 +43,10 @@ export interface CoreServices {
 }
 
 export interface ServicesOptions {
+  /** Overrides the local-model lookup (tests); by default the models module provides it. */
   models?: ModelsLookup;
+  /** false = do not create the models/downloads module (narrow unit tests). */
+  modelServices?: false;
   /**
    * Argv placed before the llama-server executable. Only for tests/dev (GPUBENCH_LLAMA_LAUNCHER),
    * so the fake engine script can stand in for a real binary.
@@ -59,6 +65,22 @@ export function parseArgvEnv(value: string | undefined): string[] | undefined {
     /* not JSON */
   }
   return undefined;
+}
+
+/**
+ * Local models for runs. A GGUF is hashed (sha256, cached by path/size/mtime) the first time it is
+ * benchmarked, so its results are recognized later, also when the same file shows up on HF.
+ */
+export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
+  return {
+    async getLocal(id) {
+      const m = await ms.models.get(id).catch(() => undefined);
+      if (!m || m.identity.sha256 || m.identity.format !== 'gguf' || !m.paths[0]) return m;
+      const sha256 = await ms.models.hashes.enqueue(m.paths[0]).catch(() => undefined);
+      if (sha256) m.identity.sha256 = sha256;
+      return m;
+    },
+  };
 }
 
 /** What a run benchmarks, resolved from the request. */
@@ -148,6 +170,21 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
 
   const runs = new RunsRepo(async () => (await ctx.settings.get()).resultsDir || deps.paths.resultsDir);
 
+  const modelServices =
+    opts.modelServices === false
+      ? undefined
+      : createModelServices(ctx, {
+          gpuInfo: async () => {
+            const g = (await ctx.telemetry.snapshot().catch(() => []))[0];
+            if (!g?.memTotalMiB) return undefined;
+            return { totalMiB: g.memTotalMiB, freeMiB: g.memTotalMiB - (g.memUsedMiB ?? 0) };
+          },
+          // Hashing every local model at start-up would read tens of GB; models are hashed when benchmarked.
+          autoHash: false,
+        });
+  if (modelServices) await modelServices.init();
+  const models: ModelsLookup | undefined = opts.models ?? (modelServices ? modelsLookup(modelServices) : undefined);
+
   const needs = async (req: StartRunRequest): Promise<RunPlan['needs']> => {
     const out: RunPlan['needs'] = [];
     if (req.engine.kind === 'llamacpp-native' && !req.engine.executable) {
@@ -169,7 +206,17 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     displayCommand,
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
     getAdapter: (kind) => registry.require(kind),
-    resolveModel: (req) => resolveModelTarget(req, opts.models),
+    resolveModel: (req) => resolveModelTarget(req, models),
+    ...(modelServices
+      ? {
+          fit: async (req: StartRunRequest, model: ModelTarget, plan: { params: StartRunRequest['params'] }) =>
+            model.local
+              ? modelServices.models
+                  .fit({ localId: model.local.id, engine: req.engine.kind, ...(plan.params ? { params: plan.params } : {}) })
+                  .catch(() => undefined)
+              : undefined,
+        }
+      : {}),
     pickPort: () => pickFreePort(),
     needs,
     evictCache: async (files) => evictor.evict(files),
@@ -181,7 +228,17 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     shutdown: ctx.shutdown,
   });
 
-  return { ownership, registry, llama, runs, bench, evictor, ...(windowsStandby ? { windowsStandby } : {}), ownPids: () => pidCache };
+  return {
+    ownership,
+    registry,
+    llama,
+    runs,
+    bench,
+    ...(modelServices ? { modelServices } : {}),
+    evictor,
+    ...(windowsStandby ? { windowsStandby } : {}),
+    ownPids: () => pidCache,
+  };
 }
 
 /** HTTP routes of every service. */
@@ -210,5 +267,6 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
+    ...(s.modelServices?.routes ?? []),
   ];
 }

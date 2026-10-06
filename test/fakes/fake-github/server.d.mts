@@ -7,6 +7,7 @@ export interface FakeGithubOptions {
   noDigest?: boolean;
   downloadStatus?: number;
   noServerBinary?: boolean;
+  serverBinaryData?: string;
 }
 
 export interface FakeGithub {

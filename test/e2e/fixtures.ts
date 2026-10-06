@@ -1,10 +1,12 @@
 import { test as base, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
-export const ROOT = path.resolve(import.meta.dirname, '../..');
+import { E2E_ENV_FILE, ROOT } from './global-setup';
+
+export { ROOT };
 
 export interface LaunchOptions {
   /** Extra env vars (fake tool locations, endpoints…). */
@@ -24,7 +26,17 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const userData = opts.userData ?? mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-'));
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  // Fake internet + fake GPU tools (see global-setup.ts): the app never touches the network or the GPU.
+  const fakes = existsSync(E2E_ENV_FILE) ? (JSON.parse(readFileSync(E2E_ENV_FILE, 'utf8')) as Record<string, string>) : {};
+  const smiState = path.join(userData, 'fake-nvidia-smi.json');
+  if (!existsSync(smiState)) writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
   Object.assign(env, {
+    ...fakes,
+    GPUBENCH_NVIDIA_SMI: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-nvidia-smi', 'fake-nvidia-smi.mjs')]),
+    FAKE_NVIDIA_SMI_STATE: smiState,
+    GPUBENCH_LLAMA_LAUNCHER: JSON.stringify([process.execPath]),
+    FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsCold: 1200, loadMsWarm: 400, prefillTps: 9000, decodeTps: 190, tokensPerChunk: 1 }),
+    FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
     GPUBENCH_USER_DATA: userData,
     GPUBENCH_MODELS_DIR: path.join(userData, 'models'),
     ...(process.env.GPUBENCH_E2E_COVERAGE ? { NODE_V8_COVERAGE: process.env.GPUBENCH_E2E_COVERAGE } : {}),

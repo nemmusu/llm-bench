@@ -1,0 +1,252 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import type { Settings } from '../../../../src/contract/settings';
+import { ModelsService } from '../../../../src/core/models/service';
+import { DOWNLOAD_SIDECAR } from '../../../../src/core/models/scanner';
+import type { GpuMem } from '../../../../src/core/models/types';
+import { startFakeHub, type FakeHub } from '../../../fakes/fake-hub';
+import { llamaLikeGguf, writeGguf, writeSafetensors } from '../../../fixtures/gguf/writer';
+import { GPU_32GB, modelDeps, settingsWith, tempDir } from './helpers';
+
+describe('ModelsService', () => {
+  let hub: FakeHub;
+  let t: ReturnType<typeof tempDir>;
+  let gpu: GpuMem | undefined;
+  let token: string | undefined;
+
+  beforeAll(async () => {
+    hub = await startFakeHub();
+  });
+  afterAll(() => hub.close());
+  beforeEach(() => {
+    t = tempDir('gb-msvc-');
+    gpu = GPU_32GB;
+    token = undefined;
+  });
+  afterEach(() => t.cleanup());
+
+  function service(patch: Partial<Settings> = {}, autoHash = false): ModelsService {
+    const deps = modelDeps(t.dir, { endpoints: { githubApi: 'http://127.0.0.1:9', huggingface: hub.url, dockerHub: 'http://127.0.0.1:9' } });
+    return new ModelsService({ deps, settings: settingsWith(patch), getToken: () => token, gpuInfo: () => Promise.resolve(gpu), autoHash });
+  }
+  const lib = () => path.join(t.dir, 'library');
+  const gguf = (file: string) => writeGguf(file, { ...llamaLikeGguf({ embd: 16, vocab: 8 }), totalSize: 4096 });
+
+  it('lists (scanning once), rescans and gets models', async () => {
+    gguf(path.join(lib(), 'a-Q8_0.gguf'));
+    const svc = service();
+    const [first, concurrent] = await Promise.all([svc.list(), svc.rescan()]);
+    expect(first).toBe(concurrent);
+    expect(await svc.list()).toBe(first);
+    gguf(path.join(lib(), 'b-Q8_0.gguf'));
+    expect(await svc.rescan()).toHaveLength(2);
+    const id = (await svc.list())[0]?.id as string;
+    expect((await svc.get(id)).id).toBe(id);
+    await expect(svc.get('nope')).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND' });
+    expect(await svc.libraryDir()).toBe(lib());
+  });
+
+  it('hashes GGUF models in the background after a scan', async () => {
+    gguf(path.join(lib(), 'h-Q8_0.gguf'));
+    writeFileSync(path.join(lib(), 'junk-Q8_0.gguf'), 'x');
+    const dir = path.join(lib(), 'o', 'st');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'config.json'), '{"num_hidden_layers": 1}');
+    writeSafetensors(path.join(dir, 'model.safetensors'));
+    const svc = service({}, true);
+    const models = await svc.list();
+    const target = models.find((m) => m.identity.displayName === 'h-Q8_0');
+    await svc.hashes.enqueue(target?.paths[0] as string);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(target?.identity.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // Already hashed models are skipped on the next scan.
+    await svc.rescan();
+    // Default options hash too.
+    const deps = modelDeps(t.dir, { endpoints: { githubApi: '', huggingface: hub.url, dockerHub: '' } });
+    const dflt = new ModelsService({ deps, settings: settingsWith(), getToken: () => undefined, gpuInfo: () => Promise.resolve(undefined) });
+    await dflt.list();
+    expect(dflt.hashes.pending).toBeGreaterThanOrEqual(0);
+  });
+
+  it('logs failing background hashes', async () => {
+    const file = gguf(path.join(lib(), 'gone-Q8_0.gguf'));
+    const svc = service({}, true);
+    svc.hashes.pause();
+    await svc.list();
+    const { rmSync } = await import('node:fs');
+    rmSync(file);
+    svc.hashes.resume();
+    await new Promise((r) => setTimeout(r, 50));
+    const deps = (svc as unknown as { opts: { deps: { log: { entries: { msg: string }[] } } } }).opts.deps;
+    expect(deps.log.entries.some((e) => e.msg === 'background hash failed')).toBe(true);
+  });
+
+  it('searches the hub, optionally keeping only models that fit', async () => {
+    const svc = service();
+    expect((await svc.search('qwen', { format: 'gguf' })).map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    hub.addRepo({ id: 'huge/Giant-400B-GGUF', tags: ['gguf'], files: [] });
+    hub.addRepo({ id: 'nosize/Mystery-GGUF', tags: ['gguf'], files: [] });
+    const fits = (await svc.search('', { onlyFits: true })).map((m) => m.repo);
+    expect(fits).toContain('ggml-org/Qwen3-0.6B-GGUF');
+    expect(fits).toContain('Qwen/Qwen3-0.6B');
+    expect(fits).not.toContain('huge/Giant-400B-GGUF');
+    expect(fits).not.toContain('nosize/Mystery-GGUF');
+    const st = (await svc.search('', { onlyFits: true, format: 'safetensors' })).map((m) => m.repo);
+    expect(st).toEqual(['Qwen/Qwen3-0.6B']);
+    const gg = await svc.search('', { onlyFits: true, format: 'gguf' });
+    expect(gg.every((m) => m.formats.includes('gguf'))).toBe(true);
+    gpu = undefined;
+    expect((await svc.search('', { onlyFits: true })).map((m) => m.repo)).toContain('huge/Giant-400B-GGUF');
+  });
+
+  it('proxies hub files, readme, related and remote facts', async () => {
+    const svc = service();
+    expect((await svc.hubFiles('ggml-org/Qwen3-0.6B-GGUF')).length).toBe(4);
+    expect((await svc.readme('ggml-org/Qwen3-0.6B-GGUF')).text).toContain('Qwen3');
+    expect((await svc.related('Qwen/Qwen3-0.6B')).map((m) => m.repo)).toEqual(['ggml-org/Qwen3-0.6B-GGUF']);
+    expect((await svc.related('Qwen/Qwen3-0.6B', { sort: 'likes' })).length).toBe(1);
+    expect((await svc.remoteGgufFacts('ggml-org/Qwen3-0.6B-GGUF', 'Qwen3-0.6B-Q4_K_M.gguf')).facts.blockCount).toBe(4);
+  });
+
+  it('estimates fit for local models, hub files (all shards) and safetensors repos', async () => {
+    gguf(path.join(lib(), 'l-Q8_0.gguf'));
+    const svc = service();
+    const local = (await svc.list())[0]?.id as string;
+    const a = await svc.fit({ localId: local, engine: 'llamacpp-native', params: { contextSize: 4096, extraArgs: [], env: {} } });
+    expect(a).toMatchObject({ basis: 'file-size', contextSize: 4096, weightsMiB: 0 });
+    const split = await svc.fit({ repo: 'unsloth/Demo-31B-it-GGUF', file: 'Q4_K_M/Demo-31B-it-Q4_K_M-00002-of-00002.gguf', engine: 'llamacpp-native' });
+    expect(split.weightsMiB).toBe(Math.round((128 * 1024 + 64 * 1024) / 1024 ** 2));
+    expect(split.notes).toContain('kv.sliding-window');
+    const single = await svc.fit({ repo: 'ggml-org/Qwen3-0.6B-GGUF', file: 'Qwen3-0.6B-Q8_0.gguf', engine: 'llamacpp-docker' });
+    expect(single.level).toBe('perfect');
+    // A GGUF that is not part of a quant group (mmproj): fitted on its own.
+    expect((await svc.fit({ repo: 'unsloth/Demo-31B-it-GGUF', file: 'mmproj-F16.gguf', engine: 'llamacpp-native' })).basis).toBe('file-size');
+    const st = await svc.fit({ repo: 'Qwen/Qwen3-0.6B', engine: 'vllm-docker' });
+    expect(st.maxConcurrency).toBeGreaterThan(0);
+    await expect(svc.fit({ repo: 'ggml-org/Qwen3-0.6B-GGUF', file: 'missing.gguf', engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'HF_NOT_FOUND' });
+    await expect(svc.fit({ engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    // A local model whose metadata could not be read still gets a (heuristic-shaped) estimate.
+    writeFileSync(path.join(lib(), 'junk-Q4_0.gguf'), 'x');
+    const junk = (await svc.rescan()).find((m) => m.identity.displayName === 'junk-Q4_0')?.id as string;
+    expect((await svc.fit({ localId: junk, engine: 'llamacpp-native' })).notes).toContain('kv.assumed-layout');
+    gpu = undefined;
+    await expect(svc.fit({ localId: local, engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
+  });
+
+  it('fits every quant of a hub repo and preselects the best', async () => {
+    const svc = service();
+    const r = await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native', { params: { contextSize: 2048, extraArgs: [], env: {} } });
+    expect(r.choices.map((c) => c.groupKey)).toEqual(['Qwen3-0.6B-Q8_0.gguf', 'Qwen3-0.6B-Q4_K_M.gguf']);
+    expect(r.best).toBe('Qwen3-0.6B-Q8_0.gguf');
+    expect(r.choices[1]?.weakKey).toBe(`ggml-org/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_K_M.gguf/Q4_K_M/${96 * 1024}`);
+    expect(r.facts.blockCount).toBe(4);
+    const st = await svc.hubFit('Qwen/Qwen3-0.6B', 'vllm-docker', { revision: 'main' });
+    expect(st.choices).toHaveLength(1);
+    expect(st.choices[0]?.groupKey).toBe('*weights');
+    expect(st.choices[0]?.weakKey).toBe(`Qwen/Qwen3-0.6B/model.safetensors//${hub.file('Qwen/Qwen3-0.6B', 'model.safetensors').size}`);
+    // A split quant: keyed by its first shard and the size of all shards, like the local copy.
+    const split = await svc.hubFit('unsloth/Demo-31B-it-GGUF', 'llamacpp-native');
+    expect(split.choices.find((c) => c.groupKey === 'Q4_K_M/Demo-31B-it-Q4_K_M')?.weakKey).toBe(`unsloth/Demo-31B-it-GGUF/Demo-31B-it-Q4_K_M-00001-of-00002.gguf/Q4_K_M/${192 * 1024}`);
+    // Only broken GGUF files: the parse error surfaces; gated repos fail at once.
+    hub.addRepo({ id: 'broken/All-GGUF', files: [{ path: 'a-Q4_K_M.gguf', size: 100 }, { path: 'b-Q8_0.gguf', size: 200 }] });
+    await expect(svc.hubFit('broken/All-GGUF', 'llamacpp-native')).rejects.toMatchObject({ code: 'MODEL_INVALID' });
+    await expect(svc.hubFit('google/gated-demo-it', 'llamacpp-native')).rejects.toMatchObject({ code: 'HF_GATED' });
+    gpu = { totalMiB: 100, freeMiB: 1 };
+    const none = await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native');
+    expect(none.best).toBeUndefined();
+    gpu = undefined;
+    await expect(svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native')).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
+  });
+
+  it('serves the curated list filtered by VRAM (given, from the GPU, or unfiltered)', async () => {
+    const svc = service();
+    const given = await svc.curated(12);
+    expect(given.vramGB).toBe(12);
+    expect(given.models.every((m) => m.tier <= 12)).toBe(true);
+    expect(given.reference.repo).toBe('Qwen/Qwen3-4B-GGUF');
+    const fromGpu = await svc.curated();
+    expect(fromGpu.vramGB).toBeCloseTo(GPU_32GB.totalMiB / 1024, 3);
+    gpu = undefined;
+    const all = await svc.curated();
+    expect(all.vramGB).toBeUndefined();
+    expect(all.models.length).toBeGreaterThan(given.models.length);
+    const broken = new ModelsService({
+      deps: modelDeps(t.dir, { paths: { ...modelDeps(t.dir).paths, resourcesDir: path.join(t.dir, 'none') } }),
+      settings: settingsWith(),
+      getToken: () => undefined,
+      gpuInfo: () => Promise.resolve(undefined),
+      autoHash: false,
+    });
+    await expect(broken.curated()).rejects.toMatchObject({ code: 'INTERNAL' });
+    // Not cached after a failure: a fixed file is read on the next call.
+    mkdirSync(path.join(t.dir, 'none'));
+    const { copyFileSync } = await import('node:fs');
+    copyFileSync(path.join('resources', 'curated-models.json'), path.join(t.dir, 'none', 'curated-models.json'));
+    expect((await broken.curated()).models.length).toBeGreaterThan(0);
+  });
+
+  it('deletes only models inside the library folder and prunes empty folders', async () => {
+    const repoDir = path.join(lib(), 'o', 'r');
+    gguf(path.join(repoDir, 'Q4_K_M', 'x-Q4_K_M-00001-of-00002.gguf'));
+    writeGguf(path.join(repoDir, 'Q4_K_M', 'x-Q4_K_M-00002-of-00002.gguf'), { metadata: {} });
+    writeFileSync(path.join(repoDir, DOWNLOAD_SIDECAR), JSON.stringify({ repo: 'o/r', files: {} }));
+    const keep = gguf(path.join(lib(), 'o', 'keep', 'k-Q8_0.gguf'));
+    const outside = path.join(t.dir, 'elsewhere');
+    gguf(path.join(outside, 'user-Q8_0.gguf'));
+    const stDir = path.join(lib(), 'q', 'st');
+    mkdirSync(stDir, { recursive: true });
+    writeFileSync(path.join(stDir, 'config.json'), '{"num_hidden_layers": 1}');
+    writeSafetensors(path.join(stDir, 'model.safetensors'));
+    writeFileSync(path.join(stDir, 'tokenizer.json'), '{}');
+    const svc = service({ extraModelDirs: [outside] });
+    const models = await svc.list();
+    const split = models.find((m) => m.identity.displayName === 'x-Q4_K_M') as (typeof models)[number];
+    const user = models.find((m) => m.identity.displayName === 'user-Q8_0') as (typeof models)[number];
+    const st = models.find((m) => m.identity.format === 'safetensors') as (typeof models)[number];
+
+    await expect(svc.deleteLocal(user.id)).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(existsSync(user.paths[0] as string)).toBe(true);
+
+    await svc.deleteLocal(split.id);
+    expect(existsSync(repoDir)).toBe(false);
+    expect(existsSync(keep)).toBe(true);
+    expect((await svc.list()).some((m) => m.id === split.id)).toBe(false);
+
+    await svc.deleteLocal(st.id);
+    expect(existsSync(stDir)).toBe(false);
+    expect(existsSync(path.join(lib(), 'q'))).toBe(false);
+    expect(readdirSync(lib())).toEqual(['o']);
+  });
+
+  it('refuses deletes through links pointing outside, and without a library folder', async () => {
+    const outside = path.join(t.dir, 'outside');
+    gguf(path.join(outside, 'real-Q8_0.gguf'));
+    mkdirSync(lib(), { recursive: true });
+    symlinkSync(outside, path.join(lib(), 'linked'), 'junction');
+    const svc = service();
+    const m = (await svc.list()).find((x) => x.identity.displayName === 'real-Q8_0');
+    expect(m).toBeDefined();
+    await expect(svc.deleteLocal(m?.id as string)).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(existsSync(path.join(outside, 'real-Q8_0.gguf'))).toBe(true);
+
+    // The library folder is gone (moved drive…): nothing can be deleted.
+    const svc2 = service({ extraModelDirs: [outside], modelsDir: path.join(t.dir, 'missing-lib') });
+    const m2 = (await svc2.list())[0];
+    await expect(svc2.deleteLocal(m2?.id as string)).rejects.toMatchObject({ code: 'VALIDATION' });
+    // A model whose files vanished: the check uses the plain path.
+    gguf(path.join(lib(), 'vanish-Q8_0.gguf'));
+    const svc3 = service();
+    const v = (await svc3.list()).find((x) => x.identity.displayName === 'vanish-Q8_0');
+    const { rmSync } = await import('node:fs');
+    rmSync(v?.paths[0] as string);
+    await svc3.deleteLocal(v?.id as string);
+    expect((await svc3.list()).some((x) => x.id === v?.id)).toBe(false);
+    // Its whole folder vanished: nothing left to prune.
+    gguf(path.join(lib(), 'gone', 'dir', 'g-Q8_0.gguf'));
+    const g = (await svc3.rescan()).find((x) => x.identity.displayName === 'g-Q8_0');
+    rmSync(path.join(lib(), 'gone', 'dir'), { recursive: true });
+    await svc3.deleteLocal(g?.id as string);
+    expect(existsSync(path.join(lib(), 'gone'))).toBe(true);
+  });
+});

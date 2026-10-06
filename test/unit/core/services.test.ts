@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { StartRunRequest } from '../../../src/contract/api';
 import type { LocalModel } from '../../../src/contract/models';
 import type { ProcessRunner } from '../../../src/core/deps';
-import { clientFactory, createServices, parseArgvEnv, resolveModelTarget, serviceModules } from '../../../src/core/services';
+import { clientFactory, createServices, modelsLookup, parseArgvEnv, resolveModelTarget, serviceModules } from '../../../src/core/services';
 import type { OwnershipRegistry } from '../../../src/core/process/ownership';
 import { systemClock } from '../../../src/core/node-deps';
 import { createApp } from '../../../src/core/server/app';
@@ -81,7 +81,7 @@ describe('createServices', () => {
   it('builds the services for each platform and exposes routes', async () => {
     for (const platform of ['linux', 'win32', 'darwin'] as const) {
       const ctx = testContext(testDeps(t.dir, { platform, proc: quietProc }));
-      const s = await createServices(ctx, { llamaLauncherPrefix: ['node'] });
+      const s = await createServices(ctx, { llamaLauncherPrefix: ['node'], modelServices: false });
       expect(s.evictor.kind).toBe(platform === 'linux' ? 'linux-fadvise' : platform === 'win32' ? 'windows-standby' : 'none');
       expect(Boolean(s.windowsStandby)).toBe(platform === 'win32');
       expect(s.ownPids()).toEqual([]);
@@ -224,5 +224,86 @@ describe('clientFactory', () => {
     const make = clientFactory({ fetch: globalThis.fetch, clock: systemClock });
     expect(make('llamacpp', 'http://h:1').flavor).toBe('llamacpp');
     expect(make('openai', 'http://h:1', { apiKey: 'k' }).flavor).toBe('openai');
+  });
+});
+
+describe('modelsLookup', () => {
+  const gguf = (sha?: string): LocalModel => ({ ...local, identity: { ...local.identity, ...(sha ? { sha256: sha } : {}) } });
+
+  it('hashes a GGUF the first time it is benchmarked', async () => {
+    const m = gguf();
+    const lookup = modelsLookup({
+      models: { get: async () => m, hashes: { enqueue: async () => 'deadbeef' } } as never,
+    });
+    expect((await lookup.getLocal('abc'))?.identity.sha256).toBe('deadbeef');
+  });
+
+  it('returns known hashes, non-GGUF models and hashing failures unchanged', async () => {
+    let enqueued = 0;
+    const hashes = {
+      enqueue: async () => {
+        enqueued++;
+        throw new Error('io');
+      },
+    };
+    const known = gguf('cafe');
+    expect(await modelsLookup({ models: { get: async () => known, hashes } as never }).getLocal('x')).toBe(known);
+    const st: LocalModel = { ...local, identity: { ...local.identity, format: 'safetensors' } };
+    expect(await modelsLookup({ models: { get: async () => st, hashes } as never }).getLocal('x')).toBe(st);
+    const noPath: LocalModel = { ...gguf(), paths: [] };
+    expect(await modelsLookup({ models: { get: async () => noPath, hashes } as never }).getLocal('x')).toBe(noPath);
+    expect(enqueued).toBe(0);
+    const failing = gguf();
+    expect((await modelsLookup({ models: { get: async () => failing, hashes } as never }).getLocal('x'))?.identity.sha256).toBeUndefined();
+    expect(enqueued).toBe(1);
+    const missing = modelsLookup({ models: { get: () => Promise.reject(new Error('nope')), hashes } as never });
+    expect(await missing.getLocal('x')).toBeUndefined();
+  });
+});
+
+describe('createServices with the models module', () => {
+  let t: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    t = tempDir();
+  });
+  afterEach(() => t.cleanup());
+
+  it('feeds GPU memory to the fit estimator and estimates local models for the plan', async () => {
+    const deps = testDeps(t.dir, {
+      proc: {
+        run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
+        spawn: () => {
+          throw new Error('no spawn');
+        },
+      },
+    });
+    const ctx = testContext(deps);
+    await ctx.settings.update({ scanKnownLocations: false });
+    const s = await createServices(ctx);
+    const ms = s.modelServices!;
+    const gpuInfo = (ms.models as unknown as { opts: { gpuInfo: () => Promise<unknown> } }).opts.gpuInfo;
+    expect(await gpuInfo()).toBeUndefined();
+    ctx.telemetry.snapshot = () => Promise.reject(new Error('no driver'));
+    expect(await gpuInfo()).toBeUndefined();
+    ctx.telemetry.snapshot = () => Promise.resolve([{ memTotalMiB: 32607, memUsedMiB: 1600 } as never]);
+    expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 31007 });
+    ctx.telemetry.snapshot = () => Promise.resolve([{ memTotalMiB: 8192, memUsedMiB: null } as never]);
+    expect(await gpuInfo()).toEqual({ totalMiB: 8192, freeMiB: 8192 });
+
+    const fit = (s.bench as unknown as { deps: { fit: (r: StartRunRequest, m: unknown, p: unknown) => Promise<unknown> } }).deps.fit;
+    const req = { ...base, engine: { kind: 'llamacpp-native' as const }, model: { localId: 'abc' } };
+    expect(await fit(req, { identity: local.identity }, { params: {} })).toBeUndefined();
+    ms.models.fit = () => Promise.resolve({ level: 'good' } as never);
+    expect(await fit(req, { identity: local.identity, local }, { params: { contextSize: 4096 } })).toEqual({ level: 'good' });
+    expect(await fit(req, { identity: local.identity, local }, {})).toEqual({ level: 'good' });
+    ms.models.fit = () => Promise.reject(new Error('no gpu'));
+    expect(await fit(req, { identity: local.identity, local }, { params: {} })).toBeUndefined();
+
+    // The model and download routes are mounted.
+    const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+    const res = await app.request('/api/downloads', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+    expect(await res.json()).toEqual([]);
+    const loc = await app.request('/api/models/local', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+    expect(loc.status).toBe(200);
   });
 });

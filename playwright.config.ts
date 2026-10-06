@@ -7,6 +7,7 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: 'test/e2e',
+  globalSetup: './test/e2e/global-setup.ts',
   outputDir: '.qa/test-results',
   timeout: 60_000,
   expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled' } },
