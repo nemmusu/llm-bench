@@ -53,6 +53,25 @@ async function previewSuggestion(page) {
   await page.getByText('Il modello non è ancora sul PC', { exact: false }).waitFor({ timeout: 30000 });
 }
 
+/** "Avvia solo il server" on the Benchmark page: the confirmation with the context chosen for this card and the command. */
+async function openServeConfirm(page) {
+  await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Avvia il server' });
+  await dialog.getByText(/^[\d.]+ token$/).waitFor({ timeout: 30000 });
+}
+
+/** The server started from that confirmation, ready: its address for other programs. */
+async function openServeReady(page) {
+  await openServeConfirm(page);
+  await page.getByRole('button', { name: 'Avvia server' }).click();
+  await page.getByRole('dialog', { name: 'Il server è pronto' }).getByText('Indirizzo compatibile OpenAI').waitFor({ timeout: 90000 });
+}
+
+/** Stops every server a scene started (the next screens, the live run above all, need a free GPU). */
+async function stopServers(info) {
+  for (const s of await api(info, 'GET', '/api/servers')) await api(info, 'DELETE', `/api/servers/${encodeURIComponent(s.id)}`);
+}
+
 /** This PC's id as the core computes it (core/sysinfo/fingerprint.ts), for the seeded runs made "here". */
 function thisHostId() {
   let machineId;
@@ -69,13 +88,16 @@ function thisHostId() {
 
 /**
  * n, name, route, settings patch, optional page action (`click`, `keys`, or `act` for several steps;
- * after `act` the page is reloaded so the next screens start clean), and which sizes to render.
+ * after `act` the page is reloaded so the next screens start clean; `after(info)` undoes what it
+ * started in the core), and which sizes to render.
  */
 const SCREENS = [
   { n: 1, name: 'welcome', route: '/welcome', wait: 'Controllo del sistema' },
   { n: 2, name: 'benchmark', route: '/', wait: 'Pronto a misurare', small: true },
   // Before the live run below installs llama.cpp: engine and model are both still to fetch.
   { n: 15, name: 'benchmark-download', route: '/', wait: 'Pronto a misurare', act: previewSuggestion, small: true, full: true },
+  // Before the live run below installs llama.cpp: the server confirmation lists its install too.
+  { n: 17, name: 'serve-confirm', route: '/', wait: 'Pronto a misurare', act: openServeConfirm, small: true },
   { n: 3, name: 'run', route: 'LIVE', wait: 'Test in corso', settle: 2500 },
   { n: 4, name: 'result', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', small: true },
   { n: 5, name: 'benchmark-expert', route: '/', wait: 'Pronto a misurare', settings: { expertMode: true }, full: true },
@@ -89,6 +111,8 @@ const SCREENS = [
   { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Cosa cambia tra i due' },
   { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
   { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
+  { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
+  { n: 19, name: 'serve-ready', route: '/', wait: 'Pronto a misurare', act: openServeReady, after: stopServers },
 ];
 
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
@@ -261,6 +285,7 @@ async function main() {
             written.push(fullFile);
           }
           // Screens that changed what is on the page leave it fresh for the next ones.
+          if (s.after) await s.after(info);
           if (s.act) await page.reload();
         }
         await context.close();

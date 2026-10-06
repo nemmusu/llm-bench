@@ -3,6 +3,7 @@ import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
 import type { RunPlan } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
+import type { FitEstimate } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
@@ -30,6 +31,38 @@ export interface PlanCardProps {
 
 const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
 
+/** The VRAM verdict and its estimate ("Stima: 6,8 GB su 30,4 GB disponibili"). */
+export function FitSummary({ fit }: { fit: FitEstimate }) {
+  const { t, number } = useI18n();
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <FitBadge level={fit.level} size="sm" />
+      <span className="text-fg-2 tabular-nums">
+        {t('fit.estimate', { need: `${number(fit.needMiB / MIB_PER_GB, 1)} GB`, available: `${number(fit.availableMiB / MIB_PER_GB, 1)} GB` })}
+      </span>
+    </span>
+  );
+}
+
+/** Planning warnings in plain words (runs and servers). */
+export function PlanWarnings({ warnings }: { warnings: RunPlan['warnings'] }) {
+  const f = useI18n();
+  return (
+    <ul className="flex flex-col gap-2" aria-label={f.t('benchmark.plan.warnings')}>
+      {warnings.map((w, i) => {
+        const n = noteText(w, f);
+        return (
+          <li key={`${w.code}-${i}`}>
+            <Callout tone={n.tone} title={n.title}>
+              {n.body}
+            </Callout>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * "Anteprima": duration, VRAM fit, what gets installed or downloaded first, warnings and the exact
  * command. It is complete before anything is downloaded: a missing llama.cpp or model already has
@@ -37,7 +70,7 @@ const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
  */
 export function PlanCard({ plan, loading, error, needs, expert }: PlanCardProps) {
   const f = useI18n();
-  const { t, bytes, duration, number } = f;
+  const { t, bytes, duration } = f;
   const [open, setOpen] = useState(expert);
   const [prevExpert, setPrevExpert] = useState(expert);
   // Expert mode opens the command; switching it off folds it again.
@@ -80,11 +113,8 @@ export function PlanCard({ plan, loading, error, needs, expert }: PlanCardProps)
             {fit && (
               <div className="flex flex-col gap-1">
                 <dt className="text-xs text-fg-3">{t('benchmark.plan.fit')}</dt>
-                <dd className="flex flex-wrap items-center gap-2">
-                  <FitBadge level={fit.level} size="sm" />
-                  <span className="text-fg-2 tabular-nums">
-                    {t('fit.estimate', { need: `${number(fit.needMiB / MIB_PER_GB, 1)} GB`, available: `${number(fit.availableMiB / MIB_PER_GB, 1)} GB` })}
-                  </span>
+                <dd>
+                  <FitSummary fit={fit} />
                 </dd>
               </div>
             )}
@@ -122,20 +152,7 @@ export function PlanCard({ plan, loading, error, needs, expert }: PlanCardProps)
           </dl>
         )}
         {error && <ErrorCard error={error} headingLevel={3} />}
-        {plan && plan.warnings.length > 0 && (
-          <ul className="flex flex-col gap-2" aria-label={t('benchmark.plan.warnings')}>
-            {plan.warnings.map((w, i) => {
-              const n = noteText(w, f);
-              return (
-                <li key={`${w.code}-${i}`}>
-                  <Callout tone={n.tone} title={n.title}>
-                    {n.body}
-                  </Callout>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} />}
       </div>
       <Collapsible.Root open={open} onOpenChange={setOpen} className="border-t border-border">
         <Collapsible.Trigger asChild>

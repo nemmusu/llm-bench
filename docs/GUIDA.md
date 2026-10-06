@@ -46,6 +46,15 @@ Premi **Avvia benchmark**. Se serve scaricare qualcosa, GPU Bench ti mostra cosa
 
 Durante il test vedi in tempo reale le fasi, la velocità, la memoria video, la temperatura e i watt. Puoi annullare in qualsiasi momento.
 
+### Usare il modello nei tuoi programmi
+
+Vuoi solo accendere il modello per una chat, un editor o un assistente, senza test? Premi **Avvia solo il server** accanto ad *Avvia benchmark* (oppure **Avvia server** accanto a un modello in **Modelli → Sul tuo PC**). GPU Bench ti mostra prima cosa farà:
+
+- il **contesto**, cioè quanto testo il modello può leggere in una volta: scelto da GPU Bench perché entri bene nella tua scheda (in modalità esperto puoi deciderlo tu);
+- se il modello **entra** nella memoria video, cosa va scaricato prima e il comando esatto.
+
+Quando il server è pronto copi il suo indirizzo (compatibile OpenAI) e lo incolli nell'altro programma. Il server resta acceso finché non premi **Ferma** nel riquadro **Server attivi** della pagina Benchmark o chiudi GPU Bench; mentre è acceso non puoi fare benchmark.
+
 ## 4. Leggere i risultati
 
 | Misura | In parole semplici |

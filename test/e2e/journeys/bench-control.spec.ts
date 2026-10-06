@@ -75,6 +75,8 @@ test('an external server (expert mode): no engine to install, loading not measur
     await page.getByRole('option', { name: /Server esterno/ }).click();
     await expect(page.getByRole('group', { name: 'Server esterno' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Avvia benchmark' })).toBeDisabled();
+    // Already running elsewhere: there is no server to start.
+    await expect(page.getByRole('button', { name: 'Avvia solo il server', exact: true })).toBeHidden();
     await page.getByLabel('Indirizzo del server').fill('non è un indirizzo');
     await expect(page.getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeVisible();
     await page.getByLabel('Indirizzo del server').fill(engine.url);

@@ -1,10 +1,12 @@
 import { useNavigate } from '@tanstack/react-router';
-import { FolderOpen, Gauge, HardDrive, Trash2 } from 'lucide-react';
+import { FolderOpen, Gauge, HardDrive, Server, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import type { EngineConfig, EngineStatus } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import { useI18n } from '../../i18n';
-import { useDeleteModel, useLibraryModels } from '../../lib/queries-library';
+import { useDeleteModel, useEngineStatuses, useLibraryModels } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
+import { useStartFlow } from '../bench/start-flow';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
@@ -15,7 +17,28 @@ import { DockerVolumeAction, useVolumeSupport } from './docker-volume';
 import { ErrorCallout } from './error-callout';
 import { FitFor, TriedFor } from './model-badges';
 
-function LocalRow({ m, onDelete, inDocker }: { m: LocalModel; onDelete: (m: LocalModel) => void; inDocker: boolean | undefined }) {
+/**
+ * The engine a local model is served with: a GGUF with the llama.cpp last used (else the native one),
+ * safetensors with vLLM (installed on Linux when it works, else in Docker).
+ */
+export function serveEngineFor(m: LocalModel, lastEngine: EngineConfig | undefined, engines: EngineStatus[] | undefined): EngineConfig {
+  if (m.identity.format === 'safetensors') {
+    return { kind: engines?.some((e) => e.kind === 'vllm-native' && e.available) ? 'vllm-native' : 'vllm-docker' };
+  }
+  return lastEngine?.kind === 'llamacpp-native' || lastEngine?.kind === 'llamacpp-docker' ? lastEngine : { kind: 'llamacpp-native' };
+}
+
+function LocalRow({
+  m,
+  onDelete,
+  onServe,
+  inDocker,
+}: {
+  m: LocalModel;
+  onDelete: (m: LocalModel) => void;
+  onServe: (m: LocalModel) => void;
+  inDocker: boolean | undefined;
+}) {
   const { t, bytes, number } = useI18n();
   const navigate = useNavigate();
   const { update } = useSettings();
@@ -55,6 +78,10 @@ function LocalRow({ m, onDelete, inDocker }: { m: LocalModel; onDelete: (m: Loca
           <Gauge aria-hidden />
           {t('models.benchmark')}
         </Button>
+        <Button variant="ghost" onClick={() => onServe(m)} aria-label={`${t('models.serve')}: ${id.displayName}`}>
+          <Server aria-hidden />
+          {t('models.serve')}
+        </Button>
         <IconButton label={`${t('models.reveal')}: ${id.displayName}`} icon={<FolderOpen />} onClick={() => void window.gpubench?.revealPath(m.paths[0] as string)} />
         {m.origin === 'library' && <IconButton label={`${t('models.delete')}: ${id.displayName}`} icon={<Trash2 />} onClick={() => onDelete(m)} />}
       </div>
@@ -68,7 +95,15 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   const local = useLibraryModels();
   const del = useDeleteModel();
   const volumes = useVolumeSupport();
+  const engines = useEngineStatuses();
+  const { settings } = useSettings();
+  const flow = useStartFlow();
   const [target, setTarget] = useState<LocalModel>();
+  /** "Avvia server": this model with the recommended settings for this card (the core picks them). */
+  const serve = (m: LocalModel) => {
+    const engine = serveEngineFor(m, settings.lastEngine, engines.data);
+    flow.serve({ engine, model: { localId: m.id } }, { modelLabel: m.identity.displayName, engineLabel: t(`benchmark.engines.${engine.kind}`) });
+  };
   if (local.isError) return <ErrorCallout error={local.error} action={{ label: t('common.retry'), onClick: () => void local.refetch() }} />;
   if (!local.data) return <Skeleton className="h-40" />;
   return (
@@ -89,7 +124,13 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         ) : (
           <ul className="divide-y divide-border" aria-label={t('models.tabs.local')}>
             {local.data.map((m) => (
-              <LocalRow key={m.id} m={m} onDelete={setTarget} inDocker={volumes.enabled && m.identity.format === 'gguf' ? volumes.copied.has(m.id) : undefined} />
+              <LocalRow
+                key={m.id}
+                m={m}
+                onDelete={setTarget}
+                onServe={serve}
+                inDocker={volumes.enabled && m.identity.format === 'gguf' ? volumes.copied.has(m.id) : undefined}
+              />
             ))}
           </ul>
         )}
@@ -103,6 +144,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         cancelLabel={t('common.cancel')}
         onConfirm={() => del.mutate((target as LocalModel).id)}
       />
+      {flow.ui}
     </>
   );
 }

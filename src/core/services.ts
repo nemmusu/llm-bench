@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { RunPlan, StartRunRequest } from '../contract/api';
+import type { RunPlan, StartServerRequest } from '../contract/api';
 import { AppError } from '../contract/errors';
 import type { LocalModel } from '../contract/models';
 import { BenchService } from './bench/service';
@@ -145,7 +145,7 @@ export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
  * a real start fails with MODEL_NOT_FOUND so the UI downloads it first.
  */
 export async function resolveModelTarget(
-  req: StartRunRequest,
+  req: StartServerRequest,
   models: ModelsLookup | undefined,
   opts: { preview?: boolean } = {},
 ): Promise<ModelTarget> {
@@ -295,7 +295,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   if (modelServices) await modelServices.init();
   const models: ModelsLookup | undefined = opts.models ?? (modelServices ? modelsLookup(modelServices) : undefined);
 
-  const needs = async (req: StartRunRequest, model?: ModelTarget): Promise<RunPlan['needs']> => {
+  const needs = async (req: StartServerRequest, model?: ModelTarget): Promise<RunPlan['needs']> => {
     const out: RunPlan['needs'] = [];
     // A hub GGUF not downloaded yet (resolved for the preview as its pending download).
     if (model?.pending) out.push({ kind: 'model', label: `${model.pending.repo}/${model.pending.file}`, bytes: model.pending.bytes });
@@ -370,17 +370,23 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     log: deps.log,
   });
 
-  const serve = new ServeService({
+  // Servers are planned like runs (same model resolution, engine tweaks, fit), with their own settings.
+  const serve: ServeService = new ServeService({
     clock: deps.clock,
-    getAdapter: (kind) => registry.require(kind),
-    resolveModel: (req) => resolveModelTarget({ ...req, profile: 'quick', allowSharedGpu: true }, models),
-    pickPort: () => pickFreePort(),
+    prepare: (req, marker) => bench.prepareServer(req, { preview: false, marker }),
+    plan: (req) => bench.planServer(req),
+    blockedBy: () => {
+      const run = bench.active();
+      return run ? new AppError('RUN_IN_PROGRESS', 'A benchmark is running on the GPU', { params: { reason: 'run_in_progress', runId: run.runId } }) : undefined;
+    },
     displayCommand,
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
+    // A native server is one of our engine processes: never reported as "another program on the GPU".
+    onChange: () => void refreshPids(),
   });
 
   let lastMarker: string | undefined;
-  const bench = new BenchService({
+  const bench: BenchService = new BenchService({
     clock: deps.clock,
     runs,
     publish: (e) => ctx.hub.publish(e),
@@ -400,7 +406,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     ...(modelServices
       ? {
           // A local model, or a hub GGUF still to download (estimated from its remote header).
-          fit: async (req: StartRunRequest, model: ModelTarget, plan: { params: StartRunRequest['params'] }) => {
+          fit: async (req: StartServerRequest, model: ModelTarget, plan: { params: StartServerRequest['params'] }) => {
             const which = model.local ? { localId: model.local.id } : model.pending ? { repo: model.pending.repo, file: model.pending.file } : undefined;
             if (!which) return undefined;
             return modelServices.models.fit({ ...which, engine: req.engine.kind, ...(plan.params ? { params: plan.params } : {}) }).catch(() => undefined);
@@ -466,10 +472,8 @@ export function serviceModules(s: CoreServices): RouteModule[] {
       vllm: s.vllmDocker,
       publish: (e) => ctx.hub.publish(e),
       defaultGpuImage: async () => (await ctx.settings.get()).lastEngine?.image ?? 'ghcr.io/ggml-org/llama.cpp:server-cuda',
-      activeMarkers: () => {
-        const m = s.activeMarker();
-        return m ? [m] : [];
-      },
+      // The running benchmark's container and every server started from here survive a cleanup.
+      activeMarkers: () => [s.activeMarker(), ...s.serve.list().map((x) => x.id)].filter((m): m is string => m !== undefined),
       shutdown: ctx.shutdown,
     })),
     (app, ctx) =>

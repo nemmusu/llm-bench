@@ -1,12 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StartRunRequest } from '../../../../src/contract/api';
+import type { StartRunRequest, StartServerRequest } from '../../../../src/contract/api';
 import type { RunResult } from '../../../../src/contract/results';
 import { renderApp } from '../helpers';
 import { exerciseFormatters } from './charts';
 import { IDS, seeded, seededRuns } from './fixtures';
-import { apiError, benchApi, deferred, localModel } from './world';
+import { apiError, benchApi, deferred, localModel, serverInfo, serverPlanFor } from './world';
 
 const charts = vi.hoisted(() => ({ options: [] as Record<string, unknown>[] }));
 vi.mock('echarts/core', () => ({
@@ -230,43 +230,39 @@ describe('how it was started', () => {
     expect(router.state.location.search).toEqual({ a: IDS.quick });
   });
 
-  it('starts only the server, shows its address, stops it', async () => {
+  it('starts only the server with the run’s exact settings: confirmation, address, stop', async () => {
     const api = withLibrary();
-    const info = {
-      id: 'srv1',
-      baseUrl: 'http://127.0.0.1:5123',
-      openaiUrl: 'http://127.0.0.1:5123/v1',
-      modelName: 'Qwen3 8B',
-      engineLabel: 'llama.cpp b11438',
-      startedAt: new Date().toISOString(),
-      command: { argv: [], powershell: '', bash: '' },
-    };
+    const info = serverInfo('srv1', { contextSize: 8192 });
     const started = deferred<typeof info>();
     let fail = true;
     api.world.routes['POST /api/servers'] = () => {
-      if (fail) throw apiError('ENGINE_START_FAILED');
+      if (fail) throw apiError('ENGINE_START_FAILED', undefined, 500);
       api.world.servers = [info];
       return started.promise;
     };
-    api.world.routes['DELETE /api/servers/srv1'] = () => {
-      api.world.servers = [];
-      return { ok: true };
-    };
+    api.world.serverPlan = (body) => serverPlanFor({ contextSize: 8192, params: (body as StartServerRequest).params! });
     renderApp(`/results/${IDS.full}`, api);
     await h1(/Qwen3 8B/);
     await tab('Come è stato avviato');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    let dialog = await screen.findByRole('dialog', { name: 'Avvia solo il server' });
+    // The confirmation says how much text it takes, and that it comes from the run's own settings.
+    expect(await screen.findByText('8192 token')).toBeTruthy();
+    let dialog = screen.getByRole('dialog', { name: 'Avvia il server' });
+    expect(within(dialog).getByText(/Viene dalle impostazioni scelte/)).toBeTruthy();
+    expect(within(dialog).getByRole('region', { name: 'Comando esatto' }).textContent).toContain('llama-server');
+    expect(posted(api, '/api/servers/plan')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 } });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    dialog = await screen.findByRole('dialog', { name: 'Avvia solo il server' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Avvia il server' }));
-    expect(await within(dialog).findByRole('heading', { name: 'Il motore non è partito' })).toBeTruthy();
+    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server' }));
+    dialog = await screen.findByRole('dialog', { name: 'Il server non è partito' });
+    expect(within(dialog).getByRole('heading', { name: 'Il motore non è partito' })).toBeTruthy();
     fail = false;
     await userEvent.click(within(dialog).getByRole('button', { name: 'Riprova' }));
-    expect(await within(dialog).findByText('Avvio il motore e carico il modello…')).toBeTruthy();
+    expect(await screen.findByText('Avvio il motore e carico il modello…')).toBeTruthy();
     await act(async () => started.resolve(info));
-    expect(await within(dialog).findByText('Indirizzo compatibile OpenAI')).toBeTruthy();
+    dialog = await screen.findByRole('dialog', { name: 'Il server è pronto' });
+    expect(within(dialog).getByText('Indirizzo compatibile OpenAI')).toBeTruthy();
+    expect(within(dialog).getByText('Modello: Qwen3 8B · Contesto 8192 token')).toBeTruthy();
     expect(posted(api, '/api/servers')[1]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 } });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI' }));
     expect(clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:5123/v1');

@@ -5,6 +5,7 @@ import type { EngineAdapter, EngineInstance, LaunchPlan } from '../../../../src/
 import { systemClock } from '../../../../src/core/node-deps';
 import { createServerRoutes } from '../../../../src/core/servers/routes';
 import { ServeService, type ServeServiceDeps } from '../../../../src/core/servers/service';
+import { AppError } from '../../../../src/contract/errors';
 import { errorResponse } from '../../../../src/core/server/http-error';
 import type { CoreContext } from '../../../../src/core/context';
 
@@ -30,8 +31,10 @@ function fakeInstance(opts: { failReady?: boolean; stopFails?: boolean } = {}) {
   return { instance, stopped: () => stopped, crash: () => resolveExit({ code: 1, signal: null }) };
 }
 
-function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string } = {}) {
+function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string; blocked?: AppError; contextSize?: number } = {}) {
   const made: ReturnType<typeof fakeInstance>[] = [];
+  const markers: string[] = [];
+  let changes = 0;
   const plan: LaunchPlan = {
     kind: 'llamacpp-native',
     argv: ['llama-server', '-m', 'm.gguf', '--api-key', 'secret'],
@@ -46,7 +49,6 @@ function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string 
   };
   const adapter = {
     kind: 'llamacpp-native',
-    plan: async () => plan,
     start: async () => {
       const f = fakeInstance(opts);
       made.push(f);
@@ -55,20 +57,31 @@ function setup(opts: { failReady?: boolean; stopFails?: boolean; build?: string 
   } as unknown as EngineAdapter;
   const deps: ServeServiceDeps = {
     clock: systemClock,
-    getAdapter: () => adapter,
-    resolveModel: async () => ({ identity: { displayName: 'Qwen3 4B', format: 'gguf', source: 'local', files: [], weakKey: 'k' } }),
-    pickPort: async () => 5555,
+    prepare: async (req, marker) => {
+      // Like BenchService.prepareServer: external endpoints are already running.
+      if (req.engine.kind === 'external') throw new AppError('VALIDATION', 'external', { params: { reason: 'external' } });
+      markers.push(marker);
+      return {
+        model: { identity: { displayName: 'Qwen3 4B', format: 'gguf', source: 'local', files: [], weakKey: 'k' } },
+        adapter,
+        launch: plan,
+        ...(opts.contextSize ? { contextSize: opts.contextSize } : {}),
+      };
+    },
+    plan: async () => ({ command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' }, needs: [], params: { contextSize: 32768, extraArgs: [], env: {} }, contextSize: 32768, warnings: [] }),
+    blockedBy: () => opts.blocked,
     displayCommand: (argv) => ({ powershell: `& ${argv.join(' ')}`, bash: argv.join(' ') }),
     redact: (argv, env) => ({ argv: argv.map((a) => (a === 'secret' ? '<API_KEY>' : a)), env: { ...env, HF_TOKEN: '<HF_TOKEN>' } }),
+    onChange: () => changes++,
   };
-  return { svc: new ServeService(deps), made };
+  return { svc: new ServeService(deps), made, markers, changes: () => changes };
 }
 
 const req = { engine: { kind: 'llamacpp-native' as const }, model: { localId: 'a' } };
 
 describe('ServeService', () => {
-  it('starts an engine, reports its URLs and the redacted command, and stops it', async () => {
-    const { svc, made } = setup({ build: 'b11438' });
+  it('starts an engine, reports its URLs, context and the redacted command, and stops it', async () => {
+    const { svc, made, markers, changes } = setup({ build: 'b11438', contextSize: 32768 });
     expect(svc.busy()).toBe(false);
     const info = await svc.start(req, new AbortController().signal);
     expect(info).toMatchObject({
@@ -76,24 +89,41 @@ describe('ServeService', () => {
       openaiUrl: 'http://127.0.0.1:5555/v1',
       modelName: 'Qwen3 4B',
       engineLabel: 'llama.cpp b11438',
+      contextSize: 32768,
       command: { argv: ['llama-server', '-m', 'm.gguf', '--api-key', '<API_KEY>'], bash: 'llama-server -m m.gguf --api-key <API_KEY>' },
     });
+    // The server's id is the ownership marker its engine was prepared with.
     expect(info.id).toMatch(/^gpubench-/);
+    expect(markers).toEqual([info.id]);
     expect(svc.busy()).toBe(true);
     expect(svc.list()).toEqual([info]);
+    expect(changes()).toBe(1);
     await svc.stop(info.id);
     expect(made[0]!.stopped()).toBe(1);
     expect(svc.list()).toEqual([]);
+    // Stopped by us: the exit is not counted as a second change.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(changes()).toBe(2);
     await expect(svc.stop(info.id)).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'not_found' } });
   });
 
+  it('refuses to start while a benchmark runs (blockedBy), and plans through its dependency', async () => {
+    const { svc, made, markers } = setup({ blocked: new AppError('RUN_IN_PROGRESS', 'busy', { params: { runId: 'r1' } }) });
+    await expect(svc.start(req, new AbortController().signal)).rejects.toMatchObject({ code: 'RUN_IN_PROGRESS', params: { runId: 'r1' } });
+    expect(made).toEqual([]);
+    expect(markers).toEqual([]);
+    expect(await svc.plan(req)).toMatchObject({ contextSize: 32768, params: { contextSize: 32768 } });
+  });
+
   it('forgets an engine that exits on its own, and stops everything at shutdown', async () => {
-    const { svc, made } = setup();
+    const { svc, made, changes } = setup();
     const a = await svc.start(req, new AbortController().signal);
     expect(a.engineLabel).toBe('llama.cpp 1.0');
+    expect(a.contextSize).toBeUndefined();
     made[0]!.crash();
     await new Promise((r) => setTimeout(r, 5));
     expect(svc.list()).toEqual([]);
+    expect(changes()).toBe(2);
     await svc.start(req, new AbortController().signal);
     await svc.start(req, new AbortController().signal);
     await svc.stopAll();
@@ -136,6 +166,9 @@ describe('server routes', () => {
     expect(info.id).toMatch(/^gpubench-/);
     expect(await (await app.request(`/api/servers/${info.id}`, { method: 'DELETE' })).json()).toEqual({ ok: true });
     expect((await app.request('/api/servers/nope', { method: 'DELETE' })).status).toBe(400);
+    const plan = await app.request('/api/servers/plan', { method: 'POST', body: JSON.stringify(req) });
+    expect(await plan.json()).toMatchObject({ contextSize: 32768 });
+    expect((await app.request('/api/servers/plan', { method: 'POST', body: JSON.stringify({ model: {} }) })).status).toBe(400);
     await app.request('/api/servers', { method: 'POST', body: JSON.stringify(req) });
     shutdown.abort();
     await new Promise((r) => setTimeout(r, 5));

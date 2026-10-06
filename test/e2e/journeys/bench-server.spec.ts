@@ -13,12 +13,14 @@ test('start only the server like a past run, use its address, stop it; a benchma
     await page.getByRole('button', { name: 'Scarica e avvia' }).click();
     await expect(h1(page, /Qwen3-0\.6B/)).toBeVisible({ timeout: 60_000 });
 
-    // Server only, with this run's exact settings.
+    // Server only, with this run's exact settings (its context included).
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await page.getByRole('button', { name: 'Avvia solo il server così' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Avvia solo il server' });
-    await expect(dialog.getByText('Mentre il server è acceso non puoi fare benchmark')).toBeVisible();
-    await dialog.getByRole('button', { name: 'Avvia il server' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
+    await expect(confirm.getByText('Mentre il server è acceso non puoi fare benchmark', { exact: false })).toBeVisible({ timeout: 30_000 });
+    await expect(confirm.getByText(/Viene dalle impostazioni scelte/)).toBeVisible();
+    await confirm.getByRole('button', { name: 'Avvia server' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Il server è pronto' });
     await expect(dialog.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 30_000 });
     await scan(page, 'server ready');
     const url = (await dialog.getByText(/^http:\/\/127\.0\.0\.1:\d+\/v1$/).textContent())!;
@@ -42,7 +44,7 @@ test('start only the server like a past run, use its address, stop it; a benchma
     await page.getByRole('link', { name: /Qwen3-0\.6B/ }).first().click();
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await page.getByRole('button', { name: 'Avvia solo il server così' }).click();
-    await page.getByRole('button', { name: 'Avvia il server' }).click();
+    await page.getByRole('button', { name: 'Avvia server' }).click();
     await expect(page.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Lascia acceso' }).click();
     await page.getByRole('button', { name: 'Rifai questo benchmark' }).click();

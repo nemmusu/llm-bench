@@ -513,14 +513,28 @@ describe('composition details', () => {
     await new Promise((r) => setTimeout(r, 5));
   });
 
-  it('runs servers through the registry and blocks benchmarks while one is up', async () => {
+  it('prepares servers like runs, and runs and servers block each other', async () => {
     const ctx = testContext(testDeps(t.dir, { proc: quiet }));
     const s = await createServices(ctx, { modelServices: false });
     const sd = (s.serve as unknown as { deps: Any }).deps;
-    expect((sd.getAdapter!('external') as { kind: string }).kind).toBe('external');
-    expect(await sd.resolveModel!({ engine: { kind: 'external', baseUrl: 'http://h:1' }, model: { name: 'm' } })).toMatchObject({ servedName: 'm' });
-    expect(await sd.pickPort!()).toBeGreaterThan(0);
+    // Through the benchmark service (an external endpoint is already running: nothing to start).
+    const external = { engine: { kind: 'external', baseUrl: 'http://h:1' }, model: { name: 'm' } };
+    await expect(sd.prepare!(external, 'gpubench-m')).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'external' } });
+    await expect(sd.plan!(external)).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'external' } });
+    const seen: unknown[] = [];
+    s.bench.prepareServer = (async (_req: unknown, o: unknown) => {
+      seen.push(o);
+      return {} as never;
+    }) as typeof s.bench.prepareServer;
+    await sd.prepare!(external, 'gpubench-m');
+    expect(seen).toEqual([{ preview: false, marker: 'gpubench-m' }]);
     expect(sd.redact!(['x', '--api-key', 'k'], { HF_TOKEN: 'v' })).toEqual({ argv: ['x', '--api-key', '<API_KEY>'], env: { HF_TOKEN: '<HF_TOKEN>' } });
+    expect(sd.onChange!()).toBeUndefined();
+    // No server while a benchmark runs…
+    expect(sd.blockedBy!()).toBeUndefined();
+    s.bench.active = () => ({ runId: 'r1', phase: 'decode', progress: 0.5 }) as never;
+    expect(sd.blockedBy!()).toMatchObject({ code: 'RUN_IN_PROGRESS', params: { reason: 'run_in_progress', runId: 'r1' } });
+    // …and no benchmark while a server is up.
     const blockedBy = (s.bench as unknown as { deps: Any }).deps.blockedBy!;
     expect(blockedBy()).toBeUndefined();
     s.serve.busy = () => true;
@@ -556,7 +570,10 @@ describe('composition details', () => {
     await app.request('/api/docker/cleanup', { method: 'POST', headers: H, body: '{}' });
     s.bench.active = () => undefined as never;
     await app.request('/api/docker/cleanup', { method: 'POST', headers: H, body: '{}' });
-    expect(kept).toEqual([[marker], []]);
+    // Servers started from here keep their containers too.
+    s.serve.list = () => [{ id: 'gpubench-srv' }] as never;
+    await app.request('/api/docker/cleanup', { method: 'POST', headers: H, body: '{}' });
+    expect(kept).toEqual([[marker], [], ['gpubench-srv']]);
 
     // Pull progress goes to the event hub.
     const events: string[] = [];

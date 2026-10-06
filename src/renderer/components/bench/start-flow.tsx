@@ -1,26 +1,23 @@
 /**
- * "Avvia benchmark", start to finish: the exact plan of these choices (it lists what must be
- * installed or downloaded, with sizes), one clear confirmation for it, the installs and downloads
- * with progress, the "GPU busy" question, then POST /api/runs with the same request (the core finds
- * what was just downloaded) and the live screen. Used by the Benchmark page and by "Rifai questo benchmark".
+ * "Avvia benchmark" and "Avvia solo il server", start to finish: the exact plan of these choices (it
+ * lists what must be installed or downloaded, with sizes), one clear confirmation, the installs and
+ * downloads with progress, the "GPU busy" question, then POST /api/runs with the same request (the
+ * core finds what was just downloaded) and the live screen — or POST /api/servers and the server's
+ * address. Used by the Benchmark page, the result page ("Rifai questo benchmark", "Avvia solo il
+ * server così") and the Models page ("Avvia server").
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Box, Check, Container, Download, Loader, TriangleAlert } from 'lucide-react';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import type { RunPlan, ServerInfo, StartRunRequest } from '../../../contract/api';
+import type { RunPlan, ServerInfo, ServerPlan, StartRunRequest, StartServerRequest } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
 import type { DownloadJob } from '../../../contract/models';
-import { useI18n } from '../../i18n';
 import { useApi, useServerEvents } from '../../lib/api-context';
 import { apiErrorData, ENGINES_KEY, LOCAL_MODELS_KEY, SERVERS_KEY } from '../../lib/queries-runs';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent } from '../ui/dialog';
-import { Progress } from '../ui/progress';
-import { ErrorCard } from './error-card';
 import { needsFromPlan, type Need } from './needs';
 import { saveRunContext } from './run-context';
+import { StartDialogs, type Flow, type FlowOpts, type Job, type Pre, type StepProgress } from './start-dialogs';
 
 export interface StartOptions {
   /** What to fetch first when no plan can be made (the plan's own list wins). */
@@ -34,21 +31,12 @@ export interface StartOptions {
   onStarted?: (runId: string) => void;
 }
 
-interface StepProgress {
-  need: Need;
-  state: 'pending' | 'running' | 'done' | 'failed';
-  stage?: string;
-  done?: number;
-  total?: number;
+export interface ServeOptions {
+  modelLabel: string;
+  engineLabel: string;
+  /** Called once the server answers. */
+  onStarted?: (info: ServerInfo) => void;
 }
-
-type Flow =
-  | { step: 'idle' }
-  | { step: 'confirm'; request: StartRunRequest; opts: StartOptions }
-  | { step: 'fetching'; request: StartRunRequest; opts: StartOptions; progress: StepProgress[]; error?: AppErrorData }
-  | { step: 'busy'; request: StartRunRequest; opts: StartOptions; names: string; ownServers: ServerInfo[] }
-  | { step: 'starting'; request: StartRunRequest; opts: StartOptions }
-  | { step: 'error'; request: StartRunRequest; opts: StartOptions; error: AppErrorData };
 
 type Waiter = (e: ServerEvent) => void;
 
@@ -68,7 +56,14 @@ export function processList(params: Record<string, unknown> | undefined): string
 }
 const DOWNLOAD_DONE = new Set<DownloadJob['state']>(['done', 'failed', 'cancelled']);
 
-export function useStartFlow(): { start: (request: StartRunRequest, opts: StartOptions) => void; ui: ReactNode } {
+/** Whether the user already accepted a GPU other programs are using. */
+const sharedOk = (job: Job): boolean => (job.mode === 'run' ? job.request.allowSharedGpu : job.sharedOk === true);
+
+export function useStartFlow(): {
+  start: (request: StartRunRequest, opts: StartOptions) => void;
+  serve: (request: StartServerRequest, opts: ServeOptions) => void;
+  ui: ReactNode;
+} {
   const api = useApi();
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -96,29 +91,44 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
     return { promise, cancel: () => waiters.current.delete(w) };
   }, []);
 
+  /** The preview of exactly this job: POST /api/runs/plan or /api/servers/plan. */
+  const planOf = useCallback(
+    (job: Job) => api.post<RunPlan | ServerPlan>(job.mode === 'run' ? '/api/runs/plan' : '/api/servers/plan', job.request),
+    [api],
+  );
+
   const post = useCallback(
-    async (request: StartRunRequest, opts: StartOptions, pre: { install: boolean; download: boolean }) => {
-      setFlow({ step: 'starting', request, opts });
+    async (job: Job, opts: FlowOpts, pre: Pre) => {
+      const gen = generation.current;
+      setFlow({ step: 'starting', job, opts });
       try {
-        const { runId } = await api.post<{ runId: string }>('/api/runs', request);
-        saveRunContext(qc, runId, {
-          request,
-          ...(opts.plan ? { plan: opts.plan } : {}),
-          modelLabel: opts.modelLabel,
-          engineLabel: opts.engineLabel,
-          pre,
-          startedAt: Date.now(),
-        });
-        opts.onStarted?.(runId);
-        setFlow({ step: 'idle' });
-        void qc.invalidateQueries({ queryKey: ['runs', 'active'] });
-        void navigate({ to: '/run/$runId', params: { runId } });
+        if (job.mode === 'run') {
+          const { runId } = await api.post<{ runId: string }>('/api/runs', job.request);
+          saveRunContext(qc, runId, {
+            request: job.request,
+            ...(opts.plan ? { plan: opts.plan as RunPlan } : {}),
+            modelLabel: opts.modelLabel,
+            engineLabel: opts.engineLabel,
+            pre,
+            startedAt: Date.now(),
+          });
+          job.onStarted?.(runId);
+          setFlow({ step: 'idle' });
+          void qc.invalidateQueries({ queryKey: ['runs', 'active'] });
+          void navigate({ to: '/run/$runId', params: { runId } });
+        } else {
+          const server = await api.post<ServerInfo>('/api/servers', job.request);
+          void qc.invalidateQueries({ queryKey: SERVERS_KEY });
+          job.onStarted?.(server);
+          // Closed while it was loading: it keeps running (the "Server attivi" panel lists it).
+          if (generation.current === gen) setFlow({ step: 'ready', job, opts, server });
+        }
       } catch (e) {
         const error = apiErrorData(e);
         if (error.code === 'VRAM_BUSY') {
           const own = error.params?.reason === 'own_server' ? await api.get<ServerInfo[]>('/api/servers').catch(() => []) : [];
-          setFlow({ step: 'busy', request, opts, names: processList(error.params), ownServers: own });
-        } else setFlow({ step: 'error', request, opts, error });
+          setFlow({ step: 'busy', job, opts, names: processList(error.params), ownServers: own });
+        } else setFlow({ step: 'error', job, opts, error });
       }
     },
     [api, qc, navigate],
@@ -126,13 +136,13 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
 
   /** VRAM check from the plan, then start. */
   const proceed = useCallback(
-    (request: StartRunRequest, opts: StartOptions, pre: { install: boolean; download: boolean }) => {
+    (job: Job, opts: FlowOpts, pre: Pre) => {
       const busy = opts.plan?.warnings.find((w) => w.code === 'VRAM_BUSY');
-      if (busy && !request.allowSharedGpu) {
-        setFlow({ step: 'busy', request, opts, names: processList(busy.params), ownServers: [] });
+      if (busy && !sharedOk(job)) {
+        setFlow({ step: 'busy', job, opts, names: processList(busy.params), ownServers: [] });
         return;
       }
-      void post(request, opts, pre);
+      void post(job, opts, pre);
     },
     [post],
   );
@@ -196,7 +206,7 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
         const code = end.error?.code ?? 'DOWNLOAD_FAILED';
         throw Object.assign(new Error(end.error?.message ?? 'download failed'), { data: { code, message: end.error?.message ?? 'download failed' } });
       }
-      // The run request names the model by repo and file: the core finds this copy once its library is rescanned.
+      // The request names the model by repo and file: the core finds this copy once its library is rescanned.
       await api.post('/api/models/rescan');
       void qc.invalidateQueries({ queryKey: LOCAL_MODELS_KEY });
       void qc.invalidateQueries({ queryKey: ['lib', 'models', 'local'] });
@@ -205,17 +215,17 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
   );
 
   const fetchNeeds = useCallback(
-    async (request: StartRunRequest, opts: StartOptions) => {
+    async (job: Job, opts: FlowOpts) => {
       // Closing the dialog bumps the generation: late answers of this attempt are then ignored.
       const gen = ++generation.current;
       const alive = () => generation.current === gen;
       const progress: StepProgress[] = opts.needs.map((need) => ({ need, state: 'pending' }));
       const update = (i: number, patch: Partial<StepProgress>) => {
         progress[i] = { ...progress[i]!, ...patch };
-        if (alive()) setFlow({ step: 'fetching', request, opts, progress: [...progress] });
+        if (alive()) setFlow({ step: 'fetching', job, opts, progress: [...progress] });
       };
       const bytes = (i: number, stage: string, done: number, total: number | undefined) => update(i, { stage, done, ...(total ? { total } : {}) });
-      setFlow({ step: 'fetching', request, opts, progress: [...progress] });
+      setFlow({ step: 'fetching', job, opts, progress: [...progress] });
       try {
         for (const [i, need] of opts.needs.entries()) {
           update(i, { state: 'running' });
@@ -227,47 +237,74 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
       } catch (e) {
         if (!alive()) return;
         const data = (e as { data?: AppErrorData }).data ?? apiErrorData(e);
-        setFlow({ step: 'fetching', request, opts, progress: progress.map((p) => (p.state === 'running' ? { ...p, state: 'failed' as const } : p)), error: data });
+        setFlow({ step: 'fetching', job, opts, progress: progress.map((p) => (p.state === 'running' ? { ...p, state: 'failed' as const } : p)), error: data });
         return;
       }
       void qc.invalidateQueries({ queryKey: ['bench', 'plan'] });
       // Fresh plan now that everything is in place: warnings (GPU busy) and the scenario for the live screen.
-      const plan = await api.post<RunPlan>('/api/runs/plan', request).catch(() => opts.plan);
+      const plan = await planOf(job).catch(() => opts.plan);
       if (!alive()) return;
       const pre = { install: opts.needs.some((n) => n.kind !== 'model'), download: opts.needs.some((n) => n.kind === 'model') };
-      proceed(request, { ...opts, ...(plan ? { plan } : {}) }, pre);
+      proceed(job, { ...opts, ...(plan ? { plan } : {}) }, pre);
     },
-    [api, qc, install, download, proceed],
+    [qc, install, download, planOf, proceed],
   );
 
-  /** With the plan of this request (if one could be made): confirm what must be fetched first, or go. */
+  /** "Scarica e avvia" / "Avvia server": fetch what is missing first, or go straight on. */
+  const confirm = useCallback(
+    async (job: Job, opts: FlowOpts) => {
+      if (opts.needs.length) await fetchNeeds(job, opts);
+      else proceed(job, opts, { install: false, download: false });
+    },
+    [fetchNeeds, proceed],
+  );
+
+  /**
+   * With the plan of this job (if one could be made): a run asks only when something must be
+   * fetched first; a server always shows what will run (context, command) before starting.
+   */
   const decide = useCallback(
-    (request: StartRunRequest, opts: StartOptions, plan: RunPlan | undefined) => {
-      const needs = plan ? needsFromPlan(request, plan, opts.modelLabel) : opts.needs;
-      const next: StartOptions = { ...opts, needs, ...(plan ? { plan } : {}) };
-      if (needs.length) setFlow({ step: 'confirm', request, opts: next });
-      else proceed(request, next, { install: false, download: false });
+    (job: Job, opts: FlowOpts) => {
+      const needs = opts.plan ? needsFromPlan(job.request, opts.plan, opts.modelLabel) : opts.needs;
+      const next: FlowOpts = { ...opts, needs };
+      if (job.mode === 'serve' || needs.length) setFlow({ step: 'confirm', job, opts: next });
+      else proceed(job, next, { install: false, download: false });
     },
     [proceed],
   );
 
-  const start = useCallback(
-    (request: StartRunRequest, opts: StartOptions) => {
-      if (opts.plan) {
-        decide(request, opts, opts.plan);
-        return;
-      }
-      // Started before the preview of these exact choices arrived: get it now (downloads, GPU check, phases, duration).
+  /** Started before the preview of these exact choices arrived: get it now (downloads, GPU check, phases, duration). */
+  const begin = useCallback(
+    (job: Job, opts: FlowOpts) => {
       const gen = ++generation.current;
-      setFlow({ step: 'starting', request, opts });
-      void api
-        .post<RunPlan>('/api/runs/plan', request)
-        .catch(() => undefined)
-        .then((plan) => {
-          if (generation.current === gen) decide(request, opts, plan);
+      setFlow({ step: 'starting', job, opts, planning: true });
+      void planOf(job)
+        .then(
+          (plan): Partial<FlowOpts> => ({ plan }),
+          (e: unknown): Partial<FlowOpts> => ({ planError: apiErrorData(e) }),
+        )
+        .then((got) => {
+          if (generation.current === gen) decide(job, { ...opts, ...got });
         });
     },
-    [api, decide],
+    [planOf, decide],
+  );
+
+  const start = useCallback(
+    (request: StartRunRequest, opts: StartOptions) => {
+      const job: Job = { mode: 'run', request, onStarted: opts.onStarted };
+      const base: FlowOpts = { needs: opts.needs, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel };
+      if (opts.plan) decide(job, { ...base, plan: opts.plan });
+      else begin(job, base);
+    },
+    [decide, begin],
+  );
+
+  const serve = useCallback(
+    (request: StartServerRequest, opts: ServeOptions) => {
+      begin({ mode: 'serve', request, onStarted: opts.onStarted }, { needs: [], modelLabel: opts.modelLabel, engineLabel: opts.engineLabel });
+    },
+    [begin],
   );
 
   const close = () => {
@@ -278,222 +315,12 @@ export function useStartFlow(): { start: (request: StartRunRequest, opts: StartO
     setFlow({ step: 'idle' });
   };
 
-  const stopServersAndStart = async (request: StartRunRequest, opts: StartOptions, servers: ServerInfo[]) => {
-    setFlow({ step: 'starting', request, opts });
+  const stopServersAndStart = async (job: Job, opts: FlowOpts, servers: ServerInfo[]) => {
+    setFlow({ step: 'starting', job, opts });
     await Promise.all(servers.map((s) => api.del(`/api/servers/${encodeURIComponent(s.id)}`).catch(() => undefined)));
     void qc.invalidateQueries({ queryKey: SERVERS_KEY });
-    await post(request, opts, { install: false, download: false });
+    await post(job, opts, { install: false, download: false });
   };
 
-  return { start, ui: <StartDialogs flow={flow} onClose={close} onConfirm={fetchNeeds} onContinue={post} onStopServers={stopServersAndStart} /> };
-}
-
-const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
-
-/** "Installo llama.cpp", "Scarico l'immagine …", "Scarico Qwen3 4B · Q4_K_M" and why. */
-const NEED_TEXT = {
-  engine: ['benchmark.needs.installEngine', 'benchmark.needs.engineWhy'],
-  image: ['benchmark.needs.pullImage', 'benchmark.needs.imageWhy'],
-  model: ['benchmark.needs.downloadModel', 'benchmark.needs.modelWhy'],
-} as const;
-
-function NeedRow({ p }: { p: StepProgress }) {
-  const { t, bytes, integer } = useI18n();
-  const Icon = NEED_ICONS[p.need.kind];
-  // A total always comes with the bytes done.
-  const pct = p.total ? Math.min(100, (100 * p.done!) / p.total) : p.state === 'done' ? 100 : 0;
-  const stage =
-    p.state === 'done'
-      ? t('benchmark.needs.ready')
-      : p.state === 'pending'
-        ? t('benchmark.needs.waiting')
-        : p.state === 'failed'
-          ? t('benchmark.needs.failed')
-          : t(`benchmark.needs.stage.${stageKey(p.stage)}`);
-  return (
-    <li className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3">
-      <div className="flex items-center gap-3">
-        <Icon aria-hidden className="size-4 shrink-0 text-accent-text" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{p.need.label}</span>
-        {p.state === 'done' ? (
-          <Check aria-hidden className="size-4 text-success-text" />
-        ) : p.state === 'running' ? (
-          <Loader aria-hidden className="size-4 animate-spin text-accent [animation-duration:2.4s]" />
-        ) : p.state === 'failed' ? (
-          <TriangleAlert aria-hidden className="size-4 text-danger-text" />
-        ) : null}
-        <span className="text-xs text-fg-3 tabular-nums">{stage}</span>
-      </div>
-      <Progress
-        size="sm"
-        value={pct}
-        tone={p.state === 'done' ? 'success' : 'accent'}
-        label={p.need.label}
-        valueText={p.total ? t('benchmark.needs.bytesOf', { done: bytes(p.done!), total: bytes(p.total) }) : `${integer(pct)}%`}
-      />
-    </li>
-  );
-}
-
-/** Install stages and download states shown with words. */
-function stageKey(stage: string | undefined): 'resolve' | 'download' | 'extract' | 'smoke' | 'verifying' | 'queued' | 'working' {
-  switch (stage) {
-    case 'resolve':
-    case 'download':
-    case 'extract':
-    case 'smoke':
-    case 'verifying':
-    case 'queued':
-      return stage;
-    case 'running':
-      return 'download';
-    default:
-      return 'working';
-  }
-}
-
-function StartDialogs({
-  flow,
-  onClose,
-  onConfirm,
-  onContinue,
-  onStopServers,
-}: {
-  flow: Flow;
-  onClose: () => void;
-  onConfirm: (request: StartRunRequest, opts: StartOptions) => Promise<void>;
-  onContinue: (request: StartRunRequest, opts: StartOptions, pre: { install: boolean; download: boolean }) => Promise<void>;
-  onStopServers: (request: StartRunRequest, opts: StartOptions, servers: ServerInfo[]) => Promise<void>;
-}) {
-  const { t, bytes } = useI18n();
-  const open = flow.step !== 'idle';
-  let content: ReactNode = null;
-  if (flow.step === 'confirm') {
-    const total = flow.opts.needs.reduce((a, n) => a + (n.bytes ?? 0), 0);
-    content = (
-      <DialogContent
-        title={t('benchmark.needs.title')}
-        description={total ? t('benchmark.needs.descriptionSize', { size: bytes(total) }) : t('benchmark.needs.description')}
-        footer={
-          <>
-            <Button onClick={onClose}>{t('common.cancel')}</Button>
-            <Button variant="primary" onClick={() => void onConfirm(flow.request, flow.opts)}>
-              <Download aria-hidden />
-              {t('benchmark.needs.confirm')}
-            </Button>
-          </>
-        }
-      >
-        <ul className="flex flex-col gap-2">
-          {flow.opts.needs.map((n) => {
-            const Icon = NEED_ICONS[n.kind];
-            const [what, why] = NEED_TEXT[n.kind];
-            return (
-              <li key={n.label} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
-                <Icon aria-hidden className="size-4 shrink-0 text-accent-text" />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium break-words text-fg">{t(what, { name: n.label })}</span>
-                  <span className="text-xs text-fg-3">{t(why)}</span>
-                </span>
-                <span className="shrink-0 font-medium text-fg tabular-nums">{n.bytes === undefined ? t('benchmark.needs.sizeUnknown') : bytes(n.bytes)}</span>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-3 text-xs text-fg-3">{t('benchmark.needs.once')}</p>
-      </DialogContent>
-    );
-  } else if (flow.step === 'fetching') {
-    const done = flow.progress.every((p) => p.state === 'done');
-    content = (
-      <DialogContent
-        title={flow.error ? t('benchmark.needs.failedTitle') : t('benchmark.needs.progressTitle')}
-        description={flow.error ? undefined : t('benchmark.needs.progressBody')}
-        footer={
-          flow.error ? (
-            <>
-              <Button onClick={onClose}>{t('common.close')}</Button>
-              <Button variant="primary" onClick={() => void onConfirm(flow.request, flow.opts)}>
-                {t('common.retry')}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={onClose} disabled={done}>
-              {t('common.cancel')}
-            </Button>
-          )
-        }
-      >
-        <div className="flex flex-col gap-3" aria-live="polite">
-          <ul className="flex flex-col gap-2">
-            {flow.progress.map((p) => (
-              <NeedRow key={p.need.label} p={p} />
-            ))}
-          </ul>
-          {flow.error && <ErrorCard error={flow.error} headingLevel={3} />}
-        </div>
-      </DialogContent>
-    );
-  } else if (flow.step === 'busy') {
-    const own = flow.ownServers.length > 0;
-    content = (
-      <DialogContent
-        title={t(own ? 'benchmark.busy.ownTitle' : 'benchmark.busy.title')}
-        description={t(own ? 'benchmark.busy.ownBody' : 'benchmark.busy.body')}
-        footer={
-          <>
-            <Button onClick={onClose}>{t('common.cancel')}</Button>
-            {own ? (
-              <Button variant="primary" onClick={() => void onStopServers(flow.request, flow.opts, flow.ownServers)}>
-                {t('benchmark.busy.stopServers')}
-              </Button>
-            ) : (
-              <Button variant="primary" onClick={() => void onContinue({ ...flow.request, allowSharedGpu: true }, flow.opts, { install: false, download: false })}>
-                {t('benchmark.busy.continue')}
-              </Button>
-            )}
-          </>
-        }
-      >
-        <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
-          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning-text" />
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-fg">{t('benchmark.busy.who')}</span>
-            <span className="text-fg-2">{own ? flow.ownServers.map((s) => `${s.modelName} · ${s.baseUrl}`).join(', ') : flow.names || t('benchmark.busy.unknown')}</span>
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-fg-3">{t(own ? 'benchmark.busy.ownHint' : 'benchmark.busy.hint')}</p>
-      </DialogContent>
-    );
-  } else if (flow.step === 'starting') {
-    content = (
-      <DialogContent title={t('benchmark.starting')}>
-        <p className="flex items-center gap-2 text-sm text-fg-2" aria-live="polite">
-          <Loader aria-hidden className="size-4 animate-spin text-accent" />
-          {t('benchmark.startingBody')}
-        </p>
-      </DialogContent>
-    );
-  } else if (flow.step === 'error') {
-    content = (
-      <DialogContent title={t('benchmark.startFailed')} footer={<Button onClick={onClose}>{t('common.close')}</Button>}>
-        <ErrorCard
-          error={flow.error}
-          headingLevel={3}
-          handlers={{ retry: () => void onContinue(flow.request, flow.opts, { install: false, download: false }) }}
-          extra={
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              {t('benchmark.changeChoices')}
-            </Button>
-          }
-        />
-      </DialogContent>
-    );
-  }
-  return (
-    // Radix only ever asks to close (Escape, overlay, the close button).
-    <Dialog open={open} onOpenChange={onClose}>
-      {content}
-    </Dialog>
-  );
+  return { start, serve, ui: <StartDialogs flow={flow} onClose={close} onConfirm={confirm} onContinue={post} onStopServers={stopServersAndStart} /> };
 }
