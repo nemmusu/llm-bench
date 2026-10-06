@@ -1,0 +1,2 @@
+cores=20
+caption=Microsoft Windows 11 Pro

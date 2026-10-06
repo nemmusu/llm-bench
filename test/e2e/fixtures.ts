@@ -1,5 +1,6 @@
 import { test as base, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -32,11 +33,25 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const app = await electron.launch({ args: [ROOT], cwd: ROOT, env });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
+  const coverageDir = process.env.GPUBENCH_E2E_COVERAGE;
+  if (coverageDir) {
+    // Start collecting before the app code runs: reload under coverage.
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+  }
   return {
     app,
     page,
     userData,
     close: async () => {
+      if (coverageDir && !page.isClosed()) {
+        const entries = await page.coverage.stopJSCoverage();
+        const dir = path.join(path.dirname(coverageDir), 'cov-renderer');
+        mkdirSync(dir, { recursive: true });
+        const ours = entries.filter((e) => /^http:\/\/127\.0\.0\.1:\d+\/assets\//.test(e.url));
+        writeFileSync(path.join(dir, `${randomUUID()}.json`), JSON.stringify({ result: ours }));
+      }
       await app.close();
       if (!opts.userData) rmSync(userData, { recursive: true, force: true });
     },

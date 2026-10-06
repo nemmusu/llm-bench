@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeFileAtomic, type AtomicFs } from '../../../src/core/store/atomic';
@@ -57,5 +57,26 @@ describe('writeFileAtomic', () => {
     };
     await expect(writeFileAtomic('/x/y.json', 'd', { fs: fake })).rejects.toThrow('nope');
     expect(calls).toBe(1);
+  });
+
+  it('treats errors without a code as permanent', async () => {
+    const fake: AtomicFs = {
+      writeFile: async () => {},
+      mkdir: async () => {},
+      rm: async () => {},
+      rename: async () => {
+        throw new Error('no code');
+      },
+    };
+    await expect(writeFileAtomic('/x/y.json', 'd', { fs: fake })).rejects.toThrow('no code');
+  });
+
+  it('removes the temp file when the real rename fails (target is a directory)', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-atomic-'));
+    const target = path.join(dir, 'busy');
+    mkdirSync(target);
+    writeFileSync(path.join(target, 'inside'), 'x');
+    await expect(writeFileAtomic(target, 'data', { retries: 1, delayMs: 1 })).rejects.toThrow();
+    expect(readdirSync(dir)).toEqual(['busy']);
   });
 });

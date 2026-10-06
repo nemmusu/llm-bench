@@ -1,0 +1,17 @@
+Real captures from the dev PC on 2026-10-06 (Windows 11 Pro 26H2, Intel Core Ultra 7 265F, 20 cores; WSL Ubuntu 24.04).
+Identifiers were replaced by fake values of the same shape (MachineGuid, /etc/machine-id).
+
+win-reg-machineguid.txt    reg query HKLM\SOFTWARE\Microsoft\Cryptography /v MachineGuid            (GUID faked)
+win-reg-displayversion.txt reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v DisplayVersion
+win-powercfg.txt           powercfg /getactivescheme  (Italian locale: "(Prestazioni elevate)", no trailing newline)
+win-ps-cores.txt           powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty NumberOfCores"
+win-ps-os-caption.txt      powershell … "(Get-CimInstance Win32_OperatingSystem).Caption"
+win-ps-sysinfo.txt         the single PowerShell script GPU Bench actually runs (cores sum + caption, key=value lines)
+wsl-os-release.txt         cat /etc/os-release
+wsl-proc-version.txt       cat /proc/version (contains "microsoft")
+wsl-machine-id.txt         /etc/machine-id                                                          (value faked)
+wsl-cpuinfo.txt            cat /proc/cpuinfo (20 vCPUs, 1 physical id, 20 core ids)
+
+handmade/                  hand-made: 2-socket hyper-threaded cpuinfo (8 threads, 4 cores), ARM cpuinfo without
+                           physical/core id, powercfg in Italian with CRLF + trailing space, English, a plan name
+                           with nested parentheses, and an os-release without PRETTY_NAME.

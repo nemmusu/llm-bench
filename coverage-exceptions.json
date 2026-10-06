@@ -1,0 +1,4 @@
+{
+  "$comment": "Each entry justifies one coverage-ignore hint in src/. Keep this list tiny (budget 10).",
+  "exceptions": []
+}

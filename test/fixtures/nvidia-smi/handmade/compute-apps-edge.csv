@@ -1,0 +1,7 @@
+4242, /opt/llama.cpp/build/bin/llama-server, 18432
+4242, /opt/llama.cpp/build/bin/llama-server, 1024
+5151, C:\Program Files\Acme, Inc\LM Studio\LM Studio.exe, [N/A]
+6161, [Insufficient Permissions], [N/A]
+7171, /usr/bin/python3, 9000
+No running processes found
+not-a-pid, foo, 1

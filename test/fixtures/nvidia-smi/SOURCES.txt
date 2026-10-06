@@ -1,0 +1,22 @@
+Real captures from the dev PC on 2026-10-06 (RTX 5090 32 GB, driver 617.14, CUDA UMD 13.4). Read-only commands.
+win-*  Windows 11 (WDDM), nvidia-smi.exe from System32.     wsl-*  WSL Ubuntu 24.04 (/usr/lib/wsl/lib/nvidia-smi 615.78.02).
+
+*-plain.txt              nvidia-smi                       (617 header: "KMD Version" / "CUDA UMD Version")
+*-version.txt            nvidia-smi --version             ("DRIVER/CUDA version: Deprecated", KMD/UMD lines)
+*-probe.csv              --query-gpu=index,uuid,name,memory.total,memory.used,driver_version,compute_cap,power.limit,
+                         pcie.link.gen.max,pcie.link.width.max --format=csv,noheader,nounits
+*-snapshot.csv           --query-gpu=index,utilization.gpu,memory.used,memory.total,power.draw.instant,power.draw,
+                         temperature.gpu,clocks.sm,clocks.mem,pcie.link.gen.current,pcie.link.width.current,
+                         clocks_event_reasons.active --format=csv,noheader,nounits
+*-stream.csv             same query with -lms 250, stopped after 2 s (note: -c is --compute-mode, never a count!)
+win-snapshot-legacy-names.csv  same but power.draw (no .instant) and clocks_throttle_reasons.active (alias)
+*-compute-apps.csv       --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits
+                         (Windows: used_memory is [N/A] under WDDM, desktop apps listed; WSL: empty.
+                         The user name in one path was replaced by "user".)
+*-help-query-gpu.txt     --help-query-gpu (fields supported by this driver)
+*-unsupported-field.txt  --query-gpu=index,bogus.field …: message on stdout; exit 2 on Windows, exit 0 on WSL!
+win-no-devices.txt       -i 7 --query-gpu=index: "No devices were found", exit 6
+win-clock-reasons.csv    supported (0x7FF) / active (0x400) masks + per-reason columns: 0x400 = reliability,
+                         so board_limit = 0x200 (the only remaining bit of the supported mask)
+win-q-performance.txt    nvidia-smi -q -d PERFORMANCE (reason names in bit order)
+handmade/                hand-made legacy/edge cases, see handmade/SOURCES.txt

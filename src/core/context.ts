@@ -1,4 +1,6 @@
 import type { CoreDeps } from './deps';
+import type { SysInfo } from './sysinfo/fingerprint';
+import type { Telemetry } from './telemetry/factory';
 import type { EventHub } from './server/event-hub';
 import type { SettingsRepo } from './store/settings-repo';
 
@@ -14,4 +16,7 @@ export interface CoreContext {
   shutdown: AbortSignal;
   /** In-memory secrets pushed by the Electron main (never written by the core, never logged). */
   secrets: { hfToken?: string };
+  /** One NVIDIA sampler per core, shared by the system routes and the benchmark runner. */
+  telemetry: Telemetry;
+  sysinfo: SysInfo;
 }

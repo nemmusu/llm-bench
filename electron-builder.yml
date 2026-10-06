@@ -1,0 +1,69 @@
+appId: app.gpubench.desktop
+productName: GPU Bench
+copyright: Copyright © 2026 GPU Bench
+directories:
+  output: dist
+  buildResources: build
+
+# Everything is bundled by scripts/build.mjs, so the package needs no node_modules.
+files:
+  - out/**/*
+  - '!out/**/*.map'
+  - package.json
+extraResources:
+  - from: resources
+    to: app-resources
+    filter:
+      - '**/*'
+asar: true
+compression: normal
+
+# Hardening for the shipped app. (E2E runs on the unpackaged build, which keeps the defaults.)
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: resources/icons/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: GPU Bench
+  installerLanguages: [it_IT, en_US]
+  language: '1040'
+  displayLanguageSelector: true
+  artifactName: GPU-Bench-Setup-${version}.${ext}
+  uninstallDisplayName: GPU Bench
+
+portable:
+  artifactName: GPU-Bench-${version}-portable.${ext}
+
+linux:
+  target:
+    - target: deb
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
+  icon: resources/icons/png
+  category: Utility
+  synopsis: Misura le prestazioni della GPU con l'inferenza LLM
+  description: GPU Bench misura caricamento a freddo e a caldo, token/s, latenza, VRAM e consumi con llama.cpp e vLLM.
+  maintainer: GPU Bench <noreply@gpubench.invalid>
+  artifactName: gpu-bench-${version}-${arch}.${ext}
+
+deb:
+  priority: optional

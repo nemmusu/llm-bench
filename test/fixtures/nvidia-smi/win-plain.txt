@@ -1,0 +1,42 @@
+Tue Oct  6 12:47:31 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 617.14                 KMD Version: 617.14        CUDA UMD Version: 13.4     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                  Driver-Model | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5090      WDDM  |   00000000:02:00.0  On |                  N/A |
+|  0%   60C    P8             65W /  575W |    1877MiB /  32607MiB |      3%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            8600    C+G   ...5n1h2txyewy\TextInputHost.exe      N/A      |
+|    0   N/A  N/A            9756    C+G   ...CUE5 Software\QmlRenderer.exe      N/A      |
+|    0   N/A  N/A           14064    C+G   C:\Windows\explorer.exe               N/A      |
+|    0   N/A  N/A           14824    C+G   ...2txyewy\CrossDeviceResume.exe      N/A      |
+|    0   N/A  N/A           15004    C+G   ...1g1gvanyjgm\WhatsApp.Root.exe      N/A      |
+|    0   N/A  N/A           16584    C+G   ..._cw5n1h2txyewy\SearchHost.exe      N/A      |
+|    0   N/A  N/A           16608    C+G   ...y\StartMenuExperienceHost.exe      N/A      |
+|    0   N/A  N/A           17088    C+G   ...IA App\CEF\NVIDIA Overlay.exe      N/A      |
+|    0   N/A  N/A           18904    C+G   ...mba6cd70vzyy\ArmouryCrate.exe      N/A      |
+|    0   N/A  N/A           19060    C+G   ...IA App\CEF\NVIDIA Overlay.exe      N/A      |
+|    0   N/A  N/A           20304    C+G   ....0.4258.48\msedgewebview2.exe      N/A      |
+|    0   N/A  N/A           21460    C+G   ...em32\ApplicationFrameHost.exe      N/A      |
+|    0   N/A  N/A           24712    C+G   ...rsair iCUE5 Software\iCUE.exe      N/A      |
+|    0   N/A  N/A           27308    C+G   ...2p2nqsd0c76g0\app\ChatGPT.exe      N/A      |
+|    0   N/A  N/A           27592    C+G   ...xyewy\ShellExperienceHost.exe      N/A      |
+|    0   N/A  N/A           33864    C+G   ...s\Mozilla Firefox\firefox.exe      N/A      |
+|    0   N/A  N/A           35328    C+G   ...s\Mozilla Firefox\firefox.exe      N/A      |
+|    0   N/A  N/A           39556    C+G   ..._pzs8sxrjxfjjc\app\claude.exe      N/A      |
+|    0   N/A  N/A           46020    C+G   ...ntrolPanel\SystemSettings.exe      N/A      |
+|    0   N/A  N/A           46764    C+G   ...\codex-computer-use-swift.exe      N/A      |
+|    0   N/A  N/A           53916    C+G   ..._pzs8sxrjxfjjc\app\claude.exe      N/A      |
+|    0   N/A  N/A           55908    C+G   ...indows\System32\ShellHost.exe      N/A      |
+|    0   N/A  N/A           57868    C+G   ...8bbwe\PhoneExperienceHost.exe      N/A      |
++-----------------------------------------------------------------------------------------+

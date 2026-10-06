@@ -1,0 +1,24 @@
+Hand-made nvidia-smi fixtures (NOT captured). They model drivers/hardware we do not have,
+based on the formats of the real captures in ../ (driver 617.14, Windows + WSL) and on
+public nvidia-smi output of older drivers. Keep them small and explain every oddity here.
+
+legacy-plain.txt              R470-era plain header: "Driver Version: … CUDA Version: 11.4", no KMD/UMD names.
+legacy-version-unsupported.txt What an old nvidia-smi prints for an unknown option such as --version.
+r535-version.txt              --version of R535 (before 617 deprecated "DRIVER/CUDA version" in favour of KMD/UMD).
+r535-plain-header.txt         R535 plain header (first lines only).
+no-cuda-header.txt            Header with "CUDA Version: N/A" (driver without a CUDA user-mode driver).
+legacy-probe.csv              Probe query (index,uuid,name,memory.total,memory.used,driver_version,compute_cap,
+                              power.limit,pcie.link.gen.max,pcie.link.width.max): [N/A]/[Not Supported]/[Unknown Error],
+                              extra spaces, and a GPU name containing a comma ("Quadro K2200, Inc.") to exercise
+                              free-text column merging (nvidia-smi never quotes CSV values).
+legacy-sample.csv             Sample query after fallback (power.draw.instant dropped, clocks_throttle_reasons.active):
+                              index,utilization.gpu,memory.used,memory.total,power.draw,temperature.gpu,clocks.sm,
+                              clocks.mem,pcie.link.gen.current,pcie.link.width.current,clocks_throttle_reasons.active
+legacy-unsupported-field.txt  Unsupported field error (same wording as the real ../*-unsupported-field.txt captures).
+multi-gpu-stream.csv          -lms stream of 2 GPUs (full sample field list) with a garbage line, an empty line and a
+                              truncated final line (process killed mid-write). 0x24 = sw_power_cap|sw_thermal_slowdown,
+                              0xC4 = sw_power_cap|hw_thermal_slowdown|hw_power_brake_slowdown.
+driver-missing.txt            Exit 9 message when the kernel driver is not loaded.
+nvml-mismatch.txt             Linux after a driver upgrade without reboot.
+compute-apps-edge.csv         Duplicate pid (one process on 2 GPUs), path with a comma, permission placeholder,
+                              python process, the old "No running processes found" line and a garbage line.
