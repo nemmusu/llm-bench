@@ -138,9 +138,55 @@ export function promptOffset(size: number, length: number, rep: number, seed: nu
   return (base + (rep % size) * step) % size;
 }
 
+/** Passage length (tokens) used to cycle the corpus when a prompt needs more tokens than it has. */
+export const PASSAGE_TOKENS = 256;
+/** Same for the text fallback (characters). */
+export const PASSAGE_CHARS = PASSAGE_TOKENS * CHARS_PER_TOKEN;
+
 /**
- * Exact-length prompt as token ids: [BOS] + corpus[offset … offset + length − 1), wrapping around
- * the corpus when needed.
+ * Where a prompt of `length` units comes from in a corpus of `size` units, as [from, to) segments in
+ * prompt order. Lap 0 is the corpus read once from `offset` (wrapping at the end, so every unit is
+ * used once). A prompt longer than the corpus (very large contexts: the bundled corpus is ~100K
+ * tokens) continues with further laps over the corpus cut into passages of `passage` units: each lap
+ * visits the passages in a different order (an affine permutation whose step is never 1, so two
+ * passages that follow each other in the book never follow each other again) and starts each passage
+ * at a different point (rotation). No run longer than one passage repeats inside the prompt, and the
+ * start offset (different for every request) keeps prompts from sharing a prefix across requests.
+ * The limit: beyond `size` units the text is the same book in shuffled passages — attention cost
+ * depends on how many tokens fill the context, not on what they say, so the timing is unaffected.
+ */
+export function promptSegments(size: number, length: number, offset: number, seed: number, passage: number): [number, number][] {
+  const out: [number, number][] = [];
+  let left = length;
+  const take = (from: number, to: number) => {
+    const end = Math.min(to, from + left);
+    out.push([from, end]);
+    left -= end - from;
+  };
+  take(offset, size);
+  if (left > 0 && offset > 0) take(0, offset);
+  const count = Math.ceil(size / passage);
+  for (let lap = 1; left > 0; lap++) {
+    // Step in 2…count−1 and coprime with the passage count: a permutation where no two book neighbours
+    // follow each other (count − 1 is always coprime, so the search ends there at the latest).
+    let step = count > 2 ? 2 + ((fnv1a(`${seed}:lap:${lap}`) + lap) % (count - 2)) : 1;
+    while (gcd(step, count) !== 1) step++;
+    const shift = fnv1a(`${seed}:shift:${lap}`) % count;
+    for (let j = 0; j < count && left > 0; j++) {
+      const p = (shift + j * step) % count;
+      const from = p * passage;
+      const to = Math.min(size, from + passage);
+      const rot = (lap * 61) % (to - from);
+      take(from + rot, to);
+      if (left > 0 && rot > 0) take(from, from + rot);
+    }
+  }
+  return out;
+}
+
+/**
+ * Exact-length prompt as token ids: [BOS] + the corpus from a per-request offset, cycling through
+ * shuffled passages when the prompt is longer than the corpus (see promptSegments).
  */
 export function buildPrompt(
   tokens: readonly number[],
@@ -152,7 +198,9 @@ export function buildPrompt(
   if (tokens.length === 0) throw new AppError('INTERNAL', 'Empty corpus');
   const out = opts.bos !== undefined ? [opts.bos] : [];
   const off = promptOffset(tokens.length, length, rep, opts.seed, opts.salt);
-  for (let i = 0; out.length < length; i++) out.push(tokens[(off + i) % tokens.length] as number);
+  for (const [from, to] of promptSegments(tokens.length, length - out.length, off, opts.seed + rep, PASSAGE_TOKENS)) {
+    for (let i = from; i < to; i++) out.push(tokens[i] as number);
+  }
   return out;
 }
 
@@ -165,7 +213,7 @@ export function buildTextPrompt(corpus: string, length: number, rep: number, opt
   if (corpus.length === 0) throw new AppError('INTERNAL', 'Empty corpus');
   const chars = length * CHARS_PER_TOKEN;
   const off = promptOffset(corpus.length, length, rep, opts.seed, opts.salt);
-  let out = corpus.slice(off, off + chars);
-  while (out.length < chars) out += corpus.slice(0, chars - out.length);
-  return out;
+  return promptSegments(corpus.length, chars, off, opts.seed + rep, PASSAGE_CHARS)
+    .map(([from, to]) => corpus.slice(from, to))
+    .join('');
 }

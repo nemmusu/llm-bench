@@ -116,6 +116,27 @@ export const concurrencyPointSchema = z.object({
   ttftP50Ms: z.number(),
   ttftP95Ms: z.number(),
   errors: z.number().int(),
+  /** Prompt and answer length of every request at this level (copied from the step). */
+  promptTokens: z.number().int().optional(),
+  outputTokens: z.number().int().optional(),
+  /**
+   * Tokens one user can hold: llama.cpp with split slots = ctx / slots; with a unified KV cache (and
+   * vLLM, whose pool is always shared) the whole context, shared by everyone (contextShared = true).
+   */
+  contextPerUser: z.number().int().optional(),
+  contextShared: z.boolean().optional(),
+  /** The slowest users' generation speed: 5th percentile of the per-request decode rates. */
+  perRequestDecodeTpsP5: z.number().optional(),
+  /** Distribution of the per-request decode rates (one value per successful request). */
+  perRequestDecodeTps: statSchema.optional(),
+  /** Per-user prompt reading speed (engine timings when available, else prompt / TTFT): median and 5th percentile. */
+  perRequestPrefillTpsP50: z.number().optional(),
+  perRequestPrefillTpsP5: z.number().optional(),
+  /**
+   * Prompt tokens read per second by the server as a whole: total prompt tokens over the time at
+   * least one request was still reading its prompt (union of the send → first-token windows).
+   */
+  aggregatePrefillTps: z.number().optional(),
 });
 export type ConcurrencyPoint = z.infer<typeof concurrencyPointSchema>;
 
@@ -405,6 +426,8 @@ export const runSummarySchema = z.object({
   /** Most users served at once in the test (concurrency above 1) and their combined generation speed. */
   parallelUsers: z.number().int().optional(),
   parallelTps: z.number().optional(),
+  /** Generation speed each of those users got (median per request). */
+  parallelPerUserTps: z.number().optional(),
   validity: z.array(validityFlagSchema).default([]),
   /** Which file this summary came from (results folder may be shared). */
   file: z.string(),

@@ -11,7 +11,10 @@ import {
   detectBos,
   getCorpusTokens,
   loadCorpus,
+  PASSAGE_CHARS,
+  PASSAGE_TOKENS,
   promptOffset,
+  promptSegments,
   sha256,
   splitBlocks,
   tokenCacheFile,
@@ -179,5 +182,66 @@ describe('promptOffset / buildPrompt / buildTextPrompt', () => {
     expect(t.length).toBe(5 * CHARS_PER_TOKEN);
     expect(buildTextPrompt('abcdefghij', 5, 2, { seed: 9, salt: 'x' })).toBe(t);
     expect(buildTextPrompt('abc', 0, 0, { seed: 1 })).toBe('');
+  });
+
+  it('text fallback longer than the corpus cycles shuffled passages too', () => {
+    const corpus = Array.from({ length: PASSAGE_CHARS * 6 }, (_, i) => String.fromCharCode(65 + (i % 26))).join('');
+    const t = buildTextPrompt(corpus, (corpus.length / CHARS_PER_TOKEN) * 3, 1, { seed: 5 });
+    expect(t.length).toBe(corpus.length * 3);
+  });
+});
+
+/** Longest run of indices that follow each other in the corpus (i, i+1, i+2…). */
+function longestRun(ids: readonly number[]): number {
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < ids.length; i++) {
+    run = ids[i] === (ids[i - 1] as number) + 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+  return best;
+}
+
+describe('corpus cycling for prompts longer than the corpus', () => {
+  // Unique ids = corpus positions, so "follows in the book" is "id + 1".
+  const corpus = Array.from({ length: PASSAGE_TOKENS * 40 + 77 }, (_, i) => i);
+
+  it('lap 0 reads the whole corpus once from the offset, then later laps never repeat more than one passage', () => {
+    const p = buildPrompt(corpus, corpus.length * 4, 3, { seed: 42 });
+    expect(p.length).toBe(corpus.length * 4);
+    const first = p.slice(0, corpus.length);
+    expect(new Set(first).size).toBe(corpus.length);
+    expect(longestRun(p.slice(corpus.length))).toBeLessThanOrEqual(PASSAGE_TOKENS);
+    // Every lap uses every token once more.
+    const counts = new Map<number, number>();
+    for (const id of p) counts.set(id, (counts.get(id) ?? 0) + 1);
+    expect([...counts.values()].every((c) => c === 4)).toBe(true);
+  });
+
+  it('two requests never share a prefix, and the BOS is not counted twice', () => {
+    const a = buildPrompt(corpus, corpus.length * 2, 0, { seed: 42, bos: 1 });
+    const b = buildPrompt(corpus, corpus.length * 2, 1, { seed: 42, bos: 1 });
+    expect(a.length).toBe(corpus.length * 2);
+    expect(a[0]).toBe(1);
+    expect(a[1]).not.toBe(b[1]);
+  });
+
+  it('property: segments cover exactly the requested length, inside the corpus, without long repeats', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 3000 }), fc.integer({ min: 1, max: 12000 }), fc.integer({ min: 0, max: 2999 }), fc.integer(), (size, length, off, seed) => {
+        const offset = off % size;
+        const segs = promptSegments(size, length, offset, seed, 64);
+        expect(segs.reduce((n, [a, b]) => n + (b - a), 0)).toBe(length);
+        expect(segs.every(([a, b]) => a >= 0 && b <= size && b > a)).toBe(true);
+        const ids = segs.flatMap(([a, b]) => Array.from({ length: b - a }, (_, i) => a + i));
+        if (length > size && size > 64 * 3) expect(longestRun(ids.slice(size))).toBeLessThanOrEqual(64);
+      }),
+      { numRuns: 120 },
+    );
+  });
+
+  it('tiny corpora (one or two passages) still cycle', () => {
+    expect(promptSegments(3, 7, 1, 0, 64).reduce((n, [a, b]) => n + (b - a), 0)).toBe(7);
+    expect(promptSegments(100, 400, 0, 9, 64).reduce((n, [a, b]) => n + (b - a), 0)).toBe(400);
   });
 });
