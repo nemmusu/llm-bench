@@ -64,6 +64,11 @@ describe('command formatting', () => {
     expect(formatCommand(['llama'], 'bash')).toBe('llama');
     expect(formatCommand([], 'bash')).toBe('');
     expect(formatCommand(['C:\\x.exe', '--a'], 'powershell')).toBe('C:\\x.exe `\n  --a');
+    // Subcommands stay on the first line; the image after the flags gets its own.
+    expect(formatCommand(['docker', 'run', '--rm', '--gpus', 'all', 'vllm/vllm-openai:v0.12.0', '--model', 'Qwen/Qwen3-8B'], 'bash')).toBe(
+      ['docker run \\', '  --rm \\', '  --gpus all \\', '  vllm/vllm-openai:v0.12.0 \\', '  --model Qwen/Qwen3-8B'].join('\n'),
+    );
+    expect(formatCommand(['vllm', 'serve', 'Qwen/Qwen3-8B'], 'bash')).toBe('vllm serve Qwen/Qwen3-8B');
   });
 });
 

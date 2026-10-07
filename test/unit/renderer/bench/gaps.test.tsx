@@ -484,6 +484,6 @@ describe('results and result: odd data', () => {
     act(() => void router.navigate({ to: '/compare', search: { a: IDS.quick, b: IDS.full } }));
     await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronta' })).getAllByRole('row', { name: /Caricamento a freddo/ })).toHaveLength(1));
     await choose('Risultato A', /Gemma/);
-    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronta' })).getByRole('row', { name: /Caricamento a freddo/ }).textContent).toContain('%'));
+    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronta' })).getByRole('row', { name: /Caricamento a freddo/ }).textContent).toContain('3,2 volte più breve'));
   });
 });

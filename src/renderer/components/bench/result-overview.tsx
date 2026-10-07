@@ -11,6 +11,7 @@ import { MIB_PER_GB } from './format';
 import { kpisOf, READING_WORDS_PER_SEC, sentenceKey, type Kpis } from './kpis';
 import { noteText } from './notes';
 import { ConcurrencyChart, PromptChart, TimelineChart } from './result-charts';
+import { LongConversations } from './result-sessions';
 import { validityBody } from './validity';
 
 /** What each validity warning offers as a way forward. */
@@ -231,6 +232,7 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
         )}
       </div>
       <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} />
+      <LongConversations run={run} />
       {(run.metrics.latency.length > 0 || run.metrics.concurrency.length > 0) && (
         <div className="grid gap-section lg:grid-cols-2">
           {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} />}

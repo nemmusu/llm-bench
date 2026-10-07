@@ -2,19 +2,14 @@
 import type { LaunchParams } from '../../../contract/engines';
 import type { RunResult } from '../../../contract/results';
 import type { Formatters, MessageKey } from '../../i18n';
+import { longConversationRows, type WordsRow } from './compare-words';
 import { engineLabelOf, MIB_PER_GB, modelLabelOf, prettyVariant } from './format';
 import { kpisOf } from './kpis';
 
-export interface MetricRow {
-  id: string;
-  label: string;
-  a: number | undefined;
-  b: number | undefined;
-  higherIsBetter: boolean;
-  format: (v: number) => string;
-}
+/** A headline number of both runs, and how its difference is worded (speed, amount or time). */
+export type MetricRow = WordsRow;
 
-export function metricRows(a: RunResult, b: RunResult, f: Pick<Formatters, 't' | 'number' | 'integer'>): MetricRow[] {
+export function metricRows(a: RunResult, b: RunResult, f: Pick<Formatters, 't' | 'number' | 'integer' | 'percent' | 'duration'>): MetricRow[] {
   const { t, number, integer } = f;
   const ka = kpisOf(a);
   const kb = kpisOf(b);
@@ -22,15 +17,17 @@ export function metricRows(a: RunResult, b: RunResult, f: Pick<Formatters, 't' |
   const tps0 = (v: number) => `${integer(v)} tok/s`;
   const sec = (v: number) => `${number(v / 1000, 2)} s`;
   const rows: MetricRow[] = [
-    { id: 'decode', label: t('metrics.decode.label'), a: ka.decode?.median, b: kb.decode?.median, higherIsBetter: true, format: tps1 },
-    { id: 'prefill', label: t('metrics.prefill.label'), a: ka.prefill?.median, b: kb.prefill?.median, higherIsBetter: true, format: tps0 },
-    { id: 'ttft', label: t('metrics.ttft.label'), a: ka.ttft?.median, b: kb.ttft?.median, higherIsBetter: false, format: (v) => `${integer(v)} ms` },
-    { id: 'cold', label: t('metrics.coldLoad.label'), a: ka.coldMs?.median, b: kb.coldMs?.median, higherIsBetter: false, format: sec },
-    { id: 'warm', label: t('metrics.warmLoad.label'), a: ka.warmMs?.median, b: kb.warmMs?.median, higherIsBetter: false, format: sec },
-    { id: 'vram', label: t('metrics.vramPeak.label'), a: ka.vram?.mib, b: kb.vram?.mib, higherIsBetter: false, format: (v) => `${number(v / MIB_PER_GB, 1)} GB` },
-    { id: 'concurrency', label: t('metrics.concurrency.label'), a: ka.concurrency?.aggregateTps, b: kb.concurrency?.aggregateTps, higherIsBetter: true, format: tps0 },
-    { id: 'efficiency', label: t('metrics.efficiency.label'), a: ka.tokensPerJoule, b: kb.tokensPerJoule, higherIsBetter: true, format: (v) => `${number(v, 2)} tok/J` },
-    { id: 'score', label: t('metrics.score.label'), a: ka.score, b: kb.score, higherIsBetter: true, format: integer },
+    { id: 'decode', label: t('metrics.decode.label'), a: ka.decode?.median, b: kb.decode?.median, higherIsBetter: true, kind: 'speed', format: tps1 },
+    { id: 'prefill', label: t('metrics.prefill.label'), a: ka.prefill?.median, b: kb.prefill?.median, higherIsBetter: true, kind: 'speed', format: tps0 },
+    { id: 'ttft', label: t('metrics.ttft.label'), a: ka.ttft?.median, b: kb.ttft?.median, higherIsBetter: false, kind: 'time', format: (v) => `${integer(v)} ms` },
+    { id: 'cold', label: t('metrics.coldLoad.label'), a: ka.coldMs?.median, b: kb.coldMs?.median, higherIsBetter: false, kind: 'time', format: sec },
+    { id: 'warm', label: t('metrics.warmLoad.label'), a: ka.warmMs?.median, b: kb.warmMs?.median, higherIsBetter: false, kind: 'time', format: sec },
+    { id: 'vram', label: t('metrics.vramPeak.label'), a: ka.vram?.mib, b: kb.vram?.mib, higherIsBetter: false, kind: 'amount', format: (v) => `${number(v / MIB_PER_GB, 1)} GB` },
+    { id: 'concurrency', label: t('metrics.concurrency.label'), a: ka.concurrency?.aggregateTps, b: kb.concurrency?.aggregateTps, higherIsBetter: true, kind: 'speed', format: tps0 },
+    { id: 'efficiency', label: t('metrics.efficiency.label'), a: ka.tokensPerJoule, b: kb.tokensPerJoule, higherIsBetter: true, kind: 'amount', format: (v) => `${number(v, 2)} tok/J` },
+    { id: 'score', label: t('metrics.score.label'), a: ka.score, b: kb.score, higherIsBetter: true, kind: 'amount', format: integer },
+    // "Conversazioni lunghe" and the KV cache, at the same depth in both runs.
+    ...longConversationRows(a, b, f),
   ];
   // A metric neither run measured says nothing.
   return rows.filter((r) => r.a !== undefined || r.b !== undefined);

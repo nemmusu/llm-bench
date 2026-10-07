@@ -19,6 +19,9 @@ export const NOTE_CODES = [
   'MODEL_TOO_LARGE',
   'context_sweep_budget',
   'context_sweep_skipped',
+  'sessions_depth_reduced',
+  'sessions_depth_unknown',
+  'sessions_budget',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -36,6 +39,9 @@ const TONES: Record<NoteCode, NoteTone> = {
   MODEL_TOO_LARGE: 'danger',
   context_sweep_budget: 'info',
   context_sweep_skipped: 'info',
+  sessions_depth_reduced: 'info',
+  sessions_depth_unknown: 'info',
+  sessions_budget: 'info',
 };
 
 export interface NoteText {
