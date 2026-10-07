@@ -40,14 +40,14 @@ test('history: filter, compare two runs, export the result and a selection, impo
     await page.getByRole('button', { name: 'Confronta', exact: true }).click();
     await expect(h1(page, 'Confronta')).toBeVisible();
     const table = page.getByRole('table', { name: 'Confronta' });
-    // A is the older run (Qwen3 30B A3B), B the newer one (Gemma 4 31B, slower).
-    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('−');
+    // A is the older run (Qwen3 30B A3B), B the newer one (Gemma 4 31B, 3,7 times slower): said in words.
+    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('3,7 volte più lento');
     await expect(page.getByRole('heading', { name: 'Generazione per lunghezza del testo' })).toBeVisible();
     await page.getByRole('switch', { name: 'Solo le differenze' }).click();
     await expect(page.getByRole('table', { name: 'Cosa cambia tra i due' })).toContainText('Gemma 4 31B');
     await scan(page, 'compare');
     await page.getByRole('button', { name: 'Scambia A e B' }).click();
-    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('+');
+    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('3,7 volte più veloce');
 
     // Export one result in every format, through the real "Save as" dialog.
     await page.getByRole('navigation', { name: 'Navigazione principale' }).getByRole('link', { name: 'Risultati' }).click();

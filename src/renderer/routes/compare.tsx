@@ -1,12 +1,13 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Equal } from 'lucide-react';
+import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Equal, Share2 } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
 import type { RunResult, RunSummary } from '../../contract/results';
 import { concurrencyPairs, decodePairs, pairBarsOption, pairLinesOption, type PairSeries } from '../components/bench/compare-charts';
-import { diffRows, metricRows } from '../components/bench/compare-rows';
-import { deltaView } from '../components/bench/delta';
+import { diffRows, metricRows, type MetricRow } from '../components/bench/compare-rows';
+import { rowWords } from '../components/bench/compare-words';
 import { ErrorCard } from '../components/bench/error-card';
 import { engineLabelOf, modelLabelOf, prettyEngineLabel, shortGpuName, summaryModelLabel } from '../components/bench/format';
+import { SheetDialog } from '../components/bench/sheet-dialog';
 import { ChartCard } from '../components/charts/chart-card';
 import { EChart } from '../components/charts/echart';
 import type { ChartTokens } from '../components/charts/echarts';
@@ -37,9 +38,11 @@ function Head({ children, className }: { children: ReactNode; className?: string
   return <th scope="col" className={cn('h-10 border-b border-border px-4 text-right text-xs font-medium text-fg-3 first:pl-card first:text-left last:pr-card', className)}>{children}</th>;
 }
 
-function Delta({ a, b, higherIsBetter }: { a: number | undefined; b: number | undefined; higherIsBetter: boolean }) {
-  const { t, percent } = useI18n();
-  const d = deltaView(a, b, higherIsBetter, percent);
+/** The difference in words: "2,2 volte più veloce", "+16%", "−54%", "prima riletto da capo, ora 1,00 s". */
+function Delta({ row }: { row: MetricRow }) {
+  const f = useI18n();
+  const { t } = f;
+  const d = rowWords(row, f);
   if (!d) return <span className="text-fg-3">–</span>;
   if (d.direction === 'same')
     return (
@@ -118,6 +121,11 @@ function Comparison({ a, b }: { a: RunResult; b: RunResult }) {
   const { t, number, integer } = f;
   const navigate = useNavigate();
   const [onlyDiff, setOnlyDiff] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  // An older A and a newer B read as "Prima" and "Ora", like a before/after page.
+  const ordered = Date.parse(a.createdAt) < Date.parse(b.createdAt);
+  const cell = (r: MetricRow, v: number | undefined, reread: boolean | undefined) =>
+    v === undefined ? '–' : reread ? `${t('longConversations.compare.reread')} (${r.format(v)})` : r.format(v);
   const metrics = metricRows(a, b, f);
   const diffs = diffRows(a, b, f);
   const shown = onlyDiff ? diffs.filter((d) => d.differs) : diffs;
@@ -144,8 +152,8 @@ function Comparison({ a, b }: { a: RunResult; b: RunResult }) {
           <thead>
             <tr>
               <Head>{t('compare.metric')}</Head>
-              <Head>{title(a, 'A')}</Head>
-              <Head>{title(b, 'B')}</Head>
+              <Head>{title(a, ordered ? `A · ${t('longConversations.compare.before')}` : 'A')}</Head>
+              <Head>{title(b, ordered ? `B · ${t('longConversations.compare.now')}` : 'B')}</Head>
               <Head>{t('compare.difference')}</Head>
             </tr>
           </thead>
@@ -155,10 +163,10 @@ function Comparison({ a, b }: { a: RunResult; b: RunResult }) {
                 <th scope="row" className="h-row border-b border-border px-4 pl-card text-left font-medium">
                   {r.label}
                 </th>
-                <td className="h-row border-b border-border px-4 text-right tabular-nums">{r.a === undefined ? '–' : r.format(r.a)}</td>
-                <td className="h-row border-b border-border px-4 text-right tabular-nums">{r.b === undefined ? '–' : r.format(r.b)}</td>
+                <td className="h-row border-b border-border px-4 text-right tabular-nums">{cell(r, r.a, r.reread?.a)}</td>
+                <td className="h-row border-b border-border px-4 text-right tabular-nums">{cell(r, r.b, r.reread?.b)}</td>
                 <td className="h-row border-b border-border px-4 pr-card text-right tabular-nums">
-                  <Delta a={r.a} b={r.b} higherIsBetter={r.higherIsBetter} />
+                  <Delta row={r} />
                 </td>
               </tr>
             ))}
@@ -242,12 +250,17 @@ function Comparison({ a, b }: { a: RunResult; b: RunResult }) {
           {shown.length === 0 && <p className="px-card py-6 text-center text-sm text-fg-3">{t('compare.noDiff')}</p>}
         </div>
       </Card>
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button variant="ghost" onClick={() => void navigate({ to: '/compare', search: { a: b.id, b: a.id }, replace: true })}>
           <ArrowLeftRight aria-hidden />
           {t('compare.swap')}
         </Button>
+        <Button onClick={() => setSheet(true)}>
+          <Share2 aria-hidden />
+          {t('sheet.open')}
+        </Button>
       </div>
+      <SheetDialog open={sheet} onOpenChange={setSheet} run={b} before={a} />
     </div>
   );
 }

@@ -25,6 +25,12 @@ export interface ReportCallout {
 export interface ReportSection {
   title: string;
   text?: string;
+  /** More text, one paragraph each (after `text`). */
+  paragraphs?: string[];
+  /** Term → explanation (glossaries). */
+  definitions?: { term: string; text: string }[];
+  /** Paragraphs after the table (and before the command). */
+  after?: string[];
   table?: ReportTable;
   callouts?: ReportCallout[];
   code?: { powershell: string; bash: string };

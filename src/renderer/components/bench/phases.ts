@@ -26,7 +26,7 @@ export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {
         // The core reports long prompts (> 1024 tokens) as "reading the prompt", short ones as generation.
         if (step.promptTokens.some((p) => p > 1024)) has.add('prefill');
         if (step.promptTokens.some((p) => p <= 1024)) has.add('decode');
-      } else if (step.kind === 'concurrency') has.add('concurrency');
+      } else if (step.kind === 'concurrency' || step.kind === 'sessions' || step.kind === 'context-sweep') has.add(step.kind);
       else has.add('llama-bench');
     }
   }

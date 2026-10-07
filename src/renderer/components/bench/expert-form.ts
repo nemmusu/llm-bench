@@ -167,6 +167,10 @@ export interface ScenarioForm {
   reps: string;
   concurrency: string;
   requestsPerWorker: string;
+  /** "Conversazioni lunghe": conversations at once ("2" = 1 and 2; empty = not measured), first-message depth (empty = the whole context), messages each. */
+  sessions: string;
+  sessionsDepth: string;
+  sessionsTurns: string;
   llamaBench: boolean;
 }
 
@@ -181,8 +185,14 @@ export const DEFAULT_SCENARIO_FORM: ScenarioForm = {
   reps: '5',
   concurrency: '4',
   requestsPerWorker: '4',
+  sessions: '',
+  sessionsDepth: '',
+  sessionsTurns: '4',
   llamaBench: false,
 };
+
+/** New text of every later message and answer length of the long conversations made by the form. */
+export const FORM_SESSIONS = { followupTokens: 256, outputTokens: 256 } as const;
 
 /** "4096, 512" → [512, 4096]: smallest first, each once; null when any item is not a positive integer. */
 export function parseList(text: string): number[] | null {
@@ -212,10 +222,10 @@ export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Sce
     if (n === null) invalid.push(field);
     return n ?? undefined;
   };
-  const list = (field: 'promptTokens' | 'concurrency'): number[] => {
+  const list = (field: 'promptTokens' | 'concurrency' | 'sessions'): number[] => {
     const text = form[field].trim();
     if (!text) return [];
-    const l = field === 'concurrency' ? parseUsers(text) : parseList(text);
+    const l = field === 'promptTokens' ? parseList(text) : parseUsers(text);
     if (!l) invalid.push(field);
     return l ?? [];
   };
@@ -232,13 +242,17 @@ export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Sce
   const levels = list('concurrency');
   const perWorker = int('requestsPerWorker', 1) ?? 4;
   if (levels.length) steps.push({ kind: 'concurrency', levels, promptTokens: prompts[0] ?? 512, outputTokens: Math.min(output, 128), requestsPerWorker: perWorker });
+  const sessions = list('sessions');
+  const depth = int('sessionsDepth', 1) ?? 0;
+  const turns = int('sessionsTurns', 1) ?? 4;
+  if (sessions.length) steps.push({ kind: 'sessions', depth, levels: sessions, turns, ...FORM_SESSIONS });
   if (form.llamaBench) steps.push({ kind: 'llama-bench', pp: 512, tg: 128, reps: 5 });
   return { scenario: { profile: 'custom', seed, steps }, invalid };
 }
 
 export function formFromScenario(s: Scenario | undefined): ScenarioForm {
   if (!s) return { ...DEFAULT_SCENARIO_FORM };
-  const form: ScenarioForm = { ...DEFAULT_SCENARIO_FORM, coldReps: '0', warmReps: '0', promptTokens: '', concurrency: '', llamaBench: false };
+  const form: ScenarioForm = { ...DEFAULT_SCENARIO_FORM, coldReps: '0', warmReps: '0', promptTokens: '', concurrency: '', sessions: '', llamaBench: false };
   for (const step of s.steps) {
     if (step.kind === 'load') form[step.cache === 'cold' ? 'coldReps' : 'warmReps'] = String(step.reps);
     else if (step.kind === 'latency') {
@@ -249,7 +263,11 @@ export function formFromScenario(s: Scenario | undefined): ScenarioForm {
     } else if (step.kind === 'concurrency') {
       form.concurrency = showUsers(step.levels);
       form.requestsPerWorker = String(step.requestsPerWorker);
-    } else form.llamaBench = true;
+    } else if (step.kind === 'sessions') {
+      form.sessions = showUsers(step.levels);
+      form.sessionsDepth = step.depth > 0 ? String(step.depth) : '';
+      form.sessionsTurns = String(step.turns);
+    } else if (step.kind === 'llama-bench') form.llamaBench = true;
   }
   return form;
 }
