@@ -61,7 +61,7 @@ describe('result overview', () => {
     const { router } = renderApp(`/results/${IDS.full}`, api);
     expect(await h1(/Qwen3 8B/)).toBeTruthy();
     expect(screen.getByText('Q4_K_M', { selector: 'span' })).toBeTruthy();
-    expect(screen.getByText('1012')).toBeTruthy();
+    expect(screen.getByText('1.012')).toBeTruthy();
     expect(screen.getByText(/Scrive circa 128 parole al secondo/)).toBeTruthy();
     expect(screen.getByText('Ottima')).toBeTruthy();
     expect(screen.getByText(/llama-server\.exe \(PID 18244, 2,3 GB\)/)).toBeTruthy();
@@ -257,7 +257,7 @@ describe('how it was started', () => {
     await tab('Come è stato avviato');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
     // The confirmation says how much text it takes, and that it comes from the run's own settings.
-    expect(await screen.findByText('8192 token')).toBeTruthy();
+    expect(await screen.findByText('8.192 token')).toBeTruthy();
     let dialog = screen.getByRole('dialog', { name: 'Avvia il server' });
     expect(within(dialog).getByText(/Viene dalle impostazioni scelte/)).toBeTruthy();
     expect(within(dialog).getByRole('region', { name: 'Comando esatto' }).textContent).toContain('llama-server');
@@ -273,7 +273,7 @@ describe('how it was started', () => {
     await act(async () => started.resolve(info));
     dialog = await screen.findByRole('dialog', { name: 'Il server è pronto' });
     expect(within(dialog).getByText('Indirizzo compatibile OpenAI')).toBeTruthy();
-    expect(within(dialog).getByText('Modello: Qwen3 8B · Contesto 8192 token')).toBeTruthy();
+    expect(within(dialog).getByText('Modello: Qwen3 8B · Contesto 8.192 token')).toBeTruthy();
     expect(posted(api, '/api/servers')[1]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 } });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI' }));
     expect(clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:5123/v1');

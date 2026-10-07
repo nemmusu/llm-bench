@@ -48,7 +48,7 @@ describe('compare', () => {
     await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(2));
     for (const o of charts.options) exerciseFormatters(o);
     for (const b of screen.getAllByRole('button', { name: 'Mostra tabella' })) await userEvent.click(b);
-    expect(screen.getByRole('table', { name: /Generazione per lunghezza del testo/ }).textContent).toContain('8192');
+    expect(screen.getByRole('table', { name: /Generazione per lunghezza del testo/ }).textContent).toContain('8.192');
 
     const params = screen.getByRole('table', { name: 'Cosa cambia tra i due' });
     expect(within(params).getByText('Qwen3 30B A3B · Q4_K_M')).toBeTruthy();

@@ -230,7 +230,7 @@ describe('summary', () => {
     expect(launchSummaryParts(seeded(IDS.full), it_)).toEqual([
       'llama.cpp b11438 (CUDA 13.4)',
       'Qwen3 8B · Q4_K_M',
-      'contesto 8192',
+      'contesto 8.192',
       'tutto in GPU',
       // -b 2048 -ub 512 are llama.cpp's defaults: not worth a word.
       'flash attention',
@@ -250,7 +250,7 @@ describe('summary', () => {
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 20 }, 36, it_)).toEqual(['20 livelli in GPU']);
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 99 }, 36, it_)).toEqual(['tutto in GPU']);
     expect(paramParts('vllm-native', { extraArgs: [], env: {}, maxModelLen: 4096, gpuMemoryUtilization: 0.8, dtype: 'bfloat16', quantization: 'fp8', kvCacheType: 'auto' }, undefined, it_)).toEqual([
-      'contesto 4096',
+      'contesto 4.096',
       'memoria GPU 80%',
       'bfloat16',
       'fp8',
@@ -261,7 +261,7 @@ describe('summary', () => {
     expect(scenarioLines(seeded(IDS.full).scenario, it_)).toEqual([
       '3 caricamenti a freddo',
       '3 caricamenti a caldo',
-      'prompt da 128, 512, 1024, 2048, 4096 e 8192 token, 512 token generati, 10 ripetizioni',
+      'prompt da 128, 512, 1.024, 2.048, 4.096 e 8.192 token, 512 token generati, 10 ripetizioni',
       '1, 2, 4, 8 e 16 utenti insieme, prompt da 512 token e 256 generati ciascuno',
       'test standard llama-bench',
     ]);

@@ -55,8 +55,9 @@ export interface Formatters {
 
 export function createFormatters(lang: Lang): Formatters {
   const locale = lang === 'it' ? 'it-IT' : 'en-US';
+  // 'always': Italian CLDR leaves 4-digit numbers ungrouped ("1763" next to "12.865"); group them all.
   const nf = (digits: number) =>
-    new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: 'always' });
   const number = (n: number, digits = 1) => nf(digits).format(n);
   const integer = (n: number) => nf(0).format(Math.round(n));
   const compactNf = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 });

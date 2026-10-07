@@ -117,7 +117,7 @@ describe('normal results with the new measurements', () => {
     renderApp(`/results/${IDS.full}`, benchApi({ runs: [full()] }));
     await h1(/Qwen3 8B/);
     expect(screen.getByRole('heading', { name: 'Velocità al crescere del contesto' })).toBeTruthy();
-    expect(screen.getByText('Con 4 utenti ognuno legge a 1900 tok/s e scrive a 42,5 tok/s (85% di quando è da solo); il primo token arriva in 0,38 s (0,44 s nel caso peggiore). In tutto 170 tok/s.')).toBeTruthy();
+    expect(screen.getByText('Con 4 utenti ognuno legge a 1.900 tok/s e scrive a 42,5 tok/s (85% di quando è da solo); il primo token arriva in 0,38 s (0,44 s nel caso peggiore). In tutto 170 tok/s.')).toBeTruthy();
     await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(3));
     for (const o of charts.options) exerciseFormatters(o);
     const conc = charts.options.find((o) => JSON.stringify(o).includes('Utente più lento')) as { series: { data: [number, number | null][] }[] };
@@ -169,7 +169,7 @@ describe('normal results with the new measurements', () => {
     );
     expect(noteText({ code: 'context_sweep_skipped', params: { reason: 'unknown_context' } }, f).body).toContain('Non so quanto contesto regge il server');
     expect(noteText({ code: 'context_sweep_skipped', params: { reason: 'context_too_small', contextSize: 2048 } }, f).body).toBe(
-      'Con un contesto di 2048 token non ci sono abbastanza profondità da misurare: salto questa misura.',
+      'Con un contesto di 2.048 token non ci sono abbastanza profondità da misurare: salto questa misura.',
     );
   });
 });

@@ -19,7 +19,7 @@ describe('useConfigLabel', () => {
     expect(label.text).toBe('Contesto 32.768 · cache KV q8_0 · flash attention · ub 2048 · b 4096');
     // Defaults only: still the context (or "predefinito") and the cache type.
     expect(result.current(P({ batchSize: 2048, ubatchSize: 512, flashAttention: 'auto' }), 'llamacpp-docker').text).toBe('Contesto predefinito · cache KV f16');
-    expect(result.current(P({ maxModelLen: 8192, gpuMemoryUtilization: 0.9 }), 'vllm-docker').text).toBe('Contesto 8192 · cache KV auto');
+    expect(result.current(P({ maxModelLen: 8192, gpuMemoryUtilization: 0.9 }), 'vllm-docker').text).toBe('Contesto 8.192 · cache KV auto');
   });
 
   it('exports the defaults it compares against', () => {
@@ -64,7 +64,10 @@ describe('configParts', () => {
         it_,
         { allGpu: true, tags: ['draft', 'cpu-offload'] },
       ),
-    ).toEqual(['contesto 1024', 'cache KV q8_0 (K) / q4_0 (V)', 'solo processore', 'esperti MoE sulla CPU', 'senza flash attention', '8 thread', 'decodifica speculativa', 'f16', 'q', 'argomenti extra: --mlock -sm row']);
+    ).toEqual(['contesto 1.024', 'cache KV q8_0 (K) / q4_0 (V)', 'solo processore', 'esperti MoE sulla CPU', 'senza flash attention', '8 thread', 'decodifica speculativa', 'f16', 'q', 'argomenti extra: --mlock -sm row']);
+    // Flag values read like the command line, ungrouped in either language; the context is grouped.
+    expect(configParts('llamacpp-native', { contextSize: 131072, ubatchSize: 2048, batchSize: 16384, other: [] }, en)).toEqual(['context 131,072', 'ub 2048', 'b 16384']);
+    expect(configParts('vllm-docker', { maxNumBatchedTokens: 16384, other: [] }, it_, { context: 'never' })).toEqual(['batch 16384 token']);
     expect(configParts('llamacpp-native', { other: [] }, it_, { allGpu: true })).toEqual(['tutto in GPU']);
     expect(configParts('vllm-docker', { other: [], speculative: '{"model":5}' }, it_)).toEqual(['decodifica speculativa']);
     expect(configParts('vllm-docker', { other: [], speculative: 'not json' }, it_)).toEqual(['decodifica speculativa']);

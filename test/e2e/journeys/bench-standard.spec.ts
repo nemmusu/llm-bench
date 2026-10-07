@@ -29,7 +29,7 @@ test('standard run: cold and warm loads, long prompts and several users; then ru
     await expect(page.getByRole('heading', { name: 'Velocità per lunghezza del testo' })).toBeVisible();
     await page.getByRole('radio', { name: 'Lettura prompt' }).click();
     await page.getByRole('button', { name: 'Mostra tabella' }).first().click();
-    await expect(page.getByRole('table', { name: /Velocità per lunghezza del testo/ })).toContainText('4096');
+    await expect(page.getByRole('table', { name: /Velocità per lunghezza del testo/ })).toContainText('4.096');
 
     await page.getByRole('tab', { name: 'Dettagli' }).click();
     const conc = page.getByRole('table', { name: 'Più utenti' });
@@ -90,7 +90,7 @@ test('expert mode: custom plan and launch parameters, exact command, settings re
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     // The header says the configuration too: the sentence of this tab is the one checked here.
     const launch = page.getByRole('tabpanel', { name: 'Come è stato avviato' });
-    await expect(launch.getByText('contesto 4096')).toBeVisible();
+    await expect(launch.getByText('contesto 4.096')).toBeVisible();
     await expect(launch.getByText('argomenti extra: --metrics')).toBeVisible();
     await page.getByRole('button', { name: 'Mostra comando' }).click();
     await page.getByRole('radio', { name: 'bash' }).click();

@@ -45,10 +45,10 @@ describe('results list', () => {
     expect(screen.getByRole('columnheader', { name: /Utenti paralleli/ })).toBeTruthy();
     const mistral = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
     expect(within(mistral).getAllByText('tok/s').length).toBe(2);
-    expect(within(mistral).getByText('1024')).toBeTruthy();
+    expect(within(mistral).getByText('1.024')).toBeTruthy();
     expect(within(mistral).getAllByText('–').length).toBeGreaterThan(0);
     const gemma = screen.getByRole('link', { name: /Gemma 4 31B/ }).closest('tr')!;
-    expect(within(gemma).getByText('8192')).toBeTruthy();
+    expect(within(gemma).getByText('8.192')).toBeTruthy();
     expect(within(gemma).getByText('4 utenti')).toBeTruthy();
     // What each user got, then everyone together.
     expect(within(gemma).getByText(/^\d+ tok\/s ciascuno · [\d.]+ tok\/s in tutto$/)).toBeTruthy();

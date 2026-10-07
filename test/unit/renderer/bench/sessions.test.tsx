@@ -44,8 +44,8 @@ describe('Conversazioni lunghe: words and table', () => {
       'Errori (richieste)',
     ]);
     expect(t.rows).toEqual([
-      ['1', '1763', '1 min 53 s', '0 ms', '1,00 s', '99,7%', '31,7', '0'],
-      ['2', '1332', '2 min 47 s', '1 min 48 s (stima)', '5,40 s', '97,5%', '18,4', '0'],
+      ['1', '1.763', '1 min 53 s', '0 ms', '1,00 s', '99,7%', '31,7', '0'],
+      ['2', '1.332', '2 min 47 s', '1 min 48 s (stima)', '5,40 s', '97,5%', '18,4', '0'],
     ]);
     expect(t.estimated).toBe(true);
     expect(t.depth).toBe(200_000);
@@ -67,7 +67,7 @@ describe('Conversazioni lunghe: words and table', () => {
     expect(sessionsTable([empty], it_).columns).toEqual(['sessions', 'read', 'errors']);
     // A column one level lacks shows a dash there.
     const mixed = sessionsTable([empty, NOW_POINTS[1]!], it_);
-    expect(mixed.rows[0]).toEqual(['1', '1763', '–', '–', '–', '–', '–', '0']);
+    expect(mixed.rows[0]).toEqual(['1', '1.763', '–', '–', '–', '–', '–', '0']);
   });
 
   it('numbers in sentences: what the first message waits, what the cache saves, how long the queue is', () => {
@@ -126,7 +126,7 @@ describe('Conversazioni lunghe on the result page', () => {
     const table = within(region).getByRole('table', { name: 'Conversazioni lunghe, per numero di sessioni insieme' });
     expect(within(region).getByRole('region', { name: 'Conversazioni lunghe, per numero di sessioni insieme' }).tabIndex).toBe(0);
     expect(within(table).getByRole('columnheader', { name: 'Attesa prima risposta a 200.000 token' })).toBeTruthy();
-    expect(within(table).getByRole('row', { name: /^2 1332/ }).textContent).toContain('97,5%');
+    expect(within(table).getByRole('row', { name: /^2 1\.332/ }).textContent).toContain('97,5%');
     expect(within(region).getByText(/Attesa in coda stimata/)).toBeTruthy();
     expect(within(region).getByText('Contesto riusato')).toBeTruthy();
     expect(within(region).getByText(/circa metà del tempo/)).toBeTruthy();
@@ -211,7 +211,7 @@ describe('differences in words', () => {
     expect(commonDepth(a, b)?.depth).toBe(4096);
     const rows = longConversationRows(a, b, it_);
     expect(rows.map((r) => r.id)).toEqual(['readAt', 'writeAt', 'firstWaitAt']);
-    expect(rows[0]?.label).toBe('Lettura del contesto a 4096 token');
+    expect(rows[0]?.label).toBe('Lettura del contesto a 4.096 token');
     // A deeper sweep point wins over shallower conversations.
     const both = sweep(now, [262_144]);
     const both2 = sweep(before, [262_144]);

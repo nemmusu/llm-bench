@@ -52,6 +52,9 @@ describe('CSV', () => {
     expect(rows.some((r) => r[4] === 'gpu_shared')).toBe(true);
     const csv = runToCsv(run, it_, 'excel-it');
     expect(csv.startsWith('\uFEFFSezione;Misura;')).toBe(true);
+    // Numbers for spreadsheets: never grouped like the screen ("8192", not "8.192").
+    expect(csv).toContain(';8192;');
+    expect(csv).not.toContain('8.192');
     expect(runToCsv(run, en, 'standard').startsWith('Section,Measurement,')).toBe(true);
   });
 

@@ -79,7 +79,7 @@ describe('live run', () => {
     expect(screen.getByText('Fase 2 di 8')).toBeTruthy();
     act(() => api.emit({ type: 'telemetry', samples: [sample(1500), sample(1750, { gpu: 1 })] }));
     act(() => api.emit({ type: 'run.phase', runId: RUN, phase: 'prefill', progress: 0.4, detail: '4096' }));
-    expect(screen.getByText('Testo da 4096 token')).toBeTruthy();
+    expect(screen.getByText('Testo da 4.096 token')).toBeTruthy();
     act(() => api.emit({ type: 'run.live', runId: RUN, decodeTps: 190.6, prefillTps: 8950, ttftMs: 57 }));
     expect(screen.getByRole('meter', { name: 'Generazione' }).textContent).toContain('190,6');
     expect(screen.getByRole('meter', { name: 'VRAM' }).textContent).toContain('8,8');

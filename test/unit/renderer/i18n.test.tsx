@@ -71,9 +71,12 @@ describe('formatters', () => {
   const enF = createFormatters('en');
 
   it('formats numbers with the locale', () => {
-    expect(itF.number(1234.56)).toBe('1234,6');
+    // 4 digits are grouped too, in Italian as well: "1.763" next to "12.865", never "1763".
+    expect(itF.number(1234.56)).toBe('1.234,6');
     expect(itF.number(12345.6, 1)).toBe('12.345,6');
     expect(enF.number(12345.6, 1)).toBe('12,345.6');
+    expect(itF.integer(1763)).toBe('1.763');
+    expect(enF.integer(1763)).toBe('1,763');
     expect(itF.integer(190.6)).toBe('191');
     expect(itF.percent(0.123, 1)).toBe('12,3%');
     expect(enF.percent(0.5)).toBe('50%');
