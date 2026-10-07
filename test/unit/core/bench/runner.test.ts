@@ -211,8 +211,8 @@ describe('BenchRunner — happy paths', () => {
     expect(s.evictCalls).toEqual([{ files: ['C:/models/m.gguf'], runningInstances: 0 }]);
     expect(result.metrics.load.coldReadBytesPerSec).toBeCloseTo(5e9 / ((9000 - 200) / 1000));
     expect(result.metrics.latency.map((p) => p.promptTokens)).toEqual([512, 4096]);
-    expect(result.metrics.concurrency.map((c) => c.level)).toEqual([1, 4]);
-    expect(result.metrics.concurrency[1]).toMatchObject({ requests: 16, errors: 0 });
+    expect(result.metrics.concurrency.map((c) => c.level)).toEqual([1, 2, 3, 4]);
+    expect(result.metrics.concurrency[3]).toMatchObject({ level: 4, requests: 16, errors: 0 });
     expect(result.metrics.vram.estimateMiB).toBe(4200);
     expect(result.metrics.score?.referenceVersion).toBe(1);
     expect(result.metrics.score?.value).toBeGreaterThan(0);

@@ -33,13 +33,13 @@ test('standard run: cold and warm loads, long prompts and several users; then ru
 
     await page.getByRole('tab', { name: 'Dettagli' }).click();
     const conc = page.getByRole('table', { name: 'Più utenti' });
-    await expect(conc.getByRole('row')).toHaveCount(3);
+    await expect(conc.getByRole('row')).toHaveCount(5);
     await expect(page.getByRole('table', { name: 'Caricamento del modello' })).toContainText('A freddo');
     await expect(page.getByRole('table', { name: 'Memoria video' })).toBeVisible();
     await scan(page, 'result details');
 
     await page.getByRole('tab', { name: 'Log' }).click();
-    await expect(page.getByRole('region', { name: 'Log del server (estratto)' })).toContainText('llama');
+    await expect(page.getByRole('region', { name: 'Log del server (estratto)' })).toContainText('slot');
 
     // Run it again, same settings: no download this time, straight to the live screen.
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
