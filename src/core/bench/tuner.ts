@@ -359,14 +359,18 @@ export class Tuner {
     for (const kv of space.kvLadder) await this.searchCapacity(kv);
     const fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
     if (fitting.length === 0 && this.input.offload) await this.offload(this.input.offload);
-    if (fitting.length > 0) await this.extend(fitting);
     // Largest context first (the recommendation comes from there), then the more precise KV.
     const order = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
+    const bests = new Map<TuneKvType, Variant>();
     for (const kv of order) {
       this.deps.onPhase?.('tune-variants');
       const best = await this.descend(kv);
-      if (best) await this.sweepCombination(best.variant, best.ctx);
+      if (!best) continue;
+      bests.set(kv, best.variant);
+      await this.sweepCombination(best.variant, best.ctx);
     }
+    const left = fitting.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
+    if (left.length > 0) await this.extend(left, bests);
     await this.extraSweeps();
     if (this.input.fidelity) await this.checkFidelity();
     return this.snapshot();
@@ -840,15 +844,16 @@ export class Tuner {
 
   /**
    * vLLM: fewer CUDA graphs, then --enforce-eager, free graph memory for the KV cache. Each is searched
-   * (one step up, then the capacity vLLM reports) with the most compact KV, only to go beyond the
-   * largest context so far; the combination found is measured on the same launch.
+   * (one step up, then the capacity vLLM reports) with the most compact KV and the best settings found
+   * for it, only to go beyond the largest context so far; the combination found is measured on the
+   * same launch.
    */
-  private async extend(fitting: readonly TuneKvType[]): Promise<void> {
+  private async extend(fitting: readonly TuneKvType[], bests: ReadonlyMap<TuneKvType, Variant>): Promise<void> {
     const kv = fitting[fitting.length - 1] as TuneKvType;
     for (const ext of this.input.space.extensions ?? []) {
       const best = Math.max(...fitting.map((k) => this.maxOf(k)), ...this.combos.map((c) => c.maxContext));
       if (best >= this.cap) return;
-      const variant: Variant = { ...this.base(kv), ...ext };
+      const variant: Variant = { ...(bests.get(kv) ?? this.base(kv)), ...ext };
       const cap: Capacity = { kv, candidates: [best, Math.min(this.cap, best * 2)], status: new Map([[best, true]]), launched: new Set(), inferred: false };
       await this.search(cap, variant, (e, l) => this.sweepWork(e, l, []));
     }

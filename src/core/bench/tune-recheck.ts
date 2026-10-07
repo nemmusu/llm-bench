@@ -64,7 +64,6 @@ export class RecheckTuner extends Tuner {
 
   /** 1K, the middle and the deepest prompt of the combination's context. */
   private shortSweep(engine: LabEngine, live: Live): Promise<void> {
-    this.deps.onPhase?.('context-sweep');
     return this.sweepWork(engine, live, [], screenDepths);
   }
 
