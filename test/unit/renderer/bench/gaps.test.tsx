@@ -72,7 +72,7 @@ describe('pure edge cases', () => {
     expect(kpisOf({ metrics: noEngine }).prefill).toBe(noEngine.latency[1]!.prefillTps);
     const live = liveReducer(initialLive(), { type: 'run.phase', runId: 'r', phase: 'prepare', progress: 0 }, 'r');
     expect(live.marks).toEqual([{ t: 0, phase: 'prepare' }]);
-    expect(paramParts('llamacpp-native', { extraArgs: [], env: {}, batchSize: 1024 }, undefined, it_)).toContain('batch 1024/–');
+    expect(paramParts('llamacpp-native', { extraArgs: [], env: {}, batchSize: 1024 }, undefined, it_)).toContain('b 1024');
     expect(reportToMarkdown(reportOf(seeded(IDS.failed), it_), { powershell: 'PS', bash: 'sh' })).not.toContain('> ');
     expect(reportOf(seeded(IDS.vllm), it_).sections.find((x) => x.title === 'Da sapere su questo risultato')!.callouts!.map((c) => c.title)).toContain('vLLM userà meno memoria del solito');
   });

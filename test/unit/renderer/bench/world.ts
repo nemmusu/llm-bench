@@ -9,6 +9,9 @@ import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
 import type { RunResult } from '../../../../src/contract/results';
+import { configsQuerySchema } from '../../../../src/contract/configs';
+import { mergeSources, queryConfigs, sourcesOf } from '../../../../src/core/store/configs-index';
+import { parseRun } from '../../../../src/core/store/runs-repo';
 import type { CuratedModel } from '../../../../src/contract/views';
 import { ApiError, type ApiClient } from '../../../../src/renderer/lib/api';
 import { fakeApi, type FakeApi } from '../helpers';
@@ -205,6 +208,13 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/models/local') return world.local;
     if (bare === '/api/models/curated') return { vramGB: 31.84, tierGB: 32, reference: world.curated[0], models: world.curated };
     if (bare === '/api/runs') return summaries(world.runs);
+    if (bare === '/api/configs') {
+      // The core's own index over this world's runs (parsed as the core reads them).
+      const query = configsQuerySchema.parse(Object.fromEntries(new URLSearchParams(path.split('?')[1] ?? '')));
+      const gpu = world.system.gpus[0];
+      const sources = world.runs.map((r) => sourcesOf(parseRun(r)!)).filter((s) => s !== undefined);
+      return queryConfigs(mergeSources(sources), query, { hostId: world.system.hostId, ...(gpu ? { gpuUuid: gpu.uuid, gpuName: gpu.name } : {}) });
+    }
     if (bare === '/api/runs/active') return { active: world.active };
     if (bare === '/api/runs/tried') {
       const weakKey = new URLSearchParams(path.split('?')[1]).get('weakKey');

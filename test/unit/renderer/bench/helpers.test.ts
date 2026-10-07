@@ -232,17 +232,17 @@ describe('summary', () => {
       'Qwen3 8B · Q4_K_M',
       'contesto 8192',
       'tutto in GPU',
+      // -b 2048 -ub 512 are llama.cpp's defaults: not worth a word.
       'flash attention',
-      'batch 2048/512',
     ]);
     expect(launchSummaryParts(seeded(IDS.vllm), it_)[0]).toBe('vLLM v0.12.0 (CUDA) · Docker');
     const p = { extraArgs: ['--metrics'], env: { A: '1' } };
     expect(paramParts('llamacpp-native', { ...p, gpuLayers: 0, flashAttention: 'off', kvCacheType: 'q8_0', threads: 8, ubatchSize: 256, parallel: 4 }, 36, en)).toEqual([
+      'KV cache q8_0',
       'CPU only',
       'no flash attention',
-      'KV cache q8_0',
+      'ub 256',
       '4 parallel slots',
-      'batch –/256',
       '8 threads',
       'extra arguments: --metrics',
       '1 environment variables',
@@ -489,8 +489,11 @@ describe('rerun', () => {
     expect(r.request.params?.contextSize).toBe(8192);
     expect(r.modelMissing).toBe(false);
     expect(r.needsExpert).toBe(true);
-    const custom = rerunOf({ ...seeded(IDS.full), scenario: { ...seeded(IDS.full).scenario, profile: 'custom' } }, lib, undefined);
-    expect(custom.request.engine.executable).toContain('llama-server.exe');
+    // A managed build of another PC (same folder layout) is not a custom executable: this PC's build is used.
+    expect(rerunOf(seeded(IDS.full), lib, undefined).request.engine).toEqual({ kind: 'llamacpp-native' });
+    const full = seeded(IDS.full);
+    const custom = rerunOf({ ...full, engine: { ...full.engine, executable: 'D:\\llama\\llama-server.exe' }, scenario: { ...full.scenario, profile: 'custom' } }, lib, undefined);
+    expect(custom.request.engine.executable).toBe('D:\\llama\\llama-server.exe');
     expect(custom.draft.scenario?.profile).toBe('custom');
     expect(rerunOf(seeded(IDS.gemma), [], undefined).modelMissing).toBe(true);
     const vllm = rerunOf(seeded(IDS.vllm), [], undefined);
