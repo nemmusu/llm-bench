@@ -92,6 +92,15 @@ async function main() {
     o.ctx = Number(get('-c', '--ctx-size') ?? 4096) || 4096;
     o.np = Number(get('-np', '--parallel') ?? -1);
     o.flashAttn = fa ?? 'auto';
+    // What the memory model of the profile looks at (see FakeMemory in server.mjs).
+    o.kvType = get('-ctk', '--cache-type-k') ?? 'f16';
+    o.kvTypeV = get('-ctv', '--cache-type-v') ?? 'f16';
+    o.ubatch = Number(get('-ub', '--ubatch-size') ?? 512);
+    o.batch = Number(get('-b', '--batch-size') ?? 2048);
+    const ncmoe = get('-ncmoe', '--n-cpu-moe');
+    if (ncmoe !== undefined) o.nCpuMoe = Number(ncmoe);
+    const ngl = get('-ngl', '--gpu-layers', '--n-gpu-layers');
+    if (ngl !== undefined && /^\d+$/.test(ngl)) o.gpuLayers = Number(ngl);
     o.requireModelFile = env.FAKE_ENGINE_ALLOW_MISSING_MODEL !== '1';
   } else {
     const rest = argv[0] === 'serve' ? argv.slice(1) : argv;
@@ -116,6 +125,11 @@ async function main() {
     o.port = Number(val['--port'] ?? 8000);
     o.aliases = names.length > 0 ? names : [model];
     o.ctx = Number(val['--max-model-len'] ?? 4096);
+    o.kvType = val['--kv-cache-dtype'] === 'fp8' ? 'fp8' : 'auto';
+    o.kvTypeV = o.kvType;
+    if (val['--max-num-batched-tokens'] !== undefined) o.ubatch = Number(val['--max-num-batched-tokens']);
+    if (val['--gpu-memory-utilization'] !== undefined) o.gpuMemoryUtilization = Number(val['--gpu-memory-utilization']);
+    o.eager = val['--enforce-eager'] !== undefined;
   }
   if (env.FAKE_NVIDIA_SMI_STATE) o.stateFile = env.FAKE_NVIDIA_SMI_STATE;
   if (env.FAKE_ENGINE_COLD_MARKER) o.coldMarker = env.FAKE_ENGINE_COLD_MARKER;
