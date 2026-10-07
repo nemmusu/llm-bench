@@ -133,6 +133,15 @@ export function perUserStat(p: ConcurrencyPoint): Stat {
   return { n: 1, median: v, mean: v, min: v, max: v, stddev: 0, cv: 0, values: [v] };
 }
 
+/**
+ * Noise of a per-user median: its values are different users, not repetitions, so their spread is
+ * partly real (the first user reads its prompt alone); the median's own noise is that spread over the
+ * square root of the users.
+ */
+export function usersNoise(s: Stat): number {
+  return s.n > 1 ? s.cv / Math.sqrt(s.n) : s.cv;
+}
+
 /** The point of a level, if measured. */
 export function levelPoint(points: readonly ConcurrencyPoint[] | undefined, level: number): ConcurrencyPoint | undefined {
   return points?.find((p) => p.level === level);
@@ -143,9 +152,9 @@ export function compareUsers(a: UsersMeasure, b: UsersMeasure): number {
   if (a.point.errors !== b.point.errors) return b.point.errors - a.point.errors;
   const ua = perUserStat(a.point);
   const ub = perUserStat(b.point);
-  if (!tied(ua, ub)) return ua.median - ub.median;
-  // Totals and tails have no repetitions of their own: the per-user spread stands for their noise.
-  const cv = Math.max(ua.cv, ub.cv);
+  // Totals and tails have no repetitions of their own: the per-user noise stands for theirs too.
+  const cv = Math.max(usersNoise(ua), usersNoise(ub));
+  if (!tiedValues(ua.median, ub.median, cv)) return ua.median - ub.median;
   if (!tiedValues(a.point.aggregateTps, b.point.aggregateTps, cv)) return a.point.aggregateTps - b.point.aggregateTps;
   if (!tiedValues(a.point.ttftP95Ms, b.point.ttftP95Ms, cv, TIE_TAIL)) return b.point.ttftP95Ms - a.point.ttftP95Ms;
   const la = a.sessions?.laterTurns?.ttftMs;
@@ -226,8 +235,8 @@ export function movedLevels(before: readonly ConcurrencyPoint[], now: readonly C
     if (!q) continue;
     const a = perUserStat(q);
     const b = perUserStat(p);
-    const cv = Math.max(a.cv, b.cv);
-    if (!tied(a, b)) out.push({ at: p.level, metric: 'perUserDecode', before: a.median, after: b.median });
+    const cv = Math.max(usersNoise(a), usersNoise(b));
+    if (!tiedValues(a.median, b.median, cv)) out.push({ at: p.level, metric: 'perUserDecode', before: a.median, after: b.median });
     if (!tiedValues(q.aggregateTps, p.aggregateTps, cv)) out.push({ at: p.level, metric: 'aggregate', before: q.aggregateTps, after: p.aggregateTps });
     if (!tiedValues(q.ttftP95Ms, p.ttftP95Ms, cv, TIE_TAIL)) out.push({ at: p.level, metric: 'ttftP95', before: q.ttftP95Ms, after: p.ttftP95Ms });
   }

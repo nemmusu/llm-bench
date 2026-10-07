@@ -190,13 +190,14 @@ export interface TuneQuestion {
 /**
  * Completed tune runs of this model on this PC and card, with the same engine family and the same
  * question, newest first (the summaries come from RunsRepo.tried, already newest first in each group).
+ * With `measured` false, runs that measured no combination are kept too (a recheck that no longer fits).
  */
-export function tuneRunsFor(runs: readonly RunSummary[], here: HereIdentity, kind: EngineKind, q: TuneQuestion = { goal: 'single' }): RunSummary[] {
+export function tuneRunsFor(runs: readonly RunSummary[], here: HereIdentity, kind: EngineKind, q: TuneQuestion = { goal: 'single' }, measured = true): RunSummary[] {
   return runs.filter(
     (r) =>
       r.profile === 'tune' &&
       r.status === 'completed' &&
-      (r.tunedCombinations ?? 0) > 0 &&
+      (!measured || (r.tunedCombinations ?? 0) > 0) &&
       r.hostId === here.hostId &&
       (!here.gpuUuid || !r.gpuUuid || r.gpuUuid === here.gpuUuid) &&
       family(r.engineKind) === family(kind) &&
@@ -273,10 +274,11 @@ export async function tunedServerParams(
   const user = req.params;
   const slots = user?.parallel ?? 1;
   const question: TuneQuestion = slots > 1 ? { goal: 'multi', users: slots } : { goal: 'single' };
-  const list = tuneRunsFor(await runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here).catch(() => []), here, req.engine.kind, question);
+  const list = tuneRunsFor(await runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here).catch(() => []), here, req.engine.kind, question, false);
   const currentBuild = list.length && currentBuildOf ? await currentBuildOf().catch(() => undefined) : undefined;
+  // The newest run with this build decides, even when it found nothing that fits (then: the estimate).
   const sameBuild = currentBuild !== undefined ? list.find((r) => r.engineBuild === currentBuild) : undefined;
-  const hit = sameBuild ?? list[0];
+  const hit = sameBuild ?? list.find((r) => (r.tunedCombinations ?? 0) > 0);
   const run = hit ? await runs.get(hit.id).catch(() => undefined) : undefined;
   const t = run?.tuning;
   const combo = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
