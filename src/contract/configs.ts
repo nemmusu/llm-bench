@@ -38,6 +38,8 @@ export const VLLM_DEFAULTS = {
   cacheType: 'auto',
   gpuMemoryUtilization: 0.9,
   enforceEager: false,
+  /** --block-size on CUDA. */
+  blockSize: 16,
 } as const;
 
 export const CONFIG_DEFAULTS = { llamacpp: LLAMA_DEFAULTS, vllm: VLLM_DEFAULTS } as const;
@@ -58,6 +60,14 @@ export const configParamsSchema = z.object({
   ubatchSize: z.number().int().positive().optional(),
   /** llama.cpp -np slots, vLLM --max-num-seqs. */
   parallel: z.number().int().positive().optional(),
+  /**
+   * llama.cpp with more than one slot: 'unified' = one KV pool shared by every slot (--kv-unified),
+   * 'split' = each slot its own share of -c (--no-kv-unified, or -np N without --kv-unified). Absent
+   * with one slot (it makes no difference) and for vLLM (its pool is always shared).
+   */
+  kvLayout: z.enum(['split', 'unified']).optional(),
+  /** llama.cpp --cache-reuse N: reuses cached chunks of at least N tokens that are not a plain prefix (0 = off, the default). */
+  cacheReuse: z.number().int().positive().optional(),
   /** -ngl: layers on the GPU. */
   gpuLayers: z.union([z.number().int().min(0), z.literal('all')]).optional(),
   /** --n-cpu-moe N (expert layers kept on the CPU), --cpu-moe = all of them. */
@@ -73,6 +83,10 @@ export const configParamsSchema = z.object({
   maxNumBatchedTokens: z.number().int().positive().optional(),
   gpuMemoryUtilization: z.number().optional(),
   enforceEager: z.boolean().optional(),
+  /** vLLM --block-size (16, its CUDA default, is dropped). */
+  blockSize: z.number().int().positive().optional(),
+  /** vLLM CUDA graph capture sizes (--cuda-graph-sizes, or cudagraph_capture_sizes of --compilation-config), ascending. */
+  cudaGraphSizes: z.array(z.number().int().positive()).optional(),
   dtype: z.string().optional(),
   quantization: z.string().optional(),
   /** Any other engine flag, "flag value" with paths as bare file names, sorted. */
@@ -95,8 +109,10 @@ export interface LaunchInput {
   modelContext?: number | undefined;
 }
 
-type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize'> & {
+type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' | 'kvLayout'> & {
   contextSize?: number;
+  /** --kv-unified (true) / --no-kv-unified (false); undefined = not said. */
+  kvUnified?: boolean;
   gpuLayers?: number | 'all';
   cpuMoe?: number | 'all';
   speculativeModel?: string;
@@ -199,6 +215,35 @@ add(['--max-num-batched-tokens'], (r, v) => {
 add(['--gpu-memory-utilization'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
+add(['--cache-reuse'], (r, v) => {
+  const n = int(v[0]);
+  if (n !== undefined && n >= 0) r.cacheReuse = n;
+});
+add(['--block-size'], (r, v) => {
+  r.blockSize = positive(v[0]) ?? r.blockSize;
+});
+add(['--cuda-graph-sizes'], (r, v) => {
+  const sizes = v.flatMap((x) => x.split(/[\s,]+/)).map(positive);
+  if (sizes.length && sizes.every((n) => n !== undefined)) r.cudaGraphSizes = sizes as number[];
+});
+add(['--compilation-config', '-O'], (r, v) => {
+  if (!v.length) return;
+  const text = v.join(' ');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    r.other.add(`--compilation-config ${text.trim()}`);
+    return;
+  }
+  const { cudagraph_capture_sizes: sizes, ...rest } = parsed as Record<string, unknown>;
+  if (Array.isArray(sizes) && sizes.length && sizes.every((n) => Number.isInteger(n) && (n as number) > 0)) r.cudaGraphSizes = sizes as number[];
+  else if (sizes !== undefined) rest.cudagraph_capture_sizes = sizes;
+  if (Object.keys(rest).length) r.other.add(`--compilation-config ${stableStringify(rest)}`);
+});
 add(['--dtype'], (r, v) => {
   if (v[0]) r.dtype = v[0];
 });
@@ -209,6 +254,10 @@ add(['--quantization'], (r, v) => {
 /** Switches without a value. */
 const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['--enforce-eager', (r) => (r.enforceEager = true)],
+  ['--kv-unified', (r) => (r.kvUnified = true)],
+  ['-kvu', (r) => (r.kvUnified = true)],
+  ['--no-kv-unified', (r) => (r.kvUnified = false)],
+  ['-no-kvu', (r) => (r.kvUnified = false)],
   ['--cpu-moe', (r) => (r.cpuMoe = 'all')],
   ['-cmoe', (r) => (r.cpuMoe = 'all')],
 ]);
@@ -247,8 +296,8 @@ const IGNORED_SWITCH = new Set([
   '--log-colors',
   '--log-prefix',
   '--log-timestamps',
-  '--kv-unified',
-  '-kvu',
+  // vLLM: only how much of the prompt came from the cache is reported, nothing runs differently.
+  '--enable-prompt-tokens-details',
   '--disable-log-requests',
   '--disable-log-stats',
   '--disable-uvicorn-access-log',
@@ -372,19 +421,21 @@ export function configParamsOf(input: LaunchInput): ConfigParams {
   const family = engineFamilyOf(input.engineKind);
   const fromLaunch = emptyRaw();
   if (input.params) fromParams(family, input.params, fromLaunch);
-  if (!input.argv?.length || family === 'external') return normalize(family, fromLaunch, input);
+  // Params alone: GPU Bench adds --kv-unified for more than one slot. A command line without it: split
+  // (llama-server shares the pool by default only when the slot count is automatic).
+  if (!input.argv?.length || family === 'external') return normalize(family, fromLaunch, input, true);
   // The command line already holds the extra arguments: its unknown flags are the whole list.
   const fromArgv = emptyRaw();
   const { args, docker } = engineArgs(input.argv, input.image);
   parseArgs(args, fromArgv, docker);
-  return normalize(family, { ...fromLaunch, ...definedOnly(fromArgv), other: fromArgv.other }, input);
+  return normalize(family, { ...fromLaunch, ...definedOnly(fromArgv), other: fromArgv.other }, input, false);
 }
 
 function definedOnly<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([k, v]) => v !== undefined && k !== 'other')) as Partial<T>;
 }
 
-function normalize(family: EngineFamily, raw: Raw, input: LaunchInput): ConfigParams {
+function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedByDefault: boolean): ConfigParams {
   const out: ConfigParams = { other: [...raw.other].sort() };
   let ctx = raw.contextSize;
   if (ctx === 0) ctx = input.modelContext;
@@ -399,6 +450,8 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput): ConfigPa
   if (raw.batchSize !== undefined && raw.batchSize !== LLAMA_DEFAULTS.batchSize) out.batchSize = raw.batchSize;
   if (raw.ubatchSize !== undefined && raw.ubatchSize !== LLAMA_DEFAULTS.ubatchSize) out.ubatchSize = raw.ubatchSize;
   if (raw.parallel !== undefined) out.parallel = raw.parallel;
+  if (family === 'llamacpp' && (raw.parallel ?? 1) > 1) out.kvLayout = (raw.kvUnified ?? unifiedByDefault) ? 'unified' : 'split';
+  if (raw.cacheReuse !== undefined && raw.cacheReuse > 0) out.cacheReuse = raw.cacheReuse;
   const ngl = raw.gpuLayers;
   const allLayers = ngl === 'all' || (ngl !== undefined && (ngl >= 999 || (input.blockCount !== undefined && ngl >= input.blockCount)));
   if (ngl !== undefined && !allLayers) out.gpuLayers = ngl;
@@ -413,6 +466,8 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput): ConfigPa
   if (raw.maxNumBatchedTokens !== undefined) out.maxNumBatchedTokens = raw.maxNumBatchedTokens;
   if (raw.gpuMemoryUtilization !== undefined && raw.gpuMemoryUtilization !== VLLM_DEFAULTS.gpuMemoryUtilization) out.gpuMemoryUtilization = raw.gpuMemoryUtilization;
   if (raw.enforceEager === true) out.enforceEager = true;
+  if (raw.blockSize !== undefined && raw.blockSize !== VLLM_DEFAULTS.blockSize) out.blockSize = raw.blockSize;
+  if (raw.cudaGraphSizes !== undefined) out.cudaGraphSizes = [...new Set(raw.cudaGraphSizes)].sort((a, b) => a - b);
   if (raw.dtype !== undefined && raw.dtype !== 'auto') out.dtype = raw.dtype;
   if (raw.quantization !== undefined) out.quantization = raw.quantization;
   return out;

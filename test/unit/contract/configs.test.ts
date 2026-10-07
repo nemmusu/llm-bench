@@ -155,6 +155,47 @@ describe('configuration settings from a launch', () => {
     expect(vllm(['--enforce-eager', 'stray', '--num-speculative-tokens', '5'])).toEqual({ enforceEager: true, speculative: '{"num_speculative_tokens":5}', other: [] });
   });
 
+  it('tells a split KV pool from a unified one (more than one slot only) and reads --cache-reuse', () => {
+    expect(llama(['-np', '4', '--kv-unified'])).toEqual({ parallel: 4, kvLayout: 'unified', other: [] });
+    expect(llama(['-np', '4', '-kvu'])).toEqual(llama(['--kv-unified', '-np', '4']));
+    expect(llama(['-np', '4', '--no-kv-unified'])).toEqual({ parallel: 4, kvLayout: 'split', other: [] });
+    expect(llama(['-np', '4', '-no-kvu']).kvLayout).toBe('split');
+    // A command line with several slots and no flag: llama-server splits (the pool is shared only with automatic slots).
+    expect(llama(['-np', '4']).kvLayout).toBe('split');
+    // Params alone: GPU Bench adds --kv-unified itself, unless the extra arguments say otherwise.
+    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ parallel: 4 }) }).kvLayout).toBe('unified');
+    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ parallel: 4, extraArgs: ['--no-kv-unified'] }) }).kvLayout).toBe('split');
+    // One slot: the layout makes no difference.
+    expect(llama(['-np', '1', '--kv-unified'])).toEqual({ parallel: 1, other: [] });
+    expect(llama(['--kv-unified'])).toEqual({ other: [] });
+    expect(llama(['-np', '4', '--kv-unified', '--cache-reuse', '256'])).toEqual({ parallel: 4, kvLayout: 'unified', cacheReuse: 256, other: [] });
+    expect(llama(['--cache-reuse', '0'])).toEqual({ other: [] });
+    expect(llama(['--cache-reuse', 'x', '--cache-reuse', '-1'])).toEqual({ other: [] });
+    // vLLM's pool is always shared: no layout.
+    expect(vllm(['--max-num-seqs', '4']).kvLayout).toBeUndefined();
+  });
+
+  it('reads vLLM block size, CUDA graph sizes and the fp8 cache variants as settings of their own', () => {
+    expect(vllm(['--block-size', '32', '--cuda-graph-sizes', '4', '1', '2', '2'])).toEqual({ blockSize: 32, cudaGraphSizes: [1, 2, 4], other: [] });
+    expect(vllm(['--block-size', '16'])).toEqual({ other: [] });
+    expect(vllm(['--block-size', 'big', '--cuda-graph-sizes', '1', 'x'])).toEqual({ other: [] });
+    expect(vllm(['--cuda-graph-sizes', '1,2,8'])).toEqual({ cudaGraphSizes: [1, 2, 8], other: [] });
+    expect(vllm(['--compilation-config', '{"cudagraph_capture_sizes": [8, 1, 4]}'])).toEqual({ cudaGraphSizes: [1, 4, 8], other: [] });
+    expect(vllm(['-O', '{"level": 3, "cudagraph_capture_sizes": [2, 1]}'])).toEqual({ cudaGraphSizes: [1, 2], other: ['--compilation-config {"level":3}'] });
+    expect(vllm(['--compilation-config', '{"cudagraph_capture_sizes": "all"}']).other).toEqual(['--compilation-config {"cudagraph_capture_sizes":"all"}']);
+    expect(vllm(['--compilation-config', '3'])).toEqual({ other: ['--compilation-config 3'] });
+    expect(vllm(['--compilation-config', '{level:3}'])).toEqual({ other: ['--compilation-config {level:3}'] });
+    expect(vllm(['--compilation-config', '{"level": 3}'])).toEqual({ other: ['--compilation-config {"level":3}'] });
+    expect(vllm(['--compilation-config', '[1]'])).toEqual({ other: ['--compilation-config [1]'] });
+    expect(vllm(['--compilation-config'])).toEqual({ other: [] });
+    expect(vllm(['--cuda-graph-sizes'])).toEqual({ other: [] });
+    // The fp8 formats stay apart from plain fp8 (what was passed is what ran).
+    expect(vllm(['--kv-cache-dtype', 'fp8_e5m2'])).toEqual({ cacheTypeK: 'fp8_e5m2', cacheTypeV: 'fp8_e5m2', other: [] });
+    expect(configParamsOf({ engineKind: 'vllm-docker', params: P({ kvCacheType: 'fp8', extraArgs: ['--kv-cache-dtype', 'fp8_e4m3'] }) }).cacheTypeK).toBe('fp8_e4m3');
+    // Reporting cached tokens changes nothing about how the engine runs.
+    expect(vllm(['--enable-prompt-tokens-details'])).toEqual({ other: [] });
+  });
+
   it('has nothing to say about an external server', () => {
     expect(configParamsOf({ engineKind: 'external', argv: ['x', '-c', '1'], params: P({ contextSize: 4096 }) })).toEqual({ other: [] });
   });
