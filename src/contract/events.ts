@@ -3,7 +3,7 @@ import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
 import { launchParamsSchema } from './engines';
-import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, tuneAttemptSchema, tuningSchema } from './results';
+import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, sessionsPointSchema, tuneAttemptSchema, tuningSchema } from './results';
 
 /** Phases of a benchmark run, in order. Shown as the stepper on the live screen. */
 export const RUN_PHASES = [
@@ -16,6 +16,8 @@ export const RUN_PHASES = [
   'decode',
   'context-sweep',
   'concurrency',
+  // "Conversazioni lunghe": N conversations at once, the context read once and then reused.
+  'sessions',
   'llama-bench',
   // "Trova le impostazioni migliori": largest context per KV type, then one setting at a time.
   'tune-capacity',
@@ -43,7 +45,7 @@ export type RunLaunch = z.infer<typeof runLaunchSchema>;
  * What is being measured right now. 'first-token' = the 1-token probe right after the first load;
  * 'tune-probe' / 'tune-screen' = the quick checks of a tune attempt (its full sweeps are 'context-sweep').
  */
-export const CURRENT_STEP_KINDS = ['load', 'first-token', 'latency', 'context-sweep', 'concurrency', 'llama-bench', 'tune-probe', 'tune-screen', 'fidelity'] as const;
+export const CURRENT_STEP_KINDS = ['load', 'first-token', 'latency', 'context-sweep', 'concurrency', 'sessions', 'llama-bench', 'tune-probe', 'tune-screen', 'fidelity'] as const;
 export const currentStepSchema = z.object({
   kind: z.enum(CURRENT_STEP_KINDS),
   /** Prompt length of the request in flight (latency, sweeps: same as depth). */
@@ -55,8 +57,11 @@ export const currentStepSchema = z.object({
   rep: z.number().int().optional(),
   reps: z.number().int().optional(),
   warmup: z.boolean().optional(),
-  /** Concurrent users of the level being measured. */
+  /** Concurrent users of the level being measured (sessions: conversations at once). */
   concurrency: z.number().int().optional(),
+  /** Sessions: the message of the conversations being sent (1 = the whole context), out of turns. */
+  turn: z.number().int().optional(),
+  turns: z.number().int().optional(),
   /** Loads: 'cold' / 'warm'; tune attempts: the stage. */
   label: z.string().optional(),
 });
@@ -74,8 +79,60 @@ export const livePointSchema = z.union([
     attempt: z.number().int().min(0).optional(),
   }),
   z.object({ stepKind: z.literal('concurrency'), point: concurrencyPointSchema }),
+  /** "Conversazioni lunghe": one level (point.sessions conversations at once), re-sent after every message. */
+  z.object({ stepKind: z.literal('sessions'), point: sessionsPointSchema }),
 ]);
 export type LivePoint = z.infer<typeof livePointSchema>;
+
+// ---- Engine start progress ("cosa sta facendo il motore mentre si carica") ----------------------
+
+/**
+ * What an engine is doing while it starts, read from its log (see core engines/shared/load-progress):
+ * - 'starting': launched, nothing recognised in the log yet (native engines);
+ * - 'container': Docker container starting, before the first engine line;
+ * - 'metadata': llama.cpp reading the GGUF header;
+ * - 'weights': loading the weights (vLLM checkpoint shards done/total; llama.cpp progress dots,
+ *   "offloaded N/M layers to GPU" as detail);
+ * - 'compile': vLLM torch.compile / Dynamo;
+ * - 'memory-profile': vLLM measuring the memory left for the KV cache;
+ * - 'kv-cache': allocating the KV cache (llama_context / llama_kv_cache, vLLM "GPU KV cache size");
+ * - 'cuda-graphs': vLLM capturing CUDA graphs (done/total);
+ * - 'warmup': llama.cpp "warming up the model", vLLM "init engine (profile, create kv cache, warmup model) took";
+ * - 'api-server': the HTTP server is starting;
+ * - 'ready': the engine answers.
+ */
+export const LOAD_STAGES = [
+  'starting',
+  'container',
+  'metadata',
+  'weights',
+  'compile',
+  'memory-profile',
+  'kv-cache',
+  'cuda-graphs',
+  'warmup',
+  'api-server',
+  'ready',
+] as const;
+export const loadStageSchema = z.enum(LOAD_STAGES);
+export type LoadStage = z.infer<typeof loadStageSchema>;
+
+/** The latest start progress of an engine (run.load, ActiveRun.loading, ServerInfo.loading). */
+export const loadProgressSchema = z.object({
+  stage: loadStageSchema,
+  /** 0..1 inside the stage, when the log says (vLLM shards and CUDA graphs, llama.cpp progress dots). */
+  fraction: z.number().min(0).max(1).optional(),
+  /** Units of the stage done and in total (shards, graphs, layers), when the log says. */
+  done: z.number().int().min(0).optional(),
+  total: z.number().int().min(0).optional(),
+  /** Short text from the log line, already trimmed (e.g. "offloaded 49/49 layers to GPU", "took 12.40 s"). */
+  detail: z.string().optional(),
+  /** ms since this engine instance was started. */
+  elapsedMs: z.number().min(0),
+  /** Usual start → ready time of this model with this engine on this PC (past runs), when known: "di solito ~45 s". */
+  expectedMs: z.number().min(0).optional(),
+});
+export type LoadProgress = z.infer<typeof loadProgressSchema>;
 
 /** Server-sent events on GET /api/events. Each SSE `event:` name equals `type`. */
 export const serverEventSchema = z.discriminatedUnion('type', [
@@ -110,6 +167,11 @@ export const serverEventSchema = z.discriminatedUnion('type', [
    * measured). `current` = the launch in progress (no outcome yet: shown as "in corso").
    */
   z.object({ type: z.literal('run.tune'), runId: z.string(), tuning: tuningSchema, current: tuneAttemptSchema.omit({ outcome: true }).optional() }),
+  /**
+   * An engine of the run is starting (every cold/warm load, step instance and tune attempt): what it
+   * is doing now, a few times per second at most. The last one of a start has stage 'ready'.
+   */
+  z.object({ type: z.literal('run.load'), runId: z.string(), ...loadProgressSchema.shape }),
   z.object({ type: z.literal('run.done'), runId: z.string(), summary: runSummarySchema }),
   z.object({ type: z.literal('run.error'), runId: z.string(), error: appErrorSchema }),
   z.object({ type: z.literal('telemetry'), samples: z.array(gpuSampleSchema) }),

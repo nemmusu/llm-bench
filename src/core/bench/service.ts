@@ -80,14 +80,16 @@ interface Current {
   controller: AbortController;
   done: Promise<void>;
   /** What GET /api/runs/active shows besides phase and progress; set once the run is prepared. */
-  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress' | 'tuning' | 'launch' | 'current' | 'points'>;
+  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress' | 'tuning' | 'launch' | 'current' | 'points' | 'loading'>;
   /** Latest run.tune / run.launch / run.step, and every run.point (latest per key). */
-  live: Pick<ActiveRun, 'tuning' | 'launch' | 'current'> & { points: Map<string, LivePoint> };
+  live: Pick<ActiveRun, 'tuning' | 'launch' | 'current' | 'loading'> & { points: Map<string, LivePoint> };
 }
 
-/** Which earlier run.point a new one replaces: same kind, same prompt length or users, same tune attempt. */
+/** Which earlier run.point a new one replaces: same kind, same prompt length, users or conversations, same tune attempt. */
 export function livePointKey(p: LivePoint): string {
-  return p.stepKind === 'concurrency' ? `concurrency:${p.point.level}` : `${p.stepKind}:${p.point.promptTokens}:${p.attempt ?? ''}`;
+  if (p.stepKind === 'concurrency') return `concurrency:${p.point.level}`;
+  if (p.stepKind === 'sessions') return `sessions:${p.point.sessions}`;
+  return `${p.stepKind}:${p.point.promptTokens}:${p.attempt ?? ''}`;
 }
 
 /** A request resolved down to the exact command (runs and servers alike). */
@@ -115,6 +117,8 @@ export interface PreparedServer extends Launched {
   apiName: string;
   /** The context and settings came from a "Trova le impostazioni migliori" run (see tunedServerParams). */
   tuned?: ServerPlan['tuned'];
+  /** Usual start → ready time here (a server start reads files the OS has usually cached: the warm time, else the cold one). */
+  expectedLoadMs?: number;
 }
 
 /** Plan fields shared by runs and servers. */
@@ -213,7 +217,19 @@ export class BenchService {
     const contextSize = await this.fillServerContext(req, model, params);
     const apiName = serverApiName(req.engine.kind, model);
     const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
-    return { model, adapter, params, ...c, contextSize, apiName, warnings: memWarning ? [memWarning] : [], ...(tuned ? { tuned: tuned.tuned } : {}) };
+    const past = opts.preview ? undefined : (await this.expectedLoad(model, req.engine.kind)).expectedLoadMs;
+    const expectedLoadMs = past?.warm ?? past?.cold;
+    return {
+      model,
+      adapter,
+      params,
+      ...c,
+      contextSize,
+      apiName,
+      warnings: memWarning ? [memWarning] : [],
+      ...(tuned ? { tuned: tuned.tuned } : {}),
+      ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
+    };
   }
 
   private async tunedServer(req: StartServerRequest, model: ModelTarget): ReturnType<typeof tunedServerParams> {
@@ -295,6 +311,26 @@ export class BenchService {
         ...(past.coldLoadMs ? { coldLoadSec: past.coldLoadMs / 1000 } : {}),
         ...(past.warmLoadMs ? { warmLoadSec: past.warmLoadMs / 1000 } : {}),
       };
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Usual start → ready time of this model with this engine kind on this PC: the latest completed run
+   * that measured it ("di solito ci mette circa 45 s"). Never fails: unknown is simply absent.
+   */
+  async expectedLoad(model: ModelTarget, kind: EngineKind): Promise<{ expectedLoadMs?: { cold?: number; warm?: number } }> {
+    try {
+      const here = await this.here();
+      const id = model.identity;
+      const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).filter(
+        (r) => r.status === 'completed' && r.hostId === here.hostId && r.engineKind === kind,
+      );
+      const cold = past.find((r) => r.coldLoadMs !== undefined)?.coldLoadMs;
+      const warm = past.find((r) => r.warmLoadMs !== undefined)?.warmLoadMs;
+      if (cold === undefined && warm === undefined) return {};
+      return { expectedLoadMs: { ...(cold !== undefined ? { cold } : {}), ...(warm !== undefined ? { warm } : {}) } };
     } catch {
       return {};
     }
@@ -415,6 +451,12 @@ export class BenchService {
           current.progress = e.progress;
         } else if (e.type === 'run.tune') current.live.tuning = e.tuning;
         else if (e.type === 'run.launch') current.live.launch = e.launch;
+        else if (e.type === 'run.load') {
+          // The engine is starting: shown until it answers (the last run.load of a start is 'ready').
+          const { type: _type, runId: _id, ...loading } = e;
+          if (loading.stage === 'ready') delete current.live.loading;
+          else current.live.loading = loading;
+        }
         else if (e.type === 'run.step') current.live.current = e.current;
         else if (e.type === 'run.point') {
           // Re-inserted: the map keeps the order in which points were last updated.
@@ -451,6 +493,7 @@ export class BenchService {
       notes: p.warnings.map((w) => `plan: ${w.code}${w.params ? ` ${JSON.stringify(w.params)}` : ''}`),
       warnings: p.warnings,
       ...(tune ? { tune } : {}),
+      ...(await this.expectedLoad(p.model, p.engine.kind)),
     };
     current.done = runner
       .run(input, controller.signal)

@@ -75,8 +75,10 @@ export function createFormatters(lang: Lang): Formatters {
     if (ms < 1000) return `${integer(ms)} ms`;
     const s = ms / 1000;
     if (s < 60) return `${number(s, s < 10 ? 2 : 1)} s`;
-    const m = Math.floor(s / 60);
-    const rest = Math.round(s - m * 60);
+    // Rounded first, so 119,6 s reads "2 min 00 s" (not "1 min 60 s").
+    const total = Math.round(s);
+    const m = Math.floor(total / 60);
+    const rest = total - m * 60;
     return `${m} min ${String(rest).padStart(2, '0')} s`;
   };
   const dateFmt = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });

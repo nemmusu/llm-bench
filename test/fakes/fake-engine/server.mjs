@@ -149,6 +149,10 @@ function mulberry32(a) {
   };
 }
 
+/** vLLM progress bars of the fake: checkpoint shards and CUDA graphs. */
+const SHARDS = 4;
+const GRAPHS = 8;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
 function readBody(req) {
@@ -190,7 +194,21 @@ function sendJson(res, status, body) {
  * @property {boolean} [requireModelFile] llama.cpp: fail like the real server when -m does not exist.
  * @property {boolean} [watchdog]       Spawn the state watchdog (default true when stateFile is set).
  * @property {(code: number) => void} [onFatal] Simulated crash (default: close the server).
+ * @property {boolean} [prefixCaching] vLLM: reuse cached prompt prefixes (default true, like vLLM V1; --no-enable-prefix-caching).
+ * @property {boolean} [promptTokensDetails] vLLM: report usage.prompt_tokens_details.cached_tokens (--enable-prompt-tokens-details).
+ * @property {number} [kvTokens] GPU KV cache size in tokens reported by vLLM (default 164816).
  */
+
+/** vLLM caches whole blocks of this many tokens. */
+const VLLM_BLOCK = 16;
+
+/** Length of the common prefix of two token arrays. */
+export function commonPrefix(a, b) {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  return i;
+}
 
 /**
  * Starts the fake engine. Resolves once the port is bound (llama.cpp binds before loading;
@@ -216,15 +234,22 @@ export async function startFakeEngine(o = {}) {
   const rand = mulberry32(p.seed ?? 1);
   // The memory model (when the profile has one) decides what loads, what spills and how much VRAM it holds.
   const mem = p.memory ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager }) : undefined;
-  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity };
+  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816 };
   const rates = (depth) => speeds(p, { depth, flashAttn: o.flashAttn, kvType: o.kvType, kvTypeV: o.kvTypeV, ubatch: o.ubatch, spill: mem?.outcome === 'spill', cpuShare: mem?.cpuShare });
 
   let loaded = false;
   let closed = false;
   let totalTokens = 0;
-  let active = 0;
   let nextTask = 0;
+  /** llama.cpp slots: busy flags and what each one holds (prompt + answer of its last request). */
+  const slotBusy = Array.from({ length: np }, () => false);
+  const slotCache = Array.from({ length: np }, () => []);
+  /** Requests waiting for a slot; `want` = their id_slot, if any. */
   const waiting = [];
+  /** vLLM prefix cache: recent sequences (prompt + answer), newest last, within the KV cache size. */
+  const prefixCache = [];
+  /** Prompts are read one at a time (like one GPU reading long prompts); answers are generated together. */
+  let prefillTail = Promise.resolve();
   const sockets = new Set();
   const stalled = new Set();
 
@@ -235,23 +260,66 @@ export async function startFakeEngine(o = {}) {
     else void close();
   };
 
-  const acquireSlot = async () => {
-    if (active < np) {
-      active++;
+  const busySlots = () => slotBusy.filter(Boolean).length;
+  /** A free slot: the one asked for (id_slot), else the first free one; undefined = wait. */
+  const pickSlot = (want) => {
+    if (want !== undefined && want < np) return slotBusy[want] ? undefined : want;
+    const free = slotBusy.indexOf(false);
+    return free < 0 ? undefined : free;
+  };
+  const acquireSlot = (want) =>
+    new Promise((resolve) => {
+      const slot = pickSlot(want);
+      if (slot === undefined) waiting.push({ want, resolve });
+      else {
+        slotBusy[slot] = true;
+        resolve(slot);
+      }
+    });
+  const releaseSlot = (slot) => {
+    slotBusy[slot] = false;
+    const k = waiting.findIndex((w) => pickSlot(w.want) !== undefined);
+    if (k < 0) return;
+    const [w] = waiting.splice(k, 1);
+    const next = pickSlot(w.want);
+    slotBusy[next] = true;
+    w.resolve(next);
+  };
+  /** Waits for the reading of earlier prompts; resolves to the function that lets the next one read. */
+  const prefillTurn = () => {
+    let release;
+    const prev = prefillTail;
+    prefillTail = new Promise((r) => (release = r));
+    return prev.then(() => release);
+  };
+  /** Tokens of `ids` the cache already holds. */
+  const cachedFor = (ids, slot, usePromptCache) => {
+    if (flavor === 'llamacpp') {
+      // llama.cpp re-reads at least the last prompt token.
+      return usePromptCache ? Math.min(commonPrefix(slotCache[slot], ids), Math.max(0, ids.length - 1)) : 0;
+    }
+    if (o.prefixCaching === false) return 0;
+    const best = prefixCache.reduce((m, seq) => Math.max(m, commonPrefix(seq, ids)), 0);
+    // Whole blocks only, and never the last token (vLLM recomputes it).
+    return Math.floor(Math.min(best, Math.max(0, ids.length - 1)) / VLLM_BLOCK) * VLLM_BLOCK;
+  };
+  const remember = (seq, slot) => {
+    if (flavor === 'llamacpp') {
+      slotCache[slot] = seq;
       return;
     }
-    await new Promise((r) => waiting.push(r));
-  };
-  const releaseSlot = () => {
-    const next = waiting.shift();
-    if (next) next();
-    else active--;
+    prefixCache.push(seq);
+    let total = prefixCache.reduce((n, x) => n + x.length, 0);
+    while (total > c.kvTokens && prefixCache.length > 1) total -= prefixCache.shift().length;
   };
 
-  /** Generation shared by both flavours. `emit` sends one chunk of `ids`. */
-  async function generate(res, { promptN, n, perChunk, emit, finish }) {
-    await acquireSlot();
-    const slot = active - 1;
+  /**
+   * Generation shared by both flavours. `emit` sends one chunk of ids. The part of the prompt the
+   * cache holds is not read again; reading waits for the prompts sent before (one at a time).
+   */
+  async function generate(res, { ids, n, perChunk, emit, finish, want, usePromptCache }) {
+    const promptN = ids.length;
+    const slot = await acquireSlot(want);
     const task = nextTask++;
     let aborted = false;
     res.on('close', () => {
@@ -259,10 +327,14 @@ export async function startFakeEngine(o = {}) {
     });
     if (flavor === 'llamacpp') out(L.llamaTaskStart(slot, task, promptN, ctx));
     gpu.setLoad(busyLoad);
+    const release = await prefillTurn();
+    const cached = cachedFor(ids, slot, usePromptCache);
     const t0 = performance.now();
     const rate = rates(promptN);
-    await sleep(((promptN / rate.prefill) * 1000) * scale);
+    await sleep((((promptN - cached) / rate.prefill) * 1000) * scale);
     const tPrefill = performance.now();
+    release();
+    const generated = [];
     const seed = (p.seed ?? 1) + task;
     let k = 0;
     // Time at which the last emitted token was due. Targets are relative to it, not to "now":
@@ -272,7 +344,7 @@ export async function startFakeEngine(o = {}) {
     try {
       while (k < n && !aborted && !closed) {
         const m = Math.min(perChunk, n - k);
-        const perToken = (1000 / rate.decode) * scale * (1 + 0.15 * Math.max(0, Math.min(active, np) - 1));
+        const perToken = (1000 / rate.decode) * scale * (1 + 0.15 * Math.max(0, busySlots() - 1));
         const target = due + m * perToken;
         const now = performance.now();
         if (target > now) await sleep(target - now);
@@ -283,6 +355,7 @@ export async function startFakeEngine(o = {}) {
           k++;
           totalTokens++;
           batch.push(genId(seed, k));
+          generated.push(genId(seed, k));
           if (p.crashAfterTokens !== undefined && totalTokens >= p.crashAfterTokens) {
             fatal(134, L.llamaCrash());
             res.destroy();
@@ -297,13 +370,15 @@ export async function startFakeEngine(o = {}) {
       }
       if (aborted || closed) return;
       const tEnd = performance.now();
-      const timings = { promptN, promptMs: tPrefill - t0, predictedN: k, predictedMs: tEnd - tPrefill };
+      // promptN = tokens actually read (llama.cpp prompt_n); the reading time excludes the wait for a turn.
+      const timings = { cacheN: cached, promptN: promptN - cached, promptMs: tPrefill - t0, predictedN: k, predictedMs: tEnd - tPrefill };
+      remember([...ids, ...generated], slot);
       finish(timings);
       if (flavor === 'llamacpp') out(L.llamaTaskDone(slot, task, timings));
     } finally {
       if (!stalled.has(res)) {
-        releaseSlot();
-        if (active === 0) gpu.setLoad(null);
+        releaseSlot(slot);
+        if (busySlots() === 0) gpu.setLoad(null);
       }
     }
   }
@@ -368,7 +443,7 @@ export async function startFakeEngine(o = {}) {
         index: 0,
         content,
         tokens: [],
-        id_slot: 0,
+        id_slot: slotOf,
         stop: true,
         model: alias,
         tokens_predicted: t.predictedN,
@@ -381,7 +456,7 @@ export async function startFakeEngine(o = {}) {
         stopping_word: '',
         tokens_cached: promptN + t.predictedN,
         timings: {
-          cache_n: 0,
+          cache_n: t.cacheN,
           prompt_n: t.promptN,
           prompt_ms: t.promptMs,
           prompt_per_token_ms: t.promptMs / Math.max(1, t.promptN),
@@ -392,15 +467,19 @@ export async function startFakeEngine(o = {}) {
           predicted_per_second: (t.predictedN / Math.max(t.predictedMs, 0.001)) * 1000,
         },
       });
+      const want = typeof body.id_slot === 'number' && body.id_slot >= 0 ? body.id_slot : undefined;
+      const slotOf = want ?? 0;
       await generate(res, {
-        promptN,
+        ids,
         n,
         perChunk: Math.max(1, p.tokensPerChunk ?? 1),
+        want,
+        usePromptCache: body.cache_prompt === true,
         emit: (batch, k) => {
           const content = detokenize(batch);
           text += content;
           if (!stream) return;
-          const chunk = { index: 0, content, ...(returnTokens ? { tokens: batch } : {}), stop: false, id_slot: 0, tokens_predicted: k, tokens_evaluated: promptN };
+          const chunk = { index: 0, content, ...(returnTokens ? { tokens: batch } : {}), stop: false, id_slot: slotOf, tokens_predicted: k, tokens_evaluated: promptN };
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         },
         finish: (t) => {
@@ -456,11 +535,17 @@ export async function startFakeEngine(o = {}) {
       const continuous = body.stream_options?.continuous_usage_stats === true;
       const id = `cmpl-fake${nextTask}`;
       const created = Math.floor(Date.now() / 1000);
-      const usage = (k) => ({ prompt_tokens: promptN, total_tokens: promptN + k, completion_tokens: k });
+      let cachedTokens = 0;
+      const usage = (k) => ({
+        prompt_tokens: promptN,
+        total_tokens: promptN + k,
+        completion_tokens: k,
+        ...(o.promptTokensDetails ? { prompt_tokens_details: { cached_tokens: cachedTokens } } : {}),
+      });
       let text = '';
       if (stream) res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
       await generate(res, {
-        promptN,
+        ids,
         n,
         perChunk: Math.max(1, p.tokensPerChunk ?? 1),
         emit: (batch, k) => {
@@ -478,6 +563,7 @@ export async function startFakeEngine(o = {}) {
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         },
         finish: (t) => {
+          cachedTokens = t.cacheN;
           if (!stream) {
             sendJson(res, 200, {
               id,
@@ -559,13 +645,24 @@ export async function startFakeEngine(o = {}) {
     out(L.vllmBanner(c));
     await sleep(loadMs * 0.1);
     if (p.noKernelImage) throw Object.assign(new Error('nokernel'), { lines: L.vllmNoKernelImage() });
-    await sleep(loadMs * 0.4);
+    // Checkpoint shards one by one (a tqdm bar in the real log).
+    for (let i = 0; i <= SHARDS; i++) {
+      out([L.vllmShards(i, SHARDS)]);
+      if (i < SHARDS) await sleep((loadMs * 0.4) / SHARDS);
+    }
     gpu.setMem(Math.round(c.vramMiB * 0.6));
     out(L.vllmWeights((loadMs * 0.4) / 1000));
     if (p.oomAtLoad) throw Object.assign(new Error('oom'), { lines: L.vllmOom() });
     out(L.vllmModelLoaded(c, (loadMs * 0.5) / 1000));
+    await sleep(loadMs * 0.2);
+    out(L.vllmCompile((loadMs * 0.2) / 1000));
+    out(L.vllmKvCache(c));
     if (mem?.outcome === 'kv-too-small') throw Object.assign(new Error('kv'), { lines: L.vllmKvTooSmall(c) });
-    await sleep(loadMs * 0.4);
+    for (let i = 0; i <= GRAPHS; i += GRAPHS / 4) {
+      out([L.vllmGraphs(i, GRAPHS)]);
+      if (i < GRAPHS) await sleep((loadMs * 0.2) / 4);
+    }
+    out(L.vllmGraphsDone((loadMs * 0.2) / 1000));
     gpu.setMem(c.vramMiB);
     gpu.setLoad(busyLoad);
     await sleep(loadMs * 0.1);

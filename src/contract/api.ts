@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './engines';
-import { currentStepSchema, livePointSchema, runLaunchSchema, runPhaseSchema } from './events';
+import { currentStepSchema, livePointSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
 import { profileSchema, scenarioSchema, tuneBudgetSchema, tuneKvTypeSchema, tuningSchema } from './results';
@@ -147,6 +147,8 @@ export const activeRunSchema = z.object({
   current: currentStepSchema.optional(),
   /** Every measurement so far (latest `run.point` per key), in arrival order. */
   points: z.array(livePointSchema).default([]),
+  /** The engine start in progress (last `run.load`); absent when no engine is starting. */
+  loading: loadProgressSchema.optional(),
 });
 export type ActiveRun = z.infer<typeof activeRunSchema>;
 export const activeRunResponseSchema = z.object({ active: activeRunSchema.nullable() });
@@ -234,5 +236,10 @@ export const serverInfoSchema = z.object({
   command: z.object({ argv: z.array(z.string()), powershell: z.string(), bash: z.string() }),
   /** Tokens the server takes at once (as in ServerPlan.contextSize), when known. */
   contextSize: z.number().int().optional(),
+  /**
+   * Present while the engine is still starting (GET /api/servers lists a server as soon as it is
+   * launched): what it is doing now. Absent once it answers.
+   */
+  loading: loadProgressSchema.optional(),
 });
 export type ServerInfo = z.infer<typeof serverInfoSchema>;

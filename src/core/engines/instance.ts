@@ -3,6 +3,7 @@ import { AppError } from '../../contract/errors';
 import type { Clock, ExitInfo, LogLine, ManagedProcess } from '../deps';
 import type { InferenceClient } from '../inference/types';
 import { AsyncQueue } from '../process/runner';
+import { HeadTailLog } from './log-buffer';
 import type { EngineInstance, PhaseMark } from './types';
 import { ignore } from './util';
 
@@ -26,27 +27,27 @@ export interface ProcessInstanceOptions {
   startSignal?: AbortSignal;
   pollMs?: number;
   readyTimeoutMs?: number;
+  /** Lines kept after the head (the head is the start of the log up to ready, see HeadTailLog). */
   maxLogLines?: number;
   /** Called once when the process is gone (ownership registry cleanup). */
   onExit?(exit: ExitInfo): Promise<void>;
 }
 
 /**
- * EngineInstance on top of a ManagedProcess: one consumer drains the process lines into a
- * bounded tail + phase marks and re-publishes them on `logs`; readiness is polled every
- * `pollMs` and raced against the process exit, so a crash is diagnosed from its own log.
+ * EngineInstance on top of a ManagedProcess: one consumer drains the process lines into a head
+ * (the start of the log, up to ready) + bounded tail and phase marks, and re-publishes them on
+ * `logs`; readiness is polled every `pollMs` and raced against the process exit, so a crash is
+ * diagnosed from its own log.
  */
 export function createProcessInstance(o: ProcessInstanceOptions): EngineInstance {
-  const tail: string[] = [];
+  const kept = new HeadTailLog(o.maxLogLines ?? DEFAULT_LOG_LINES);
   const marks: PhaseMark[] = [];
   const seen = new Set<string>();
   const logs = new AsyncQueue<LogLine>();
-  const maxLines = o.maxLogLines ?? DEFAULT_LOG_LINES;
 
   const pumped = (async () => {
     for await (const line of o.mp.lines) {
-      tail.push(line.text);
-      if (tail.length > maxLines) tail.shift();
+      kept.push(line.text);
       const phase = o.phaseOf(line.text);
       if (phase !== undefined && !seen.has(phase)) {
         seen.add(phase);
@@ -91,19 +92,22 @@ export function createProcessInstance(o: ProcessInstanceOptions): EngineInstance
         }
         if (exitInfo) {
           await drained();
-          throw o.diagnose(tail, exitInfo);
+          throw o.diagnose(kept.lines(), exitInfo);
         }
         if (o.clock.now() > deadline) {
           await stop();
           throw new AppError('ENGINE_TIMEOUT', 'The engine did not become ready in time', {
             params: { timeoutMs },
-            detail: tail.slice(-25).join('\n'),
+            detail: kept.lines().slice(-25).join('\n'),
           });
         }
         // Raced with the exit: a probe stuck on a socket that never answers must not delay the diagnosis.
         const ok = await Promise.race([o.probe(ac.signal).catch(() => false), cleanedUp.then(() => false)]);
         // A 200 from a process that already died came from someone else on that port.
-        if (ok && !exitInfo) return { tReady: o.clock.now(), phases: [...marks] };
+        if (ok && !exitInfo) {
+          kept.closeHead();
+          return { tReady: o.clock.now(), phases: [...marks] };
+        }
         await Promise.race([o.clock.sleep(o.pollMs ?? DEFAULT_POLL_MS, ac.signal).catch(ignore), cleanedUp]);
       }
     } finally {
@@ -126,6 +130,6 @@ export function createProcessInstance(o: ProcessInstanceOptions): EngineInstance
     client: o.client,
     stop,
     exited: o.mp.exited,
-    logTail: () => [...tail],
+    logTail: () => kept.lines(),
   };
 }

@@ -7,7 +7,12 @@ import type { GenerateRequest, InferenceClient, StreamEvent, Usage } from './typ
 
 const tokenizeSchema = z.object({ tokens: z.array(z.number()) });
 
-const usageSchema = z.object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional() });
+const usageSchema = z.object({
+  prompt_tokens: z.number().optional(),
+  completion_tokens: z.number().optional(),
+  /** vLLM with --enable-prompt-tokens-details: how much of the prompt came from the prefix cache. */
+  prompt_tokens_details: z.object({ cached_tokens: z.number().nullable().optional() }).nullable().optional(),
+});
 const chunkSchema = z.object({
   choices: z.array(z.object({ text: z.string().optional(), finish_reason: z.string().nullable().optional() })).optional(),
   usage: usageSchema.nullable().optional(),
@@ -17,6 +22,7 @@ function toUsage(u: z.infer<typeof usageSchema>): Usage {
   return {
     ...(u.prompt_tokens !== undefined ? { promptTokens: u.prompt_tokens } : {}),
     ...(u.completion_tokens !== undefined ? { completionTokens: u.completion_tokens } : {}),
+    ...(typeof u.prompt_tokens_details?.cached_tokens === 'number' ? { cachedTokens: u.prompt_tokens_details.cached_tokens } : {}),
   };
 }
 

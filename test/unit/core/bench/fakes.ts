@@ -109,6 +109,8 @@ export interface ClientOptions {
   silent?: (n: number) => boolean;
   /** Called before each request (e.g. to abort a run at a precise point). */
   onRequest?: (n: number) => void;
+  /** Chunks carry their token ids (llama.cpp return_tokens) or only their text pieces. */
+  pieces?: 'ids' | 'text';
 }
 
 export class FakeClient implements InferenceClient {
@@ -161,7 +163,8 @@ export class FakeClient implements InferenceClient {
     while (emitted < total) {
       if (signal?.aborted) throw new AppError('CANCELLED', 'aborted');
       const k = emitted === 0 ? 1 : Math.min(per, total - emitted);
-      yield { kind: 'chunk', t: c.now(), textLen: k * 4, ...(this.o.reportTokens === false ? {} : { tokens: k }) };
+      const piece = this.o.pieces === 'ids' ? { ids: Array.from({ length: k }, (_, j) => emitted + j) } : this.o.pieces === 'text' ? { text: `w${emitted}` } : {};
+      yield { kind: 'chunk', t: c.now(), textLen: k * 4, ...(this.o.reportTokens === false ? {} : { tokens: k }), ...piece };
       emitted += k;
       c.advance((this.o.decodeMsPerToken ?? 5) * k);
       await Promise.resolve();
@@ -348,6 +351,8 @@ export interface TelemetryOptions {
     others?: (t: number) => GpuProcessMemory[];
     /** The engine's memory as the OS reports it (default world.modelMiB); null = not listed (WSL). */
     engineMiB?: number | null;
+    /** Shared GPU memory reported for the engine (Windows counters). */
+    sharedMiB?: number;
     startThrows?: boolean;
     stopThrows?: boolean;
   };
@@ -429,7 +434,7 @@ export class FakeTelemetry implements TelemetrySampler {
     const source = new ClockSource(w.clock, (t) => [
       ...w.running
         .filter((r) => pv.engineMiB !== null && r.pid !== undefined && t >= r.from && (r.to === undefined || t <= r.to))
-        .map((r) => ({ pid: r.pid as number, mib: pv.engineMiB ?? w.modelMiB, name: 'llama-server' })),
+        .map((r) => ({ pid: r.pid as number, mib: pv.engineMiB ?? w.modelMiB, name: 'llama-server', ...(pv.sharedMiB !== undefined ? { sharedMib: pv.sharedMiB } : {}) })),
       ...(pv.others?.(t) ?? []),
     ]);
     const rec = new ProcessVramRecorder({ source, clock: w.clock, pids, intervalMs });

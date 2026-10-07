@@ -15,20 +15,25 @@ export interface RunnerOptions {
 
 const MAX_CAPTURE = 4 * 1024 * 1024;
 
-/** Splits a byte stream into lines; keeps a trailing partial line until the next chunk. */
+/**
+ * Splits a byte stream into lines; keeps a trailing partial line until the next chunk. A lone CR
+ * ends a line too: progress bars (vLLM's tqdm "Loading safetensors checkpoint shards: 43% …") redraw
+ * with CR and only print LF at the end, so each redraw becomes a line as it happens. A CR at the end
+ * of a chunk waits for the next one (it may be the first half of CRLF).
+ */
 export class LineSplitter {
   private rest = '';
   push(chunk: string): string[] {
     const text = this.rest + chunk;
-    const parts = text.split(/\r?\n/);
+    const parts = text.split(/\r\n|\r(?!$)|\n/);
     // split() always returns at least one element.
     this.rest = parts.pop() as string;
     return parts;
   }
   flush(): string[] {
-    const out = this.rest ? [this.rest] : [];
+    const last = this.rest.replace(/\r$/, '');
     this.rest = '';
-    return out;
+    return last ? [last] : [];
   }
 }
 

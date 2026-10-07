@@ -1,5 +1,5 @@
 import type { EngineKind, LaunchParams } from '../../contract/engines';
-import type { Profile, Scenario, Step } from '../../contract/results';
+import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
 import { CONTEXT_MARGIN, sweepDepths } from './sweep';
 
 export { CONTEXT_MARGIN };
@@ -28,6 +28,8 @@ const PROFILES: Record<BuiltinProfile, Step[]> = {
     { kind: 'latency', promptTokens: [128, 512, 2048, 8192, 32768], outputTokens: 512, warmup: 2, reps: 10 },
     { kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2, maxSeconds: 300 },
     { kind: 'concurrency', levels: usersUpTo(16), promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
+    // "Conversazioni lunghe": the context the launch gives each conversation, up to 32K (never grows the launch).
+    { kind: 'sessions', depth: 0, maxDepth: 32768, levels: [1, 2], turns: 3, followupTokens: 256, outputTokens: 256, maxSeconds: 300 },
     { kind: 'llama-bench', pp: 512, tg: 128, reps: 5 },
   ],
   // "Trova le impostazioni migliori": the tuner launches the engine several times (see tuner.ts);
@@ -49,6 +51,8 @@ export interface ScenarioLimits {
   contextSize?: number;
   /** Concurrent requests the server accepts (llama.cpp slots); undefined = no limit known. */
   maxConcurrency?: number;
+  /** llama.cpp unified KV: contextSize is one pool that requests at the same time share. */
+  sharedPool?: boolean;
 }
 
 /**
@@ -66,12 +70,20 @@ export function limitsFor(
   if (isLlamaCpp(kind)) {
     const parallel = params.parallel ?? 1;
     const perRequest = ctx === undefined ? undefined : opts.kvUnified ? ctx : Math.floor(ctx / parallel);
-    return { engineKind: kind, ...(perRequest ? { contextSize: perRequest } : {}), maxConcurrency: parallel };
+    return { engineKind: kind, ...(perRequest ? { contextSize: perRequest } : {}), maxConcurrency: parallel, ...(opts.kvUnified ? { sharedPool: true } : {}) };
   }
   return { engineKind: kind, ...(ctx ? { contextSize: ctx } : {}) };
 }
 
 const roundUp = (n: number, step: number): number => Math.ceil(n / step) * step;
+
+/** Tokens a conversation adds to its first message: every answer, every follow-up, and the margin. */
+export function sessionExtras(step: Pick<SessionsStep, 'turns' | 'outputTokens' | 'followupTokens'>): number {
+  return step.turns * step.outputTokens + (step.turns - 1) * step.followupTokens + CONTEXT_MARGIN;
+}
+
+/** vLLM reports cached prompt tokens only with this flag (prefix caching itself is on by default in V1). */
+export const VLLM_PROMPT_DETAILS_FLAG = '--enable-prompt-tokens-details';
 
 /**
  * Launch parameters the scenario needs, for whatever the user did not set: the context must hold
@@ -89,30 +101,42 @@ export function autoLaunchParams(
   let single = 0;
   let concurrency = 0;
   let perConcurrent = 0;
+  let sessions = 0;
+  let perSession = 0;
   for (const step of scenario.steps) {
     if (step.kind === 'latency') single = Math.max(single, Math.max(...step.promptTokens) + step.outputTokens + CONTEXT_MARGIN);
     if (step.kind === 'concurrency') {
       concurrency = Math.max(concurrency, ...step.levels);
       perConcurrent = Math.max(perConcurrent, step.promptTokens + step.outputTokens + CONTEXT_MARGIN);
     }
+    if (step.kind === 'sessions') {
+      sessions = Math.max(sessions, ...step.levels);
+      // Depth 0 takes whatever the launch gives: it never grows the context.
+      if (step.depth > 0) perSession = Math.max(perSession, step.depth + sessionExtras(step));
+    }
   }
   if (kind === 'external') return params;
   // Round first, then cap: the context must never exceed what the model was trained for.
   const sized = (n: number) => (modelContext ? Math.min(roundUp(n, 1024), modelContext) : roundUp(n, 1024));
   const out: LaunchParams = { ...params };
+  const users = Math.max(concurrency, sessions);
   if (isLlamaCpp(kind)) {
-    const parallel = params.parallel ?? Math.max(1, concurrency);
+    // One slot per user at once; a conversation keeps its slot (and its cached context) between messages.
+    const parallel = params.parallel ?? Math.max(1, users);
     if (params.parallel === undefined && parallel > 1) out.parallel = parallel;
-    if (params.contextSize === undefined && (single > 0 || perConcurrent > 0)) {
+    if (params.contextSize === undefined && (single > 0 || perConcurrent > 0 || perSession > 0)) {
       const unified = opts.kvUnified ?? true;
-      const perSlot = Math.max(single, perConcurrent);
-      const total = unified ? Math.max(single, perConcurrent * Math.min(parallel, concurrency || 1)) : perSlot * parallel;
+      const perSlot = Math.max(single, perConcurrent, perSession);
+      const total = unified
+        ? Math.max(single, perConcurrent * Math.min(parallel, concurrency || 1), perSession * Math.min(parallel, sessions || 1))
+        : perSlot * parallel;
       out.contextSize = unified ? sized(total) : sized(perSlot) * parallel;
     }
     return out;
   }
-  if (params.maxModelLen === undefined && single > 0) out.maxModelLen = sized(Math.max(single, perConcurrent));
-  if (params.parallel === undefined && concurrency > 1) out.parallel = concurrency;
+  if (params.maxModelLen === undefined && (single > 0 || perSession > 0)) out.maxModelLen = sized(Math.max(single, perConcurrent, perSession));
+  if (params.parallel === undefined && users > 1) out.parallel = users;
+  if (sessions > 0 && !out.extraArgs.includes(VLLM_PROMPT_DETAILS_FLAG)) out.extraArgs = [...out.extraArgs, VLLM_PROMPT_DETAILS_FLAG];
   return out;
 }
 
@@ -170,6 +194,11 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
         if (limits.engineKind === 'llamacpp-native') steps.push(step);
         else warnings.push({ code: 'llama_bench_unsupported' });
         break;
+      case 'sessions': {
+        const fitted = fitSessions(step, limits, warnings);
+        if (fitted) steps.push(fitted);
+        break;
+      }
       case 'context-sweep': {
         // The grid follows the context the engine is started with; without one there is nothing to fill.
         if (ctx === undefined) {
@@ -186,6 +215,38 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
     }
   }
   return { scenario: { ...scenario, steps }, warnings };
+}
+
+/** Shortest first message worth measuring as a "long conversation". */
+export const MIN_SESSION_DEPTH = 256;
+
+/**
+ * Levels in ascending order within the server's slots, and the first-message depth that lets the
+ * whole conversation fit the context each conversation gets (a unified llama.cpp pool is shared by
+ * the conversations at once). A depth that does not fit is reduced (warning sessions_depth_reduced).
+ */
+function fitSessions(step: SessionsStep, limits: ScenarioLimits, warnings: ScenarioWarning[]): SessionsStep | undefined {
+  const max = limits.maxConcurrency;
+  const all = ascending(step.levels);
+  const levels = all.filter((l) => max === undefined || l <= max);
+  for (const l of all) if (!levels.includes(l)) warnings.push({ code: 'concurrency_level_skipped', params: { level: l, parallel: max } });
+  if (!levels.length) return undefined;
+  const ctx = limits.contextSize;
+  if (ctx === undefined) {
+    if (step.depth > 0) return { ...step, levels };
+    warnings.push({ code: 'sessions_depth_unknown' });
+    return undefined;
+  }
+  const perSession = limits.sharedPool ? Math.floor(ctx / (levels[levels.length - 1] as number)) : ctx;
+  const room = perSession - sessionExtras(step);
+  const wanted = step.depth > 0 ? step.depth : Math.min(room, step.maxDepth ?? room);
+  const depth = Math.min(wanted, room);
+  if (depth < MIN_SESSION_DEPTH) {
+    warnings.push({ code: 'prompt_too_long', params: { promptTokens: wanted, contextSize: perSession } });
+    return undefined;
+  }
+  if (depth < step.depth) warnings.push({ code: 'sessions_depth_reduced', params: { requested: step.depth, depth, contextSize: perSession } });
+  return { ...step, levels, depth };
 }
 
 /** Speeds used to estimate durations; past results for the same model replace the defaults. */
@@ -226,6 +287,16 @@ export function stepSeconds(step: Step, e: Expectations): number {
       return e.warmLoadSec + step.reps * (step.pp / e.prefillTps + step.tg / e.decodeTps + 1);
     case 'context-sweep': {
       const all = step.depths.reduce((s, d) => s + step.reps * requestSeconds(d, step.outputTokens, e), 0);
+      return step.maxSeconds === undefined ? all : Math.min(all, step.maxSeconds);
+    }
+    case 'sessions': {
+      // The first messages of N conversations are read one after the other; later ones only read
+      // the new text (the rest comes from the cache). Generation slows ~15% per extra stream.
+      const all = step.levels.reduce((s, n) => {
+        const write = (step.outputTokens / e.decodeTps) * (1 + 0.15 * (n - 1)) + 0.2;
+        const later = (step.turns - 1) * ((n * (step.outputTokens + step.followupTokens)) / e.prefillTps + write);
+        return s + (n * step.depth) / e.prefillTps + write + later;
+      }, 0);
       return step.maxSeconds === undefined ? all : Math.min(all, step.maxSeconds);
     }
   }

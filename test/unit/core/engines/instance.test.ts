@@ -66,13 +66,17 @@ describe('createProcessInstance', () => {
     expect(inst.t0).toBe(100);
     expect(inst.baseUrl).toBe('http://127.0.0.1:1');
     expect(inst.client).toBe(client);
-    expect(inst.logTail()).toEqual(['phase:load_tensors', 'phase:context', 'last']);
+    // The start of the log (up to ready) is always kept; after it, a tail of maxLogLines.
+    expect(inst.logTail()).toEqual(['phase:load_tensors', 'noise', 'phase:load_tensors', 'phase:context', 'last']);
+    for (const l of ['r1', 'r2', 'r3', 'r4']) f.push(l, 30);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(inst.logTail()).toEqual(['phase:load_tensors', 'noise', 'phase:load_tensors', 'phase:context', 'last', '… 1 riga omessa …', 'r2', 'r3', 'r4']);
     const logs = drain(inst.logs);
     const stopped = inst.stop();
     expect(inst.stop()).toBe(stopped);
     expect(await stopped).toEqual({ code: null, signal: 'SIGTERM' });
     expect(await inst.exited).toEqual({ code: null, signal: 'SIGTERM' });
-    expect(await logs).toEqual(['phase:load_tensors', 'noise', 'phase:load_tensors', 'phase:context', 'last']);
+    expect(await logs).toEqual(['phase:load_tensors', 'noise', 'phase:load_tensors', 'phase:context', 'last', 'r1', 'r2', 'r3', 'r4']);
     expect(f.stop).toHaveBeenCalledTimes(1);
   });
 
@@ -165,8 +169,12 @@ describe('createProcessInstance', () => {
     for (let i = 0; i < 2100; i++) f.push(`l${i}`);
     await new Promise((r) => setTimeout(r, 10));
     expect((await inst.waitReady()).phases).toEqual([]);
-    expect(inst.logTail()).toHaveLength(2000);
-    expect(inst.logTail()[0]).toBe('l100');
+    // The first 80 lines (the engine start), "… 20 righe omesse …", the last 2000.
+    expect(inst.logTail()).toHaveLength(2081);
+    expect(inst.logTail()[79]).toBe('l79');
+    expect(inst.logTail()[80]).toBe('… 20 righe omesse …');
+    expect(inst.logTail()[81]).toBe('l100');
+    expect(inst.logTail().at(-1)).toBe('l2099');
     f.exit({ code: 0, signal: null });
   });
 });
