@@ -30,6 +30,9 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     await expect(page.getByRole('heading', { name: 'Configurazione del server' })).toBeVisible();
     await expect(page.getByText(/cache KV (f16|q8_0|q4_0)/).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Misure finora' })).toBeVisible();
+    // Every launch's engine start, stage by stage: where the loading time goes.
+    await expect(page.getByText(/^pronto in \d+:\d\d$/)).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Fasi dell’avvio e quanto sono durate' })).toContainText('Pesi');
     await scan(page, 'live tune run');
 
     // The result: one sentence from the numbers, the recommended combination, the ranking.
