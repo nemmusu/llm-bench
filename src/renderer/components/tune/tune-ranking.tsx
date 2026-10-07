@@ -1,10 +1,10 @@
 import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Fragment, useState, type ReactNode } from 'react';
 import type { RunResult, TuneCombination } from '../../../contract/results';
-import { useI18n } from '../../i18n';
+import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { SweepTable } from '../bench/context-sweep';
-import { MIB_PER_GB, prefillStat } from '../bench/format';
+import { MIB_PER_GB } from '../bench/format';
 import { PresetActions } from '../presets/preset-actions';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
@@ -15,7 +15,27 @@ import { HelpTip } from '../ui/help-tip';
 import { SegmentedControl } from '../ui/segmented-control';
 import { comboText, depthLabel } from './tune-format';
 import { TuneGlossary } from './tune-sections';
-import { bestValues, defaultDir, sortRows, type RankRow, type SortDir, type SortKey } from './tune-logic';
+import { bestValues, CONTEXT_COLUMNS, sortRows, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
+
+type F = Pick<Formatters, 't' | 'number' | 'integer'>;
+
+/** How a metric column looks: its header (with the unit) and its numbers. */
+export interface ColumnView {
+  column: MetricColumn;
+  header: MessageKey;
+  format: (v: number, f: F) => string;
+  /** Tooltip of a cell (e.g. the exact token count behind "32K"). */
+  title?: (v: number, f: F) => string;
+}
+
+/** The columns of a one-user search: largest context, generation, prompt reading, first token, peak VRAM. */
+export const CONTEXT_VIEWS: readonly ColumnView[] = [
+  { column: CONTEXT_COLUMNS[0]!, header: 'tune.columns.maxContext', format: (v, f) => depthLabel(v, f), title: (v, f) => `${f.integer(v)} ${f.t('results.tokens')}` },
+  { column: CONTEXT_COLUMNS[1]!, header: 'tune.columns.decode', format: (v, f) => f.number(v, 1) },
+  { column: CONTEXT_COLUMNS[2]!, header: 'tune.columns.prefill', format: (v, f) => f.integer(v) },
+  { column: CONTEXT_COLUMNS[3]!, header: 'tune.columns.ttft', format: (v, f) => f.number(v / 1000, 2) },
+  { column: CONTEXT_COLUMNS[4]!, header: 'tune.columns.vram', format: (v, f) => f.number(v / MIB_PER_GB, 1) },
+];
 
 export interface RankingProps {
   run: RunResult & { tuning: NonNullable<RunResult['tuning']> };
@@ -24,24 +44,31 @@ export interface RankingProps {
   depths: readonly number[];
   onDepth: (depth: number) => void;
   recommended: number | undefined;
+  /** The metric columns, in order (default: the one-user context search). */
+  views?: readonly ColumnView[];
 }
-
-const COLS = 7;
 
 /**
  * "Classifica": one row per measured combination, ranked by generation speed at the compared depth;
  * any column can sort; those that stop earlier sit greyed at the bottom. Every row opens its
  * measurements and the exact command, and has the preset actions.
  */
-export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: RankingProps) {
+export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, views = CONTEXT_VIEWS }: RankingProps) {
   const f = useI18n();
-  const { t, number, integer } = f;
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'rank', dir: 'asc' });
+  const { t } = f;
+  // key undefined = the ranking's own order.
+  const [sort, setSort] = useState<{ key: string | undefined; dir: SortDir }>({ key: undefined, dir: 'asc' });
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const label = useConfigLabel();
-  const best = bestValues(rows);
-  const sorted = sortRows(rows, sort.key, sort.dir);
+  const columns = views.map((v) => v.column);
+  const best = bestValues(rows, columns);
+  const sorted = sortRows(
+    rows,
+    columns.find((c) => c.key === sort.key),
+    sort.dir,
+  );
   const kind = run.engine.kind;
+  const atDepth = views.filter((v) => v.column.atDepth).length;
   const toggle = (i: number) =>
     setOpen((cur) => {
       const next = new Set(cur);
@@ -49,18 +76,19 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
       else next.add(i);
       return next;
     });
-  const by = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: defaultDir(key) }));
-  const head = (key: SortKey, text: string, numeric = true) => {
+  const by = (key: string | undefined, first: SortDir) => setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: first }));
+  const head = (key: string | undefined, first: SortDir, text: string, numeric = true) => {
     const active = sort.key === key;
     return (
       <th
+        key={key ?? 'rank'}
         scope="col"
         aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
         className={cn('h-10 border-b border-border px-3 align-bottom text-xs font-medium text-fg-3 first:pl-card', numeric ? 'text-right' : 'text-left')}
       >
         <button
           type="button"
-          onClick={() => by(key)}
+          onClick={() => by(key, first)}
           title={active && sort.dir === 'desc' ? t('table.sortAscending') : t('table.sortDescending')}
           className={cn('inline-flex items-end gap-1 rounded-xs pb-2 hover:text-fg focus-ring', numeric && 'flex-row-reverse text-right', active && 'text-fg')}
         >
@@ -70,8 +98,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
       </th>
     );
   };
-  const cell = (on: boolean, children: ReactNode) => (
-    <td className={cn('border-b border-border px-3 py-3 text-right align-top whitespace-nowrap tabular-nums', on && 'font-semibold text-success-text')}>
+  const cell = (key: string, on: boolean, children: ReactNode, title?: string) => (
+    <td key={key} title={title} className={cn('border-b border-border px-3 py-3 text-right align-top whitespace-nowrap tabular-nums last:pr-card', on && 'font-semibold text-success-text')}>
       {on ? (
         <span className="inline-flex items-center gap-1 rounded-sm bg-success-soft px-1.5 py-0.5" title={t('tune.ranking.bestHint')}>
           {children}
@@ -82,6 +110,20 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
       )}
     </td>
   );
+  /** The metric cells of a row; the depth-bound ones become one "arriva solo a 32K" cell when it stops earlier. */
+  const metrics = (r: RankRow) =>
+    views.flatMap((v, k) => {
+      if (v.column.atDepth && !r.point) {
+        if (views.findIndex((w) => w.column.atDepth) !== k) return [];
+        return [
+          <td key="short" colSpan={atDepth} className="border-b border-border px-3 py-3 text-right text-sm whitespace-nowrap italic">
+            {t('tune.ranking.reachesOnly', { depth: depthLabel(r.combo.maxContext, f) })}
+          </td>,
+        ];
+      }
+      const value = v.column.value(r);
+      return [cell(v.column.key, best.get(v.column.key)?.has(r.index) === true, value === undefined ? '–' : v.format(value, f), value === undefined || !v.title ? undefined : v.title(value, f))];
+    });
 
   return (
     <Card className="overflow-hidden">
@@ -112,15 +154,11 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
           <caption className="sr-only">{t('tune.ranking.caption', { depth: depthLabel(depth, f) })}</caption>
           <thead>
             <tr>
-              {head('rank', t('tune.columns.rank'), false)}
+              {head(undefined, 'asc', t('tune.columns.rank'), false)}
               <th scope="col" className="h-10 border-b border-border px-3 pb-2 text-left align-bottom text-xs font-medium text-fg-3">
                 {t('tune.columns.settings')}
               </th>
-              {head('maxContext', t('tune.columns.maxContext'))}
-              {head('decode', t('tune.columns.decode'))}
-              {head('prefill', t('tune.columns.prefill'))}
-              {head('ttft', t('tune.columns.ttft'))}
-              {head('vram', t('tune.columns.vram'))}
+              {views.map((v) => head(v.column.key, v.column.dir, t(v.header)))}
             </tr>
           </thead>
           <tbody>
@@ -164,27 +202,11 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
                         </span>
                       </span>
                     </th>
-                    <td className="border-b border-border px-3 py-3 text-right whitespace-nowrap tabular-nums" title={`${integer(r.combo.maxContext)} ${t('results.tokens')}`}>
-                      {depthLabel(r.combo.maxContext, f)}
-                    </td>
-                    {r.point ? (
-                      <>
-                        {cell(best.decode.has(r.index), number(r.point.decodeTps.median, 1))}
-                        {cell(best.prefill.has(r.index), integer(prefillStat(r.point).median))}
-                        {cell(best.ttft.has(r.index), number(r.point.ttftMs.median / 1000, 2))}
-                      </>
-                    ) : (
-                      <td colSpan={3} className="border-b border-border px-3 py-3 text-right text-sm whitespace-nowrap italic">
-                        {t('tune.ranking.reachesOnly', { depth: depthLabel(r.combo.maxContext, f) })}
-                      </td>
-                    )}
-                    <td className="border-b border-border px-3 py-3 pr-card text-right whitespace-nowrap tabular-nums">
-                      {r.combo.vramPeakMiB === undefined ? '–' : number(r.combo.vramPeakMiB / MIB_PER_GB, 1)}
-                    </td>
+                    {metrics(r)}
                   </tr>
                   {expanded && (
                     <tr id={`tune-measures-${r.index}`}>
-                      <td colSpan={COLS} className="border-b border-border bg-surface-2/60 px-card py-4">
+                      <td colSpan={views.length + 2} className="border-b border-border bg-surface-2/60 px-card py-4">
                         <Measures combo={r.combo} title={text} />
                       </td>
                     </tr>

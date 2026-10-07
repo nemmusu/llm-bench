@@ -4,7 +4,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { StartRunRequest } from '../../../../src/contract/api';
 import type { RunLaunch } from '../../../../src/contract/events';
 import type { Scenario } from '../../../../src/contract/results';
-import { renderApp } from '../helpers';
+import { DEFAULT_TUNE, TuneOptions } from '../../../../src/renderer/components/tune/tune-options';
+import { renderApp, renderUi } from '../helpers';
 import { activeRun, benchApi, planFor } from '../bench/world';
 import { attempt, params, point, stat, tuning, users } from './tune-fixtures';
 
@@ -72,6 +73,16 @@ describe('Benchmark: "Trova le impostazioni migliori"', () => {
       expect.stringContaining('Fedeltà'),
       expect.stringContaining('Pulizia'),
     ]);
+  });
+
+  it('takes more choices in the same box', async () => {
+    renderUi(
+      <TuneOptions value={DEFAULT_TUNE} onChange={() => undefined} expert={false}>
+        <p>scopo della ricerca</p>
+      </TuneOptions>,
+    );
+    expect(screen.getByText('scopo della ricerca')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /^Veloce/ })).toBeTruthy();
   });
 
   it('beginners do not see the fidelity check and never send it', async () => {

@@ -7,9 +7,9 @@ import {
   bestValues,
   capacityLead,
   compareContenders,
+  CONTEXT_COLUMNS,
   deepestPoint,
   defaultDepth,
-  defaultDir,
   depthOptions,
   discardedAttempts,
   lastPoint,
@@ -104,11 +104,10 @@ describe('ranking at a depth', () => {
 
   it('sorts by any column, keeping those that do not reach the depth at the bottom', () => {
     const rows = rankAt(tuning(), 64 * K);
-    expect(defaultDir('rank')).toBe('asc');
-    expect(defaultDir('ttft')).toBe('asc');
-    expect(defaultDir('vram')).toBe('asc');
-    expect(defaultDir('decode')).toBe('desc');
-    const ids = (key: Parameters<typeof sortRows>[1], dir: Parameters<typeof sortRows>[2]) => sortRows(rows, key, dir).map((r) => r.index);
+    const col = (key: string) => CONTEXT_COLUMNS.find((c) => c.key === key);
+    // Better first: faster, bigger, sooner, smaller.
+    expect(CONTEXT_COLUMNS.map((c) => `${c.key}:${c.dir}`)).toEqual(['maxContext:desc', 'decode:desc', 'prefill:desc', 'ttft:asc', 'vram:asc']);
+    const ids = (key: string, dir: Parameters<typeof sortRows>[2]) => sortRows(rows, col(key), dir).map((r) => r.index);
     expect(ids('rank', 'asc')).toEqual([2, 3, 4, 1, 0]);
     expect(ids('rank', 'desc')).toEqual([4, 3, 2, 0, 1]);
     expect(ids('decode', 'asc')).toEqual([4, 3, 2, 1, 0]);
@@ -121,13 +120,15 @@ describe('ranking at a depth', () => {
   });
 
   it('marks the best value of each column, ties included', () => {
-    const best = bestValues(rankAt(tuning(), 64 * K));
-    expect([...best.decode]).toEqual([2]);
-    expect([...best.prefill]).toEqual([2]);
-    expect([...best.ttft]).toEqual([2]);
+    const best = bestValues(rankAt(tuning(), 64 * K), CONTEXT_COLUMNS);
+    expect([...best.get('decode')!]).toEqual([2]);
+    expect([...best.get('prefill')!]).toEqual([2]);
+    expect([...best.get('ttft')!]).toEqual([2]);
+    // Context and memory are not highlighted.
+    expect([...best.keys()]).toEqual(['decode', 'prefill', 'ttft']);
     const pair = { combinations: [combo('f16', 8 * K, [point(K, 90, 9000)]), combo('q8_0', 8 * K, [point(K, 89.5, 8000)])], fastestByDepth: [] };
-    expect([...bestValues(rankAt(pair, K)).decode]).toEqual([0, 1]);
-    expect(bestValues([]).decode.size).toBe(0);
+    expect([...bestValues(rankAt(pair, K), CONTEXT_COLUMNS).get('decode')!]).toEqual([0, 1]);
+    expect(bestValues([], CONTEXT_COLUMNS).size).toBe(0);
   });
 
   it('recommends the core’s pick, else the fastest among those reaching the largest context', () => {

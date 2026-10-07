@@ -245,6 +245,16 @@ describe('tune result', () => {
     expect(within(bare).queryByText(/Generazione a/)).toBeNull();
   });
 
+  it('combinations measured without a context sweep (other goals) do not break the page', async () => {
+    const t = tuning();
+    const run = tunedRun({ combinations: t.combinations.map((c) => ({ ...c, sweep: [] })), fastestByDepth: [], recommended: 0 });
+    open(run);
+    await h1(/Qwen3 8B/);
+    expect(screen.getByText('Nessuna combinazione è stata misurata fino in fondo.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Velocità al crescere del contesto' })).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Combinazione consigliata' })).getByText('24K')).toBeTruthy();
+  });
+
   it('without the model in the library every row offers to find it', async () => {
     const api = benchApi({ runs: [tunedRun()], local: [] });
     renderApp(`/results/${TUNE_ID}`, api);

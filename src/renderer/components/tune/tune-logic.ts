@@ -120,40 +120,43 @@ export function defaultDepth(tuning: Pick<Tuning, 'combinations'>, options: read
   return common.length ? common[common.length - 1] : options[0];
 }
 
-export type SortKey = 'rank' | 'maxContext' | 'decode' | 'prefill' | 'ttft' | 'vram';
 export type SortDir = 'asc' | 'desc';
 
-/** Natural first direction of a column: bigger is better, except time to first token and memory. */
-export function defaultDir(key: SortKey): SortDir {
-  return key === 'rank' || key === 'ttft' || key === 'vram' ? 'asc' : 'desc';
+/**
+ * A metric column of the ranking, as data: the table, its sorting and its "best value" highlight
+ * are all built from a list of these (another goal can bring its own list).
+ */
+export interface MetricColumn {
+  key: string;
+  /** First sort direction when its header is clicked: the better values first. */
+  dir: SortDir;
+  value: (row: RankRow) => number | undefined;
+  /** Measured at the compared depth: blank for combinations that stop earlier. */
+  atDepth: boolean;
+  /** Highlight the best value (ties within the noise included): which statistic, and which way is better. */
+  best?: { stat: (p: LatencyPoint) => Stat; higher: boolean };
 }
 
-function sortValue(row: RankRow, key: Exclude<SortKey, 'rank'>): number | undefined {
-  switch (key) {
-    case 'maxContext':
-      return row.combo.maxContext;
-    case 'vram':
-      return row.combo.vramPeakMiB;
-    case 'decode':
-      return row.point?.decodeTps.median;
-    case 'prefill':
-      return row.point ? prefillStat(row.point).median : undefined;
-    case 'ttft':
-      return row.point?.ttftMs.median;
-  }
-}
+/** "Trova le impostazioni migliori" for one user: context, generation, prompt reading, first token, memory. */
+export const CONTEXT_COLUMNS: readonly MetricColumn[] = [
+  { key: 'maxContext', dir: 'desc', atDepth: false, value: (r) => r.combo.maxContext },
+  { key: 'decode', dir: 'desc', atDepth: true, value: (r) => r.point?.decodeTps.median, best: { stat: (p) => p.decodeTps, higher: true } },
+  { key: 'prefill', dir: 'desc', atDepth: true, value: (r) => (r.point ? prefillStat(r.point).median : undefined), best: { stat: prefillStat, higher: true } },
+  { key: 'ttft', dir: 'asc', atDepth: true, value: (r) => r.point?.ttftMs.median, best: { stat: (p) => p.ttftMs, higher: false } },
+  { key: 'vram', dir: 'asc', atDepth: false, value: (r) => r.combo.vramPeakMiB },
+];
 
 /**
- * Rows re-sorted by a column. Those not reaching the compared depth always stay at the bottom;
- * missing values sort last; equal values keep the ranking order.
+ * Rows re-sorted by a column (none = the ranking itself). Those not reaching the compared depth
+ * always stay at the bottom; missing values sort last; equal values keep the ranking order.
  */
-export function sortRows(rows: readonly RankRow[], key: SortKey, dir: SortDir): RankRow[] {
+export function sortRows(rows: readonly RankRow[], column: MetricColumn | undefined, dir: SortDir): RankRow[] {
   const order = new Map(rows.map((r, i) => [r.index, i]));
   const sign = dir === 'asc' ? 1 : -1;
   const by = (a: RankRow, b: RankRow): number => {
-    if (key !== 'rank') {
-      const va = sortValue(a, key);
-      const vb = sortValue(b, key);
+    if (column) {
+      const va = column.value(a);
+      const vb = column.value(b);
       if (va === undefined && vb !== undefined) return 1;
       if (vb === undefined && va !== undefined) return -1;
       if (va !== undefined && vb !== undefined && va !== vb) return sign * (va - vb);
@@ -166,25 +169,17 @@ export function sortRows(rows: readonly RankRow[], key: SortKey, dir: SortDir): 
   return [...reaching, ...short];
 }
 
-export interface Best {
-  decode: ReadonlySet<number>;
-  prefill: ReadonlySet<number>;
-  ttft: ReadonlySet<number>;
-}
-
-/** Per column, the combinations whose value ties (within the noise) with the best one at the compared depth. */
-export function bestValues(rows: readonly RankRow[]): Best {
+/** Per highlighted column (by key), the combinations whose value ties (within the noise) with the best one. */
+export function bestValues(rows: readonly RankRow[], columns: readonly MetricColumn[]): Map<string, ReadonlySet<number>> {
   const reaching = rows.filter((r): r is RankRow & { point: LatencyPoint } => r.point !== undefined);
-  const pick = (stat: (p: LatencyPoint) => Stat, better: (a: number, b: number) => boolean): Set<number> => {
-    if (!reaching.length) return new Set();
-    const top = reaching.reduce((b, r) => (better(stat(r.point).median, stat(b.point).median) ? r : b));
-    return new Set(reaching.filter((r) => sameWithinNoise(stat(r.point), stat(top.point))).map((r) => r.index));
-  };
-  return {
-    decode: pick((p) => p.decodeTps, (a, b) => a > b),
-    prefill: pick(prefillStat, (a, b) => a > b),
-    ttft: pick((p) => p.ttftMs, (a, b) => a < b),
-  };
+  const out = new Map<string, ReadonlySet<number>>();
+  for (const c of columns) {
+    if (!c.best || !reaching.length) continue;
+    const { stat, higher } = c.best;
+    const top = reaching.reduce((b, r) => ((higher ? stat(r.point).median > stat(b.point).median : stat(r.point).median < stat(b.point).median) ? r : b));
+    out.set(c.key, new Set(reaching.filter((r) => sameWithinNoise(stat(r.point), stat(top.point))).map((r) => r.index)));
+  }
+  return out;
 }
 
 /** The recommended combination: the core's pick, else the fastest at its deepest point among those reaching the largest context. */
