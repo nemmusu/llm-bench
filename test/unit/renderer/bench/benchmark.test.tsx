@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { StartRunRequest } from '../../../../src/contract/api';
@@ -371,12 +371,28 @@ describe('benchmark choices', () => {
       throw apiError('MODEL_INVALID');
     };
     const { router } = renderApp('/', api);
-    expect(await screen.findByRole('heading', { name: 'Pronto a misurare' })).toBeTruthy();
+    // No NVIDIA card: the hero and the GPU card say so, and lead to the system check.
+    expect(await screen.findByRole('heading', { name: 'Nessuna scheda NVIDIA trovata' })).toBeTruthy();
+    expect(screen.getByText(/Per misurare serve una scheda video NVIDIA con il suo driver/)).toBeTruthy();
+    expect(await screen.findByText('Quando avrai installato il driver NVIDIA, qui vedrai memoria, temperatura e consumo dal vivo.')).toBeTruthy();
+    expect(screen.queryByText('Dal vivo')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Controlla il sistema' })).toHaveLength(2);
     expect(await screen.findByRole('heading', { name: 'Il file del modello non è valido' })).toBeTruthy();
     await choose('Cambia motore', /vLLM \(Docker\)/);
     expect(await screen.findByText('Non ho trovato modelli adatti a questo motore. Scaricane uno da Modelli.')).toBeTruthy();
     await userEvent.click(screen.getAllByRole('button', { name: 'Apri Modelli' })[0]!);
     await waitFor(() => expect(router.state.location.pathname).toBe('/models'));
+  });
+
+  it('without an NVIDIA card both "Controlla il sistema" buttons open the system check', async () => {
+    for (const which of [0, 1]) {
+      const api = benchApi({ local: [localModel('a')], system: { ...benchApi().world.system, gpus: [] } });
+      const { router } = renderApp('/', api);
+      await waitFor(() => expect(screen.getAllByRole('button', { name: 'Controlla il sistema' })).toHaveLength(2));
+      await userEvent.click(screen.getAllByRole('button', { name: 'Controlla il sistema' })[which]!);
+      await waitFor(() => expect(router.state.location.pathname).toBe('/welcome'));
+      cleanup();
+    }
   });
 
   it('the picker can be empty', async () => {

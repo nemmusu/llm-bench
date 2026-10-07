@@ -1,6 +1,8 @@
 import { Activity, Zap } from 'lucide-react';
 import { useI18n } from '../../i18n';
-import { useGpuSnapshot, useMainGpu } from '../../lib/queries-library';
+import { useNavigate } from '@tanstack/react-router';
+import { useGpuSnapshot, useSystemInfo } from '../../lib/queries-library';
+import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { RadialGauge } from '../ui/radial-gauge';
@@ -10,8 +12,27 @@ import { StatusDot } from '../ui/status-dot';
 /** "Your GPU" card with live VRAM, temperature, power and utilization (real readings, every second). */
 export function GpuCard() {
   const { t, number, integer } = useI18n();
-  const gpu = useMainGpu();
+  const navigate = useNavigate();
+  const system = useSystemInfo();
+  const gpu = system.data?.gpus.find((g) => g.vendor === 'nvidia');
   const sample = useGpuSnapshot(1000).data?.[0];
+  if (system.isSuccess && !gpu) {
+    // Nothing to show live without an NVIDIA card: say why, and where to fix it.
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('benchmark.gpu.title')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-start gap-3 pt-3">
+          <p className="text-sm font-medium text-fg">{t('benchmark.gpu.none')}</p>
+          <p className="text-sm text-fg-2">{t('benchmark.gpu.noneBody')}</p>
+          <Button size="sm" onClick={() => void navigate({ to: '/welcome' })}>
+            {t('benchmark.noGpuAction')}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
   const totalGb = (gpu?.memoryTotalMiB ?? sample?.memTotalMiB ?? 1) / 1024;
   const usedGb = (sample?.memUsedMiB ?? 0) / 1024;
   const dash = (v: number | null | undefined, fmt: (n: number) => string) => (v === null || v === undefined ? '–' : fmt(v));

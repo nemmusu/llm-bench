@@ -329,6 +329,16 @@ function BenchmarkScreen() {
                 <p className="text-md text-fg-2">
                   {t('benchmark.heroSummary', { engine: engineLabel, model: modelLabel, duration: `${t(`benchmark.profiles.${effProfile}`)} (${profileTime})` })}
                 </p>
+                {system.data && !gpu && (
+                  // No NVIDIA card (or no driver): say so first, with the way to fix it.
+                  <div className="mt-1 flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
+                    <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning-text" />
+                    <span className="min-w-0 flex-1 text-fg">{t('benchmark.noGpuBody')}</span>
+                    <Button size="sm" onClick={() => void navigate({ to: '/welcome' })}>
+                      {t('benchmark.noGpuAction')}
+                    </Button>
+                  </div>
+                )}
                 {needs.length > 0 && (
                   <p className="mt-1 inline-flex items-center gap-2 text-sm text-fg-2">
                     <Download aria-hidden className="size-4 text-accent-text" />
