@@ -40,7 +40,7 @@ Nella pagina **Benchmark** scegli tre cose:
    - **Entra in parte**: funziona, ma più lentamente;
    - **Non entra**: troppo grande per la tua scheda.
    Se un modello ha l'etichetta **Provato su questa GPU**, l'hai già misurato: vedi subito quanto andava.
-3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio) o *Completo* (15–30 minuti).
+3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (5–20 minuti, vedi sotto).
 
 Premi **Avvia benchmark**. Se serve scaricare qualcosa, GPU Bench ti mostra cosa e quanto pesa e aspetta la tua conferma.
 
@@ -54,6 +54,26 @@ Vuoi solo accendere il modello per una chat, un editor o un assistente, senza te
 - se il modello **entra** nella memoria video, cosa va scaricato prima e il comando esatto.
 
 Quando il server è pronto copi il suo indirizzo (compatibile OpenAI) e lo incolli nell'altro programma. Il server resta acceso finché non premi **Ferma** nel riquadro **Server attivi** della pagina Benchmark o chiudi GPU Bench; mentre è acceso non puoi fare benchmark.
+
+Se hai già fatto **Trova le impostazioni migliori** con quel modello su questa scheda, *Avvia solo il server* usa il contesto e le impostazioni consigliate da quel test (te lo dice nella finestra di conferma).
+
+### Trova le impostazioni migliori
+
+Scegli la durata **Trova le impostazioni migliori** (*Veloce* circa 5 minuti, *Accurata* circa 20). GPU Bench avvia il modello più volte e prova da solo:
+
+- la **cache KV** (la memoria che tiene il testo già letto): prima *f16*, poi *q8_0*, poi *q4_0*, che occupa circa un quarto e lascia spazio a molto più contesto. Con le cache ridotte attiva sempre la *flash attention* e usa lo stesso tipo per K e V;
+- il **contesto più grande** che entra tutto nella memoria video, per ogni tipo di cache;
+- le impostazioni che cambiano la velocità: *flash attention*, *batch* e *ubatch* (quanti token del prompt la scheda legge insieme: più alto legge più in fretta ma usa più memoria) e, se il modello ha già un file "draft" o "MTP" nella libreria, la generazione speculativa.
+
+Poi misura ogni combinazione **riempiendo il contesto un po' alla volta** (1K, 4K, 8K, 16K… token) e ti mostra i numeri fianco a fianco: la più veloce a ogni lunghezza e quella consigliata, cioè la più veloce tra quelle che arrivano al contesto più grande. Ogni prova ha il suo comando esatto.
+
+Su Windows, quando un modello non entra nella memoria video, il driver non dà errore: sposta una parte nella RAM del PC e tutto diventa circa 10 volte più lento. GPU Bench se ne accorge (memoria condivisa usata dal motore, oppure velocità crollata rispetto alla prima prova) e conta quella configurazione come "non entra".
+
+Solo se il modello non entra nemmeno con 4K di contesto e cache *q4_0*, GPU Bench prova a tenere una parte del modello sulla CPU (*--n-cpu-moe* per i modelli MoE, meno *-ngl* per gli altri): funziona, ma è più lento, e lo trovi segnato così.
+
+In modalità esperto puoi aggiungere il controllo di **fedeltà**: lo stesso testo generato con la cache più precisa e con quella consigliata, per vedere quanti token restano uguali. È un'indicazione, non un test di qualità.
+
+Il profilo **Completo** misura anche il **contesto per gradi** con le impostazioni scelte. Il testo di prova è un romanzo di circa 100.000 token: oltre quella lunghezza GPU Bench lo riusa a pezzi rimescolati, così nessun pezzo lungo si ripete; la velocità non cambia (conta quanti token riempiono il contesto, non cosa dicono).
 
 ## 4. Leggere i risultati
 
