@@ -124,6 +124,7 @@ export abstract class DockerEngineAdapter implements EngineAdapter {
           ...(p.bytesTotal > 0 ? { bytesTotal: p.bytesTotal } : {}),
         }),
       signal,
+      plan.bytes > 0 ? plan.bytes : undefined,
     );
   }
 

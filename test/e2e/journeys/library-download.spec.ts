@@ -74,7 +74,10 @@ test('search a model, open it, download the best version with pause and resume, 
     await expect(row.getByText('Completato')).toBeVisible({ timeout: 30_000 });
     await row.getByRole('button', { name: 'Mostra nella cartella' }).click();
     await expect.poll(() => revealed(gb)).toHaveLength(1);
-    await panel.getByRole('button', { name: 'Chiudi' }).click();
+    // The "downloaded" toast stays clickable over the open panel: its action opens the Benchmark page.
+    await page.getByText('Fai il benchmark', { exact: true }).click();
+    await expect(h1(page, 'Benchmark')).toBeVisible();
+    await expect(panel).toBeHidden();
 
     // It is now on the PC, ready to benchmark.
     await page.getByRole('link', { name: 'Modelli' }).first().click();

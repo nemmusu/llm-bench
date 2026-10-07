@@ -386,6 +386,14 @@
   app-region: no-drag;
 }
 
+/*
+ * Toasts stay clickable while a dialog is open: Radix modal dialogs set pointer-events: none on the
+ * body, which would make a toast's action ("Fai il benchmark" after a download) dead.
+ */
+[data-sonner-toast]:not([data-visible='false']) {
+  pointer-events: auto;
+}
+
 @utility focus-ring {
   &:focus-visible {
     outline: 2px solid var(--ring);

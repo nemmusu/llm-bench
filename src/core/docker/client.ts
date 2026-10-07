@@ -349,11 +349,11 @@ export class DockerApi {
    * POST /images/create with streamed progress. Errors inside the stream (auth, manifest unknown,
    * disk full) and HTTP errors both become DOCKER_PULL_FAILED (or DISK_FULL) with a reason param.
    */
-  async pull(ref: string, onProgress: (p: PullProgress) => void, signal?: AbortSignal): Promise<{ digest?: string }> {
+  async pull(ref: string, onProgress: (p: PullProgress) => void, signal?: AbortSignal, expectedBytes?: number): Promise<{ digest?: string }> {
     const r = parseImageRef(ref);
     const repo = displayRepo(r);
     const q = new URLSearchParams({ fromImage: repo, tag: refVersion(r) });
-    const agg = new PullAggregator();
+    const agg = new PullAggregator(expectedBytes);
     const res = await this.streamJson(
       'POST',
       `/images/create?${q.toString()}`,

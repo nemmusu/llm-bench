@@ -42,14 +42,16 @@ function make(o: {
     noteGpuFailure: (image: string) => noted.push(image),
   } as unknown as DockerEnvironment;
   const pulls: string[] = [];
+  const expectedSizes: (number | undefined)[] = [];
   const images = {
     inspect: async (ref: string) => {
       if (o.inspectError) throw o.inspectError;
       return o.images?.[ref];
     },
     downloadSize: async () => o.size,
-    pull: async (ref: string, on: (p: PullProgress) => void) => {
+    pull: async (ref: string, on: (p: PullProgress) => void, _signal?: AbortSignal, expected?: number) => {
       pulls.push(ref);
+      expectedSizes.push(expected);
       on({ status: 'resolving', bytesDone: 0, bytesTotal: 0, layersDone: 0, layersTotal: 0 });
       on({ status: 'downloading', bytesDone: 5, bytesTotal: 10, layersDone: 0, layersTotal: 1 });
       on({ status: 'extracting', bytesDone: 10, bytesTotal: 10, layersDone: 0, layersTotal: 1 });
@@ -73,7 +75,7 @@ function make(o: {
     createClient: (flavor: string, baseUrl: string, opts?: unknown) => ({ flavor, baseUrl, opts }) as never,
     ...(o.compat ? { loadCompat: async () => o.compat as EngineCompat } : {}),
   };
-  return { proc, cli, noted, pulls, common };
+  return { proc, cli, noted, pulls, expectedSizes, common };
 }
 
 const LLAMA_IMAGE = 'ghcr.io/ggml-org/llama.cpp:server-cuda';
@@ -280,6 +282,10 @@ describe('DockerEngineAdapter (shared detect/install)', () => {
       { stage: 'done', bytesDone: 10, bytesTotal: 10 },
     ]);
     expect(h.pulls).toEqual([LLAMA_IMAGE]);
+    // The planned size is the bar's total from the start; an unknown size (0) is not passed.
+    expect(h.expectedSizes).toEqual([3_000_000_000]);
+    await a.install({ ...plan, bytes: 0 }, () => {}, new AbortController().signal);
+    expect(h.expectedSizes).toEqual([3_000_000_000, undefined]);
     await expect(a.install({ ...plan, data: {} }, () => {}, new AbortController().signal)).rejects.toThrow();
   });
 });

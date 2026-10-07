@@ -29,6 +29,26 @@ describe('PullAggregator', () => {
     expect(agg.done).toBe(true);
   });
 
+  it('with the image size known up front, the bar never goes back when new layers start', () => {
+    const agg = new PullAggregator(1000);
+    const fractions: number[] = [];
+    const push = (m: Parameters<PullAggregator['push']>[0]) => {
+      const p = agg.push(m);
+      fractions.push(p.bytesDone / p.bytesTotal);
+      return p;
+    };
+    push({ status: 'Pulling fs layer', id: 'a' });
+    push({ status: 'Pulling fs layer', id: 'b' });
+    push({ status: 'Downloading', id: 'a', progressDetail: { current: 200, total: 400 } });
+    push({ status: 'Download complete', id: 'a' });
+    // Layer b's size appears only now: without the known total, the bar would drop from 100% to 40%.
+    const p = push({ status: 'Downloading', id: 'b', progressDetail: { current: 100, total: 600 } });
+    expect(p.bytesTotal).toBe(1000);
+    for (let i = 1; i < fractions.length; i++) expect(fractions[i]).toBeGreaterThanOrEqual(fractions[i - 1] as number);
+    // Layers bigger than announced: the known sum wins.
+    expect(new PullAggregator(10).push({ status: 'Downloading', id: 'x', progressDetail: { current: 5, total: 50 } }).bytesTotal).toBe(50);
+  });
+
   it('ignores messages without status or layer id and clamps current to total', () => {
     const agg = new PullAggregator();
     agg.push({});

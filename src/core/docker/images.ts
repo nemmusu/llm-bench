@@ -36,7 +36,8 @@ export class ImageService {
     }
   }
 
-  async pull(ref: string, onProgress: (p: PullProgress) => void, signal?: AbortSignal): Promise<{ digest?: string }> {
+  /** `expectedBytes` (the image's download size, when known) keeps the progress bar from going back. */
+  async pull(ref: string, onProgress: (p: PullProgress) => void, signal?: AbortSignal, expectedBytes?: number): Promise<{ digest?: string }> {
     parseImageRef(ref);
     let api;
     try {
@@ -46,7 +47,7 @@ export class ImageService {
       this.o.log?.info('docker API unusable, pulling through the CLI', { error: (e as AppError).code });
       return this.pullCli(ref, onProgress, signal);
     }
-    return api.pull(ref, onProgress, signal);
+    return api.pull(ref, onProgress, signal, expectedBytes);
   }
 
   /** CLI pull: layer counts only (the non-TTY output has no byte figures). */

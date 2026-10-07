@@ -106,15 +106,19 @@ export function createDockerRoutes(svc: DockerRoutesDeps | ((ctx: CoreContext) =
       const emit = (e: Omit<DockerEvent, 'type' | 'kind' | 'image'>) =>
         s.publish({ type: 'engine.install', kind, image: body.image, ...e } as DockerEvent);
       void s.images
-        .pull(
-          body.image,
-          (p) =>
-            emit({
-              stage: p.status === 'done' ? 'done' : p.status === 'extracting' ? 'extract' : 'download',
-              bytesDone: p.bytesDone,
-              ...(p.bytesTotal > 0 ? { bytesTotal: p.bytesTotal } : {}),
-            }),
-          l.signal,
+        .downloadSize(body.image, l.signal)
+        .then((expected) =>
+          s.images.pull(
+            body.image,
+            (p) =>
+              emit({
+                stage: p.status === 'done' ? 'done' : p.status === 'extracting' ? 'extract' : 'download',
+                bytesDone: p.bytesDone,
+                ...(p.bytesTotal > 0 ? { bytesTotal: p.bytesTotal } : {}),
+              }),
+            l.signal,
+            expected,
+          ),
         )
         .catch((e: unknown) => emit({ stage: 'error', bytesDone: 0, error: toAppErrorData(e) }))
         .finally(() => {

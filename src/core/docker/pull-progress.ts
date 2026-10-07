@@ -13,7 +13,11 @@ export interface PullMessage {
 export interface PullProgress {
   status: 'resolving' | 'downloading' | 'extracting' | 'done';
   bytesDone: number;
-  /** Sum of the layer sizes known so far (a layer's size is known once its download starts). */
+  /**
+   * The image's download size when known up front (Docker Hub), else the sum of the layer sizes
+   * known so far. Docker reports a layer's size only once its download starts, so that sum grows
+   * during the pull: a bar based on it would go back every time a new layer starts.
+   */
   bytesTotal: number;
   layersDone: number;
   layersTotal: number;
@@ -34,6 +38,9 @@ export class PullAggregator {
   private readonly layers = new Map<string, Layer>();
   private finished = false;
   digest: string | undefined;
+
+  /** `expectedBytes`: the image's total download size, when the registry told it before the pull. */
+  constructor(private readonly expectedBytes = 0) {}
 
   /** Applies one message; throws DOCKER_PULL_FAILED (or DISK_FULL) for an error message. */
   push(m: PullMessage): PullProgress {
@@ -80,6 +87,8 @@ export class PullAggregator {
       if (l.done) layersDone++;
       if (!l.downloaded) downloading = true;
     }
+    // Never below what is already known (layers bigger than announced, or no announced size).
+    bytesTotal = Math.max(this.expectedBytes, bytesTotal);
     const layersTotal = this.layers.size;
     const status: PullProgress['status'] = this.finished
       ? 'done'

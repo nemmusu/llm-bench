@@ -36,6 +36,7 @@ function setup(over: Partial<DockerRoutesDeps> = {}, envOver: Partial<DockerEnvi
     ...envOver,
   } as unknown as DockerEnvironment;
   const images = {
+    downloadSize: async () => undefined,
     pull: async (_ref: string, on: (p: PullProgress) => void) => {
       on({ status: 'downloading', bytesDone: 5, bytesTotal: 10, layersDone: 0, layersTotal: 1 });
       on({ status: 'extracting', bytesDone: 10, bytesTotal: 10, layersDone: 0, layersTotal: 1 });
@@ -146,11 +147,15 @@ describe('docker routes', () => {
 
   it('POST /api/docker/pull streams progress events and rejects duplicates', async () => {
     const gate = deferred<{ digest?: string }>();
+    const expected: (number | undefined)[] = [];
     const { post, events } = setup(
       {},
       {},
       {
-        pull: async (_ref: string, on: (p: PullProgress) => void) => {
+        // The image's size from Docker Hub goes to the pull, so its bar never goes back.
+        downloadSize: async () => 9_000_000_000,
+        pull: async (_ref: string, on: (p: PullProgress) => void, _signal?: AbortSignal, bytes?: number) => {
+          expected.push(bytes);
           on({ status: 'downloading', bytesDone: 5, bytesTotal: 10, layersDone: 0, layersTotal: 1 });
           on({ status: 'resolving', bytesDone: 0, bytesTotal: 0, layersDone: 0, layersTotal: 0 });
           return gate.promise;
@@ -167,6 +172,7 @@ describe('docker routes', () => {
       { type: 'engine.install', kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0', stage: 'download', bytesDone: 5, bytesTotal: 10 },
       { type: 'engine.install', kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0', stage: 'download', bytesDone: 0 },
     ]);
+    expect(expected).toEqual([9_000_000_000]);
     // Finished: the same image can be pulled again.
     expect((await post('/api/docker/pull', { image: 'vllm/vllm-openai:v0.31.0' })).status).toBe(200);
   });
