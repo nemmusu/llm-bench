@@ -7,6 +7,7 @@ import type { Step } from '../../../contract/results';
 import type { LlamaBenchResult, RunnerDeps } from '../../bench/runner';
 import type { Platform, ProcessRunner } from '../../deps';
 import { diagnoseExit } from '../llamacpp-native/logs';
+import { llamaFlashAttention, llamaKvArgs } from '../shared/kv-flags';
 import type { LaunchPlan } from '../types';
 
 export type LlamaBenchStep = Extract<Step, { kind: 'llama-bench' }>;
@@ -47,11 +48,11 @@ const ALL_LAYERS = 999;
 export function buildLlamaBenchArgs(model: string, step: LlamaBenchStep, params: LaunchParams, fa: FlashAttnStyle): string[] {
   const args = ['-m', model, '-p', String(step.pp), '-n', String(step.tg), '-r', String(step.reps)];
   args.push('-ngl', String(params.gpuLayers ?? ALL_LAYERS));
-  const want = params.flashAttention ?? 'auto';
+  const want = llamaFlashAttention(params);
   if (fa === 'value') args.push('-fa', want);
   // Old builds have no "auto": leave their default (off) rather than guessing.
   else if (fa === 'binary' && want !== 'auto') args.push('-fa', want === 'on' ? '1' : '0');
-  if (params.kvCacheType !== undefined && params.kvCacheType !== 'auto') args.push('-ctk', params.kvCacheType, '-ctv', params.kvCacheType);
+  args.push(...llamaKvArgs(params));
   if (params.batchSize !== undefined) args.push('-b', String(params.batchSize));
   if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
   if (params.threads !== undefined) args.push('-t', String(params.threads));

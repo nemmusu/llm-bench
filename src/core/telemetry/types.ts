@@ -24,6 +24,8 @@ export interface GpuProcessMemory {
   mib: number;
   /** Executable name or path, when known. */
   name?: string;
+  /** Shared GPU memory (system RAM used by the GPU for this process, Windows), MiB; absent where the OS cannot tell. */
+  sharedMib?: number;
 }
 
 /** One per-process reading taken while an engine runs. */
@@ -34,6 +36,8 @@ export interface ProcessVramTick {
   engine: number[];
   /** VRAM held by those PIDs (MiB). */
   engineMiB: number;
+  /** Shared GPU memory of those PIDs (MiB), when the source reports it (Windows counters). */
+  engineSharedMiB?: number;
   /** Every process holding GPU memory at this reading (engine included). */
   procs: GpuProcessMemory[];
 }
@@ -47,6 +51,11 @@ export interface ProcessVramSession {
   latestMiB(): number | undefined;
   /** Highest engine VRAM seen (MiB); undefined when the engine never appeared (not attributable). */
   peakMiB(): number | undefined;
+  /**
+   * Highest shared GPU memory of the engine (MiB): on Windows a model that does not fit in VRAM spills
+   * there. Undefined when the source does not report shared memory.
+   */
+  sharedPeakMiB(): number | undefined;
   /** Every reading so far (the first one is always kept). */
   readonly samples: readonly ProcessVramTick[];
   /** Stops sampling (only our own helper process, if any) and returns every reading. Idempotent. */
