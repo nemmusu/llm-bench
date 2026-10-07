@@ -120,10 +120,11 @@ describe('Conversazioni lunghe on the result page', () => {
   it('sentences, table, glossary and the context held in memory', async () => {
     const { now } = teamRuns();
     renderUi(<LongConversations run={now} />);
-    const region = screen.getByRole('region', { name: /Conversazioni lunghe/ });
+    const region = screen.getByRole('region', { name: 'Conversazioni lunghe' });
     expect(within(region).getByText('889.820 token (bastano per 4 conversazioni da 200.000)')).toBeTruthy();
     expect(within(region).getByText(/la seconda aspetta in coda 1 min 48 s \(stima\)/)).toBeTruthy();
     const table = within(region).getByRole('table', { name: 'Conversazioni lunghe, per numero di sessioni insieme' });
+    expect(within(region).getByRole('region', { name: 'Conversazioni lunghe, per numero di sessioni insieme' }).tabIndex).toBe(0);
     expect(within(table).getByRole('columnheader', { name: 'Attesa prima risposta a 200.000 token' })).toBeTruthy();
     expect(within(table).getByRole('row', { name: /^2 1332/ }).textContent).toContain('97,5%');
     expect(within(region).getByText(/Attesa in coda stimata/)).toBeTruthy();
@@ -136,7 +137,7 @@ describe('Conversazioni lunghe on the result page', () => {
     const kvOnly = withSessions(seeded(IDS.vllm), 'kv', [], { tokens: 164_816 }, '2026-10-07T08:00:00.000Z');
     const { unmount } = renderUi(<LongConversations run={kvOnly} />);
     expect(screen.getByText('164.816 token')).toBeTruthy();
-    expect(screen.queryByRole('region', { name: /Conversazioni lunghe/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Conversazioni lunghe' })).toBeNull();
     unmount();
     const engineQueue = withSessions(seeded(IDS.vllm), 'q', NOW_POINTS.map((p) => ({ ...p, queueEstimated: false })), undefined, '2026-10-07T08:00:00.000Z');
     renderUi(<LongConversations run={engineQueue} />);
@@ -149,7 +150,7 @@ describe('Conversazioni lunghe on the result page', () => {
   it('is part of the overview', async () => {
     const { now } = teamRuns();
     renderApp(`/results/${now.id}`, benchApi({ runs: [...seededRuns(), now] }));
-    expect(await screen.findByRole('region', { name: /Conversazioni lunghe/ })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Conversazioni lunghe' })).toBeTruthy();
   });
 });
 

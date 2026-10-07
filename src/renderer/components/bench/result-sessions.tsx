@@ -2,8 +2,47 @@ import type { RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
-import { SimpleTable } from './result-details';
-import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsSentences, sessionsTable } from './sessions-view';
+import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsSentences, sessionsTable, type SessionsTable } from './sessions-view';
+
+/**
+ * The table by sessions. Headers wrap (they carry the units and the depth); on a narrow window the
+ * table scrolls inside a focusable region, so the keyboard can scroll it too.
+ */
+function Table({ table, caption }: { table: SessionsTable; caption: string }) {
+  return (
+    <div role="region" aria-label={caption} tabIndex={0} className="overflow-x-auto focus-ring">
+      <table className="w-full border-separate border-spacing-0 text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr>
+            {table.head.map((h, i) => (
+              <th key={h} scope="col" className={`h-9 min-w-24 border-b border-border px-3 py-2 align-bottom text-xs font-medium text-fg-3 first:pl-card last:pr-card ${i === 0 ? 'text-left' : 'text-right'}`}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((r) => (
+            <tr key={r[0]}>
+              {r.map((c, i) =>
+                i === 0 ? (
+                  <th key={i} scope="row" className="h-row border-b border-border px-3 pl-card text-left font-medium text-fg">
+                    {c}
+                  </th>
+                ) : (
+                  <td key={i} className="h-row border-b border-border px-3 text-right whitespace-nowrap tabular-nums last:pr-card">
+                    {c}
+                  </td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /** "Contesto tenuto in memoria: 889.820 token (bastano per 4 conversazioni da 200.000)". */
 function KvCapacityLine({ run }: { run: RunResult }) {
@@ -40,8 +79,8 @@ export function LongConversations({ run }: { run: RunResult }) {
   return (
     <Card className="overflow-hidden" role="region" aria-labelledby="long-conversations-title">
       <CardHeader className="flex-col gap-2 pb-3">
-        <CardTitle id="long-conversations-title" className="flex items-center gap-1.5">
-          {t('longConversations.title')}
+        <CardTitle className="flex items-center gap-1.5">
+          <span id="long-conversations-title">{t('longConversations.title')}</span>
           <HelpTip term={t('longConversations.title')}>{t('longConversations.help')}</HelpTip>
         </CardTitle>
         {kv && <KvCapacityLine run={run} />}
@@ -53,7 +92,7 @@ export function LongConversations({ run }: { run: RunResult }) {
           </ul>
         )}
       </CardHeader>
-      <SimpleTable caption={t('longConversations.caption')} head={table.head} rows={table.rows} />
+      <Table table={table} caption={t('longConversations.caption')} />
       <div className="flex flex-col gap-3 px-card py-4 text-sm">
         {table.estimated && <p className="text-xs text-fg-3">{t('longConversations.estimatedNote')}</p>}
         <h3 className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('longConversations.glossaryTitle')}</h3>

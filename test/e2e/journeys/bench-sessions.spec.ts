@@ -37,7 +37,7 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await expect(h1(page, /Qwen3-0\.6B/)).toBeVisible({ timeout: 120_000 });
 
     // The result: the cache is reused from the second message, the second conversation queues.
-    const section = page.getByRole('region', { name: 'Conversazioni lunghe' });
+    const section = page.getByRole('region', { name: 'Conversazioni lunghe', exact: true });
     await expect(section).toBeVisible();
     await expect(section.getByText(/^Con 1 sessione il primo messaggio aspetta .* per leggere 2048 token; dal secondo il server riusa il 9\d,\d% del contesto/)).toBeVisible();
     await expect(section.getByText(/^Con 2 sessioni la seconda aspetta in coda /)).toBeVisible();
