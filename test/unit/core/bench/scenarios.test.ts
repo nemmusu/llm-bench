@@ -32,12 +32,13 @@ describe('buildScenario', () => {
     expect(std.seed).toBe(7);
     expect(std.steps.map((s) => s.kind)).toEqual(['load', 'load', 'latency', 'concurrency']);
     expect(std.steps[2]).toMatchObject({ promptTokens: [512, 4096], outputTokens: 256, warmup: 1, reps: 5 });
-    expect(std.steps[3]).toMatchObject({ levels: [1, 4], promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 });
+    expect(std.steps[3]).toMatchObject({ levels: [1, 2, 3, 4], promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 });
     const full = buildScenario('full');
     expect(full.steps[0]).toEqual({ kind: 'load', cache: 'cold', reps: 3 });
     expect(full.steps[2]).toMatchObject({ promptTokens: [128, 512, 2048, 8192, 32768], outputTokens: 512, warmup: 2, reps: 10 });
     // "Contesto per gradi" on the launched context, within 5 minutes.
     expect(full.steps[3]).toEqual({ kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2, maxSeconds: 300 });
+    expect(full.steps[4]).toMatchObject({ levels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] });
     expect(full.steps[5]).toEqual({ kind: 'llama-bench', pp: 512, tg: 128, reps: 5 });
     // The tuner's sweep template.
     expect(buildScenario('tune').steps).toEqual([{ kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2 }]);
@@ -71,10 +72,23 @@ describe('fitScenario', () => {
   it('drops prompts that do not fit and concurrency levels above the slots', () => {
     const { scenario, warnings } = fitScenario(buildScenario('full'), { engineKind: 'llamacpp-native', contextSize: 4096, maxConcurrency: 4 });
     expect(scenario.steps.find((s) => s.kind === 'latency')).toMatchObject({ promptTokens: [128, 512, 2048] });
-    expect(scenario.steps.find((s) => s.kind === 'concurrency')).toMatchObject({ levels: [1, 2, 4] });
+    expect(scenario.steps.find((s) => s.kind === 'concurrency')).toMatchObject({ levels: [1, 2, 3, 4] });
     expect(scenario.steps.some((s) => s.kind === 'llama-bench')).toBe(true);
     expect(warnings).toContainEqual({ code: 'prompt_too_long', params: { promptTokens: 8192, contextSize: 4096 } });
     expect(warnings).toContainEqual({ code: 'concurrency_level_skipped', params: { level: 16, parallel: 4 } });
+  });
+  it('runs prompt lengths and users smallest first, each once', () => {
+    const custom = {
+      profile: 'custom' as const,
+      seed: 1,
+      steps: [
+        { kind: 'latency' as const, promptTokens: [4096, 512, 512], outputTokens: 16, warmup: 0, reps: 1 },
+        { kind: 'concurrency' as const, levels: [4, 1, 4, 2], promptTokens: 64, outputTokens: 16, requestsPerWorker: 1 },
+      ],
+    };
+    const { scenario } = fitScenario(custom, { engineKind: 'vllm-docker' });
+    expect(scenario.steps[0]).toMatchObject({ promptTokens: [512, 4096] });
+    expect(scenario.steps[1]).toMatchObject({ levels: [1, 2, 4] });
   });
   it('removes whole steps when nothing fits, llama-bench outside native, loads on external', () => {
     const tiny = fitScenario(buildScenario('standard'), { engineKind: 'vllm-docker', contextSize: 300 });
