@@ -108,7 +108,7 @@ describe('BenchRunner — tune runs', () => {
     expect(s.ev.ofType('run.launch')[0]!.launch).toMatchObject({ contextSize: 4096, params: { kvCacheType: 'f16' }, engineLabel: 'llama.cpp b11438 (CUDA 13.4)' });
     const points = s.ev.ofType('run.point').map((e) => e.live);
     expect(new Set(points.map((p) => p.stepKind))).toEqual(new Set(['tune-probe', 'tune-screen', 'context-sweep']));
-    expect(points.every((p) => p.stepKind === 'concurrency' || p.attempt !== undefined)).toBe(true);
+    expect(points.every((p) => 'attempt' in p && p.attempt !== undefined)).toBe(true);
     expect(s.ev.ofType('run.step').map((e) => e.current.kind)).toEqual(expect.arrayContaining(['load', 'tune-probe', 'tune-screen', 'context-sweep', 'fidelity']));
     const phases = [...new Set(s.ev.ofType('run.phase').map((e) => e.phase))];
     expect(phases).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'context-sweep', 'fidelity', 'cleanup']);
