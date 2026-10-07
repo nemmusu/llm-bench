@@ -12,6 +12,7 @@ import { kpisOf, READING_WORDS_PER_SEC, sentenceKey, type Kpis } from './kpis';
 import { noteText } from './notes';
 import { ConcurrencyChart, PromptChart, TimelineChart } from './result-charts';
 import { LongConversations } from './result-sessions';
+import { contextSweepOf } from './sessions-view';
 import { validityBody } from './validity';
 
 /** What each validity warning offers as a way forward. */
@@ -239,7 +240,7 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
           {run.metrics.concurrency.length > 0 && <ConcurrencyChart run={run} />}
         </div>
       )}
-      {run.metrics.contextSweep.length > 0 && <ContextSweepChart points={run.metrics.contextSweep} />}
+      {contextSweepOf(run).length > 0 && <ContextSweepChart points={contextSweepOf(run)} />}
       {run.telemetry && run.telemetry.t.length > 0 && <TimelineChart telemetry={run.telemetry} totalMiB={gpu?.memoryTotalMiB} powerLimitW={gpu?.powerLimitW} />}
     </div>
   );

@@ -1,7 +1,7 @@
 /** Realistic runs for the benchmark-flow tests (the same seeds the E2E journeys and mockups use). */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { runResultSchema, type RunResult, type RunSummary } from '../../../../src/contract/results';
+import type { RunResult, RunSummary } from '../../../../src/contract/results';
 import { summaryOf } from '../../../../src/core/store/runs-repo';
 
 const DIR = path.resolve(import.meta.dirname, '../../../fixtures/runs');
@@ -27,8 +27,7 @@ let cache: RunResult[] | undefined;
 export function seededRuns(): RunResult[] {
   cache ??= readdirSync(DIR)
     .filter((f) => f.endsWith('.json'))
-    // Parsed like the core reads them (runs-repo): defaults of newer fields are filled in.
-    .map((f) => runResultSchema.parse(JSON.parse(readFileSync(path.join(DIR, f), 'utf8').replaceAll('__THIS_HOST_ID__', HOST_ID).replaceAll('__THIS_PC__', HOST))));
+    .map((f) => JSON.parse(readFileSync(path.join(DIR, f), 'utf8').replaceAll('__THIS_HOST_ID__', HOST_ID).replaceAll('__THIS_PC__', HOST)) as RunResult);
   return structuredClone(cache);
 }
 

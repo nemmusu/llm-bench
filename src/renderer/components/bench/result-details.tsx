@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from '../ui/card';
 import { columnHelper, DataTable } from '../ui/data-table';
 import { UsersTable } from './concurrency-users';
 import { SweepTable } from './context-sweep';
+import { contextSweepOf } from './sessions-view';
 import { MIB_PER_GB } from './format';
 
 export function SimpleTable({ caption, head, rows, numericFrom = 1 }: { caption: string; head: string[]; rows: ReactNode[][]; numericFrom?: number }) {
@@ -172,9 +173,9 @@ export function Details({ run }: { run: RunResult }) {
           />
         </Section>
       </div>
-      {m.contextSweep.length > 0 && (
+      {contextSweepOf(run).length > 0 && (
         <Section title={t('result.sweep.title')}>
-          <SweepTable caption={t('result.sweep.title')} points={m.contextSweep} />
+          <SweepTable caption={t('result.sweep.title')} points={contextSweepOf(run)} />
         </Section>
       )}
       {m.concurrency.length > 0 && (
