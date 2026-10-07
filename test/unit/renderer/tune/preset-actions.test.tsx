@@ -11,10 +11,20 @@ import { ApiProvider } from '../../../../src/renderer/lib/api-context';
 import { SettingsProvider } from '../../../../src/renderer/lib/settings';
 import { newQueryClient } from '../helpers';
 import { IDS, seeded } from '../bench/fixtures';
-import { benchApi } from '../bench/world';
+import { presetOf } from '../../../../src/renderer/components/bench/rerun';
+import { benchApi, ENGINES_DIR, localModel } from '../bench/world';
 
 beforeAll(() => {
   Object.assign(Element.prototype, { hasPointerCapture: () => false, releasePointerCapture: () => undefined, scrollIntoView: () => undefined });
+});
+
+describe('preset of a run saved before the context sweep existed', () => {
+  it('quotes its headline numbers (no sweep list in the file)', () => {
+    const run = seeded(IDS.full);
+    delete (run.metrics as { contextSweep?: unknown }).contextSweep;
+    const preset = presetOf(run, [localModel('qwen3-8b', { weakKey: run.model.weakKey })], ENGINES_DIR);
+    expect(preset.draft.provenance?.decodeTps).toBe(run.metrics.latency.find((p) => p.promptTokens === 512)!.decodeTps.median);
+  });
 });
 
 describe('preset actions of a run', () => {
