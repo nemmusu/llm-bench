@@ -151,6 +151,26 @@ describe('sources of a run', () => {
     expect(comboSources(makeRun())).toEqual([]);
     expect(sourcesOf(run('T2', '2026-10-02T10:00:00.000Z', [], { tuning: tuning([]) }))).toBeUndefined();
   });
+
+  it('a "Più utenti" combination is a source by its users at once (no sweep); the layout and cache reuse are part of it', () => {
+    const users = (perUser: number) => [concurrency(1, 90, 90), concurrency(2, 160, 80), concurrency(4, 280, perUser)];
+    const r = run('M1', '2026-10-02T10:00:00.000Z', [], {
+      scenario: { profile: 'tune', seed: 42, steps: [] },
+      tuning: tuning([
+        combo({ contextSize: 32768, kvCacheType: 'q8_0', parallel: 4, extraArgs: ['--no-kv-unified', '--cache-reuse', '256'] }, [], { concurrency: users(70) }),
+        combo({ contextSize: 32768, kvCacheType: 'q8_0', parallel: 4, extraArgs: ['--kv-unified'] }, [], { concurrency: users(0) }),
+        combo({ contextSize: 32768, parallel: 4 }, [], { concurrency: [concurrency(1, 90, 90)] }),
+        combo({ contextSize: 32768, parallel: 4 }, [], { concurrency: users(70), outcome: 'oom' }),
+      ]),
+    });
+    const s = sourcesOf(r)!;
+    expect(s.sources.map((x) => [x.source.combo, x.source.points, x.source.parallel])).toEqual([
+      [0, [], { users: 4, totalTps: 280, perUserTps: 70 }],
+      [1, [], { users: 4, totalTps: 280 }],
+    ]);
+    expect(s.sources[0]!.params).toEqual({ contextSize: 32768, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', parallel: 4, kvLayout: 'split', cacheReuse: 256, other: [] });
+    expect(s.sources[1]!.params.kvLayout).toBe('unified');
+  });
 });
 
 describe('merging sources into configurations', () => {

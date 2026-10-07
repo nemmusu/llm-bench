@@ -16,11 +16,17 @@
  * context, so its peaks say nothing about the KV cache.
  */
 import type { EngineKind, LaunchParams } from '../../contract/engines';
-import type { ModelIdentity } from '../../contract/models';
 import type { RunResult } from '../../contract/results';
 import type { HereIdentity, RunsRepo } from '../store/runs-repo';
 import { CUDA_CONTEXT_MIB, estimateFit, fitParamsFrom, type FitCalibration } from './fit';
 import type { ModelFactsEx } from './types';
+
+/** What a calibration is asked for: the model (its hash when known, its weak key) and its architecture. */
+export interface ModelKey {
+  sha256?: string | undefined;
+  weakKey: string;
+  architecture?: string | undefined;
+}
 
 /** One measured VRAM peak and what produced it. */
 export interface VramSample {
@@ -89,8 +95,8 @@ const median = (xs: readonly number[]): number => {
 /** Least squares of measured − base = offset + scale × variable (offset 0 when not allowed or not identifiable). */
 export function fitSamples(samples: readonly VramSample[], scope: FitCalibration['scope']): FitCalibration | undefined {
   if (samples.length < 2) return undefined;
-  const pts = samples.map((s) => ({ ...split(s), measured: s.measuredMiB })).filter((p) => p.variable > 0);
-  if (pts.length < 2) return undefined;
+  // The KV + compute part is never 0: the attention buffer alone grows with the context.
+  const pts = samples.map((s) => ({ ...split(s), measured: s.measuredMiB }));
   const xs = pts.map((p) => p.variable);
   const ys = pts.map((p) => p.measured - p.base);
   const spread = (Math.max(...xs) - Math.min(...xs)) / Math.max(...xs);
@@ -125,7 +131,7 @@ function sameGpu(s: VramSample, here: Pick<HereIdentity, 'gpuUuid' | 'gpuName'>)
  */
 export function calibrationFor(
   samples: readonly VramSample[],
-  model: Pick<ModelIdentity, 'sha256' | 'weakKey'> & { architecture?: string | undefined },
+  model: ModelKey,
   kind: EngineKind,
   here: Pick<HereIdentity, 'gpuUuid' | 'gpuName'>,
 ): FitCalibration | undefined {
@@ -170,7 +176,7 @@ export class FitCalibrator {
   }
 
   /** Never fails: no calibration when the runs cannot be read. */
-  async for(model: Pick<ModelIdentity, 'sha256' | 'weakKey'> & { architecture?: string | undefined }, kind: EngineKind): Promise<FitCalibration | undefined> {
+  async for(model: ModelKey, kind: EngineKind): Promise<FitCalibration | undefined> {
     try {
       return calibrationFor(await this.samples(), model, kind, await this.here());
     } catch {

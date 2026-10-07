@@ -177,6 +177,36 @@ describe('ModelsService', () => {
     await expect(svc.fit({ localId: local, engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
   });
 
+  it('corrects the estimate with the peaks measured here when there are enough ("stima tarata su N misure")', async () => {
+    gguf(path.join(lib(), 'c-Q8_0.gguf'));
+    const asked: { model: { sha256?: string; weakKey: string; architecture?: string }; engine: string }[] = [];
+    const deps = modelDeps(t.dir, { endpoints: { githubApi: 'http://127.0.0.1:9', huggingface: hub.url, dockerHub: 'http://127.0.0.1:9' } });
+    const svc = new ModelsService({
+      deps,
+      settings: settingsWith(),
+      getToken: () => undefined,
+      gpuInfo: () => Promise.resolve(gpu),
+      calibration: async (model, engine) => {
+        asked.push({ model, engine });
+        return engine === 'vllm-docker' ? Promise.reject(new Error('never fails the fit')) : { scale: 2, offsetMiB: 10, samples: 4, errorPct: 3.5, scope: 'model' };
+      },
+    });
+    const local = (await svc.list())[0]!;
+    const fit = await svc.fit({ localId: local.id, engine: 'llamacpp-native', params: { contextSize: 4096, extraArgs: [], env: {} } });
+    expect(fit.calibration).toMatchObject({ samples: 4, errorPct: 3.5, scope: 'model' });
+    expect(asked[0]).toEqual({ model: { weakKey: local.identity.weakKey, ...(local.identity.sha256 ? { sha256: local.identity.sha256 } : {}), architecture: 'qwen3' }, engine: 'llamacpp-native' });
+    // A hub GGUF before its download: the weak key its downloaded copy will have.
+    const hubFit = await svc.fit({ repo: 'ggml-org/Qwen3-0.6B-GGUF', file: 'Qwen3-0.6B-Q8_0.gguf', engine: 'llamacpp-docker' });
+    expect(hubFit.calibration?.samples).toBe(4);
+    expect(asked[1]!.model.weakKey).toBe('ggml-org/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf/Q8_0/163840');
+    expect((await svc.fit({ localId: local.id, engine: 'vllm-docker' })).calibration).toBeUndefined();
+    // Facts without an architecture: none asked for.
+    writeFileSync(path.join(lib(), 'junk-Q4_0.gguf'), 'x');
+    const junk = (await svc.rescan()).find((m) => m.identity.displayName === 'junk-Q4_0')!;
+    await svc.fit({ localId: junk.id, engine: 'llamacpp-native' });
+    expect(asked.at(-1)!.model).not.toHaveProperty('architecture');
+  });
+
   it('fits every quant of a hub repo and preselects the best', async () => {
     const svc = service();
     const r = await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native', { params: { contextSize: 2048, extraArgs: [], env: {} } });

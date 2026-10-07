@@ -17,7 +17,7 @@ import { smFromComputeCap } from './engines/shared/compat';
 import type { DockerLaunchPlan } from './engines/shared/docker-engine';
 import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
 import { VllmNativeAdapter } from './engines/vllm-native/adapter';
-import { FitCalibrator } from './models/calibration';
+import { FitCalibrator, type ModelKey } from './models/calibration';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
 import type { EngineKind } from '../contract/engines';
@@ -284,7 +284,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   const runs = new RunsRepo(async () => (await ctx.settings.get()).resultsDir || deps.paths.resultsDir);
   // "Stima tarata su N misure": VRAM peaks of past runs on this GPU correct the fit estimates.
   const calibrator = new FitCalibrator(runs, () => bench.here());
-  const calibration = (model: { sha256?: string; weakKey: string; architecture?: string }, kind: EngineKind) => calibrator.for(model, kind);
+  const calibration = (model: ModelKey, kind: EngineKind) => calibrator.for(model, kind);
 
   const modelServices =
     opts.modelServices === false
@@ -434,7 +434,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       serve.busy() ? new AppError('VRAM_BUSY', 'A GPU Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
     calibration: (model, kind) => {
       const id = model.identity;
-      return calibration({ weakKey: id.weakKey, ...(id.sha256 ? { sha256: id.sha256 } : {}), ...(id.facts?.architecture ? { architecture: id.facts.architecture } : {}) }, kind);
+      return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);
     },
   });
 

@@ -7,6 +7,7 @@ import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFi
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
+import type { ModelKey } from './calibration';
 import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitCalibration, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
@@ -26,7 +27,7 @@ export interface ModelsServiceOptions {
   autoHash?: boolean;
   hub?: HubClient;
   /** The correction from VRAM peaks measured on this GPU for a model with an engine (llama.cpp); undefined = none. */
-  calibration?: (model: { sha256?: string; weakKey: string; architecture?: string }, engine: EngineKind) => Promise<FitCalibration | undefined>;
+  calibration?: (model: ModelKey, engine: EngineKind) => Promise<FitCalibration | undefined>;
 }
 
 export interface ModelSearchOptions extends SearchOptions {
@@ -235,14 +236,14 @@ export class ModelsService {
     const gpu = await this.gpu();
     const params: FitParams = fitParamsFrom(req.params);
     // Corrected with the peaks measured here, when there are enough ("stima tarata su N misure").
-    const calibrated = async (model: { sha256?: string; weakKey: string }, facts: ModelFactsEx): Promise<{ calibration?: FitCalibration }> => {
+    const calibrated = async (model: ModelKey, facts: ModelFactsEx): Promise<{ calibration?: FitCalibration }> => {
       const c = await this.opts.calibration?.({ ...model, ...(facts.architecture ? { architecture: facts.architecture } : {}) }, req.engine).catch(() => undefined);
       return c ? { calibration: c } : {};
     };
     if (req.localId) {
       const m = await this.get(req.localId);
       const facts = m.identity.facts ?? {};
-      const id = { weakKey: m.identity.weakKey, ...(m.identity.sha256 ? { sha256: m.identity.sha256 } : {}) };
+      const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
       return estimateFit({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, params, ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {
