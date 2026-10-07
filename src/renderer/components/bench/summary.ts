@@ -52,8 +52,11 @@ export function scenarioLines(scenario: Scenario, f: Pick<Formatters, 't' | 'int
         return t(s.cache === 'cold' ? (s.reps === 1 ? 'benchmark.scenario.cold1' : 'benchmark.scenario.cold') : s.reps === 1 ? 'benchmark.scenario.warm1' : 'benchmark.scenario.warm', { n: s.reps });
       case 'latency':
         return t('benchmark.scenario.latency', { prompts: list(s.promptTokens), output: integer(s.outputTokens), reps: s.reps });
-      case 'concurrency':
-        return t('benchmark.scenario.concurrency', { levels: list(s.levels) });
+      case 'concurrency': {
+        const sizes = { prompt: integer(s.promptTokens), output: integer(s.outputTokens) };
+        const upTo = s.levels.length > 2 && s.levels.every((l, i) => l === i + 1);
+        return upTo ? t('benchmark.scenario.concurrencyUpTo', { n: s.levels.length, ...sizes }) : t('benchmark.scenario.concurrency', { levels: list(s.levels), ...sizes });
+      }
       case 'llama-bench':
         return t('benchmark.scenario.llamaBench');
       case 'context-sweep':
