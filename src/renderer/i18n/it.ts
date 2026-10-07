@@ -1299,7 +1299,7 @@ export const it = {
     curated: {
       title: 'Consigliati per la tua GPU',
       subtitle: 'Scelti per una scheda con {vram} GB di memoria video.',
-      subtitleNoGpu: 'I modelli consigliati, dal più grande al più piccolo.',
+      subtitleNoGpu: 'I modelli consigliati, dal più piccolo al più grande.',
       reference: 'Modello di riferimento',
       all: 'Mostra tutti ({n})',
       less: 'Mostra meno',

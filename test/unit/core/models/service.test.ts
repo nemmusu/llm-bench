@@ -345,6 +345,9 @@ describe('ModelsService', () => {
     const all = await svc.curated();
     expect(all.vramGB).toBeUndefined();
     expect(all.models.every((m) => m.fit === undefined)).toBe(true);
+    // No GPU: smallest first.
+    const sizes = all.models.map((m) => [m.tier, m.sizeBytes] as const);
+    expect(sizes).toEqual([...sizes].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
     expect(all.models.length).toBeGreaterThan(given.models.length);
     const broken = new ModelsService({
       deps: modelDeps(t.dir, { paths: { ...modelDeps(t.dir).paths, resourcesDir: path.join(t.dir, 'none') } }),

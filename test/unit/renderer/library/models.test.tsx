@@ -236,7 +236,7 @@ describe('models: download', () => {
   it('without a GPU or with a failing list the curated card still explains itself', async () => {
     const api = libApi(world({ system: system({ gpus: [] }), snapshot: [], check: report([]), curated: { ...curated(2), vramGB: undefined } }));
     renderLib('/models?tab=download', api);
-    expect(await screen.findByText('I modelli consigliati, dal più grande al più piccolo.')).toBeTruthy();
+    expect(await screen.findByText('I modelli consigliati, dal più piccolo al più grande.')).toBeTruthy();
     await userEvent.click(await screen.findByRole('button', { name: 'Scarica Qwen3 4B · Q4_K_M · 2,3 GB' }));
     expect(api.calls.some((c) => c.path === '/api/models/curated')).toBe(true);
     const dialog = await screen.findByRole('dialog');

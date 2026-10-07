@@ -1298,7 +1298,7 @@ export const en: Messages = {
     curated: {
       title: 'Recommended for your GPU',
       subtitle: 'Picked for a card with {vram} GB of graphics memory.',
-      subtitleNoGpu: 'The recommended models, from largest to smallest.',
+      subtitleNoGpu: 'The recommended models, from smallest to largest.',
       reference: 'Reference model',
       all: 'Show all ({n})',
       less: 'Show less',

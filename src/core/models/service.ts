@@ -306,7 +306,8 @@ export class ModelsService {
     const gpu = await this.opts.gpuInfo();
     const withFit = (models: CuratedModel[]) => (gpu ? models.map((m) => ({ ...m, fit: curatedFit(m, gpu) })) : models);
     const gb = vramGB ?? (gpu?.totalMiB ?? 0) / MIB_PER_GB;
-    if (gb <= 0) return { reference: list.reference, models: withFit(list.models) };
+    // Unknown card: every entry, smallest first (the safe pick when the VRAM is not known).
+    if (gb <= 0) return { reference: list.reference, models: withFit([...list.models].sort((a, b) => a.tier - b.tier || a.sizeBytes - b.sizeBytes)) };
     const tier = tierFor(gb);
     return { vramGB: gb, ...(tier !== undefined ? { tierGB: tier } : {}), reference: list.reference, models: withFit(curatedForVram(list, gb)) };
   }
