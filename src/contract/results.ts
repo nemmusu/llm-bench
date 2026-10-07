@@ -44,6 +44,17 @@ export const contextSweepStepSchema = z.object({
 });
 export type ContextSweepStep = z.infer<typeof contextSweepStepSchema>;
 
+/**
+ * The grid depth a measured depth stands for, so sweeps of different contexts line up (core and
+ * renderer use the same rule): the deepest prompt of a 32K context (32 624 tokens with 128 to
+ * generate) is "32K". A depth within max(256, 1 %) below a multiple of 1024 counts as that multiple;
+ * anything else stays as it is. Tuning.depths and fastestByDepth use these nominal depths.
+ */
+export function nominalDepth(depth: number): number {
+  const up = Math.ceil(depth / 1024) * 1024;
+  return up - depth <= Math.max(256, up * 0.01) ? up : depth;
+}
+
 export const stepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('load'), cache: z.enum(['cold', 'warm']), reps: z.number().int().min(1) }),
   z.object({
