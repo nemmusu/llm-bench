@@ -99,12 +99,12 @@ describe('fitScenario', () => {
     expect(noLevels.scenario.steps.some((s) => s.kind === 'concurrency')).toBe(false);
     const ext = fitScenario(buildScenario('full'), { engineKind: 'external' });
     expect(ext.scenario.steps.map((s) => s.kind)).toEqual(['latency', 'concurrency']);
-    expect(ext.warnings.map((w) => w.code)).toEqual(['load_not_measurable', 'load_not_measurable', 'context_sweep_skipped', 'llama_bench_unsupported']);
+    expect(ext.warnings.map((w) => w.code)).toEqual(['load_not_measurable', 'load_not_measurable', 'context_sweep_skipped', 'sessions_depth_unknown', 'llama_bench_unsupported']);
     expect(ext.warnings[2]).toEqual({ code: 'context_sweep_skipped', params: { reason: 'unknown_context' } });
   });
-  it('keeps everything else when limits are unknown (the sweep needs a context)', () => {
+  it('keeps everything else when limits are unknown (the sweep and the long conversations need a context)', () => {
     const s: Scenario = buildScenario('full');
-    expect(fitScenario(s, { engineKind: 'llamacpp-native' }).scenario).toEqual({ ...s, steps: s.steps.filter((x) => x.kind !== 'context-sweep') });
+    expect(fitScenario(s, { engineKind: 'llamacpp-native' }).scenario).toEqual({ ...s, steps: s.steps.filter((x) => x.kind !== 'context-sweep' && x.kind !== 'sessions') });
   });
   it('resolves the context sweep to the launched context: the grid, its exact maximum, optional fractions', () => {
     const sweep = (over: Partial<Extract<Scenario['steps'][number], { kind: 'context-sweep' }>>): Scenario => ({
