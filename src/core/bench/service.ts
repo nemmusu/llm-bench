@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
-import type { RunPhase, ServerEvent } from '../../contract/events';
+import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
 import type { Scenario } from '../../contract/results';
@@ -24,6 +24,8 @@ import {
   type ScenarioWarning,
 } from './scenarios';
 import { loadScoreReference } from './score';
+import { buildTuneSetup, tunedServerParams } from './tune-setup';
+import { BUDGETS } from './tuner';
 
 export interface BenchServiceDeps {
   clock: Clock;
@@ -78,7 +80,14 @@ interface Current {
   controller: AbortController;
   done: Promise<void>;
   /** What GET /api/runs/active shows besides phase and progress; set once the run is prepared. */
-  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress'>;
+  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress' | 'tuning' | 'launch' | 'current' | 'points'>;
+  /** Latest run.tune / run.launch / run.step, and every run.point (latest per key). */
+  live: Pick<ActiveRun, 'tuning' | 'launch' | 'current'> & { points: Map<string, LivePoint> };
+}
+
+/** Which earlier run.point a new one replaces: same kind, same prompt length or users, same tune attempt. */
+export function livePointKey(p: LivePoint): string {
+  return p.stepKind === 'concurrency' ? `concurrency:${p.point.level}` : `${p.stepKind}:${p.point.promptTokens}:${p.attempt ?? ''}`;
 }
 
 /** A request resolved down to the exact command (runs and servers alike). */
@@ -104,6 +113,8 @@ export interface PreparedServer extends Launched {
   contextSize: number;
   /** The model name other programs use with this server. */
   apiName: string;
+  /** The context and settings came from a "Trova le impostazioni migliori" run (see tunedServerParams). */
+  tuned?: ServerPlan['tuned'];
 }
 
 /** Plan fields shared by runs and servers. */
@@ -171,11 +182,15 @@ export class BenchService {
     const model = await this.deps.resolveModel(req, { preview });
     const adapter = this.deps.getAdapter(req.engine.kind);
     const modelContext = model.identity.facts?.contextLength;
+    if (scenario.profile === 'tune' && req.engine.kind === 'external') {
+      throw new AppError('VALIDATION', 'An external endpoint cannot be relaunched with other settings', { params: { reason: 'tune_external' } });
+    }
     const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const c = await this.command(req, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
     const kvUnified = c.launch.argv.includes('--kv-unified');
-    const fitted = fitScenario(scenario, limitsFor(req.engine.kind, c.launch.params, modelContext, { kvUnified }));
+    // A tune run picks its contexts itself (the tuner): its sweep template stays as it is.
+    const fitted = scenario.profile === 'tune' ? { scenario, warnings: [] } : fitScenario(scenario, limitsFor(req.engine.kind, c.launch.params, modelContext, { kvUnified }));
     const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
     return { model, adapter, params, ...c, scenario: fitted.scenario, warnings };
   }
@@ -190,12 +205,20 @@ export class BenchService {
     if (req.engine.kind === 'external') throw new AppError('VALIDATION', 'External endpoints are already running', { params: { reason: 'external' } });
     const model = await this.deps.resolveModel(req, { preview: opts.preview });
     const adapter = this.deps.getAdapter(req.engine.kind);
-    const params: LaunchParams = { ...(req.params ?? launchParamsSchema.parse({})) };
+    // No context chosen: the latest "Trova le impostazioni migliori" of this model here decides, if any.
+    const userParams = req.params ?? launchParamsSchema.parse({});
+    const tuned = serverContextOf(req.engine.kind, userParams) === undefined ? await this.tunedServer(req, model) : undefined;
+    const params: LaunchParams = { ...(tuned?.params ?? userParams) };
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const contextSize = await this.fillServerContext(req, model, params);
     const apiName = serverApiName(req.engine.kind, model);
     const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
-    return { model, adapter, params, ...c, contextSize, apiName, warnings: memWarning ? [memWarning] : [] };
+    return { model, adapter, params, ...c, contextSize, apiName, warnings: memWarning ? [memWarning] : [], ...(tuned ? { tuned: tuned.tuned } : {}) };
+  }
+
+  private async tunedServer(req: StartServerRequest, model: ModelTarget): ReturnType<typeof tunedServerParams> {
+    const here = await this.here().catch(() => undefined);
+    return here ? tunedServerParams(this.deps.runs, here, req, model) : undefined;
   }
 
   /** Sets the context the user left unset to the recommended one; returns the context the server will offer. */
@@ -277,6 +300,12 @@ export class BenchService {
     }
   }
 
+  /** Expected seconds: a tune run lasts its time budget, other runs are estimated from their steps. */
+  private async duration(req: StartRunRequest, p: Prepared): Promise<number> {
+    if (p.scenario.profile === 'tune') return BUDGETS[req.tune?.budget ?? 'fast'].ms / 1000;
+    return estimateSeconds(p.scenario, await this.expectations(p.model));
+  }
+
   /**
    * Preview for "Anteprima comando": exact command, downloads needed, duration, VRAM fit, warnings.
    * Works before the engine is installed or the model downloaded: the command then names where they
@@ -285,7 +314,7 @@ export class BenchService {
   async plan(req: StartRunRequest): Promise<RunPlan> {
     const p = await this.prepare(req, true);
     const preview = await this.preview(req, p);
-    return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)) };
+    return { scenario: p.scenario, ...preview, estimatedSeconds: await this.duration(req, p) };
   }
 
   /**
@@ -295,7 +324,7 @@ export class BenchService {
   async planServer(req: StartServerRequest): Promise<ServerPlan> {
     const p = await this.prepareServer(req, { preview: true, marker: `gpubench-${randomUUID()}` });
     const preview = await this.preview(req, p);
-    return { ...preview, params: p.launch.params, contextSize: p.contextSize };
+    return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}) };
   }
 
   /** What runs and servers show before starting: redacted command, needs, fit and the warnings about this PC. */
@@ -351,24 +380,25 @@ export class BenchService {
     const startedAt = new Date(d.clock.wall()).toISOString();
     const controller = new AbortController();
     // Claimed before the first await so two concurrent starts cannot both pass the check.
-    const current: Current = { runId, phase: 'prepare', progress: 0, controller, done: Promise.resolve() };
+    const current: Current = { runId, phase: 'prepare', progress: 0, controller, done: Promise.resolve(), live: { points: new Map() } };
     this.current = current;
     let p: Prepared;
     let fit: FitEstimate | undefined;
     let interval: number | undefined;
+    let tune: RunInput['tune'];
     try {
       // Never a preview: a missing engine or model fails here (ENGINE_NOT_INSTALLED / MODEL_NOT_FOUND).
       p = await this.prepare(req, false);
       fit = await d.fit?.(req, p.model, p.launch).catch(() => undefined);
       interval = await d.telemetryIntervalMs?.();
+      if (p.scenario.profile === 'tune') tune = await buildTuneSetup({ telemetry: d.telemetry, fingerprint: d.fingerprint }, req, p);
       current.info = {
         startedAt,
         profile: p.scenario.profile,
-        estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)),
+        estimatedSeconds: await this.duration(req, p),
         modelName: p.model.identity.displayName,
         engineLabel: engineLabelOf(p.launch.engine),
         scenario: p.scenario,
-        points: [],
       };
     } catch (e) {
       this.current = undefined;
@@ -383,6 +413,14 @@ export class BenchService {
         if (e.type === 'run.phase') {
           current.phase = e.phase;
           current.progress = e.progress;
+        } else if (e.type === 'run.tune') current.live.tuning = e.tuning;
+        else if (e.type === 'run.launch') current.live.launch = e.launch;
+        else if (e.type === 'run.step') current.live.current = e.current;
+        else if (e.type === 'run.point') {
+          // Re-inserted: the map keeps the order in which points were last updated.
+          const key = livePointKey(e.live);
+          current.live.points.delete(key);
+          current.live.points.set(key, e.live);
         }
         d.publish(e);
       },
@@ -412,6 +450,7 @@ export class BenchService {
       ...(fit ? { vramEstimateMiB: fit.needMiB } : {}),
       notes: p.warnings.map((w) => `plan: ${w.code}${w.params ? ` ${JSON.stringify(w.params)}` : ''}`),
       warnings: p.warnings,
+      ...(tune ? { tune } : {}),
     };
     current.done = runner
       .run(input, controller.signal)
@@ -437,7 +476,8 @@ export class BenchService {
   active(): ActiveRun | undefined {
     const c = this.current;
     if (!c?.info) return undefined;
-    return { runId: c.runId, phase: c.phase, progress: c.progress, ...c.info };
+    const { points, ...live } = c.live;
+    return { runId: c.runId, phase: c.phase, progress: c.progress, ...c.info, ...live, points: [...points.values()] };
   }
 
   /** Resolves when no run is active (tests, shutdown). */

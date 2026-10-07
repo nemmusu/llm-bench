@@ -8,6 +8,7 @@ import { diagnoseExit, llamaPhaseOf } from '../llamacpp-native/logs';
 import { weightFiles, type LaunchPlan, type ModelTarget, type PlanOptions } from '../types';
 import type { EngineCompat } from '../shared/compat';
 import { DockerEngineAdapter, type DockerEngineConfig, type DockerLaunchPlan } from '../shared/docker-engine';
+import { llamaFlashAttention, llamaKvArgs } from '../shared/kv-flags';
 import { modelReadyProbe } from '../shared/probes';
 
 export const LLAMA_CONTAINER_PORT = 8080;
@@ -35,10 +36,10 @@ export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { mode
   const args = ['-m', o.modelPath, '--host', '0.0.0.0', '--port', String(LLAMA_CONTAINER_PORT), '--alias', aliasArg(caps, o.marker, o.apiName)];
   args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
   args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
-  const fa = params.flashAttention ?? 'auto';
+  const fa = llamaFlashAttention(params);
   if (caps.flashAttn === 'value') args.push('-fa', fa);
   else if (caps.flashAttn === 'toggle' && fa === 'on') args.push('-fa');
-  if (params.kvCacheType !== undefined && params.kvCacheType !== 'auto') args.push('-ctk', params.kvCacheType, '-ctv', params.kvCacheType);
+  args.push(...llamaKvArgs(params));
   if (params.batchSize !== undefined) args.push('-b', String(params.batchSize));
   if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
   if (params.threads !== undefined) args.push('-t', String(params.threads));

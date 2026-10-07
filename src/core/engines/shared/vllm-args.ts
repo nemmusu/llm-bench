@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { LaunchParams } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 import type { ModelTarget } from '../types';
+import { vllmKvDtype } from './kv-flags';
 
 export const VLLM_DEFAULT_MAX_MODEL_LEN = 4096;
 /** vLLM's own default, passed explicitly so the stored command says what was used. */
@@ -73,6 +74,10 @@ export function vllmServeArgs(params: LaunchParams, o: VllmServeOptions): string
   args.push('--max-model-len', String(params.maxModelLen ?? params.contextSize ?? VLLM_DEFAULT_MAX_MODEL_LEN));
   args.push('--gpu-memory-utilization', String(params.gpuMemoryUtilization ?? VLLM_DEFAULT_GPU_MEMORY_UTILIZATION));
   if (params.parallel !== undefined) args.push('--max-num-seqs', String(params.parallel));
+  const kv = vllmKvDtype(params);
+  if (kv !== undefined) args.push('--kv-cache-dtype', kv);
+  // Chunked-prefill size: prompt tokens processed per engine step (llama.cpp's batch).
+  if (params.batchSize !== undefined) args.push('--max-num-batched-tokens', String(params.batchSize));
   args.push('--seed', String(VLLM_SEED));
   if (params.dtype !== undefined) args.push('--dtype', params.dtype);
   if (params.quantization !== undefined) args.push('--quantization', params.quantization);

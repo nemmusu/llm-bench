@@ -1,12 +1,13 @@
 import path from 'node:path';
 import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
 import { AppError, isAppError, toAppErrorData, type AppErrorData } from '../../contract/errors';
-import type { RunPhase, ServerEvent } from '../../contract/events';
+import type { CurrentStep, LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { GpuSample, HardwareFingerprint } from '../../contract/hardware';
 import {
   METRICS_FORMULA_VERSION,
   RESULT_SCHEMA_VERSION,
   type ConcurrencyPoint,
+  type ContextSweepStep,
   type LatencyPoint,
   type LaunchRecord,
   type Metrics,
@@ -14,12 +15,14 @@ import {
   type RunStatus,
   type Scenario,
   type Step,
+  type Tuning,
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
+import { parseVllmLoadReport } from '../engines/shared/vllm-logs';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
-import { summaryOf } from '../store/runs-repo';
+import { contextOf, engineLabelOf, summaryOf } from '../store/runs-repo';
 import { PROCESS_VRAM_INTERVAL_MS } from '../telemetry/process-vram';
 import type { GpuUser, ProcessVramSession, ProcessVramTick, TelemetrySampler, TelemetrySession } from '../telemetry/types';
 import {
@@ -40,9 +43,11 @@ import {
   type Window,
 } from './metrics';
 import { buildPrompt, buildTextPrompt, getCorpusTokens } from './prompts';
-import { DEFAULT_EXPECTATIONS, isLlamaCpp, stepSeconds } from './scenarios';
+import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
+import { runSweep } from './sweep';
+import { BUDGETS, Tuner, type LabEngine, type TuneLab, type TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
@@ -114,6 +119,8 @@ export interface RunInput {
   notes?: string[];
   /** Planning warnings as codes for the renderer (stored in RunResult.notes). */
   warnings?: RunNote[];
+  /** Profile "tune": what to search (see tuner.ts); the runner provides the engine launches. */
+  tune?: TunerInput;
 }
 
 /** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
@@ -197,11 +204,19 @@ interface RunState {
   requestSeq: number;
   requestExample?: Record<string, unknown>;
   latency: LatencyPoint[];
+  contextSweep: LatencyPoint[];
   measured: RequestMetrics[];
   concurrency: ConcurrencyPoint[];
   llamaBench: LlamaBenchResult[];
   outputExact: boolean;
   tokensApproximate: boolean;
+  /** Total VRAM used at every telemetry sample (all GPUs), for per-launch peaks of the tuner. */
+  memTrace: { t: number; gpu: number; usedMiB: number }[];
+  /** Profile "tune": the search so far, and each attempt's launch record (by attempt index). */
+  tuning?: Tuning;
+  tuneRecords: Map<number, LaunchRecord>;
+  /** Monotonic ms when the search started (progress of a tune run is its share of the time budget). */
+  tuneStart?: number;
 }
 
 function checkAbort(signal: AbortSignal): void {
@@ -223,9 +238,26 @@ export function loadSequence(scenario: Scenario): LoadKind[] {
     if (i < cold) out.push({ cache: 'cold', measured: true });
     if (i < warm) out.push({ cache: 'warm', measured: true });
   }
-  const needsServer = scenario.steps.some((s) => s.kind === 'latency' || s.kind === 'concurrency');
-  if (out.length === 0 && needsServer) out.push({ cache: 'warm', measured: false });
+  if (out.length === 0 && scenario.steps.some(needsServer)) out.push({ cache: 'warm', measured: false });
   return out;
+}
+
+/** Steps that send requests to the running server. */
+function needsServer(step: Step): boolean {
+  return step.kind === 'latency' || step.kind === 'concurrency' || step.kind === 'context-sweep';
+}
+
+/**
+ * Context each user of a concurrency level can hold: llama.cpp splits its context across the slots
+ * unless the KV cache is unified (then everyone shares the whole context, as with vLLM's pool).
+ */
+export function userContext(plan: Pick<LaunchPlan, 'kind' | 'argv' | 'params'>): { contextPerUser?: number; contextShared?: boolean } {
+  const ctx = contextOf(plan);
+  if (ctx === undefined) return {};
+  if (!isLlamaCpp(plan.kind)) return { contextPerUser: ctx, contextShared: true };
+  const slots = plan.params.parallel ?? 1;
+  if (slots <= 1) return { contextPerUser: ctx, contextShared: false };
+  return plan.argv.includes('--kv-unified') ? { contextPerUser: ctx, contextShared: true } : { contextPerUser: Math.floor(ctx / slots), contextShared: false };
 }
 
 /** Example request for the launch record: token arrays are summarized, long texts shortened. */
@@ -294,11 +326,14 @@ export class BenchRunner {
       corpus: '',
       requestSeq: 0,
       latency: [],
+      contextSweep: [],
       measured: [],
       concurrency: [],
       llamaBench: [],
       outputExact: true,
       tokensApproximate: false,
+      memTrace: [],
+      tuneRecords: new Map(),
     };
     let status: RunStatus = 'completed';
     let error: AppErrorData | undefined;
@@ -355,7 +390,10 @@ export class BenchRunner {
     }
     s.corpus = await d.corpus();
     if (s.telemetryOn) {
-      s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => d.publish({ type: 'telemetry', samples }));
+      s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => {
+        for (const x of samples) if (x.memUsedMiB !== null) s.memTrace.push({ t: x.t, gpu: x.gpu, usedMiB: x.memUsedMiB });
+        d.publish({ type: 'telemetry', samples });
+      });
       // Started before the first load: its first reading is the reference for other processes' drift.
       s.procVram = d.telemetry.startProcessVram
         ? await d.telemetry.startProcessVram(() => this.enginePids(s), PROCESS_VRAM_INTERVAL_MS).catch(() => undefined)
@@ -364,9 +402,14 @@ export class BenchRunner {
     this.advance(s, 1);
     checkAbort(signal);
 
+    if (input.tune) {
+      await this.tune(s, input.tune);
+      return;
+    }
     await this.loads(s, plan);
     for (const step of input.scenario.steps) {
       if (step.kind === 'latency') await this.latencyStep(s, step);
+      else if (step.kind === 'context-sweep') await this.contextSweepStep(s, step);
       else if (step.kind === 'concurrency') await this.concurrencyStep(s, step, plan);
     }
     const bench = input.scenario.steps.find((x): x is Extract<Step, { kind: 'llama-bench' }> => x.kind === 'llama-bench');
@@ -388,11 +431,14 @@ export class BenchRunner {
         s.coldGuaranteed = (s.coldGuaranteed ?? true) && evicted.guaranteed;
       }
       checkAbort(s.signal);
+      const total = seq.filter((l) => l.cache === load.cache && l.measured === load.measured).length;
+      this.step(s, { kind: 'load', label: load.cache, rep: n, reps: total });
       const inst = await d.adapter.start(plan, s.signal);
       this.attach(s, inst, label);
       s.marks.push({ t: inst.t0, label });
       const ready = await inst.waitReady(s.signal);
       s.marks.push({ t: ready.tReady, label: 'ready' });
+      this.publishLaunch(s, plan);
       const loadMs = ready.tReady - inst.t0;
       const phases = toLoadPhases(ready.phases, inst.t0, ready.tReady);
       s.firstPhases ??= phases;
@@ -407,9 +453,28 @@ export class BenchRunner {
       if (i < seq.length - 1) await this.stopInstance(s);
       this.advance(s, stepSeconds({ kind: 'load', cache: load.cache, reps: 1 }, DEFAULT_EXPECTATIONS));
     }
-    if (s.instance && s.input.scenario.steps.some((x) => x.kind === 'latency' || x.kind === 'concurrency')) {
-      await this.prepareCorpus(s, s.instance);
-    }
+    if (s.instance && s.input.scenario.steps.some(needsServer)) await this.prepareCorpus(s, s.instance);
+  }
+
+  /** run.launch: the engine instance now in use (every load, every tune attempt). */
+  private publishLaunch(s: RunState, plan: LaunchPlan): void {
+    const r = launchRecordOf(plan, this.deps.displayCommand, this.deps.redact);
+    const contextSize = contextOf(plan);
+    this.deps.publish({
+      type: 'run.launch',
+      runId: s.input.runId,
+      launch: { params: plan.params, ...(contextSize !== undefined ? { contextSize } : {}), command: { argv: r.argv, ...r.display }, engineLabel: engineLabelOf(plan.engine) },
+    });
+  }
+
+  /** run.step: what is measured right now. */
+  private step(s: RunState, current: CurrentStep): void {
+    this.deps.publish({ type: 'run.step', runId: s.input.runId, current });
+  }
+
+  /** run.point: a measurement so far (medians up to the last repetition). */
+  private point(s: RunState, live: LivePoint): void {
+    this.deps.publish({ type: 'run.point', runId: s.input.runId, live });
   }
 
   /** "First token after load": a ~16-token prompt with 1 output token right after ready (lazy init). */
@@ -420,6 +485,7 @@ export class BenchRunner {
       seed: s.input.scenario.seed,
       ...this.modelField(s),
     };
+    this.step(s, { kind: 'first-token', outputTokens: 1 });
     const sentAt = this.deps.clock.now();
     const events = await this.collect(inst, req, s.signal);
     const first = events.find((e) => e.kind === 'chunk' && ((e.tokens ?? 0) > 0 || e.textLen > 0));
@@ -448,29 +514,74 @@ export class BenchRunner {
       this.setPhase(s, p > 1024 ? 'prefill' : 'decode', String(p));
       s.marks.push({ t: this.deps.clock.now(), label: `latency ${p}` });
       const unit = stepSeconds({ ...step, promptTokens: [p], warmup: 0, reps: 1 }, DEFAULT_EXPECTATIONS);
-      for (let w = 0; w < step.warmup; w++) {
-        await this.measure(s, inst, p, step.outputTokens, 'latency');
-        this.advance(s, unit);
-      }
-      const results: RequestMetrics[] = [];
-      for (let r = 0; r < step.reps; r++) {
-        const m = await this.measure(s, inst, p, step.outputTokens, 'latency');
-        this.record(s, m);
-        results.push(m);
-        this.deps.publish({
-          type: 'run.live',
-          runId: s.input.runId,
-          ttftMs: m.ttftMs,
-          tokens: m.outputTokens,
-          ...(m.decodeTps !== undefined ? { decodeTps: m.decodeTps } : {}),
-          ...((m.prefillTpsEngine ?? m.prefillTpsClient) !== undefined
-            ? { prefillTps: m.prefillTpsEngine ?? m.prefillTpsClient }
-            : {}),
-        });
-        this.advance(s, unit);
-      }
-      s.latency.push(aggregateLatency(results, { promptTokens: p, outputTokens: step.outputTokens }));
+      const point = await this.measurePoint(s, inst, { kind: 'latency', promptTokens: p, outputTokens: step.outputTokens, reps: step.reps, warmup: step.warmup }, () =>
+        this.advance(s, unit),
+      );
+      s.latency.push(point);
     }
+  }
+
+  /**
+   * "Contesto per gradi": the same engine, prompts filling the context deeper and deeper (depths
+   * resolved by fitScenario), shallow first, within the step's time budget.
+   */
+  private async contextSweepStep(s: RunState, step: ContextSweepStep): Promise<void> {
+    const inst = this.running(s);
+    const d = this.deps;
+    this.setPhase(s, 'context-sweep');
+    const result = await runSweep(
+      step.depths,
+      async (depth) => {
+        this.setPhase(s, 'context-sweep', String(depth));
+        s.marks.push({ t: d.clock.now(), label: `context ${depth}` });
+        const unit = requestSeconds(depth, step.outputTokens, DEFAULT_EXPECTATIONS);
+        return this.measurePoint(s, inst, { kind: 'context-sweep', promptTokens: depth, outputTokens: step.outputTokens, reps: step.reps }, () => this.advance(s, unit));
+      },
+      { outputTokens: step.outputTokens, reps: step.reps, now: () => d.clock.now(), ...(step.maxSeconds !== undefined ? { maxMs: step.maxSeconds * 1000 } : {}) },
+    );
+    s.contextSweep = result.points;
+    if (result.skippedFrom !== undefined) {
+      s.notes.push(`context sweep stopped at ${result.skippedFrom} tokens: its time budget (${step.maxSeconds} s) was spent`);
+      s.codes.push({ code: 'context_sweep_budget', params: { depth: result.skippedFrom, seconds: step.maxSeconds } });
+    }
+  }
+
+  /**
+   * One prompt length measured `reps` times (after `warmup` unmeasured requests): run.step before each
+   * request, run.live and run.point (medians so far) after each measured one.
+   */
+  private async measurePoint(
+    s: RunState,
+    inst: EngineInstance,
+    o: { kind: 'latency' | 'context-sweep' | 'tune-probe' | 'tune-screen'; promptTokens: number; outputTokens: number; reps: number; warmup?: number; attempt?: number },
+    onRequest?: () => void,
+  ): Promise<LatencyPoint> {
+    const shape = { promptTokens: o.promptTokens, outputTokens: o.outputTokens };
+    const depth = o.kind === 'latency' ? {} : { depth: o.promptTokens };
+    const warmup = o.warmup ?? 0;
+    for (let w = 0; w < warmup; w++) {
+      this.step(s, { kind: o.kind, ...shape, ...depth, rep: w + 1, reps: warmup, warmup: true });
+      await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind);
+      onRequest?.();
+    }
+    const results: RequestMetrics[] = [];
+    for (let r = 0; r < o.reps; r++) {
+      this.step(s, { kind: o.kind, ...shape, ...depth, rep: r + 1, reps: o.reps });
+      const m = await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind);
+      this.record(s, m);
+      results.push(m);
+      this.deps.publish({
+        type: 'run.live',
+        runId: s.input.runId,
+        ttftMs: m.ttftMs,
+        tokens: m.outputTokens,
+        ...(m.decodeTps !== undefined ? { decodeTps: m.decodeTps } : {}),
+        ...((m.prefillTpsEngine ?? m.prefillTpsClient) !== undefined ? { prefillTps: m.prefillTpsEngine ?? m.prefillTpsClient } : {}),
+      });
+      this.point(s, { stepKind: o.kind, point: aggregateLatency(results, shape), ...(o.attempt !== undefined ? { attempt: o.attempt } : {}) });
+      onRequest?.();
+    }
+    return aggregateLatency(results, shape);
   }
 
   /** C closed-loop workers, each sending requestsPerWorker requests back to back. Failed requests count as errors. */
@@ -479,6 +590,7 @@ export class BenchRunner {
     const d = this.deps;
     this.setPhase(s, 'concurrency');
     const slots = plan.params.parallel ?? 1;
+    const shape = { promptTokens: step.promptTokens, outputTokens: step.outputTokens, ...userContext(plan) };
     for (const level of step.levels) {
       const unit = stepSeconds({ ...step, levels: [level] }, DEFAULT_EXPECTATIONS);
       if (isLlamaCpp(plan.kind) && level > slots) {
@@ -491,6 +603,10 @@ export class BenchRunner {
       s.marks.push({ t: d.clock.now(), label: `concurrency ${level}` });
       const results: (RequestMetrics | null)[] = [];
       const start = d.clock.now();
+      const total = level * step.requestsPerWorker;
+      const progress = () =>
+        this.step(s, { kind: 'concurrency', concurrency: level, promptTokens: step.promptTokens, outputTokens: step.outputTokens, rep: results.length, reps: total });
+      progress();
       const worker = async () => {
         for (let k = 0; k < step.requestsPerWorker; k++) {
           checkAbort(s.signal);
@@ -502,12 +618,14 @@ export class BenchRunner {
             if (s.signal.aborted) throw e;
             results.push(null);
           }
+          progress();
         }
       };
       await Promise.all(Array.from({ length: level }, worker));
       if (s.instanceExit) throw this.engineExited(s.instanceExit);
-      const point = aggregateConcurrency(level, results, d.clock.now() - start);
+      const point = aggregateConcurrency(level, results, d.clock.now() - start, shape);
       s.concurrency.push(point);
+      this.point(s, { stepKind: 'concurrency', point });
       d.publish({ type: 'run.live', runId: s.input.runId, decodeTps: point.aggregateTps });
       this.advance(s, unit);
     }
@@ -524,8 +642,115 @@ export class BenchRunner {
     await this.stopInstance(s);
     await this.waitVramSettled(s);
     this.setPhase(s, 'decode', 'llama-bench');
+    this.step(s, { kind: 'llama-bench', promptTokens: step.pp, outputTokens: step.tg, reps: step.reps });
     s.llamaBench = await d.llamaBench(plan, step, s.signal);
     this.advance(s, stepSeconds(step, DEFAULT_EXPECTATIONS));
+  }
+
+  // ---- "Trova le impostazioni migliori" ----------------------------------------------------
+
+  /** The search (tuner.ts) with this runner's engine launches; run.tune after every change. */
+  private async tune(s: RunState, setup: TunerInput): Promise<void> {
+    const d = this.deps;
+    s.tuneStart = d.clock.now();
+    const tuner = new Tuner(setup, {
+      lab: this.tuneLab(s),
+      now: () => d.clock.now(),
+      onUpdate: (tuning, current) => {
+        s.tuning = tuning;
+        d.publish({ type: 'run.tune', runId: s.input.runId, tuning, ...(current ? { current } : {}) });
+        this.publishPhase(s);
+      },
+      onPhase: (phase) => this.setPhase(s, phase),
+    });
+    s.tuning = await tuner.run();
+  }
+
+  /**
+   * Engine launches for the tuner: the same adapter, logs, telemetry and request machinery as the
+   * normal loads (attach / waitReady / measure), one instance at a time, VRAM settled in between.
+   */
+  private tuneLab(s: RunState): TuneLab {
+    const d = this.deps;
+    const { input } = s;
+    return {
+      prepare: async (params, info) => {
+        const plan = await d.adapter.plan(input.engineConfig, input.model, params, { port: input.port, marker: input.marker });
+        const record = launchRecordOf(plan, d.displayCommand, d.redact);
+        s.tuneRecords.set(info.attempt, record);
+        return {
+          command: { argv: record.argv, ...record.display },
+          start: async () => {
+            await this.waitVramSettled(s);
+            checkAbort(s.signal);
+            const label = `tune ${info.attempt + 1} (${info.stage}, ctx ${contextOf(plan) ?? '?'})`;
+            this.step(s, { kind: 'load', label: info.stage });
+            let inst: EngineInstance;
+            try {
+              inst = await d.adapter.start(plan, s.signal);
+            } catch (e) {
+              checkAbort(s.signal);
+              return { ok: false, error: toAppErrorData(e) };
+            }
+            this.attach(s, inst, label);
+            s.marks.push({ t: inst.t0, label });
+            let tReady: number;
+            try {
+              tReady = (await inst.waitReady(s.signal)).tReady;
+            } catch (e) {
+              await this.stopInstance(s);
+              checkAbort(s.signal);
+              return { ok: false, error: toAppErrorData(e), loadMs: d.clock.now() - inst.t0 };
+            }
+            s.marks.push({ t: tReady, label: 'ready' });
+            this.publishLaunch(s, plan);
+            if (!s.tokens && !s.tokensApproximate) await this.prepareCorpus(s, inst);
+            return { ok: true, loadMs: tReady - inst.t0, engine: this.labEngine(s, inst, plan, info.attempt, inst.t0) };
+          },
+        };
+      },
+    };
+  }
+
+  private labEngine(s: RunState, inst: EngineInstance, plan: LaunchPlan, attempt: number, from: number): LabEngine {
+    return {
+      measure: (depth, outputTokens, reps, kind) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt }),
+      memory: () => this.launchMemory(s, from),
+      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : parseVllmLoadReport(inst.logTail()).kvCacheTokens),
+      generate: async (promptTokens, tokens) => {
+        this.step(s, { kind: 'fidelity', promptTokens, outputTokens: tokens });
+        const seed = s.input.scenario.seed;
+        // The same prompt on every launch (fixed repetition and salt): the outputs are comparable.
+        const prompt: Pick<GenerateRequest, 'promptIds' | 'promptText'> = s.tokens
+          ? { promptIds: buildPrompt(s.tokens, promptTokens, 0, { seed, salt: 'fidelity', ...(s.bos !== undefined ? { bos: s.bos } : {}) }) }
+          : { promptText: buildTextPrompt(s.corpus, promptTokens, 0, { seed, salt: 'fidelity' }) };
+        const events = await this.collect(inst, { ...prompt, outputTokens: tokens, seed, ...this.modelField(s) }, s.signal);
+        return events.flatMap((e): (number | string)[] => (e.kind !== 'chunk' ? [] : (e.ids ?? (e.text !== undefined ? [e.text] : []))));
+      },
+      stop: () => this.stopInstance(s),
+    };
+  }
+
+  /**
+   * VRAM of the launch started at `from`: the engine process's own peak (and shared memory) when the
+   * OS attributes it, else the peak total minus the baseline.
+   */
+  private launchMemory(s: RunState, from: number): { vramPeakMiB?: number; sharedPeakMiB?: number } {
+    const ticks = (s.procVram?.samples ?? []).filter((t) => t.t >= from && t.engine.length > 0 && t.engineMiB > 0);
+    if (ticks.length > 0) {
+      const shared = ticks.map((t) => t.engineSharedMiB).filter((v): v is number => v !== undefined);
+      return {
+        vramPeakMiB: Math.round(Math.max(...ticks.map((t) => t.engineMiB))),
+        ...(shared.length ? { sharedPeakMiB: Math.round(Math.max(...shared)) } : {}),
+      };
+    }
+    const base = new Map(s.baseline.map((b) => [b.gpu, b.memUsedMiB ?? 0]));
+    const peak = new Map<number, number>();
+    for (const x of s.memTrace) if (x.t >= from) peak.set(x.gpu, Math.max(peak.get(x.gpu) ?? 0, x.usedMiB));
+    if (peak.size === 0) return {};
+    let delta = 0;
+    for (const [gpu, p] of peak) delta += Math.max(0, p - (base.get(gpu) ?? p));
+    return { vramPeakMiB: Math.round(delta) };
   }
 
   // ---- requests ---------------------------------------------------------------------------
@@ -663,6 +888,8 @@ export class BenchRunner {
   }
 
   private progress(s: RunState): number {
+    // A tune run's length is its time budget.
+    if (s.tuneStart !== undefined) return Math.min(0.97, (this.deps.clock.now() - s.tuneStart) / BUDGETS[(s.input.tune as TunerInput).budget].ms);
     return Math.min(1, s.doneUnits / s.totalUnits);
   }
 
@@ -736,6 +963,8 @@ export class BenchRunner {
     const method = processPeakMiB !== undefined ? 'process' : vr.deltaMiB !== undefined ? 'total-delta' : undefined;
     const drift = othersDriftMiB(s.procTicks, { engineHasPid: s.enginePidSeen });
     if (drift !== undefined && drift >= VRAM_DRIFT_MIN_MIB) s.notes.push(`other GPU processes changed their VRAM by up to ${drift} MiB during the run`);
+    // Tune runs are described by their recommended combination: its command, its context sweep.
+    const tuned = recommendedOf(s.tuning, s.tuneRecords);
 
     const metrics: Metrics = {
       formulaVersion: METRICS_FORMULA_VERSION,
@@ -747,7 +976,7 @@ export class BenchRunner {
       },
       ...(s.firstTokenMs !== undefined ? { firstTokenAfterLoadMs: s.firstTokenMs } : {}),
       latency,
-      contextSweep: [],
+      contextSweep: tuned?.combination.sweep ?? s.contextSweep,
       concurrency: s.concurrency,
       llamaBench: s.llamaBench,
       vram: {
@@ -794,7 +1023,8 @@ export class BenchRunner {
     });
 
     const launch: LaunchRecord = {
-      ...(s.launch ?? {
+      ...(tuned?.record ??
+        s.launch ?? {
         argv: [],
         env: {},
         display: { powershell: '', bash: '' },
@@ -837,8 +1067,19 @@ export class BenchRunner {
         : {}),
       logExcerpt: buildLogExcerpt(s.logBlocks, s.notes),
       ...(input.note ? { note: input.note } : {}),
+      ...(s.tuning ? { tuning: s.tuning } : {}),
     };
   }
+}
+
+type Combination = Tuning['combinations'][number];
+
+/** The recommended combination of a tune run and the launch record of the attempt that measured it. */
+export function recommendedOf(tuning: Tuning | undefined, records: ReadonlyMap<number, LaunchRecord>): { combination: Combination; record: LaunchRecord } | undefined {
+  const rec = tuning?.recommended;
+  if (tuning === undefined || rec === undefined) return undefined;
+  const record = records.get(tuning.attempts.findIndex((a) => a.combination === rec));
+  return record ? { combination: tuning.combinations[rec] as Combination, record } : undefined;
 }
 
 function baselineUtil(baseline: readonly GpuSample[]): { baselineUtilPct?: number } {
