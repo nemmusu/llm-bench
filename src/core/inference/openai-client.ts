@@ -121,7 +121,7 @@ export class OpenAiClient implements InferenceClient {
       // The last usage-only chunk (choices: []) carries totals, not text.
       if (choices.length === 0) continue;
       for (const ch of choices) if (ch.finish_reason) finish = ch.finish_reason;
-      const textLen = choices.reduce((n, ch) => n + (ch.text?.length ?? 0), 0);
+      const text = choices.map((ch) => ch.text ?? '').join('');
       // Continuous usage gives a running completion count: the delta is this chunk's exact tokens.
       const running = c.usage?.completion_tokens;
       let tokens: number | undefined;
@@ -129,7 +129,7 @@ export class OpenAiClient implements InferenceClient {
         tokens = running - completionSoFar;
         completionSoFar = running;
       }
-      yield { kind: 'chunk', t, textLen, ...(tokens !== undefined ? { tokens } : {}) };
+      yield { kind: 'chunk', t, textLen: text.length, ...(tokens !== undefined ? { tokens } : {}), ...(text ? { text } : {}) };
     }
     yield {
       kind: 'done',

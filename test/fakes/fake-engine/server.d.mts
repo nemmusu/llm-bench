@@ -16,7 +16,45 @@ export interface FakeProfile {
   nLayers?: number;
   seed?: number;
   busy?: { utilPct: number; powerW: number; tempC?: number };
+  memory?: FakeMemory;
+  speed?: FakeSpeed;
 }
+
+export interface FakeMemory {
+  totalMiB: number;
+  weightsMiB: number;
+  kvMiBPer1k: number;
+  computeMiBPer512?: number;
+  spillMiB?: number;
+  layers?: number;
+}
+
+export interface FakeSpeed {
+  depthSlowdown?: number;
+  prefillDepthSlowdown?: number;
+  faOffDepthFactor?: number;
+  ubatchExponent?: number;
+  kvDecodeFactor?: Record<string, number>;
+  spillFactor?: number;
+  offloadPenalty?: number;
+}
+
+export interface MemoryPlan {
+  cpuShare: number;
+  needMiB: number;
+  vramMiB: number;
+  capacity?: number;
+  outcome: 'ok' | 'spill' | 'oom' | 'kv-too-small';
+}
+
+export function memoryPlan(
+  m: FakeMemory,
+  o: { flavor: string; ctx: number; kvType?: string; ubatch?: number; nCpuMoe?: number; gpuLayers?: number; gpuMemoryUtilization?: number; eager?: boolean },
+): MemoryPlan;
+export function speeds(
+  p: FakeProfile,
+  o: { depth: number; flashAttn?: string; kvType?: string; kvTypeV?: string; ubatch?: number; spill?: boolean; cpuShare?: number },
+): { decode: number; prefill: number };
 
 export interface FakeEngineOptions {
   flavor?: 'llamacpp' | 'vllm';
@@ -30,6 +68,16 @@ export interface FakeEngineOptions {
   ctx?: number;
   np?: number;
   flashAttn?: string;
+  /** llama.cpp -ctk / -ctv, vLLM --kv-cache-dtype (memory model and speed). */
+  kvType?: string;
+  kvTypeV?: string;
+  /** llama.cpp -ub, vLLM --max-num-batched-tokens. */
+  ubatch?: number;
+  batch?: number;
+  nCpuMoe?: number;
+  gpuLayers?: number;
+  gpuMemoryUtilization?: number;
+  eager?: boolean;
   profile?: FakeProfile;
   log?: (line: string) => void;
   stateFile?: string;

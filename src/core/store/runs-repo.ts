@@ -62,7 +62,7 @@ export function engineLabelOf(e: Pick<EngineIdentity, 'name' | 'build' | 'versio
 const CONTEXT_FLAGS = new Set(['-c', '--ctx-size', '--max-model-len']);
 
 /** The context a run's engine was started with: its params, else the flag on its command line. */
-export function contextOf(launch: RunResult['launch']): number | undefined {
+export function contextOf(launch: Pick<RunResult['launch'], 'params' | 'argv'>): number | undefined {
   const fromParams = launch.params.contextSize ?? launch.params.maxModelLen;
   if (fromParams !== undefined) return fromParams;
   const at = launch.argv.findIndex((a) => CONTEXT_FLAGS.has(a));
@@ -72,14 +72,18 @@ export function contextOf(launch: RunResult['launch']): number | undefined {
 
 export function summaryOf(run: RunResult, file: string): RunSummary {
   const m = run.metrics;
-  const head = headlinePoint(m.latency);
-  const largest = [...m.latency].sort((a, b) => b.promptTokens - a.promptTokens)[0];
+  // Runs without latency points (tune runs) are described by their context sweep: 1K for the headline, the deepest for reading.
+  const points = m.latency.length ? m.latency : m.contextSweep;
+  const head = headlinePoint(points);
+  const largest = [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0];
+  const t = run.tuning;
+  const recommended = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
   const gpu = run.hardware.gpus[0];
   const e = run.engine;
   const engineLabel = engineLabelOf(e);
   const prefill = largest ? (largest.prefillTpsEngine ?? largest.prefillTps).median : undefined;
   // The engine's own VRAM when the OS could attribute it; otherwise the total-minus-baseline estimate.
-  const vramMiB = m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
+  const vramMiB = recommended?.vramPeakMiB ?? m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
   const context = contextOf(run.launch);
   const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
   return {
@@ -105,7 +109,9 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(vramMiB !== undefined ? { vramPeakMiB: vramMiB } : {}),
     ...(m.score ? { score: m.score.value } : {}),
     ...(context !== undefined ? { contextSize: context } : {}),
-    ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps } : {}),
+    ...(run.launch.params.kvCacheType !== undefined ? { kvCacheType: run.launch.params.kvCacheType } : {}),
+    ...(t ? { tunedCombinations: t.combinations.length } : {}),
+    ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps, parallelPerUserTps: busiest.perRequestDecodeTpsP50 } : {}),
     validity: run.validity,
     file,
   };

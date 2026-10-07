@@ -113,7 +113,9 @@ describe('Windows monitor protocol', () => {
     const s = windowsMonitorScript({ intervalMs: 999.6, parentPid: 4321.9 });
     expect(s).not.toContain('"');
     expect(s).toContain("PerformanceCounterCategory('GPU Process Memory')");
-    expect(s).toContain("ReadCategory()['Dedicated Usage']");
+    expect(s).toContain("$data['Dedicated Usage']");
+    expect(s).toContain("$data['Shared Usage']");
+    expect(s).toContain("'=' + $sum[$p] + '/' + [int64]$sh[$p]");
     expect(s).toContain('GetProcessById(4321)');
     expect(s).toContain('Start-Sleep -Milliseconds 1000');
     expect(windowsMonitorScript({ intervalMs: 0, parentPid: 1 })).toContain('Start-Sleep -Milliseconds 1');
@@ -153,8 +155,10 @@ describe('Windows monitor protocol', () => {
   });
 
   it('handles empty readings, duplicates, errors and noise', () => {
-    expect(parseMonitorLine('S')).toEqual({ kind: 'sample', bytes: new Map() });
-    expect(parseMonitorLine(' S 1=10 1=5 x=3 2=-1 3=7 \r')).toEqual({ kind: 'sample', bytes: new Map([[1, 15], [3, 7]]) });
+    expect(parseMonitorLine('S')).toEqual({ kind: 'sample', bytes: new Map(), shared: new Map() });
+    expect(parseMonitorLine(' S 1=10 1=5 x=3 2=-1 3=7 \r')).toEqual({ kind: 'sample', bytes: new Map([[1, 15], [3, 7]]), shared: new Map() });
+    // Current monitors add the shared bytes after a slash; old and new entries can mix.
+    expect(parseMonitorLine('S 1=10/4 1=5/1 2=7 3=8/x')).toEqual({ kind: 'sample', bytes: new Map([[1, 15], [2, 7]]), shared: new Map([[1, 5]]) });
     expect(parseMonitorLine('E Categoria non trovata.')).toEqual({ kind: 'error', message: 'Categoria non trovata.' });
     for (const l of ['', 'Sx', 'N x name', 'N 12', 'hello', 'E']) expect(parseMonitorLine(l), l).toBeUndefined();
   });
@@ -188,6 +192,20 @@ describe('WindowsGpuMemory', () => {
     await mem.dispose();
     expect(child.stopCalls).toBe(1);
     expect(mem.running).toBe(false);
+  });
+
+  it('reports the shared GPU memory of each process when the monitor sends it (a model spilling to system RAM)', async () => {
+    const { mem, runner } = monitor();
+    const reading = mem.read();
+    await tick();
+    const child = runner.spawned[0]!;
+    child.emit('N 42 llama-server');
+    child.emit(`S 42=${30_000 * MIB}/${6_000 * MIB} 9=${MIB}`);
+    expect(await reading).toEqual([
+      { pid: 42, mib: 30_000, name: 'llama-server', sharedMib: 6_000 },
+      { pid: 9, mib: 1 },
+    ]);
+    await mem.dispose();
   });
 
   it('defaults the parent to the core itself', async () => {
@@ -519,6 +537,22 @@ describe('ProcessVramRecorder', () => {
     expect(source.stops).toBe(1);
     source.tick(6000, [{ pid: 50, mib: 1 }]);
     expect(rec.samples).toHaveLength(5);
+  });
+
+  it('keeps the engine’s shared GPU memory per reading and its peak; none reported = undefined', async () => {
+    const source = new ManualSource();
+    const rec = new ProcessVramRecorder({ source, clock: new ManualClock(), pids: [50, 51], intervalMs: 1000 });
+    source.tick(1000, [{ pid: 50, mib: 100 }]);
+    expect(rec.sharedPeakMiB()).toBeUndefined();
+    source.tick(2000, [
+      { pid: 50, mib: 30_000, sharedMib: 2_000.4 },
+      { pid: 51, mib: 10, sharedMib: 1_000 },
+      { pid: 9, mib: 5, sharedMib: 9_999 },
+    ]);
+    source.tick(3000, [{ pid: 50, mib: 30_000, sharedMib: 10 }]);
+    expect(rec.sharedPeakMiB()).toBe(3000);
+    expect(rec.samples.map((s) => s.engineSharedMiB)).toEqual([undefined, 3000.4, 10]);
+    await rec.stop();
   });
 
   it('a fixed PID list; a warm source makes it ready at once; the first reading survives the cap', async () => {

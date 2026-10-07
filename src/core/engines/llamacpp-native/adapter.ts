@@ -34,6 +34,7 @@ import {
 } from './install';
 import { diagnoseExit, llamaPhaseOf } from './logs';
 import { LlamaReleasesClient, selectAssets, type AssetSelection } from './releases';
+import { llamaFlashAttention, llamaKvArgs } from '../shared/kv-flags';
 import { ignore, timeoutSignal } from '../util';
 
 export const DEFAULT_CONTEXT = 4096;
@@ -179,12 +180,10 @@ export class LlamaNativeAdapter implements EngineAdapter {
     const args = ['-m', main, '--host', LOOPBACK, '--port', String(opts.port), '--alias', aliasArg(caps, opts.marker, opts.apiName)];
     args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
     args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
-    const fa = params.flashAttention ?? 'auto';
+    const fa = llamaFlashAttention(params);
     if (caps.flashAttn === 'value') args.push('-fa', fa);
     else if (caps.flashAttn === 'toggle' && fa === 'on') args.push('-fa');
-    if (params.kvCacheType !== undefined && params.kvCacheType !== 'auto') {
-      args.push('-ctk', params.kvCacheType, '-ctv', params.kvCacheType);
-    }
+    args.push(...llamaKvArgs(params));
     if (params.batchSize !== undefined) args.push('-b', String(params.batchSize));
     if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
     if (params.threads !== undefined) args.push('-t', String(params.threads));

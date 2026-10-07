@@ -64,7 +64,13 @@ function toUsage(c: LlamaChunk): Usage | undefined {
 }
 
 function chunkEvent(c: LlamaChunk, t: number): StreamEvent {
-  return { kind: 'chunk', t, textLen: c.content?.length ?? 0, ...(c.tokens ? { tokens: c.tokens.length } : {}) };
+  return {
+    kind: 'chunk',
+    t,
+    textLen: c.content?.length ?? 0,
+    ...(c.tokens ? { tokens: c.tokens.length, ids: c.tokens } : {}),
+    ...(c.content ? { text: c.content } : {}),
+  };
 }
 
 /**
