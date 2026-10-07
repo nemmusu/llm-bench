@@ -15,6 +15,7 @@ import {
   primaryGpu,
   throttling,
   toLoadPhases,
+  unionMs,
   vram,
   type RequestMetrics,
 } from '../../../../src/core/bench/metrics';
@@ -197,7 +198,7 @@ describe('aggregateLatency', () => {
 describe('aggregateConcurrency', () => {
   it('aggregate throughput over the makespan, errors counted', () => {
     const c = aggregateConcurrency(4, [rm({ outputTokens: 100, ttftMs: 50 }), rm({ outputTokens: 100, ttftMs: 150, decodeTps: 80 }), null], 2000);
-    expect(c).toEqual({
+    expect(c).toMatchObject({
       level: 4,
       requests: 3,
       aggregateTps: 100,
@@ -206,7 +207,24 @@ describe('aggregateConcurrency', () => {
       ttftP95Ms: 145,
       errors: 1,
     });
-    expect(aggregateConcurrency(1, [], 0).aggregateTps).toBe(0);
+    expect(aggregateConcurrency(1, [], 0)).toEqual({ level: 1, requests: 0, aggregateTps: 0, perRequestDecodeTpsP50: 0, ttftP50Ms: 0, ttftP95Ms: 0, errors: 0 });
+  });
+
+  it('what each user gets: prompt and answer size, context per user, read and write speeds, the server’s reading speed', () => {
+    const a = rm({ sentAt: 0, firstAt: 100, promptTokens: 512, decodeTps: 40, prefillTpsEngine: 5000 });
+    const b = rm({ sentAt: 50, firstAt: 300, promptTokens: 512, decodeTps: 30, prefillTpsClient: 2048 });
+    const c = rm({ sentAt: 400, firstAt: 450, promptTokens: 512, decodeTps: 20 });
+    const p = aggregateConcurrency(3, [a, b, c, null], 1000, { promptTokens: 512, outputTokens: 128, contextPerUser: 4096, contextShared: false });
+    expect(p).toMatchObject({ promptTokens: 512, outputTokens: 128, contextPerUser: 4096, contextShared: false, errors: 1 });
+    expect(p.perRequestDecodeTpsP5).toBeCloseTo(21, 5);
+    expect(p.perRequestDecodeTps).toMatchObject({ n: 3, median: 30, min: 20, max: 40 });
+    expect(p.perRequestPrefillTpsP50).toBe(5000);
+    // Reading windows 0–100, 50–300 and 400–450: 350 ms in total, 1536 prompt tokens.
+    expect(p.aggregatePrefillTps).toBeCloseTo((1536 / 350) * 1000, 6);
+    const shared = aggregateConcurrency(2, [a], 500, { promptTokens: 512, outputTokens: 128 });
+    expect(shared).not.toHaveProperty('contextPerUser');
+    expect(shared).not.toHaveProperty('contextShared');
+    expect(unionMs([[0, 10], [5, 8], [20, 20], [9, 15]])).toBe(15);
   });
 });
 

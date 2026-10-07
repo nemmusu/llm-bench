@@ -225,6 +225,8 @@ interface Capacity {
   candidates: number[];
   /** Known results per context: true = loads fully on the GPU, false = does not. */
   status: Map<number, boolean>;
+  /** Contexts this type was actually launched with (the others are known from a more precise type). */
+  launched: Set<number>;
   measuredMax?: number;
   inferred: boolean;
   skipped?: 'estimate' | 'no-gain' | 'budget';
@@ -342,7 +344,7 @@ export class Tuner {
     const candidates: number[] = [];
     for (let c = this.min; c <= limit; c *= 2) candidates.push(c);
     if (this.cap <= limit && !candidates.includes(this.cap)) candidates.push(this.cap);
-    return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), inferred: false };
+    return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }
 
   /** The most precise KV type's base settings at the smallest context: the speed a spill is compared with. */
@@ -353,6 +355,7 @@ export class Tuner {
       const live = await this.launch('reference', this.input.space.base(kv), this.min);
       if (!live) return;
       cap.status.set(this.min, live.att.outcome === 'ok');
+      cap.launched.add(this.min);
       if (live.att.outcome === 'ok') {
         this.refDecode = (live.att.points[0] as LatencyPoint).decodeTps.median;
         this.refShared = live.att.sharedPeakMiB;
@@ -394,6 +397,15 @@ export class Tuner {
       }
       cap.candidates.push(this.min);
     }
+    await this.search(cap, this.input.space.base(kv), (e, l) => this.screenWork(e, l));
+  }
+
+  /**
+   * Largest candidate that loads with `variant`: the top unknown one first (the estimate or the
+   * engine's own report is usually close), then a binary search. A launch that is the largest if it
+   * loads (the next candidate is known not to) also runs `provenWork`.
+   */
+  private async search(cap: Capacity, variant: Variant, provenWork: Work): Promise<void> {
     let tried = false;
     for (;;) {
       const cands = cap.candidates;
@@ -407,31 +419,39 @@ export class Tuner {
       const ctx = cands[next] as number;
       // If it loads it is the largest (the next candidate is known not to, or there is none): screen it now.
       const provenMax = next === hi - 1;
-      const live = await this.launch('capacity', this.input.space.base(kv), ctx, provenMax ? (e, l) => this.screenWork(e, l) : undefined);
+      const live = await this.launch('capacity', variant, ctx, provenMax ? provenWork : undefined);
       if (!live) {
-        if (okIdx < 0) cap.skipped = 'budget';
+        cap.skipped = 'budget';
         break;
       }
       cap.status.set(ctx, live.att.outcome === 'ok');
-      this.applyHint(cap, live.hint);
+      cap.launched.add(ctx);
+      if (live.sweep) this.addCombination(live);
+      // The engine said how much fits: its exact capacity is the next candidate to try.
+      if (this.applyHint(cap, live.hint)) tried = false;
     }
     const okIdx = this.highestOk(cap);
-    if (okIdx >= 0) cap.measuredMax = cap.candidates[okIdx] as number;
+    if (okIdx < 0) return;
+    cap.measuredMax = cap.candidates[okIdx] as number;
+    cap.inferred = !cap.launched.has(cap.measuredMax);
   }
 
   private highestOk(cap: Capacity): number {
     return cap.candidates.reduce((m, c, i) => (cap.status.get(c) === true ? i : m), -1);
   }
 
-  /** vLLM reports how many tokens its KV cache holds: candidates above are impossible, the exact capacity is one. */
-  private applyHint(cap: Capacity, hint: number | undefined): void {
-    if (hint === undefined) return;
+  /**
+   * vLLM reports how many tokens its KV cache holds: candidates above are impossible, the exact
+   * capacity (rounded down to 1K) becomes one. True when that added a candidate.
+   */
+  private applyHint(cap: Capacity, hint: number | undefined): boolean {
+    if (hint === undefined) return false;
     for (const c of cap.candidates) if (c > hint) cap.status.set(c, false);
     const exact = Math.floor(hint / 1024) * 1024;
-    if (exact >= this.min && exact <= this.cap && !cap.candidates.includes(exact)) {
-      cap.candidates.push(exact);
-      cap.candidates.sort((a, b) => a - b);
-    }
+    if (exact < this.min || exact > this.cap || cap.candidates.includes(exact)) return false;
+    cap.candidates.push(exact);
+    cap.candidates.sort((a, b) => a - b);
+    return true;
   }
 
   // ---- launches -------------------------------------------------------------------------------
@@ -678,14 +698,18 @@ export class Tuner {
     }
   }
 
-  /** vLLM: one step above the largest context with --enforce-eager (frees the CUDA graph memory). */
+  /**
+   * vLLM: --enforce-eager frees the CUDA graph memory for the KV cache. Searched (one step up, then
+   * the capacity vLLM reports) with the most compact KV, only to go beyond the largest context; the
+   * combination found is measured on the same launch.
+   */
   private async eager(fitting: readonly TuneKvType[]): Promise<void> {
     const best = Math.max(...fitting.map((kv) => this.maxOf(kv)));
     if (best >= this.cap) return;
     const kv = fitting[fitting.length - 1] as TuneKvType;
     const variant: Variant = { ...this.input.space.base(kv), eager: true };
-    const live = await this.launch('capacity', variant, Math.min(this.cap, best * 2), (e, l) => this.sweepWork(e, l, []));
-    if (live?.sweep) this.addCombination(live);
+    const cap: Capacity = { kv, candidates: [best, Math.min(this.cap, best * 2)], status: new Map([[best, true]]), launched: new Set(), inferred: false };
+    await this.search(cap, variant, (e, l) => this.sweepWork(e, l, []));
   }
 
   /** Same prompt, greedy: the most precise KV that fits vs the recommended one. An indication only. */
