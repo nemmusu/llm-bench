@@ -33,6 +33,9 @@ const outDir = path.join(root, '.qa', 'mockups');
 const RESULT_ID = '01K6Y7Q2ZC4M8N3B5V9R1T0XWE';
 const COMPARE_A = '01K6TZ5G1H4J7K2L8Z3X6C9VBN';
 const FAILED_ID = '01K6NA2S5D8F1G4H7J3K6L9ZXC';
+// Long conversations before and after a configuration change (written by fakeWorld from COMPARE_A).
+const TEAM_BEFORE = '01K6Z0PR1MA00000000000000A';
+const TEAM_NOW = '01K6Z1N0W0000000000000000B';
 
 const curated = JSON.parse(readFileSync(path.join(root, 'resources', 'curated-models.json'), 'utf8'));
 /** The curated reference model, served by the fake Hugging Face (not on the PC: it is previewed before its download). */
@@ -113,7 +116,80 @@ const SCREENS = [
   { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
   { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
   { n: 19, name: 'serve-ready', route: '/', wait: 'Pronto a misurare', act: openServeReady, after: stopServers },
+  { n: 20, name: 'long-conversations', route: `/results/${TEAM_NOW}`, wait: 'Conversazioni lunghe', act: showLongConversations, small: true, full: true },
+  { n: 21, name: 'compare-words', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', full: true },
+  { n: 22, name: 'sheet-dialog', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', act: openSheetDialog },
+  { n: 23, name: 'sheet-html', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', act: openSheetHtml, full: true },
 ];
+
+/** The "Conversazioni lunghe" section of a result, scrolled into view. */
+async function showLongConversations(page) {
+  await page.getByRole('region', { name: 'Conversazioni lunghe', exact: true }).scrollIntoViewIfNeeded();
+}
+
+/** "Scheda da condividere" from the Compare page, with the optional fields filled in. */
+async function openSheetDialog(page) {
+  await page.getByRole('button', { name: 'Scheda da condividere' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Scheda da condividere' });
+  await dialog.getByLabel('Nome del servizio').fill('Assistente del team');
+  await dialog.getByLabel('Indirizzo').fill('http://server-gpu:8000/v1');
+  await dialog.getByLabel('Note').fill('Riavvio automatico ogni lunedì alle 6. Per problemi scrivere a #team-ai.');
+}
+
+/** The exported HTML sheet itself (browser mode saves it as a download), opened as a page. */
+async function openSheetHtml(page) {
+  await openSheetDialog(page);
+  await page.getByRole('dialog').getByRole('radio', { name: /Pagina HTML/ }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Salva la scheda' }).click();
+  const file = path.join(os.tmpdir(), `gpubench-mockup-sheet-${process.pid}.html`);
+  await (await download).saveAs(file);
+  await page.goto(pathToFileURL(file).href);
+  await page.getByText('Il contesto si legge una volta sola').first().waitFor({ timeout: 10000 });
+}
+
+/** A Stat over measured values (as the core stores it). */
+function stat(values) {
+  const n = values.length;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mean = values.reduce((x, y) => x + y, 0) / n;
+  const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  const stddev = n > 1 ? Math.sqrt(values.reduce((x, y) => x + (y - mean) ** 2, 0) / (n - 1)) : 0;
+  return { n, median, mean, min: sorted[0], max: sorted[n - 1], stddev, cv: mean ? stddev / mean : 0, values };
+}
+
+/** One level of long conversations at 200 000 tokens (the numbers of the team page the user shared). */
+function level(sessions, o) {
+  return {
+    sessions,
+    depth: 200000,
+    turns: 3,
+    outputTokens: 256,
+    followupTokens: 256,
+    firstTurn: { ttftMs: stat(o.first), prefillTps: stat(o.prefill), queueWaitMs: stat(o.queue), decodeTps: stat(o.decode) },
+    laterTurns: { ttftMs: stat(o.later), cachedShare: stat(o.share), decodeTps: stat(o.decode) },
+    aggregatePrefillTps: o.read,
+    queueEstimated: true,
+    requests: sessions * 3,
+    errors: 0,
+  };
+}
+
+/** Two vLLM runs with long conversations, before and after a configuration change. */
+function teamRuns(base) {
+  const before = structuredClone(base);
+  Object.assign(before, { id: TEAM_BEFORE, createdAt: '2026-10-06T08:00:00.000Z', finishedAt: '2026-10-06T08:20:00.000Z' });
+  before.metrics.sessions = [level(1, { first: [247000], prefill: [795], queue: [0], decode: [27.4], later: [246000, 246500], share: [0, 0], read: 795 })];
+  before.metrics.kvCapacity = { tokens: 399806, maxConcurrencyAtTokens: { tokens: 200000, concurrency: 1.99 } };
+  const now = structuredClone(base);
+  Object.assign(now, { id: TEAM_NOW, createdAt: '2026-10-07T08:00:00.000Z', finishedAt: '2026-10-07T08:22:00.000Z' });
+  now.metrics.sessions = [
+    level(1, { first: [113000], prefill: [1763], queue: [0], decode: [31.7], later: [1000, 1000], share: [0.997, 0.997], read: 1763 }),
+    level(2, { first: [112000, 222000], prefill: [1785, 1780], queue: [0, 108000], decode: [18.4, 18.4], later: [5400, 5400, 5400, 5400], share: [0.975, 0.975, 0.975, 0.975], read: 1332 }),
+  ];
+  now.metrics.kvCapacity = { tokens: 889820, maxConcurrencyAtTokens: { tokens: 200000, concurrency: 4.45 } };
+  return [before, now];
+}
 
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
 async function fakeWorld(dataDir) {
@@ -149,6 +225,8 @@ async function fakeWorld(dataDir) {
   for (const f of readdirSync(seeds).filter((x) => x.endsWith('.json'))) {
     writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname()));
   }
+  const base = JSON.parse(readFileSync(path.join(results, readdirSync(results).find((f) => f.includes(COMPARE_A))), 'utf8'));
+  for (const run of teamRuns(base)) writeFileSync(path.join(results, `${run.createdAt.slice(0, 10)}_08-00-00_${run.id}.json`), JSON.stringify(run, null, 2));
   writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
   const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
   writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
@@ -224,7 +302,8 @@ async function shoot(page, file, { full } = {}) {
     // The page scrolls inside <main>: grow the viewport to the content so one image shows it all.
     const h = await page.evaluate(() => {
       const main = document.getElementById('main');
-      return Math.ceil((main?.scrollHeight ?? 900) + (main?.getBoundingClientRect().top ?? 40));
+      // App pages scroll inside <main>; a plain document (the exported sheet) scrolls itself.
+      return main ? Math.ceil(main.scrollHeight + main.getBoundingClientRect().top) : document.documentElement.scrollHeight;
     });
     const vp = page.viewportSize();
     await page.setViewportSize({ width: vp.width, height: Math.max(vp.height, h) });

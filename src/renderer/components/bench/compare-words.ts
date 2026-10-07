@@ -140,5 +140,9 @@ export function rowWords(r: WordsRow, f: Pick<Formatters, 't' | 'number' | 'perc
       good: before,
     };
   }
+  // From nothing (e.g. 0% of the context reused): no ratio, both values in words.
+  if (r.a === 0 && r.b !== undefined && r.b !== 0) {
+    return { change: Infinity, text: f.t('longConversations.compare.fromZero', { before: r.format(r.a), now: r.format(r.b) }), direction: 'up', good: r.higherIsBetter };
+  }
   return deltaWords(r.a, r.b, r, f);
 }

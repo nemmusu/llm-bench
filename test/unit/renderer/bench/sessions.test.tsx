@@ -44,7 +44,7 @@ describe('Conversazioni lunghe: words and table', () => {
       'Errori (richieste)',
     ]);
     expect(t.rows).toEqual([
-      ['1', '1763', '1 min 53 s', '0 ms (stima)', '1,00 s', '99,7%', '31,7', '0'],
+      ['1', '1763', '1 min 53 s', '0 ms', '1,00 s', '99,7%', '31,7', '0'],
       ['2', '1332', '2 min 47 s', '1 min 48 s (stima)', '5,40 s', '97,5%', '18,4', '0'],
     ]);
     expect(t.estimated).toBe(true);

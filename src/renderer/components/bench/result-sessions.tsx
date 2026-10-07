@@ -16,7 +16,7 @@ function Table({ table, caption }: { table: SessionsTable; caption: string }) {
         <thead>
           <tr>
             {table.head.map((h, i) => (
-              <th key={h} scope="col" className={`h-9 min-w-24 border-b border-border px-3 py-2 align-bottom text-xs font-medium text-fg-3 first:pl-card last:pr-card ${i === 0 ? 'text-left' : 'text-right'}`}>
+              <th key={h} scope="col" className={`h-9 min-w-28 border-b border-border px-3 py-2 align-bottom text-xs font-medium text-fg-3 first:pl-card last:pr-card ${i === 0 ? 'text-left' : 'text-right'}`}>
                 {h}
               </th>
             ))}

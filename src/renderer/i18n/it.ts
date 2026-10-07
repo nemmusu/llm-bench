@@ -1367,6 +1367,7 @@ export const it = {
       rereadBefore: 'prima riletto da capo, ora {value}',
       rereadNow: 'prima {value}, ora riletto da capo',
       reread: 'riletto da capo',
+      fromZero: 'prima {before}, ora {now}',
       before: 'Prima',
       now: 'Ora',
     },
@@ -1425,8 +1426,6 @@ export const it = {
       pc: 'PC',
       launch: 'Configurazione',
       defaults: 'impostazioni predefinite',
-      context: 'Contesto',
-      contextValue: '{n} token',
       commandIntro: 'Il comando esatto con cui è stato avviato (password e chiavi oscurate):',
     },
     cache: {

@@ -33,6 +33,7 @@ export function reportToMarkdown(report: Report, labels: { powershell: string; b
     if (s.callouts) for (const c of s.callouts) out.push(`- **${mdText(c.title)}**: ${mdText(c.body)}`);
     if (s.callouts) out.push('');
     if (s.table) out.push(...table(s.table), '');
+    for (const para of s.after ?? []) out.push(mdText(para), '');
     if (s.code) {
       for (const [shell, lang] of [
         ['powershell', 'powershell'],

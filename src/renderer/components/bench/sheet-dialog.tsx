@@ -65,6 +65,10 @@ export function SheetDialog({ open, onOpenChange, run, before }: SheetDialogProp
           <Field label={t('sheet.notes')} hint={t('sheet.optional')}>
             {({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} value={notes} placeholder={t('sheet.notesPlaceholder')} onChange={(e) => setNotes(e.target.value)} />}
           </Field>
+          {/* The radio group is named by its own label; this one is for the eye. */}
+          <p aria-hidden className="-mb-2 text-sm font-medium text-fg">
+            {t('sheet.format')}
+          </p>
           <SegmentedControl<SheetFormat>
             label={t('sheet.format')}
             value={format}

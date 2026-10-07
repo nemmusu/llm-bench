@@ -29,6 +29,8 @@ export interface ReportSection {
   paragraphs?: string[];
   /** Term → explanation (glossaries). */
   definitions?: { term: string; text: string }[];
+  /** Paragraphs after the table (and before the command). */
+  after?: string[];
   table?: ReportTable;
   callouts?: ReportCallout[];
   code?: { powershell: string; bash: string };

@@ -44,6 +44,7 @@ export function reportToHtml(report: Report, opts: { lang: string; labels: { pow
       if (s.definitions) parts.push(`<dl>${s.definitions.map((d) => `<dt>${escapeHtml(d.term)}</dt><dd>${escapeHtml(d.text)}</dd>`).join('')}</dl>`);
       for (const c of s.callouts ?? []) parts.push(`<div class="callout"><b>${escapeHtml(c.title)}</b>${escapeHtml(c.body)}</div>`);
       if (s.table) parts.push(table(s.table));
+      for (const para of s.after ?? []) parts.push(`<p>${escapeHtml(para)}</p>`);
       if (s.code) {
         for (const shell of ['powershell', 'bash'] as const) {
           parts.push(`<p class="label">${escapeHtml(opts.labels[shell])}</p><pre><code>${escapeHtml(s.code[shell])}</code></pre>`);

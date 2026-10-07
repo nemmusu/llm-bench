@@ -72,12 +72,14 @@ export function sessionsTable(points: readonly SessionsPoint[], f: SessionsForma
   const rows = sessionsRows(points);
   // Called with at least one level; every level of a step has the same depth.
   const depth = (points[0] as SessionsPoint).depth;
-  const estimated = rows.some((r) => r.queueEstimated && r.queueMs !== undefined);
+  // A wait of 0 (one conversation alone) is no estimate worth marking.
+  const marked = (r: SessionsRow) => r.queueEstimated && (r.queueMs ?? 0) > 0;
+  const estimated = rows.some(marked);
   const value: Record<SessionsColumn, (r: SessionsRow) => string | undefined> = {
     sessions: (r) => integer(r.sessions),
     read: (r) => (r.read === undefined ? undefined : integer(r.read)),
     firstWait: (r) => (r.firstWaitMs === undefined ? undefined : duration(r.firstWaitMs)),
-    queue: (r) => (r.queueMs === undefined ? undefined : `${duration(r.queueMs)}${r.queueEstimated ? ` (${t('longConversations.estimated')})` : ''}`),
+    queue: (r) => (r.queueMs === undefined ? undefined : `${duration(r.queueMs)}${marked(r) ? ` (${t('longConversations.estimated')})` : ''}`),
     laterWait: (r) => (r.laterWaitMs === undefined ? undefined : duration(r.laterWaitMs)),
     reuse: (r) => (r.reuse === undefined ? undefined : percent(r.reuse, 1)),
     write: (r) => (r.write === undefined ? undefined : number(r.write, 1)),

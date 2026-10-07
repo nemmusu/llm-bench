@@ -44,8 +44,9 @@ describe('Scheda da condividere: content', () => {
       ['Nome del servizio', 'Assistente del team'],
       ['Indirizzo', 'http://gpu:8000/v1'],
     ]);
-    expect(service?.paragraphs).toEqual(['Riavvio ogni lunedì.', 'Scrivere a Marta.']);
-    expect(setup?.table?.rows.map((x) => x[0])).toEqual(['Modello', 'Motore', 'Scheda video', 'PC', 'Configurazione', 'Contesto']);
+    expect(service?.after).toEqual(['Riavvio ogni lunedì.', 'Scrivere a Marta.']);
+    expect(setup?.table?.rows.map((x) => x[0])).toEqual(['Modello', 'Motore', 'Scheda video', 'PC', 'Configurazione']);
+    expect(setup?.after).toEqual(['Il comando esatto con cui è stato avviato (password e chiavi oscurate):']);
     expect(setup?.code?.bash).toBe(teamRuns().now.launch.display.bash);
     expect(speed?.paragraphs?.[0]).toBe('Con 1 sessione il primo messaggio aspetta 1 min 53 s per leggere 200.000 token; dal secondo il server riusa il 99,7% del contesto e l’attesa scende a 1,00 s.');
     expect(speed?.table?.head[2]).toBe('Attesa prima risposta a 200.000 token');
@@ -61,7 +62,8 @@ describe('Scheda da condividere: content', () => {
     expect(row(/^Attesa prima risposta a/)?.slice(1)).toEqual(['4 min 07 s', '1 min 53 s', '2,2 volte più breve']);
     expect(row(/^Attesa risposte successive/)?.slice(1)).toEqual(['riletto da capo (4 min 06 s)', '1,00 s', 'prima riletto da capo, ora 1,00 s']);
     expect(glossary?.definitions?.map((d) => d.term)).toEqual(['Lettura del contesto', 'Attesa prima risposta', 'Attesa in coda', 'Contesto riusato', 'Velocità di scrittura']);
-    expect(glossary?.paragraphs?.[0]).toMatch(/È un’approssimazione\.$/);
+    expect(glossary?.after?.[0]).toMatch(/È un’approssimazione\.$/);
+    expect(row(/^Contesto riusato/)?.slice(1)).toEqual(['0%', '99,7%', 'prima 0%, ora 99,7%']);
     expect(r.sentence).toBe('Qwen3-8B-FP8 con vLLM v0.12.0 (CUDA) su RTX 5090: legge il contesto a 1763 token/s e scrive a 31,7 token/s per conversazione (prova con 200.000 token).');
     expect(r.footer).toMatch(/^Scheda creata il .* con GPU Bench 0\.3\.0\./);
     expect(r.meta.at(-1)).toMatch(/^misurato il /);
@@ -117,7 +119,6 @@ describe('Scheda da condividere: content', () => {
     expect(rows['Scheda video']).toBe('–');
     expect(rows['Motore']?.endsWith(' · vllm/vllm-openai:v0.12.0')).toBe(true);
     expect(rows['Configurazione']).toBe('impostazioni predefinite');
-    expect(rows['Contesto']).toBeUndefined();
     expect(r.meta[1]).toBe('–');
     expect(r.sentence).toContain(' su –:');
     const basic = structuredClone(seeded(IDS.full));
@@ -185,9 +186,11 @@ describe('Scheda da condividere: never a secret', () => {
   });
 
   it('report renderers: paragraphs and definitions', () => {
-    const report = { title: 'T', meta: [], sections: [{ title: 'S', paragraphs: ['one | two', 'three'], definitions: [{ term: 'a_b', text: 'c' }] }], footer: 'F' };
+    const report = { title: 'T', meta: [], sections: [{ title: 'S', paragraphs: ['one | two', 'three'], definitions: [{ term: 'a_b', text: 'c' }], table: { head: ['h'], rows: [['v']], numericFrom: 1 }, after: ['after it'] }], footer: 'F' };
     const md = reportToMarkdown(report, { powershell: 'PS', bash: 'sh' });
     expect(md).toContain('one \\| two\n\nthree\n\n- **a\\_b**: c');
-    expect(reportToHtml(report, { lang: 'it', labels: { powershell: 'PS', bash: 'sh' } })).toContain('<p>one | two</p><p>three</p><dl><dt>a_b</dt><dd>c</dd></dl>');
+    expect(md).toContain('| v |\n\nafter it\n');
+    expect(reportToHtml(report, { lang: 'it', labels: { powershell: 'PS', bash: 'sh' } })).toContain('<p>one | two</p><p>three</p><dl><dt>a_b</dt><dd>c</dd></dl><table>');
+    expect(reportToHtml(report, { lang: 'it', labels: { powershell: 'PS', bash: 'sh' } })).toContain('</table><p>after it</p>');
   });
 });

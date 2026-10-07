@@ -59,6 +59,7 @@ function scrub(report: Report): Report {
       ...(s.text ? { text: r(s.text) } : {}),
       ...(s.paragraphs ? { paragraphs: s.paragraphs.map(r) } : {}),
       ...(s.definitions ? { definitions: s.definitions.map((d) => ({ term: r(d.term), text: r(d.text) })) } : {}),
+      ...(s.after ? { after: s.after.map(r) } : {}),
       ...(s.table ? { table: { ...s.table, head: s.table.head.map(r), rows: s.table.rows.map((row) => row.map(r)) } } : {}),
       ...(s.code ? { code: { powershell: r(s.code.powershell), bash: r(s.code.bash) } } : {}),
     })),
@@ -181,11 +182,10 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
             },
           }
         : {}),
-      ...(notes ? { paragraphs: notes.split(/\r?\n\s*\r?\n/).map((p) => p.replace(/\s*\r?\n\s*/g, ' ')) } : {}),
+      ...(notes ? { after: notes.split(/\r?\n\s*\r?\n/).map((p) => p.replace(/\s*\r?\n\s*/g, ' ')) } : {}),
     });
   }
 
-  const ctx = run.launch.params.contextSize ?? run.launch.params.maxModelLen;
   sections.push({
     title: t('sheet.sections.setup'),
     table: {
@@ -197,10 +197,9 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
         [t('sheet.facts.gpu'), m.gpu],
         [t('sheet.facts.pc'), m.pc],
         [t('sheet.facts.launch'), launchSummaryParts(run, f).slice(2).join(' · ') || t('sheet.facts.defaults')],
-        ...(ctx !== undefined ? [[t('sheet.facts.context'), t('sheet.facts.contextValue', { n: integer(ctx) })]] : []),
       ],
     },
-    paragraphs: [t('sheet.facts.commandIntro')],
+    after: [t('sheet.facts.commandIntro')],
     code: run.launch.display,
   });
 
@@ -210,7 +209,7 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
   }
   if (input.before) sections.push(comparisonSection(input.before, run, f));
   if (sessionsOf(run).length) {
-    sections.push({ title: t('sheet.sections.glossary'), definitions: sessionsGlossary(f), paragraphs: [t('longConversations.proportional')] });
+    sections.push({ title: t('sheet.sections.glossary'), definitions: sessionsGlossary(f), after: [t('longConversations.proportional')] });
   }
 
   const solo = soloPoint(sessionsOf(run));

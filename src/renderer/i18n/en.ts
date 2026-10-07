@@ -1366,6 +1366,7 @@ export const en: Messages = {
       rereadBefore: 'before re-read from scratch, now {value}',
       rereadNow: 'before {value}, now re-read from scratch',
       reread: 're-read from scratch',
+      fromZero: 'before {before}, now {now}',
       before: 'Before',
       now: 'Now',
     },
@@ -1424,8 +1425,6 @@ export const en: Messages = {
       pc: 'PC',
       launch: 'Configuration',
       defaults: 'default settings',
-      context: 'Context',
-      contextValue: '{n} tokens',
       commandIntro: 'The exact command it was started with (passwords and keys masked):',
     },
     cache: {
