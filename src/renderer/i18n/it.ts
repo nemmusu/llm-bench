@@ -1292,6 +1292,7 @@ export const it = {
     testsOne: '1 test',
     lastTest: 'ultimo {date}',
     openTests: 'Mostra i {n} test di {model}',
+    openTestsOne: 'Mostra il test di {model}',
     sources: {
       title: 'Test di questa configurazione',
       test: 'Test',

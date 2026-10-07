@@ -70,8 +70,8 @@ export function SourcesDialog({ entry, depth, onOpenChange }: SourcesDialogProps
           meta: NUMERIC,
           sortUndefined: 'last',
           cell: (c) => {
-            const p = c.row.original.parallel;
-            if (!p) return dash;
+            if (c.getValue() === undefined) return dash;
+            const p = c.row.original.parallel!;
             const each = p.perUserTps !== undefined ? `${t('configs.perUser', { tps: integer(p.perUserTps) })} · ` : '';
             return (
               <span className="flex flex-col items-end leading-5">

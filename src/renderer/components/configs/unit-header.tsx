@@ -7,9 +7,10 @@ export const NUMERIC: DataTableColumnMeta = { numeric: true, className: 'px-2' }
 export function UnitHeader({ text }: { text: string }) {
   const m = /^(.*\S)\s+\(([^()]+)\)$/.exec(text);
   if (!m) return <>{text}</>;
+  // The name may wrap ("Lettura / prompt"): many columns share the width of a laptop screen.
   return (
     <span className="inline-flex flex-col leading-4">
-      <span>{m[1]}</span>
+      <span className="whitespace-normal">{m[1]}</span>
       <span className="text-[11px] font-normal text-fg-3">({m[2]})</span>
     </span>
   );

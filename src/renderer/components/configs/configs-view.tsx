@@ -42,6 +42,12 @@ interface Filters {
 
 const NO_FILTERS: Filters = { model: ALL, engine: ALL, minContext: ALL };
 
+/** A table row: the configuration and its numbers at the compared depth (none when not measured there). */
+interface Row {
+  entry: ConfigEntry;
+  point: DepthPoint | undefined;
+}
+
 /** "Usa questo preset" of a row: the newest test that measured the compared depth, loaded on demand. */
 function RowPreset({ entry, depth }: { entry: ConfigEntry; depth: number | undefined }) {
   const { t } = useI18n();
@@ -76,22 +82,18 @@ export function ConfigsView() {
   const choices = useMemo(() => depthChoices(entries), [entries]);
   const depth = picked !== undefined && choices.includes(picked) ? picked : defaultDepth(entries, choices);
   const set = (patch: Partial<Filters>) => setFilters((cur) => ({ ...cur, ...patch }));
+  // New rows for every depth: the table caches cell values per row, so the numbers must come with them.
+  const rows = useMemo(() => entries.map((entry): Row => ({ entry, point: pointAt(entry, depth) })), [entries, depth]);
 
   const columns = useMemo(() => {
-    const col = columnHelper<ConfigEntry>();
+    const col = columnHelper<Row>();
     const dash = <span className="text-fg-3">–</span>;
     /** A number at the compared depth; the column only when some configuration has it. */
-    const atDepth = (id: string, header: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<ConfigEntry>[] =>
-      entries.some((e) => {
-        const p = pointAt(e, depth);
-        return p !== undefined && pick(p) !== undefined;
-      })
+    const atDepth = (id: string, header: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<Row>[] =>
+      rows.some((r) => r.point !== undefined && pick(r.point) !== undefined)
         ? [
             col.accessor(
-              (e) => {
-                const p = pointAt(e, depth);
-                return p && pick(p);
-              },
+              (r) => r.point && pick(r.point),
               {
                 id,
                 header: () => <UnitHeader text={t(header)} />,
@@ -107,19 +109,19 @@ export function ConfigsView() {
         : [];
     return [
       // The model and, under it, the engine (as in the Test list).
-      col.accessor((e) => summaryModelLabel({ modelName: e.model.name, quant: e.model.quant }), {
+      col.accessor(({ entry: e }) => summaryModelLabel({ modelName: e.model.name, quant: e.model.quant }), {
         id: 'model',
         meta: { className: 'min-w-44 max-w-60 whitespace-normal py-2' },
         header: t('configs.columns.model'),
         cell: (c) => (
           <span className="flex flex-col leading-5">
             <span className="font-medium text-fg">{c.getValue()}</span>
-            <span className="text-xs whitespace-nowrap text-fg-3">{configEngineLabel(c.row.original)}</span>
+            <span className="text-xs whitespace-nowrap text-fg-3">{configEngineLabel(c.row.original.entry)}</span>
           </span>
         ),
       }),
       // Only what differs from the engine's defaults; the context has its own column.
-      col.accessor((e) => configLabelOf(e.engineKind, e.params, f, { context: false, kv: 'custom', tags: e.tags }).text || t('configs.defaults'), {
+      col.accessor(({ entry: e }) => configLabelOf(e.engineKind, e.params, f, { context: false, kv: 'custom', capitalize: false, tags: e.tags }).text || t('configs.defaults'), {
         id: 'config',
         enableSorting: false,
         meta: { className: 'min-w-40 max-w-56 whitespace-normal py-2 leading-5' },
@@ -133,7 +135,8 @@ export function ConfigsView() {
       }),
       ...(entries.some((e) => e.contextSize !== undefined)
         ? [
-            col.accessor('contextSize', {
+            col.accessor((r) => r.entry.contextSize, {
+              id: 'context',
               header: () => <UnitHeader text={t('configs.columns.context')} />,
               meta: NUMERIC,
               sortUndefined: 'last',
@@ -144,7 +147,7 @@ export function ConfigsView() {
             }),
           ]
         : []),
-      col.accessor((e) => pointAt(e, depth)?.decodeTps, {
+      col.accessor((r) => r.point?.decodeTps, {
         id: 'decode',
         header: () => <UnitHeader text={t('configs.columns.decode')} />,
         meta: NUMERIC,
@@ -162,7 +165,8 @@ export function ConfigsView() {
       ...atDepth('ttft', 'configs.columns.ttft', (p) => p.ttftMs, integer),
       ...(entries.some((e) => e.vramPeakMiB !== undefined)
         ? [
-            col.accessor('vramPeakMiB', {
+            col.accessor((r) => r.entry.vramPeakMiB, {
+              id: 'vram',
               header: () => <UnitHeader text={t('configs.columns.vram')} />,
               meta: NUMERIC,
               sortUndefined: 'last',
@@ -174,15 +178,15 @@ export function ConfigsView() {
           ]
         : []),
       // How many tests, and when the last one ran; the tests themselves (with users in parallel) open from here.
-      col.accessor('latest', {
+      col.accessor((r) => r.entry.latest, {
         id: 'tests',
         header: t('configs.columns.tests'),
         cell: (c) => {
-          const e = c.row.original;
+          const e = c.row.original.entry;
           const n = e.sources.length;
           return (
             <span className="flex flex-col items-start leading-5">
-              <Button size="sm" variant="link" onClick={() => setOpen(e)} aria-label={t('configs.openTests', { n, model: e.model.name })}>
+              <Button size="sm" variant="link" onClick={() => setOpen(e)} aria-label={t(countKey(n, 'configs.openTestsOne', 'configs.openTests'), { n, model: e.model.name })}>
                 {t(countKey(n, 'configs.testsOne', 'configs.tests'), { n })}
               </Button>
               <span className="text-xs text-fg-3 tabular-nums" title={date(c.getValue())}>
@@ -194,11 +198,13 @@ export function ConfigsView() {
       }),
       col.display({
         id: 'actions',
+        // Always in sight: on a narrow window the numbers scroll under it.
+        meta: { className: 'sticky right-0 bg-surface shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.18)] group-hover:bg-surface-2' },
         header: () => <span className="sr-only">{t('configs.columns.actions')}</span>,
-        cell: (c) => <RowPreset entry={c.row.original} depth={depth} />,
+        cell: (c) => <RowPreset entry={c.row.original.entry} depth={depth} />,
       }),
-    ] as DataTableColumn<ConfigEntry>[];
-  }, [entries, depth, f, t, number, integer, date]);
+    ] as DataTableColumn<Row>[];
+  }, [rows, entries, depth, f, t, number, integer, date]);
 
   const gpuOptions = (data?.gpus ?? []).map((g) => ({
     value: g.key,
@@ -289,7 +295,7 @@ export function ConfigsView() {
               action={<Button onClick={() => setFilters(NO_FILTERS)}>{t('configs.resetFilters')}</Button>}
             />
           ) : (
-            <DataTable caption={t('configs.caption')} columns={columns} data={entries} getRowId={(e) => e.id} initialSorting={[{ id: 'decode', desc: true }]} />
+            <DataTable caption={t('configs.caption')} columns={columns} data={rows} getRowId={(r) => r.entry.id} initialSorting={[{ id: 'decode', desc: true }]} />
           )}
         </Card>
       )}

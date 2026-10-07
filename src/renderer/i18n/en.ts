@@ -1291,6 +1291,7 @@ export const en: Messages = {
     testsOne: '1 test',
     lastTest: 'last {date}',
     openTests: 'Show the {n} tests of {model}',
+    openTestsOne: 'Show the test of {model}',
     sources: {
       title: 'Tests of this configuration',
       test: 'Test',

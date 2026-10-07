@@ -70,7 +70,7 @@ function provenanceOf(run: RunResult, params: LaunchParams, combo: number | unde
     at !== undefined
       ? points.find((p) => nominalDepth(p.promptTokens) === at)
       : combination
-        ? points.reduce<LatencyPoint | undefined>((deepest, p) => (!deepest || p.promptTokens > deepest.promptTokens ? p : deepest), undefined)
+        ? [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0]
         : headlinePoint(measured(run.metrics.latency)) ?? points[0];
   const contextSize =
     combination?.maxContext ??
