@@ -176,6 +176,19 @@ describe('sources of a run', () => {
 describe('merging sources into configurations', () => {
   const at = (h: number) => `2026-10-0${h}T10:00:00.000Z`;
 
+  it('a test that spilled to shared memory is its own entry, marked: the clean numbers of the same settings stay clean', () => {
+    const args = ['-c', '262144', '-fa', 'auto'];
+    const clean = run('C1', at(1), args, { metrics: { ...makeRun().metrics, latency: [point(512, 53.7)] } });
+    const spilled = run('S1', at(2), args, { validity: ['shared_memory_spill'], metrics: { ...makeRun().metrics, latency: [point(512, 3.5)] } });
+    const entries = mergeSources([clean, spilled].map((r) => sourcesOf(r)!));
+    expect(entries.map((e) => [e.sources.map((s) => s.runId), e.spill, e.points[0]!.decodeTps])).toEqual([
+      [['S1'], true, 3.5],
+      [['C1'], undefined, 53.7],
+    ]);
+    expect(entries[0]!.sources[0]!.spill).toBe(true);
+    expect(entries[0]!.id).not.toBe(entries[1]!.id);
+  });
+
   it('merges the same settings in another order: medians per depth, every test, highest VRAM', () => {
     const a = run('R1', at(1), ['-c', '8192', '-ub', '1024', '-fa', 'on'], { metrics: { ...makeRun().metrics, latency: [point(512, 200, 8000, 40), point(4096, 180)], vram: { deltaMiB: 4000 } } });
     const b = run('R2', at(3), ['-fa', 'on', '-ub', '1024', '-c', '8192'], { metrics: { ...makeRun().metrics, latency: [point(512, 210, 9000, 44)], vram: { deltaMiB: 4500 }, concurrency: [concurrency(4, 600, 150)] } });

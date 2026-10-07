@@ -69,6 +69,18 @@ describe('fastest per depth and the recommendation', () => {
     expect(recommendedCombination([f16, q8])).toBe(1);
     expect(recommendedCombination([combo('f16', 4096, [], { outcome: 'ok' }), combo('q8_0', 8192, [point(1, 1)], { outcome: 'oom' })])).toBeUndefined();
     expect(recommendedCombination([])).toBeUndefined();
+    // Partly measured (the time ran out): compared at the deepest depth they all have, 64K here …
+    const partQ8 = combo('q8_0', 262_144, [point(1024, 54.8), point(65_536, 46.5)], { partial: 'budget' });
+    const partQ4 = combo('q4_0', 262_144, [point(1024, 50), point(16_384, 99), point(65_536, 40)], { partial: 'budget' });
+    expect(recommendedCombination([partQ4, partQ8])).toBe(1);
+    // … and nothing in common at all: the more precise cache, then the earlier one.
+    const onlyDeep = combo('q4_0', 262_144, [point(65_536, 99)], { partial: 'budget' });
+    const onlyProbe = combo('q8_0', 262_144, [point(1024, 50)], { partial: 'budget' });
+    expect(recommendedCombination([onlyDeep, onlyProbe])).toBe(1);
+    expect(recommendedCombination([onlyProbe, { ...onlyProbe, sweep: [point(2048, 1)] }])).toBe(0);
+    // A screening cut by the time limit is compared on the depths both have.
+    expect(screenBetter([point(1024, 60), point(65_536, 50)], [point(1024, 50), point(65_536, 40), point(262_000, 30)])).toBe(true);
+    expect(screenBetter([point(2048, 60)], [point(1024, 50)])).toBe(false);
     // A sweep cut short is compared where both have a point.
     const short = combo('q4_0', 65536, [point(1024, 300), point(4096, 290)]);
     expect(recommendedCombination([q4, short])).toBe(1);

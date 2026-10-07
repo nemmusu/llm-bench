@@ -89,8 +89,10 @@ export function detailLine(phase: RunPhase, detail: string | undefined, scenario
  * Seconds left: from the plan's estimate while it is plausible, otherwise extrapolated from the
  * progress. Undefined until there is enough to say something honest.
  */
-export function remainingSeconds(elapsedSec: number, progress: number, estimatedSec?: number): number | undefined {
+export function remainingSeconds(elapsedSec: number, progress: number, estimatedSec?: number, core?: { seconds: number; at: number }, now = Date.now()): number | undefined {
   if (progress >= 1) return 0;
+  // The core's own forecast (a tune run), counted down since it was said; re-sent every few seconds.
+  if (core) return Math.max(0, core.seconds - (now - core.at) / 1000);
   if (estimatedSec !== undefined && estimatedSec > elapsedSec) return estimatedSec - elapsedSec;
   // Early progress says little about the rest (loads are short, generation is long).
   if (progress < 0.1 || elapsedSec < 10) return undefined;

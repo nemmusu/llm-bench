@@ -127,6 +127,8 @@ describe('measurements from saved runs', () => {
     expect(samplesOf({ ...normal, metrics: { ...normal.metrics, vram: { deltaMiB: 9100 } } })[0]!.measuredMiB).toBe(9100);
     expect(samplesOf({ ...normal, metrics: { ...normal.metrics, vram: {} } })).toEqual([]);
     expect(samplesOf({ ...normal, status: 'failed' })).toEqual([]);
+    // A run that spilled did not fit: its dedicated peak is capped at the VRAM (29 349 MiB of a 32 GB card), not what it needed.
+    expect(samplesOf({ ...normal, validity: ['shared_memory_spill'], metrics: { ...normal.metrics, vram: { processPeakMiB: 29_349, sharedPeakMiB: 4666 } } })).toEqual([]);
     expect(samplesOf(tuneRun).map((s) => s.measuredMiB)).toEqual([7000]);
     expect(samplesOf({ ...normal, engine: { kind: 'vllm-docker', name: 'vLLM' } })).toEqual([]);
     expect(samplesOf(makeRun())).toEqual([]);

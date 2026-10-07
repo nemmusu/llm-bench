@@ -13,6 +13,7 @@ import { useConfigs } from '../../lib/queries-configs';
 import { apiErrorData, useRun } from '../../lib/queries-runs';
 import { ErrorCard } from '../bench/error-card';
 import { countKey, MIB_PER_GB, shortGpuName, summaryModelLabel } from '../bench/format';
+import { SpillBadge } from '../bench/spill';
 import { configLabelOf } from '../presets/config-label';
 import { shortDate, tokensShort } from '../presets/format';
 import { PresetActions } from '../presets/preset-actions';
@@ -114,9 +115,11 @@ export function ConfigsView() {
         meta: { className: 'min-w-44 max-w-60 whitespace-normal py-2' },
         header: t('configs.columns.model'),
         cell: (c) => (
-          <span className="flex flex-col leading-5">
+          <span className="flex flex-col items-start leading-5">
             <span className="font-medium text-fg">{c.getValue()}</span>
             <span className="text-xs whitespace-nowrap text-fg-3">{configEngineLabel(c.row.original.entry)}</span>
+            {/* Its tests spilled to shared memory: these numbers are not the card's. */}
+            {c.row.original.entry.spill && <SpillBadge className="mt-1" />}
           </span>
         ),
       }),

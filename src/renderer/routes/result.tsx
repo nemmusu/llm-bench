@@ -1,10 +1,14 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Copy, GitCompareArrows } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { configParamsOf } from '../../contract/configs';
 import type { StartRunRequest } from '../../contract/api';
+import { launchParamsSchema, type LaunchParams } from '../../contract/engines';
 import type { RunResult } from '../../contract/results';
+import { saveDraft } from '../components/bench/run-context';
+import { recommendedIndex } from '../components/tune/tune-logic';
 import { ErrorCard } from '../components/bench/error-card';
 import { ExportMenu } from '../components/bench/export-menu';
 import { engineLabelOf, modelLabelOf, shortGpuName } from '../components/bench/format';
@@ -28,24 +32,34 @@ import { apiErrorData, useRun } from '../lib/queries-runs';
 
 const statusTone = { completed: 'success', failed: 'danger', cancelled: 'neutral' } as const;
 
-/** The configuration the run measured (a tune run: its recommended combination), in configuration words. */
+/**
+ * The configuration the run measured (a tune run: its recommended combination, partly measured or
+ * not), in configuration words. A tune run that measured nothing has no configuration to show: its
+ * own launch record is only one of its launches.
+ */
 function ConfigLine({ run, combo }: { run: RunResult; combo: number | undefined }) {
   const f = useI18n();
   const combination = combo === undefined ? undefined : run.tuning?.combinations[combo];
-  const launch = combination ? { params: combination.params, argv: combination.command.argv } : run.launch;
-  const params = configParamsOf({
-    engineKind: run.engine.kind,
-    params: launch.params,
-    argv: launch.argv,
-    image: run.engine.image,
-    blockCount: run.model.facts?.blockCount,
-    modelContext: run.model.facts?.contextLength,
-  });
-  const label = configLabelOf(run.engine.kind, params, f, { tags: combination?.tags });
+  const launch = combination ? { params: combination.params, argv: combination.command.argv } : run.tuning ? undefined : run.launch;
+  const label = launch
+    ? configLabelOf(
+        run.engine.kind,
+        configParamsOf({
+          engineKind: run.engine.kind,
+          params: launch.params,
+          argv: launch.argv,
+          image: run.engine.image,
+          blockCount: run.model.facts?.blockCount,
+          modelContext: run.model.facts?.contextLength,
+        }),
+        f,
+        { tags: combination?.tags },
+      ).text
+    : '';
   return (
     <span className="block text-sm text-fg-2">
       <span className="font-medium text-fg">{engineLabelOf(run.engine)}</span>
-      {label.text && <span>{` · ${label.text}`}</span>}
+      {label && <span>{` · ${label}`}</span>}
     </span>
   );
 }
@@ -88,6 +102,7 @@ function ResultView({ run }: { run: RunResult }) {
   const f = useI18n();
   const { t, dateTime } = f;
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const flow = useStartFlow();
   // "Usa queste impostazioni" / "Avvia solo il server così": the same preset logic as everywhere (presets/).
   const launch = usePreset(run);
@@ -113,6 +128,17 @@ function ResultView({ run }: { run: RunResult }) {
     startAgain({ profile: 'tune', tune: { budget: 'fast', fidelity: false, ...(m ? { goal: 'multi' as const, users: m.users, perUserContext: m.perUserContext } : {}) } });
   };
 
+  /** A run that spilled: the Benchmark page with this model and "Trova le impostazioni migliori", nothing else carried over. */
+  const findSettings = () => {
+    if (!rerun) return;
+    const { provenance: _from, ...draft } = rerun.draft;
+    saveDraft(qc, { ...draft, profile: 'tune', params: launchParamsSchema.parse({}) });
+    void navigate({ to: '/' });
+  };
+
+  /** A run that spilled: the same test with what would fit (the q4_0 cache, or the largest context that fits). */
+  const retryWith = (patch: Partial<LaunchParams>) => startAgain({ params: { ...run.launch.params, ...patch } });
+
   const errorCard = run.error ? (
     <ErrorCard
       error={run.error}
@@ -127,8 +153,10 @@ function ResultView({ run }: { run: RunResult }) {
     />
   ) : undefined;
   const gpu = run.hardware.gpus[0];
-  // A "Trova le impostazioni migliori" test is used through its recommended combination.
-  const combo = run.tuning?.recommended;
+  // A "Trova le impostazioni migliori" test is used through its recommended combination (partly measured
+  // when time ran out); never through its own launch record. Nothing measured: no preset at all.
+  const combo = run.tuning ? recommendedIndex(run.tuning) : undefined;
+  const presets = run.status === 'completed' && (!run.tuning || combo !== undefined);
 
   return (
     <Page
@@ -157,7 +185,7 @@ function ResultView({ run }: { run: RunResult }) {
       }
       actions={
         <>
-          {run.status === 'completed' && <PresetActions run={run} combo={combo} />}
+          {presets && <PresetActions run={run} combo={combo} />}
           <Button onClick={() => void navigate({ to: '/compare', search: { a: run.id } })}>
             <GitCompareArrows aria-hidden />
             {t('result.compareWith')}
@@ -177,7 +205,7 @@ function ResultView({ run }: { run: RunResult }) {
           {run.tuning ? (
             <TuneOverview run={run as TunedRun} onFullSearch={fullSearch} {...(errorCard ? { errorCard } : {})} />
           ) : (
-            <Overview run={run} onRerun={() => doRerun()} {...(errorCard ? { errorCard } : {})} />
+            <Overview run={run} onRerun={() => doRerun()} onFindSettings={findSettings} onRetry={retryWith} {...(errorCard ? { errorCard } : {})} />
           )}
         </TabsContent>
         <TabsContent value="details">

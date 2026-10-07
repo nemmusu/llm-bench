@@ -167,6 +167,33 @@ export const it = {
     value: 'Provato su questa GPU · {tps} tok/s',
     short: 'Provato · {tps} tok/s',
     tooltip: 'L’hai già misurato il {date}: {tps} tok/s in generazione.',
+    spill: 'Provato: usava la RAM condivisa',
+    spillShort: 'Provato: RAM condivisa',
+    spillTooltip: 'Il {date} non è entrato tutto nella memoria della scheda: Windows ha usato la RAM condivisa e i numeri di quel test non contano.',
+  },
+  spill: {
+    title: 'Il modello non è entrato tutto nella memoria della scheda',
+    shared: 'Windows ha usato {size} di RAM condivisa, per questo va circa {times} volte più lento del normale ({tps} tok/s invece di {normal}).',
+    sharedNoNormal: 'Windows ha usato {size} di RAM condivisa: in questi casi tutto va circa 10–15 volte più lento del normale.',
+    collapse: 'Genera {tps} tok/s invece dei soliti {normal}, circa {times} volte più lento: Windows ha messo una parte del modello nella RAM condivisa.',
+    notReal: 'Questi numeri non sono quelli veri della scheda.',
+    tune: 'Trova le impostazioni migliori',
+    q4: 'Riprova con cache q4_0',
+    context: 'Riprova con meno contesto ({ctx})',
+    kpi: '+ {size} nella RAM condivisa',
+    badge: 'RAM condivisa',
+    badgeHelp: 'Il modello non entrava tutto nella memoria della scheda: Windows ha usato la RAM condivisa e questi numeri sono molto più bassi di quelli veri.',
+    live: {
+      title: 'Sta usando la RAM condivisa: i numeri saranno molto più bassi',
+      shared: 'Il modello non entra tutto nella memoria della scheda: Windows ne ha messo {size} nella RAM del PC. Puoi annullare e riprovare con meno contesto o con la cache q4_0.',
+      collapse: 'Genera {tps} tok/s invece dei soliti {normal}: probabilmente Windows ha messo una parte del modello nella RAM del PC. Puoi annullare e riprovare con meno contesto o con la cache q4_0.',
+      cancel: 'Annulla test',
+    },
+    fix: {
+      q4: 'Usa cache q4_0',
+      context: 'Contesto massimo che entra: {ctx}',
+      applied: 'Impostazioni aggiornate nei parametri avanzati.',
+    },
   },
   codeblock: {
     shell: 'Formato del comando',
@@ -270,6 +297,11 @@ export const it = {
     itl: { label: 'Pausa tra token', help: 'Il tempo tra un token e il successivo mentre scrive. Valori bassi e regolari danno un testo fluido.' },
   },
   validity: {
+    shared_memory_spill: {
+      title: 'Il modello non è entrato tutto nella memoria della scheda',
+      body: 'Windows ha messo una parte del modello nella RAM condivisa del PC, molto più lenta: questi numeri non sono quelli veri della scheda.',
+      action: 'Trova le impostazioni migliori',
+    },
     gpu_shared: {
       title: 'Altri programmi stavano usando la GPU',
       body: 'Durante il test altri programmi occupavano memoria video. I numeri potrebbero essere un po’ più bassi del normale.',
@@ -419,6 +451,14 @@ export const it = {
     partial_offload: {
       title: 'Il modello non entra tutto nella scheda video',
       body: 'Solo {maxGpuLayers} livelli staranno nella memoria video, il resto nella RAM: funziona, ma più lentamente.',
+    },
+    spill_risk: {
+      title: 'Il modello non entra tutto nella scheda video',
+      body: 'Servono circa {need}, ne hai {available} liberi. Windows metterà il resto nella RAM condivisa: tutto sarà molto più lento (circa 10–15 volte) e i numeri non saranno quelli veri della scheda.',
+    },
+    oom_risk: {
+      title: 'Il modello non entra nella scheda video',
+      body: 'Servono circa {need}, ne hai {available} liberi. Con tutti i livelli sulla scheda il motore si fermerà per memoria esaurita.',
     },
     slow_shared_filesystem: {
       title: 'Il modello è su una cartella lenta',
@@ -860,7 +900,7 @@ export const it = {
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variabile',
-      tune: '5–20 min',
+      tune: 'dipende dal modello',
     },
     profileDesc: {
       quick: 'Una misura veloce per farti un’idea: un caricamento e un testo di prova.',
@@ -1144,6 +1184,7 @@ export const it = {
       stabilityGood: 'Ottima',
       stabilityOk: 'Buona',
       stabilityBad: 'Variabile',
+      stabilitySpill: 'Falsata dalla RAM condivisa',
       stabilityHelp: 'Quanto si somigliano le ripetizioni della stessa misura (generazione e lettura del prompt; conta la più variabile). Sotto il 2% di variazione i numeri sono affidabili.',
     },
     kpis: 'Numeri principali',
@@ -1364,9 +1405,10 @@ export const it = {
       budget: 'Quanto cercare',
       budgetHelp: 'Ogni prova avvia il motore con impostazioni diverse. Più prove = più combinazioni confrontate, ma ci vuole di più.',
       fast: 'Veloce',
-      fastTime: '~5 min',
+      fastTime: 'meno combinazioni',
       thorough: 'Accurata',
-      thoroughTime: '~20 min',
+      thoroughTime: 'più combinazioni',
+      modelTime: 'circa {time} per questo modello',
       fastDesc: 'Le impostazioni che contano di più, poche prove.',
       thoroughDesc: 'Più valori per ogni impostazione e più ripetizioni.',
       fidelity: 'Controllo di fedeltà',
@@ -1383,7 +1425,7 @@ export const it = {
       perUserContext: 'Contesto per utente (token)',
       perUserContextHelp: 'Quanto testo il server tiene a mente per ognuno, domanda e risposta insieme (1K = 1.024 token, circa 750 parole).',
       recheck: 'Ricontrollo rapido',
-      recheckTime: '~3 min',
+      recheckTime: 'due prove',
       recheckDesc: 'L’ultima ricerca è stata fatta con {build}; ora usi {current}. Ricarico solo la configurazione consigliata e la seconda migliore e controllo se i numeri sono ancora quelli.',
     },
     outcome: {
@@ -1430,6 +1472,12 @@ export const it = {
       budget: 'Mi sono fermato prima: tempo finito',
       launches: 'Mi sono fermato prima: raggiunto il numero massimo di prove',
       body: 'Ho fatto {n} prove. Con «Accurata» provo più combinazioni.',
+      bodyLimit: 'Ho fatto {n} prove nel tempo previsto ({limit}). Le combinazioni «misurate in parte» hanno i numeri presi fin lì, confrontati con le stesse regole.',
+    },
+    partial: {
+      budget: 'Misurata in parte (tempo finito)',
+      launches: 'Misurata in parte (troppe prove)',
+      help: 'La ricerca si è fermata prima di misurare tutto il contesto di questa combinazione: hai i numeri presi fin lì (almeno il controllo a 1K al contesto più grande).',
     },
     rec: {
       title: 'Combinazione consigliata',
@@ -1511,6 +1559,7 @@ export const it = {
       vram: 'VRAM picco {size} GB',
       shared: 'RAM condivisa {size} GB',
       command: 'Comando della prova {n}: {settings}, contesto {ctx}',
+      skipped: 'Non misurato a {depths}: sarebbe finito dopo il tempo previsto (circa {time}).',
     },
     capacity: {
       title: 'Contesto massimo per tipo di cache',
@@ -1522,6 +1571,13 @@ export const it = {
       noFit: 'non ci sta',
       none: 'Nessun contesto è entrato tutto nella memoria video.',
       measuredNote: 'Misurato avviando il motore.',
+      atLeast: 'almeno {ctx}',
+      bound: {
+        found: 'Limite trovato: a {next} non entra più.',
+        model: 'Arriva al contesto massimo del modello.',
+        estimate: 'Almeno {ctx}: oltre non provato (la stima arriva a {est}).',
+        budget: 'Almeno {ctx}: oltre non provato (tempo finito).',
+      },
       inferred: 'Dedotto senza avviare il motore: arriva già al limite del modello.',
       skipped: {
         estimate: 'Non provata: la stima della memoria la escludeva.',

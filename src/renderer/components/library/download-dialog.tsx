@@ -60,7 +60,12 @@ function Body({ choice }: { choice: DownloadChoice }) {
         <dt className="text-fg-3">{t('downloads.confirm.dest')}</dt>
         <dd className="font-mono text-xs break-all text-fg">{modelsDir ? destinationOf(modelsDir, choice.repo) : '–'}</dd>
       </dl>
-      {best && <Callout tone="info" title={t('downloads.confirm.tried', { tps: number(best.tps, 0), date: date(best.date) })} />}
+      {best &&
+        (best.tps !== undefined ? (
+          <Callout tone="info" title={t('downloads.confirm.tried', { tps: number(best.tps, 0), date: date(best.date) })} />
+        ) : (
+          <Callout tone="warning" title={t('tried.spillTooltip', { date: date(best.date) })} />
+        ))}
       {tooBig && (
         <Callout tone="danger" title={t('downloads.confirm.noSpace')} action={{ label: t('downloads.confirm.changeFolder'), onClick: () => void navigate({ to: '/settings' }) }}>
           {t('downloads.confirm.noSpaceBody', { size: bytes(choice.sizeBytes) })}

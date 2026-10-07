@@ -2,7 +2,7 @@
 import type { StartRunRequest } from '../../../contract/api';
 import type { EngineKind } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
-import type { RunSummary } from '../../../contract/results';
+import { spilledRun, type RunSummary } from '../../../contract/results';
 import type { CuratedModel } from '../../../contract/views';
 
 export type ModelOption =
@@ -103,12 +103,26 @@ export function requestModel(o: ModelOption): StartRunRequest['model'] {
   return file === undefined ? { repo, revision } : { repo, file, revision };
 }
 
-/** Newest completed run of this model on this GPU ("Provato su questa GPU"). */
+/**
+ * Newest completed run of this model on this GPU ("Provato su questa GPU"): one that did not spill to
+ * shared memory; a run that spilled only when there is no other (its badge then says so).
+ */
 export function triedOn(o: ModelOption, runs: readonly RunSummary[], gpuName: string | undefined): RunSummary | undefined {
   const matches = (r: RunSummary) => {
     if (o.source === 'local') return (o.local.identity.sha256 !== undefined && r.modelSha256 === o.local.identity.sha256) || r.modelWeakKey === o.local.identity.weakKey;
     const c = o.curated;
     return (c.sha256 !== undefined && r.modelSha256 === c.sha256) || r.modelWeakKey === `${c.repo}@${c.revision}`;
   };
-  return runs.find((r) => r.status === 'completed' && r.decodeTps !== undefined && r.gpuName === gpuName && matches(r));
+  return newestTried(runs.filter((r) => r.gpuName === gpuName && matches(r)));
+}
+
+/** What the "Provato" badge says about a run: its speed, or that it spilled (its speed does not count). */
+export function triedHere(r: RunSummary): { tps?: number; date: string; spilled?: boolean } {
+  return spilledRun(r) ? { date: r.createdAt, spilled: true } : { tps: r.decodeTps as number, date: r.createdAt };
+}
+
+/** The newest completed run with a speed among `runs` (newest first): one that did not spill, else one that did. */
+export function newestTried(runs: readonly RunSummary[]): RunSummary | undefined {
+  const done = runs.filter((r) => r.status === 'completed' && r.decodeTps !== undefined);
+  return done.find((r) => !spilledRun(r)) ?? done[0];
 }

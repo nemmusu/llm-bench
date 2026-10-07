@@ -11,8 +11,8 @@ import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog';
 import { EmptyState } from '../ui/empty-state';
 import { FitBadge } from '../ui/fit-badge';
-import { TriedBadge } from '../ui/tried-badge';
-import { triedOn, type ModelOption } from './model-options';
+import { TriedHereBadge } from '../ui/tried-badge';
+import { triedHere, triedOn, type ModelOption } from './model-options';
 
 export interface BenchModelPickerProps {
   open: boolean;
@@ -68,7 +68,7 @@ function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind;
         </span>
         <span className="flex flex-wrap items-center gap-1.5">
           <RowFit option={o} engine={engine} />
-          {tried && <TriedBadge tps={tried.decodeTps!} date={tried.createdAt} short size="sm" />}
+          {tried && <TriedHereBadge tried={triedHere(tried)} short size="sm" />}
         </span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-0.5 text-sm tabular-nums">

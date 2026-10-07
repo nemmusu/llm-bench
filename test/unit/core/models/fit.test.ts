@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import type { EngineKind } from '../../../../src/contract/engines';
+import { launchParamsSchema, type EngineKind, type LaunchParams } from '../../../../src/contract/engines';
 import type { HubFile } from '../../../../src/contract/models';
 import {
   bestQuant,
@@ -8,7 +8,10 @@ import {
   DEFAULT_FIT_CONTEXT,
   estimateFit,
   FIT_NOTES,
+  FIX_CONTEXT_STEP,
+  fitFixes,
   fitParamsFrom,
+  fitsFully,
   kvLayoutOf,
   levelFor,
   levelRank,
@@ -350,5 +353,35 @@ describe('quantChoices / bestQuant', () => {
     expect(binOnly[0]?.quant).toBeUndefined();
     // GGUF without groupKey falls back to its path.
     expect(quantChoices([{ path: 'x.gguf', sizeBytes: 1, kind: 'weights' }], {}, GPU, 'llamacpp-native')[0]?.groupKey).toBe('x.gguf');
+  });
+});
+
+describe('fitFixes: what would make a launch fit (the "Usa cache q4_0" / "Contesto massimo che entra" buttons)', () => {
+  const gpu = { totalMiB: 12288, freeMiB: 12000 };
+  const estimate = (p: LaunchParams, engine: EngineKind = 'llamacpp-native') => estimateFit({ facts: llama8b, fileBytes: 4.9e9, gpu, engine, params: fitParamsFrom(p) });
+  const P = (o: object) => launchParamsSchema.parse(o);
+
+  it('a long context with every layer on the GPU: the q4_0 cache at the same context, and the largest context that fits', () => {
+    const p = P({ contextSize: 131_072 });
+    const fixes = fitFixes('llamacpp-native', p, estimate(p), estimate)!;
+    expect(fixes.kvCacheType).toBe('q4_0');
+    expect(fitsFully(estimate({ ...p, kvCacheType: 'q4_0', flashAttention: 'on' }))).toBe(true);
+    const max = fixes.maxContext!;
+    expect(max % FIX_CONTEXT_STEP).toBe(0);
+    expect(fitsFully(estimate({ ...p, contextSize: max }))).toBe(true);
+    expect(fitsFully(estimate({ ...p, contextSize: max + FIX_CONTEXT_STEP }))).toBe(false);
+  });
+
+  it('already q4_0: only the context; nothing when it fits, for vLLM and external endpoints, or when not even 1K fits', () => {
+    const q4 = P({ contextSize: 524_288, kvCacheType: 'q4_0' });
+    expect(fitFixes('llamacpp-native', q4, estimate(q4), estimate)).toEqual({ maxContext: expect.any(Number) });
+    const small = P({ contextSize: 4096 });
+    expect(fitFixes('llamacpp-docker', small, estimate(small), estimate)).toBeUndefined();
+    expect(fitFixes('vllm-docker', small, { level: 'no', contextSize: 4096 }, estimate)).toBeUndefined();
+    expect(fitFixes('external', small, { level: 'no', contextSize: 4096 }, estimate)).toBeUndefined();
+    const never = () => ({ level: 'no' as const });
+    expect(fitFixes('llamacpp-native', small, { level: 'no', contextSize: 4096 }, never)).toBeUndefined();
+    // No context chosen: the one the estimate assumed.
+    expect(fitFixes('llamacpp-native', P({}), { level: 'partial', contextSize: 8192 }, (p) => ({ level: (p.contextSize ?? 8192) <= 2048 ? 'good' : 'partial' }))).toEqual({ maxContext: 2048 });
   });
 });

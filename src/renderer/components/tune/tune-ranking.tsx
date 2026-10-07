@@ -15,7 +15,7 @@ import { CodeBlock } from '../ui/code-block';
 import { HelpTip } from '../ui/help-tip';
 import { SegmentedControl } from '../ui/segmented-control';
 import { comboText, depthLabel } from './tune-format';
-import { TuneGlossary } from './tune-sections';
+import { PartialBadge, TuneGlossary } from './tune-sections';
 import { bestValues, CONTEXT_COLUMNS, reaches as reachesRow, sortRows, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
@@ -194,6 +194,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
                               {t('tune.recommended')}
                             </Badge>
                           )}
+                          {r.combo.partial && <PartialBadge why={r.combo.partial} />}
                         </span>
                         <span className="flex flex-wrap items-start gap-2">
                           <PresetActions run={run} combo={r.index} at={depth} layout="compact" />

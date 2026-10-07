@@ -2,11 +2,14 @@ import { Box, ChevronDown, Container, Download, ListChecks, Timer } from 'lucide
 import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
 import type { RunPlan } from '../../../contract/api';
+import type { LaunchParams } from '../../../contract/engines';
 import type { AppErrorData } from '../../../contract/errors';
 import type { FitEstimate } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { depthLabel } from '../tune/tune-format';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Callout } from '../ui/callout';
 import { CodeBlock } from '../ui/code-block';
@@ -27,6 +30,8 @@ export interface PlanCardProps {
   /** Installs and downloads done before the test (they are part of the preview, not a blocker). */
   needs: Need[];
   expert: boolean;
+  /** "Usa cache q4_0" / "Contesto massimo che entra" of a "does not fit" warning. */
+  onFix: (patch: FitPatch) => void;
 }
 
 const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
@@ -56,8 +61,32 @@ export function FitSummary({ fit }: { fit: FitEstimate }) {
   );
 }
 
-/** Planning warnings in plain words (runs and servers). */
-export function PlanWarnings({ warnings }: { warnings: RunPlan['warnings'] }) {
+/** A setting that makes the launch fit ("Usa cache q4_0", "Contesto massimo che entra"). */
+export type FitPatch = Pick<LaunchParams, 'kvCacheType' | 'flashAttention' | 'contextSize'>;
+
+/** The quick fixes a "does not fit" warning carries (the plan's fit.fixes), as buttons. */
+function FitFixButtons({ params, onFix }: { params: Record<string, unknown> | undefined; onFix: (patch: FitPatch) => void }) {
+  const f = useI18n();
+  const ctx = typeof params?.maxContext === 'number' ? params.maxContext : undefined;
+  if (params?.kvCacheType !== 'q4_0' && ctx === undefined) return null;
+  return (
+    <span className="mt-2 flex flex-wrap gap-2">
+      {params?.kvCacheType === 'q4_0' && (
+        <Button size="sm" onClick={() => onFix({ kvCacheType: 'q4_0', flashAttention: 'on' })}>
+          {f.t('spill.fix.q4')}
+        </Button>
+      )}
+      {ctx !== undefined && (
+        <Button size="sm" onClick={() => onFix({ contextSize: ctx })}>
+          {f.t('spill.fix.context', { ctx: depthLabel(ctx, f) })}
+        </Button>
+      )}
+    </span>
+  );
+}
+
+/** Planning warnings in plain words (runs and servers); with `onFix`, a "does not fit" one offers its fixes. */
+export function PlanWarnings({ warnings, onFix }: { warnings: RunPlan['warnings']; onFix?: (patch: FitPatch) => void }) {
   const f = useI18n();
   return (
     <ul className="flex flex-col gap-2" aria-label={f.t('benchmark.plan.warnings')}>
@@ -67,6 +96,7 @@ export function PlanWarnings({ warnings }: { warnings: RunPlan['warnings'] }) {
           <li key={`${w.code}-${i}`}>
             <Callout tone={n.tone} title={n.title}>
               {n.body}
+              {onFix && (w.code === 'spill_risk' || w.code === 'oom_risk') && <FitFixButtons params={w.params} onFix={onFix} />}
             </Callout>
           </li>
         );
@@ -80,7 +110,7 @@ export function PlanWarnings({ warnings }: { warnings: RunPlan['warnings'] }) {
  * command. It is complete before anything is downloaded: a missing llama.cpp or model already has
  * its final path in the command, marked as prepared before the test.
  */
-export function PlanCard({ plan, loading, error, needs, expert }: PlanCardProps) {
+export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCardProps) {
   const f = useI18n();
   const { t, bytes, duration } = f;
   const [open, setOpen] = useState(expert);
@@ -164,7 +194,7 @@ export function PlanCard({ plan, loading, error, needs, expert }: PlanCardProps)
           </dl>
         )}
         {error && <ErrorCard error={error} headingLevel={3} />}
-        {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} />}
+        {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} onFix={onFix} />}
       </div>
       <Collapsible.Root open={open} onOpenChange={setOpen} className="border-t border-border">
         <Collapsible.Trigger asChild>

@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n';
 import { useFit, useMainGpu, useTried } from '../../lib/queries-library';
 import { FitBadge } from '../ui/fit-badge';
 import { Skeleton } from '../ui/skeleton';
-import { TriedBadge } from '../ui/tried-badge';
+import { TriedHereBadge } from '../ui/tried-badge';
 import { bestRunHere } from './helpers';
 
 /** "Stima: 6,8 GB su 30,4 GB disponibili" for the fit tooltip. */
@@ -22,11 +22,14 @@ export function FitFor({ req }: { req: FitRequest }) {
   return <FitBadge level={fit.data.level} detail={detail(fit.data)} size="sm" />;
 }
 
-/** "Provato su questa GPU · 142 tok/s" when a completed run of this model exists for this GPU. */
+/**
+ * "Provato su questa GPU · 142 tok/s" when a completed run of this model exists for this GPU; "Provato:
+ * usava la RAM condivisa" when the only ones spilled to shared memory (their speed does not count).
+ */
 export function TriedFor({ weakKey, sha256 }: { weakKey: string; sha256?: string | undefined }) {
   const tried = useTried(weakKey, sha256);
   const gpu = useMainGpu();
   const best = bestRunHere(tried.data, gpu);
   if (!best) return null;
-  return <TriedBadge tps={best.tps} date={best.date} size="sm" />;
+  return <TriedHereBadge tried={best} short={false} size="sm" />;
 }

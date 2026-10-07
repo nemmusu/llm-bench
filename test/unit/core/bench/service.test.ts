@@ -3,7 +3,7 @@ import { AppError } from '../../../../src/contract/errors';
 import type { FitEstimate } from '../../../../src/contract/models';
 import { BenchService } from '../../../../src/core/bench/service';
 import { isRunId } from '../../../../src/core/store/runs-id';
-import { hardware, makeRun, modelIdentity } from '../store/fixtures';
+import { hardware, latencyPoint, makeRun, modelIdentity, stat } from '../store/fixtures';
 import { deferred, modelTarget } from './fakes';
 import { request, serviceSetup, TempDirs } from './service-helpers';
 
@@ -376,6 +376,60 @@ describe('BenchService.plan', () => {
     const s = serviceSetup(tmp, { deps: { fingerprint: async () => Promise.reject(new Error('wmi')) } });
     const plan = await new BenchService(s.deps).plan(request());
     expect(plan.estimatedSeconds).toBeGreaterThan(0);
+  });
+
+  it('a run that spilled never drives the expected duration nor the usual load time (3.5 tok/s made "Rapido" 4 minutes)', async () => {
+    const s = serviceSetup(tmp);
+    const svc = new BenchService(s.deps);
+    await s.runs.save(makeRun({ id: 'clean', createdAt: '2026-10-05T10:00:00.000Z', metrics: { ...makeRun().metrics, latency: [latencyPoint(512, 53.7)] } }));
+    const clean = (await svc.plan(request({ profile: 'standard' }))).estimatedSeconds;
+    const slow = makeRun({ id: 'spilled', createdAt: '2026-10-06T10:00:00.000Z', validity: ['shared_memory_spill'], metrics: { ...makeRun().metrics, latency: [latencyPoint(512, 3.5, 32)], load: { coldMs: stat(90_000), warmMs: stat(60_000), phases: [] } } });
+    await s.runs.save(slow);
+    expect((await svc.plan(request({ profile: 'standard' }))).estimatedSeconds).toBe(clean);
+    expect(await svc.expectedLoad(modelTarget(), 'llamacpp-native')).toEqual({ expectedLoadMs: { cold: 9000, warm: 1500 } });
+  });
+});
+
+describe('BenchService: spills in normal runs', () => {
+  it('the usual speed here and what would fit go to the run: a collapse is flagged with its fixes; the live screen gets the spill', async () => {
+    let seen: ReturnType<BenchService['active']>;
+    const holder: { svc?: BenchService } = {};
+    const fixes = { kvCacheType: 'q4_0' as const, maxContext: 131_072 };
+    const s = serviceSetup(tmp, {
+      adapter: { client: { decodeMsPerToken: 1000 / 3.5, onRequest: (n) => (n === 3 ? (seen = holder.svc!.active()) : undefined) } },
+      telemetry: { live: true, processVram: { sharedMiB: 4666 } },
+      deps: { fit: async () => fit({ level: 'partial', fixes }) },
+    });
+    // The usual: 53.7 tok/s in an earlier run here.
+    await s.runs.save(makeRun({ id: 'clean', metrics: { ...makeRun().metrics, latency: [latencyPoint(512, 53.7)] } }));
+    const svc = (holder.svc = new BenchService(s.deps));
+    const { runId } = await svc.start(request());
+    await svc.whenIdle();
+    expect(seen?.spill).toEqual({ by: ['shared-memory'], sharedPeakMiB: 4666, thresholdMiB: 1024, normalDecodeTps: 53.7 });
+    const run = (await s.runs.get(runId))!;
+    expect(run.validity[0]).toBe('shared_memory_spill');
+    expect(run.metrics.spill).toMatchObject({ by: ['shared-memory', 'decode-collapse'], normalDecodeTps: 53.7, normalRunIds: ['clean'], fixes });
+  });
+
+  it('no earlier run, no fit: only the shared memory can tell; an unknown PC does not fail the run', async () => {
+    const s = serviceSetup(tmp, { adapter: { client: { decodeMsPerToken: 1000 / 3.5 } } });
+    const svc = new BenchService(s.deps);
+    const { runId } = await svc.start(request());
+    await svc.whenIdle();
+    expect((await s.runs.get(runId))!.metrics).not.toHaveProperty('spill');
+    let calls = 0;
+    const u = serviceSetup(tmp, { deps: { fingerprint: async () => (++calls > 1 ? Promise.reject(new Error('wmi')) : hardware()) } });
+    const usvc = new BenchService(u.deps);
+    const started = await usvc.start(request());
+    await usvc.whenIdle();
+    expect((await u.runs.get(started.runId))!.status).toBe('completed');
+    // The earlier runs cannot be read: nothing to compare with, the run goes on.
+    const r = serviceSetup(tmp);
+    const broken = Object.assign(Object.create(r.runs) as typeof r.runs, { tried: () => Promise.reject(new Error('share offline')) });
+    const rsvc = new BenchService({ ...r.deps, runs: broken });
+    const third = await rsvc.start(request());
+    await rsvc.whenIdle();
+    expect((await r.runs.get(third.runId))!.status).toBe('completed');
   });
 });
 

@@ -289,7 +289,8 @@ export class MultiTuner extends Tuner {
 
   /** One screening of a KV type's descent is done (or skipped): the forecast counts one less. */
   private screened(kv: TuneKvType): void {
-    this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) ?? this.screensOf(kv)) - 1));
+    // Set when the descent of this type started.
+    this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) as number) - 1));
   }
 
   /** One dimension at a time with every user busy; returns the best screened settings. */

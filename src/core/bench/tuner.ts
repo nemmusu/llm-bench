@@ -1115,10 +1115,11 @@ export class Tuner {
   private async sweepCombination(variant: Variant, ctx: number): Promise<void> {
     const key = this.key(variant, ctx);
     if (this.combined.has(key)) return;
-    const screen = this.screens.get(key);
-    const screened = screen?.points ?? [];
+    // Every variant swept here was screened first (that is how it was chosen).
+    const screen = this.screens.get(key) as Screen;
+    const screened = screen.points;
     const have = new Set(screened.map((p) => p.promptTokens));
-    if (screen && sweepDepths(ctx, this.input.sweep.outputTokens, { step: this.gridOf(ctx) }).every((d) => have.has(d))) {
+    if (sweepDepths(ctx, this.input.sweep.outputTokens, { step: this.gridOf(ctx) }).every((d) => have.has(d))) {
       const att = this.attempts[screen.attempt] as TuneAttempt;
       this.addCombination({ att, index: screen.attempt, variant, sweep: [...screened].sort((a, b) => a.promptTokens - b.promptTokens) });
       return;
@@ -1266,7 +1267,8 @@ export class Tuner {
     // The very next context up did not fit: this is the limit.
     if (failed !== undefined && failed === above[0]) return { bound: 'found', ...known };
     if (c.measuredMax >= this.cap) return { bound: 'model' };
-    if (c.skipped === 'budget' || above.some((x) => !c.status.has(x))) return { bound: 'budget', ...known };
+    // A search leaves contexts untried above its largest only when the time limit or the launch cap cut it.
+    if (c.skipped === 'budget') return { bound: 'budget', ...known };
     return { bound: 'estimate' };
   }
 

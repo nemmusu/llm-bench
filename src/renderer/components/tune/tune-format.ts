@@ -18,6 +18,14 @@ export function depthLabel(n: number, f: Pick<Formatters, 'number' | 'integer'>)
   return f.integer(n);
 }
 
+/** An estimate as people say it: "45 s", "20 min", "1 h 05 min" (no false precision). */
+export function roughDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s`;
+  const min = Math.round(seconds / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min`;
+}
+
 /** An engine build or image as people read it: "b10997", a digest shortened to "sha256:1a2b3c4d5e6f"; unknown in words. */
 export function buildLabel(build: string | undefined, f: Pick<Formatters, 't'>): string {
   if (build === undefined) return f.t('tune.recheck.unknownBuild');

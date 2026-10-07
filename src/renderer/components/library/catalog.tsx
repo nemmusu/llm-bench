@@ -12,7 +12,7 @@ import { FitBadge } from '../ui/fit-badge';
 import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
-import { TriedBadge } from '../ui/tried-badge';
+import { TriedHereBadge } from '../ui/tried-badge';
 import { RowFacts, RowTitle, rowClass } from './catalog-rows';
 import { CuratedRows, curatedFor, type EngineFormat } from './curated-list';
 import { ErrorCallout } from './error-callout';
@@ -143,9 +143,9 @@ function HubRow({ m, tried, showFormats }: { m: HubModel; tried: TriedModel | un
             {compact(m.likes)}
             <span className="sr-only">{t('models.catalog.likesSr')}</span>
           </span>,
-          tried?.tps !== undefined && (
+          tried && (tried.tps !== undefined || tried.spilled) && (
             <span className="relative z-10">
-              <TriedBadge tps={tried.tps} date={tried.date} size="sm" short />
+              <TriedHereBadge tried={tried} size="sm" short />
             </span>
           ),
         ]}
@@ -161,9 +161,9 @@ function TriedRow({ m }: { m: TriedModel }) {
       <RowTitle owner={m.owner} name={m.name} />
       <RowFacts>
         {[
-          m.tps !== undefined && (
+          (m.tps !== undefined || m.spilled) && (
             <span className="relative z-10">
-              <TriedBadge tps={m.tps} date={m.date} size="sm" short />
+              <TriedHereBadge tried={m} size="sm" short />
             </span>
           ),
           m.quant && <span>{m.quant}</span>,

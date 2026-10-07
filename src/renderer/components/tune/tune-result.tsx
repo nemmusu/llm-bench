@@ -4,7 +4,6 @@ import { useI18n } from '../../i18n';
 import { MIB_PER_GB, prefillStat } from '../bench/format';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
-import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
@@ -13,7 +12,7 @@ import { deepestPoint, defaultDepth, depthOptions, rankAt } from './tune-logic';
 import { RecheckOverview } from './tune-recheck';
 import { TuneRanking } from './tune-ranking';
 import { UsersOverview } from './tune-users';
-import { CapacityCard, DiscardedAttempts } from './tune-sections';
+import { CapacityCard, DiscardedAttempts, PartialBadge, StoppedNote } from './tune-sections';
 
 export type TunedRun = RunResult & { tuning: Tuning };
 
@@ -60,11 +59,7 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
       <Card className="hero-wash p-7 compact:p-5">
         <p className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('tune.summary.title')}</p>
         <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">{sentences.length ? sentences.join(' ') : t('tune.summary.none')}</p>
-        {tuning.stoppedBy && (
-          <Callout className="mt-4" tone="info" title={t(`tune.stopped.${tuning.stoppedBy}`)}>
-            {t('tune.stopped.body', { n: tuning.attempts.length })}
-          </Callout>
-        )}
+        {tuning.stoppedBy && <StoppedNote tuning={tuning} />}
         {rec && <RecommendedCard run={run} index={rec.index} text={comboText(rec.combo, kind, label)} />}
       </Card>
 
@@ -115,6 +110,7 @@ function RecommendedCard({ run, index, text }: { run: TunedRun; index: number; t
         <Badge tone="accent">{t('tune.recommended')}</Badge>
         <HelpTip term={t('tune.recommended')}>{t('tune.rec.help')}</HelpTip>
         <span className="text-md font-semibold text-fg">{text}</span>
+        {combo.partial && <PartialBadge why={combo.partial} />}
       </div>
       <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (

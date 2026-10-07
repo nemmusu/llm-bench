@@ -58,11 +58,26 @@ describe('library helpers', () => {
       run('7', { status: 'failed', modelWeakKey: 'new/Other-GGUF/o.gguf/Q4_K_M/1', createdAt: '2026-10-01T00:00:00.000Z' }),
     ];
     expect(triedModels(runs, GPU)).toEqual([
-      { repo: 'new/Other-GGUF', owner: 'new', name: 'Other-GGUF', quant: undefined, tps: undefined, date: '2026-10-01T00:00:00.000Z', runs: 1 },
-      { repo: 'org/Model-GGUF', owner: 'org', name: 'Model-GGUF', quant: 'Q4_K_M', tps: 150, date: '2026-09-20T00:00:00.000Z', runs: 4 },
+      { repo: 'new/Other-GGUF', owner: 'new', name: 'Other-GGUF', quant: undefined, tps: undefined, spilled: false, date: '2026-10-01T00:00:00.000Z', runs: 1 },
+      { repo: 'org/Model-GGUF', owner: 'org', name: 'Model-GGUF', quant: 'Q4_K_M', tps: 150, spilled: false, date: '2026-09-20T00:00:00.000Z', runs: 4 },
     ]);
     expect(triedModels(runs, undefined)).toEqual([]);
     expect(triedModels(undefined, GPU)).toEqual([]);
+    // A run that spilled to shared memory (3.5 tok/s instead of 53.7) never gives the speed; it is said.
+    const spilled = run('8', { decodeTps: 3.5, validity: ['shared_memory_spill'], modelWeakKey: 'big/Qwen-27B-GGUF/q.gguf/Q4_K_XL/1', createdAt: '2026-10-06T00:00:00.000Z' });
+    expect(triedModels([spilled], GPU)[0]).toMatchObject({ tps: undefined, spilled: true });
+    expect(triedModels([spilled, { ...spilled, id: '9', decodeTps: 53.7, validity: [] }], GPU)[0]).toMatchObject({ tps: 53.7, spilled: true, runs: 2 });
+  });
+
+  it('"tried here" never comes from a run that spilled to shared memory, unless only those exist', () => {
+    const clean = run('a', { decodeTps: 53.7, createdAt: '2026-10-01T00:00:00.000Z' });
+    const spill = (id: string, createdAt: string) => run(id, { decodeTps: 3.5, validity: ['shared_memory_spill'], createdAt });
+    expect(bestRunHere([spill('s', '2026-10-06T00:00:00.000Z'), clean], GPU)).toEqual({ tps: 53.7, date: clean.createdAt, runId: 'a' });
+    expect(bestRunHere([spill('s1', '2026-10-05T00:00:00.000Z'), spill('s2', '2026-10-06T00:00:00.000Z'), spill('s0', '2026-10-04T00:00:00.000Z')], GPU)).toEqual({
+      date: '2026-10-06T00:00:00.000Z',
+      runId: 's2',
+      spilled: true,
+    });
   });
 
   it('size buckets as catalog parameter ranges', () => {

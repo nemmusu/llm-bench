@@ -1,12 +1,15 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
+import { spilledRun } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { cn } from '../../lib/cn';
 import { useRuns } from '../../lib/queries-runs';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { Skeleton } from '../ui/skeleton';
 import { Sparkline } from '../ui/sparkline';
 import { summaryModelLabel } from './format';
 import { decodeHistory } from './history';
+import { SpillBadge } from './spill';
 
 /** The last few completed runs with their generation speed (Benchmark page). */
 export function RecentRuns({ limit = 4 }: { limit?: number }) {
@@ -35,6 +38,7 @@ export function RecentRuns({ limit = 4 }: { limit?: number }) {
         <ul className="mt-2 flex flex-col px-2 pb-2">
           {items.map((r) => {
             const history = decodeHistory(r, all);
+            const spill = spilledRun(r);
             return (
               <li key={r.id}>
                 <Link
@@ -44,12 +48,16 @@ export function RecentRuns({ limit = 4 }: { limit?: number }) {
                 >
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium text-fg">{summaryModelLabel(r)}</span>
-                    <span className="truncate text-xs text-fg-3">
-                      {r.engineLabel.split(' ')[0]} · {relative(r.createdAt)}
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-3">
+                      <span className="truncate">
+                        {r.engineLabel.split(' ')[0]} · {relative(r.createdAt)}
+                      </span>
+                      {/* Its speed is not the card's: said where the number is. */}
+                      {spill && <SpillBadge className="shrink-0" />}
                     </span>
                   </div>
                   {history.length > 1 && <Sparkline values={history} width={56} height={22} endDot={false} />}
-                  <span className="w-[74px] text-right text-sm font-semibold text-fg tabular-nums">
+                  <span className={cn('w-[74px] text-right text-sm font-semibold tabular-nums', spill ? 'text-warning-text' : 'text-fg')}>
                     {r.decodeTps === undefined ? '–' : number(r.decodeTps, 1)}
                     <span className="ml-1 text-2xs font-medium text-fg-3">tok/s</span>
                   </span>

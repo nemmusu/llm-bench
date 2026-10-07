@@ -163,6 +163,26 @@ describe('models: start a server', () => {
   });
 });
 
+describe('models: runs that spilled to shared memory', () => {
+  it('never give a speed: "Provato: RAM condivisa" in the lists, said in the download dialog', async () => {
+    bridge();
+    const spill = run('s', { decodeTps: 3.5, validity: ['shared_memory_spill'], createdAt: '2026-10-06T10:00:00.000Z' });
+    const api = libApi(world({ runs: [spill], tried: [spill] }));
+    renderLib('/models?tab=download', api);
+    const list = await screen.findByRole('list', { name: 'Modelli trovati' });
+    expect(await within(list).findByText('Provato: RAM condivisa')).toBeTruthy();
+    expect(within(list).queryByText(/Provato · /)).toBeNull();
+    await userEvent.click(screen.getByRole('radio', { name: /^Già provati/ }));
+    const tried = await screen.findByRole('list', { name: 'Modelli che hai già provato' });
+    expect(within(tried).getByText('Provato: RAM condivisa')).toBeTruthy();
+    await userEvent.click(screen.getByRole('radio', { name: /^Consigliati/ }));
+    expect((await screen.findAllByText('Provato: usava la RAM condivisa')).length).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByRole('button', { name: 'Scarica Qwen3 4B · Q4_K_M · 2,3 GB' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/non è entrato tutto nella memoria della scheda/)).toBeTruthy();
+  });
+});
+
 describe('models: download', () => {
   it('curated for this GPU: fit, tried, reference, already on the PC, by engine and name, download', async () => {
     bridge();

@@ -21,6 +21,11 @@ describe('computeValidity', () => {
     expect(computeValidity({ ...clean, baselineVramMiB: 1600, baselineUtilPct: 5, coldGuaranteed: true })).toEqual([]);
   });
 
+  it('shared_memory_spill comes first: every other number of the run is off', () => {
+    expect(computeValidity({ ...clean, sharedMemorySpill: true, keyStats: [{ n: 3, median: 3.5, mean: 3.5, min: 3, max: 4, stddev: 0.3, cv: 0.08, values: [] }] })).toEqual(['shared_memory_spill', 'unstable']);
+    expect(computeValidity({ ...clean, sharedMemorySpill: false })).toEqual([]);
+  });
+
   it('gpu_shared: known LLM servers, big VRAM baseline or busy GPU', () => {
     expect(computeValidity({ ...clean, otherGpuUsers: [{ pid: 1, name: 'llama-server', knownLlm: true }] })).toEqual(['gpu_shared']);
     expect(computeValidity({ ...clean, otherGpuUsers: [{ pid: 1, name: 'chrome', knownLlm: false }] })).toEqual([]);

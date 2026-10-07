@@ -173,6 +173,12 @@ describe('ModelsService', () => {
     writeFileSync(path.join(lib(), 'junk-Q4_0.gguf'), 'x');
     const junk = (await svc.rescan()).find((m) => m.identity.displayName === 'junk-Q4_0')?.id as string;
     expect((await svc.fit({ localId: junk, engine: 'llamacpp-native' })).notes).toContain('kv.assumed-layout');
+    // Not enough free VRAM for that context with every layer on the GPU: what would fit comes with it.
+    gpu = { totalMiB: 8192, freeMiB: 400 };
+    const tight = await svc.fit({ localId: local, engine: 'llamacpp-native', params: { contextSize: 262_144, extraArgs: [], env: {} } });
+    expect(tight.level === 'partial' || tight.level === 'no').toBe(true);
+    expect(tight.fixes?.maxContext).toBeLessThan(262_144);
+    expect(a).not.toHaveProperty('fixes');
     gpu = undefined;
     await expect(svc.fit({ localId: local, engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
   });

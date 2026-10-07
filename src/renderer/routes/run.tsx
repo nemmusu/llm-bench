@@ -11,6 +11,7 @@ import { initialLive, liveReducer, seedFromActive, type LiveState } from '../com
 import { engineKindOfLabel, nowText } from '../components/bench/live-now';
 import { LiveConfig, LivePoints } from '../components/bench/live-panels';
 import { LoadLine } from '../components/bench/load-line';
+import { LiveSpillBanner } from '../components/bench/spill';
 import { finishedStages } from '../components/bench/load-progress';
 import { TuneLive } from '../components/tune/tune-live';
 import { stageText } from '../components/tune/tune-format';
@@ -112,7 +113,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const at = Math.max(0, phases.indexOf(current));
   const startedAt = ctx?.startedAt ?? (info ? Date.parse(info.startedAt) : undefined);
   const elapsedSec = startedAt === undefined ? 0 : Math.max(0, (now - startedAt) / 1000);
-  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds ?? info?.estimatedSeconds);
+  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds ?? info?.estimatedSeconds, live.remaining, now);
   const detail = detailLine(live.phase, live.detail, scenario);
 
   const gpu = system.data?.gpus[0];
@@ -186,6 +187,8 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
       }
     >
       <div className="flex flex-col gap-section">
+        {/* The moment the engine spills, before everything else: the numbers below will be far too low. */}
+        {live.spill && <LiveSpillBanner spill={live.spill} onCancel={() => setConfirmOpen(true)} cancelling={cancelling} />}
         <Card className="overflow-hidden">
           <div className="px-card pt-6 pb-5">
             <Stepper

@@ -9,6 +9,8 @@ import type { RunResult, Tuning } from '../../../../src/contract/results';
 import { buildScenario } from '../../../../src/core/bench/scenarios';
 import {
   buildTuneSetup,
+  expectFromRuns,
+  expectFromSize,
   latestTuneRun,
   learnedOrder,
   recheckInputOf,
@@ -21,7 +23,8 @@ import {
 import type { EngineAdapter } from '../../../../src/core/engines/types';
 import type { FitCalibration } from '../../../../src/core/models/fit';
 import { summaryOf } from '../../../../src/core/store/runs-repo';
-import { hardware, makeRun, modelIdentity } from '../store/fixtures';
+import { DEFAULT_LOAD_MS, DEFAULT_SPEED } from '../../../../src/core/bench/tuner';
+import { hardware, latencyPoint, makeRun, modelIdentity } from '../store/fixtures';
 import { combo, concurrencyPoint, point } from './tune-helpers';
 
 const P = (o: object = {}) => launchParamsSchema.parse(o);
@@ -111,6 +114,66 @@ describe('values that won before on this GPU', () => {
     // A card known by name only.
     expect(await learnedOrder(repo([a]), { hostId: 'h', gpuName: 'NVIDIA GeForce RTX 5090' }, 'llamacpp-native')).toBeDefined();
     expect(await learnedOrder(repo([a]), { hostId: 'h' }, 'llamacpp-native')).toBeUndefined();
+  });
+
+  it('a search cut short never compared its values, and a run that spilled never counts', async () => {
+    const partial = tuneRun({ id: 'P', tuning: { combinations: [combo('q8_0', 32768, [point(1024, 1)], { params: P({ ubatchSize: 1024 }), partial: 'budget' })] } });
+    expect(await learnedOrder(repo([partial]), here, 'llamacpp-native')).toBeUndefined();
+    const spilled = { ...tuneRun({ id: 'S' }), validity: ['shared_memory_spill' as const] };
+    expect(await learnedOrder(repo([spilled]), here, 'llamacpp-native')).toBeUndefined();
+    expect(tuneRunsFor([summaryOf(spilled, 'S.json')], here, 'llamacpp-native')).toEqual([]);
+  });
+});
+
+describe('what a search expects before it measures (its forecast)', () => {
+  const model = modelIdentity({ facts });
+  const at = (id: string, over: Partial<RunResult>): RunResult => makeRun({ id, model, ...over });
+
+  it('the newest clean run of this model and engine here: its points as speeds at known depths, its load time', async () => {
+    const quick = at('Q', { metrics: { ...makeRun().metrics, latency: [latencyPoint(512, 53.7, 1810)] } });
+    expect(await expectFromRuns(repo([quick]), here, 'llamacpp-native', model)).toEqual({ anchors: [{ depth: 512, prefillTps: 1810, decodeTps: 53.7 }], loadMs: 1500 });
+    // Only a cold load: that one.
+    const cold = at('C', { metrics: { ...makeRun().metrics, load: { coldMs: makeRun().metrics.load.coldMs!, phases: [] } } });
+    expect((await expectFromRuns(repo([cold]), here, 'llamacpp-native', model))?.loadMs).toBe(9000);
+    // A tune run: its launches say how long a start takes.
+    const t = tuneRun({ id: 'T' });
+    t.model = model;
+    t.metrics = { ...t.metrics, load: { phases: [] }, latency: [], contextSweep: [point(1024, 55.9, { prefill: 1810 })] };
+    t.tuning!.attempts = [
+      { stage: 'capacity', kvType: 'f16', contextSize: 4096, outcome: 'ok', loadMs: 9900, params: P(), points: [], command: { argv: [], powershell: '', bash: '' } },
+      { stage: 'capacity', kvType: 'f16', contextSize: 8192, outcome: 'oom', loadMs: 1, params: P(), points: [], command: { argv: [], powershell: '', bash: '' } },
+    ];
+    expect(await expectFromRuns(repo([t]), here, 'llamacpp-native', model)).toEqual({ anchors: [{ depth: 1024, prefillTps: 1810, decodeTps: 55.9 }], loadMs: 9900 });
+    t.tuning!.attempts = [];
+    expect(await expectFromRuns(repo([t]), here, 'llamacpp-native', model)).toEqual({ anchors: [{ depth: 1024, prefillTps: 1810, decodeTps: 55.9 }] });
+  });
+
+  it('never a run that spilled, failed, measured nothing or cannot be read; never another engine, PC, card or model', async () => {
+    const good = at('G', { createdAt: '2026-10-01T10:00:00.000Z' });
+    const spilled = at('S', { createdAt: '2026-10-06T10:00:00.000Z', validity: ['shared_memory_spill'] });
+    const empty = at('E', { createdAt: '2026-10-05T10:00:00.000Z', metrics: { ...makeRun().metrics, latency: [] } });
+    const gone = at('X', { createdAt: '2026-10-04T10:00:00.000Z' });
+    const others = [
+      at('F', { status: 'failed' }),
+      at('D', { engine: { kind: 'llamacpp-docker', name: 'llama.cpp' } }),
+      at('H', { hardware: hardware({ hostId: 'elsewhere' }) }),
+      at('K', { hardware: hardware({ gpus: [{ index: 0, uuid: 'GPU-zzzz', name: 'Other', vendor: 'nvidia', memoryTotalMiB: 1 }] }) }),
+      makeRun({ id: 'M', model: modelIdentity({ weakKey: 'other', facts }) }),
+    ];
+    const runs = [spilled, empty, gone, good, ...others];
+    const store = { ...repo(runs), get: async (id: string) => (id === 'X' ? Promise.reject(new Error('gone')) : runs.find((r) => r.id === id)) };
+    const out = await expectFromRuns(store, here, 'llamacpp-native', model);
+    expect(out?.anchors).toHaveLength(2);
+    expect(await expectFromRuns(repo([spilled, ...others]), here, 'llamacpp-native', model)).toBeUndefined();
+    // The same file by its hash.
+    const hashed = at('H2', { model: modelIdentity({ facts, sha256: 'abc', weakKey: 'renamed' }) });
+    expect(await expectFromRuns(repo([hashed]), here, 'llamacpp-native', { sha256: 'abc', weakKey: 'x' })).toBeDefined();
+  });
+
+  it('else what the model’s size suggests: a 17.6 GB model reads ~2 000 tok/s and generates ~58', () => {
+    expect(expectFromSize(17.6e9)).toEqual({ anchors: [{ depth: 1024, prefillTps: 2135, decodeTps: 58 }], loadMs: 11_835 });
+    expect(expectFromSize(0.1e9).anchors[0]).toMatchObject({ prefillTps: 20_000, decodeTps: 300 });
+    expect(expectFromSize(undefined)).toEqual({ anchors: [DEFAULT_SPEED], loadMs: DEFAULT_LOAD_MS });
   });
 });
 

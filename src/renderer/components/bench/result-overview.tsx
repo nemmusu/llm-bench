@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import type { RunResult, Stat, ValidityFlag } from '../../../contract/results';
+import type { LaunchParams } from '../../../contract/engines';
+import { spilledRun, type RunResult, type Stat, type ValidityFlag } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
@@ -13,11 +14,13 @@ import { noteText } from './notes';
 import { ConcurrencyChart, PromptChart, TimelineChart } from './result-charts';
 import { LongConversations } from './result-sessions';
 import { contextSweepOf } from './sessions-view';
+import { SpillWarning } from './spill';
 import { validityBody } from './validity';
 
 /** What each validity warning offers as a way forward. */
 type FlagFix = 'rerun' | 'monitor' | 'settings' | 'engines';
 const FLAG_FIX: Record<ValidityFlag, FlagFix> = {
+  shared_memory_spill: 'rerun',
   gpu_shared: 'rerun',
   throttling: 'monitor',
   cold_not_guaranteed: 'settings',
@@ -29,7 +32,13 @@ const FLAG_FIX: Record<ValidityFlag, FlagFix> = {
   unstable: 'rerun',
   vram_approximate: 'rerun',
 };
-const FLAG_TONE: Partial<Record<ValidityFlag, 'warning' | 'info'>> = { gpu_shared: 'warning', throttling: 'warning', unstable: 'warning', cold_probably_cached: 'warning' };
+const FLAG_TONE: Partial<Record<ValidityFlag, 'warning' | 'info'>> = {
+  shared_memory_spill: 'warning',
+  gpu_shared: 'warning',
+  throttling: 'warning',
+  unstable: 'warning',
+  cold_probably_cached: 'warning',
+};
 
 function ScoreCard({ k }: { k: Kpis }) {
   const { t, integer } = useI18n();
@@ -85,7 +94,8 @@ function RunSummaryCard({ run }: { run: RunResult }) {
   // The same measurements the "unstable" flag looks at (generation and prompt reading), so the two never disagree.
   const cvs = run.metrics.latency.flatMap((p) => [p.decodeTps, p.prefillTps]).filter((s) => s.n > 1).map((s) => s.cv);
   const worst = cvs.length ? Math.max(...cvs) : undefined;
-  const level = worst === undefined ? undefined : worst < 0.02 ? 'Good' : worst < 0.05 ? 'Ok' : 'Bad';
+  // Steady numbers of a run that spilled are steadily wrong: never "Ottima" (the warning above says why).
+  const level = worst === undefined ? undefined : spilledRun(run) ? 'Spill' : worst < 0.02 ? 'Good' : worst < 0.05 ? 'Ok' : 'Bad';
   const items: { label: string; value: ReactNode; help?: string }[] = [
     { label: t('result.summary.duration'), value: duration(Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt))) },
     { label: t('result.summary.repetitions'), value: reps?.kind === 'latency' ? t('result.summary.repetitionsValue', { n: reps.reps }) : '–' },
@@ -119,12 +129,14 @@ function RunSummaryCard({ run }: { run: RunResult }) {
   );
 }
 
-function KpiGrid({ k, totalMiB }: { k: Kpis; totalMiB: number | undefined }) {
+function KpiGrid({ k, totalMiB, sharedMiB }: { k: Kpis; totalMiB: number | undefined; sharedMiB: number | undefined }) {
   const f = useI18n();
   const { t, number, integer, percent } = f;
   const cv = (s: Stat | undefined) => (s && s.n > 1 ? t('result.variation', { cv: percent(s.cv, 1) }) : undefined);
   const gb = (mib: number) => `${number(mib / MIB_PER_GB, 1)} GB`;
   const vramHint = [
+    // A spill: what did not fit, first.
+    sharedMiB !== undefined ? t('spill.kpi', { size: gb(sharedMiB) }) : undefined,
     k.vram?.approximate ? t('result.vramApprox') : k.vram ? t('result.vramExact') : undefined,
     k.vramEstimateMiB !== undefined ? t('result.vramEstimate', { size: gb(k.vramEstimateMiB) }) : undefined,
     totalMiB ? t('result.vramOf', { size: gb(totalMiB) }) : undefined,
@@ -188,9 +200,13 @@ export interface OverviewProps {
   onRerun: () => void;
   /** The failure card for failed/cancelled runs (rendered above everything). */
   errorCard?: ReactNode;
+  /** A run that spilled: "Trova le impostazioni migliori" with this model. */
+  onFindSettings: () => void;
+  /** A run that spilled: the same test with these settings changed ("Riprova con cache q4_0", "con meno contesto"). */
+  onRetry: (patch: Partial<LaunchParams>) => void;
 }
 
-export function Overview({ run, onRerun, errorCard }: OverviewProps) {
+export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: OverviewProps) {
   const f = useI18n();
   const { t } = f;
   const navigate = useNavigate();
@@ -202,10 +218,14 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
     settings: () => void navigate({ to: '/settings' }),
     engines: () => void navigate({ to: '/engines' }),
   };
-  const hasWarnings = run.validity.length > 0 || run.notes.length > 0;
+  const spill = run.metrics.spill;
+  // The spill has its own card, first: not once more among the other warnings.
+  const flags = spill ? run.validity.filter((v) => v !== 'shared_memory_spill') : run.validity;
+  const hasWarnings = flags.length > 0 || run.notes.length > 0;
   return (
     <div className="flex flex-col gap-section">
       {errorCard}
+      {spill && <SpillWarning spill={spill} onFindSettings={onFindSettings} onRetry={onRetry} />}
       <div className={hasWarnings ? 'grid gap-section lg:grid-cols-12' : 'grid gap-section'}>
         <div className={hasWarnings ? 'flex flex-col gap-section lg:col-span-5' : 'grid gap-section lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'}>
           <ScoreCard k={k} />
@@ -216,7 +236,7 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
             <h2 id="validity-title" className="text-md font-semibold tracking-[-0.01em]">
               {t('result.validityTitle')}
             </h2>
-            {run.validity.map((flag) => (
+            {flags.map((flag) => (
               <Callout key={flag} tone={FLAG_TONE[flag] ?? 'info'} title={t(`validity.${flag}.title`)} action={{ label: t(`validity.${flag}.action`), onClick: fixes[FLAG_FIX[flag]] }}>
                 {validityBody(run, flag, f)}
               </Callout>
@@ -232,7 +252,7 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
           </section>
         )}
       </div>
-      <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} />
+      <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} sharedMiB={spill?.sharedPeakMiB} />
       <LongConversations run={run} />
       {(run.metrics.latency.length > 0 || run.metrics.concurrency.length > 0) && (
         <div className="grid gap-section lg:grid-cols-2">

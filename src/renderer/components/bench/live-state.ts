@@ -1,7 +1,7 @@
 /** State of the live screen, folded from the core's server events (pure reducer). */
 import type { ActiveRun } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
-import type { CurrentStep, LivePoint, RunLaunch, RunPhase, ServerEvent } from '../../../contract/events';
+import type { CurrentStep, LivePoint, LiveSpill, RunLaunch, RunPhase, ServerEvent } from '../../../contract/events';
 import type { GpuSample } from '../../../contract/hardware';
 import type { TuneAttempt, Tuning } from '../../../contract/results';
 import { trackLoad, type LoadTrack } from './load-progress';
@@ -56,6 +56,10 @@ export interface LiveState {
   tuneCurrent?: TuneCurrent;
   /** The latest engine start, stage by stage. */
   load?: LoadTrack;
+  /** The time left the core last said (a tune run), and when it said it (Date.now()). */
+  remaining?: { seconds: number; at: number };
+  /** The engine spilled to shared system memory (run.spill). */
+  spill?: LiveSpill;
 }
 
 export function initialLive(phase: RunPhase = 'prepare', progress = 0): LiveState {
@@ -66,13 +70,15 @@ export function initialLive(phase: RunPhase = 'prepare', progress = 0): LiveStat
  * What the core says about the run (screen reopened, or a missed event): fills in what the events
  * have not brought yet, never overwriting fresher event data.
  */
-export function seedFromActive(s: LiveState, a: ActiveRun): LiveState {
+export function seedFromActive(s: LiveState, a: ActiveRun, now = Date.now()): LiveState {
   const patch: Partial<LiveState> = {};
   // Until the first event arrives (screen reopened mid-run), show where the core says the run is.
   if (!s.marks.length) {
     patch.phase = a.phase;
     patch.progress = Math.max(s.progress, a.progress);
   }
+  if (!s.remaining && a.remainingSeconds !== undefined) patch.remaining = { seconds: a.remainingSeconds, at: now };
+  if (!s.spill && a.spill) patch.spill = a.spill;
   if (!s.launch && a.launch) patch.launch = a.launch;
   if (!s.current && a.current) patch.current = a.current;
   if (!s.tuning && a.tuning) patch.tuning = a.tuning;
@@ -84,8 +90,8 @@ export function seedFromActive(s: LiveState, a: ActiveRun): LiveState {
   return { ...s, ...patch };
 }
 
-/** Applies one event of this run (other runs' events and unrelated types are ignored). */
-export function liveReducer(s: LiveState, e: ServerEvent, runId: string): LiveState {
+/** Applies one event of this run (other runs' events and unrelated types are ignored); `now` stamps the time left the core says. */
+export function liveReducer(s: LiveState, e: ServerEvent, runId: string, now = Date.now()): LiveState {
   switch (e.type) {
     case 'run.phase': {
       if (e.runId !== runId) return s;
@@ -94,8 +100,11 @@ export function liveReducer(s: LiveState, e: ServerEvent, runId: string): LiveSt
       const next: LiveState = { ...s, phase: e.phase, progress: Math.max(s.progress, e.progress), marks };
       if (e.detail === undefined) delete next.detail;
       else next.detail = e.detail;
+      if (e.remainingSeconds !== undefined) next.remaining = { seconds: e.remainingSeconds, at: now };
       return next;
     }
+    case 'run.spill':
+      return e.runId === runId ? { ...s, spill: e.spill } : s;
     case 'run.live': {
       if (e.runId !== runId) return s;
       const next = { ...s };

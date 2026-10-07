@@ -6,7 +6,7 @@ import { Field, Input } from '../ui/input';
 import { HelpTip } from '../ui/help-tip';
 import { SegmentedControl } from '../ui/segmented-control';
 import { Switch } from '../ui/switch';
-import { buildLabel, depthLabel } from './tune-format';
+import { buildLabel, depthLabel, roughDuration } from './tune-format';
 
 export type TuneRequest = NonNullable<StartRunRequest['tune']>;
 
@@ -45,6 +45,10 @@ export interface TuneOptionsProps {
   expert: boolean;
   /** The latest tune of the same question (from the plan): "Ricontrollo rapido" when it ran with another build. */
   previous?: RunPlan['previousTune'];
+  /** How long each budget takes for this model (the plan's forecast); absent until the plan says. */
+  times?: RunPlan['tuneSeconds'] | undefined;
+  /** "Ricontrollo rapido" chosen: how long it takes (the plan's estimate). */
+  recheckTime?: number | undefined;
   /** More choices shown first, in the same box. */
   children?: ReactNode;
 }
@@ -55,9 +59,11 @@ export interface TuneOptionsProps {
  * ("Ricontrollo rapido" when the engine changed since the last search) and (experts only) the fidelity
  * check, which is an indication and not a quality test.
  */
-export function TuneOptions({ value, onChange, expert, previous, children }: TuneOptionsProps) {
+export function TuneOptions({ value, onChange, expert, previous, times, recheckTime, children }: TuneOptionsProps) {
   const f = useI18n();
   const { t } = f;
+  // "circa 20 min per questo modello": the search's own forecast, once the plan says.
+  const timeOf = (seconds: number | undefined, fallback: Parameters<typeof t>[0]) => (seconds === undefined ? t(fallback) : t('tune.options.modelTime', { time: roughDuration(seconds) }));
   const goal: TuneGoal = value.goal ?? 'single';
   const users = value.users ?? TUNE_MULTI_DEFAULTS.users;
   const perUser = value.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext;
@@ -139,9 +145,9 @@ export function TuneOptions({ value, onChange, expert, previous, children }: Tun
           value={budget}
           onValueChange={(b) => onChange({ ...value, budget: b })}
           options={[
-            ...(offered ? [{ value: 'recheck' as const, label: t('tune.options.recheck'), sublabel: t('tune.options.recheckTime') }] : []),
-            { value: 'fast', label: t('tune.options.fast'), sublabel: t('tune.options.fastTime') },
-            { value: 'thorough', label: t('tune.options.thorough'), sublabel: t('tune.options.thoroughTime') },
+            ...(offered ? [{ value: 'recheck' as const, label: t('tune.options.recheck'), sublabel: timeOf(recheckTime, 'tune.options.recheckTime') }] : []),
+            { value: 'fast', label: t('tune.options.fast'), sublabel: timeOf(times?.fast, 'tune.options.fastTime') },
+            { value: 'thorough', label: t('tune.options.thorough'), sublabel: timeOf(times?.thorough, 'tune.options.thoroughTime') },
           ]}
         />
         <p className="text-xs text-fg-3">{budgetDesc}</p>

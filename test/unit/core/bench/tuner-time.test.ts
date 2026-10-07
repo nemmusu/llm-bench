@@ -171,12 +171,12 @@ describe('time: the forecast, the limit and every request within it', () => {
   });
 
   it('a request taking longer than predicted is expected to need a quarter of what it took so far', async () => {
-    let tuner: ReturnType<typeof createTuner> | undefined;
+    const holder: { tuner?: ReturnType<typeof createTuner> } = {};
     let during: number[] = [];
     const lab = realLab();
-    const measure = lab.prepare.bind(lab);
-    lab.prepare = async (params, info) => {
-      const r = await measure(params, info);
+    const prepare = lab.prepare.bind(lab);
+    lab.prepare = async (params: LaunchParams) => {
+      const r = await prepare(params);
       return {
         ...r,
         start: async () => {
@@ -187,11 +187,11 @@ describe('time: the forecast, the limit and every request within it', () => {
             ...s,
             engine: {
               ...s.engine,
-              measure: async (d, o, n, k, more) => {
+              measure: async (d: number, o: number, n: number, k: Parameters<typeof m>[3], more?: () => boolean) => {
                 // In the middle of a 64K request: much later than it should have ended.
                 if (d === 65_536 && during.length === 0) {
                   lab.t += 1_000_000;
-                  during = [tuner!.forecast().remainingMs];
+                  during = [holder.tuner!.forecast().remainingMs];
                 }
                 return m(d, o, n, k, more);
               },
@@ -200,9 +200,51 @@ describe('time: the forecast, the limit and every request within it', () => {
         },
       };
     };
-    tuner = createTuner(input(real({ limitMs: 10_000_000 })), { lab, now: lab.now });
-    await tuner.run();
+    holder.tuner = createTuner(input(real({ limitMs: 10_000_000 })), { lab, now: lab.now });
+    await holder.tuner.run();
     expect(during[0]).toBeGreaterThanOrEqual(1_000_000 / 4);
+  });
+
+  it('"Accurata" cut by the limit inside a screening: the screening keeps what it measured', async () => {
+    const { t } = await tune(real({ budget: 'thorough', space: llamaSpace({ budget: 'thorough', params: P() }), limitMs: 8 * 60_000 }), realLab());
+    const cut = t.attempts.find((a) => a.stage === 'variant' && a.skipped);
+    expect(cut!.skipped![0]!.depth).toBe(262_000);
+    expect(cut!.points.map((p) => p.promptTokens)).toEqual([1024, 1024, 131_072]);
+    expect(t.combinations.every((c) => c.partial === 'budget')).toBe(true);
+  });
+
+  it('a point without measurements says nothing about the speeds', async () => {
+    const lab = realLab();
+    const prepare = lab.prepare.bind(lab);
+    lab.prepare = async (params: LaunchParams) => {
+      const r = await prepare(params);
+      return {
+        ...r,
+        start: async () => {
+          const s = await r.start();
+          if (!s.ok) return s;
+          const m = s.engine.measure;
+          // Every 1K probe comes back empty (no token ids, no timings).
+          const empty = async (d: number, o: number, n: number, k: Parameters<typeof m>[3], more?: () => boolean) => {
+            const p = await m(d, o, n, k, more);
+            return d === 1024 && o === 32 ? { ...p, decodeTps: { ...p.decodeTps, n: 0 } } : p;
+          };
+          return { ...s, engine: { ...s.engine, measure: empty } };
+        },
+      };
+    };
+    const tuner = createTuner(input(real({ spillPossible: false })), { lab, now: lab.now });
+    const before = tuner.time().estimateMs;
+    await tuner.run();
+    expect(tuner.time().estimateMs).toBe(before);
+  });
+
+  it('the search between "loads" and "does not" never repeats a context (an unaligned largest one)', () => {
+    const tuner = createTuner(input(), { lab: FORECAST_ONLY, now: () => 0 }) as unknown as { refine: (c: object, ok: number, fail: number) => boolean };
+    const cap = { candidates: [74_000, 84_000], status: new Map([[74_000, true], [84_000, false]]) };
+    // Their middle rounded down to 8K is 73 728: below the largest that loads.
+    expect(tuner.refine(cap, 0, 1)).toBe(false);
+    expect(cap.candidates).toEqual([74_000, 84_000]);
   });
 
   it('speeds are predicted from the measurement nearest in depth', () => {

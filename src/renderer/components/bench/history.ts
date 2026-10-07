@@ -1,14 +1,18 @@
 /** Run lists: speed history for sparklines, "this PC", and the filter options of the results page. */
-import type { RunSummary } from '../../../contract/results';
+import { spilledRun, type RunSummary } from '../../../contract/results';
 
 /**
  * Generation speed of the same model on the same GPU over time, oldest first, up to `target`
- * included: the sparkline next to a result tells whether this run is in line with the others.
+ * included: the sparkline next to a result tells whether this run is in line with the others. Runs
+ * that spilled to shared memory are left out (their numbers are not the card's).
  */
 export function decodeHistory(target: RunSummary, runs: readonly RunSummary[], max = 12): number[] {
   const at = Date.parse(target.createdAt);
   return runs
-    .filter((r) => r.status === 'completed' && r.decodeTps !== undefined && r.modelWeakKey === target.modelWeakKey && r.gpuName === target.gpuName && Date.parse(r.createdAt) <= at)
+    .filter(
+      (r) =>
+        r.status === 'completed' && r.decodeTps !== undefined && !spilledRun(r) && r.modelWeakKey === target.modelWeakKey && r.gpuName === target.gpuName && Date.parse(r.createdAt) <= at,
+    )
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     .slice(-max)
     .map((r) => r.decodeTps!);

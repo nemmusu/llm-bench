@@ -12,13 +12,12 @@ import { MIB_PER_GB } from '../bench/format';
 import { LongConversations } from '../bench/result-sessions';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
-import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { comboText, depthLabel, type LabelFn } from './tune-format';
 import { rankUsers, USERS_COLUMNS, usersLevel, type RankRow } from './tune-logic';
 import { TuneRanking, type ColumnView } from './tune-ranking';
-import { DiscardedAttempts } from './tune-sections';
+import { DiscardedAttempts, StoppedNote } from './tune-sections';
 
 type TunedRun = RunResult & { tuning: Tuning };
 
@@ -71,11 +70,7 @@ export function UsersOverview({ run, errorCard }: { run: TunedRun; errorCard?: R
       <Card className="hero-wash p-7 compact:p-5">
         <p className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('tune.summary.title')}</p>
         <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">{usersSummary(tuning, rows, kind, label, f)}</p>
-        {tuning.stoppedBy && (
-          <Callout className="mt-4" tone="info" title={t(`tune.stopped.${tuning.stoppedBy}`)}>
-            {t('tune.stopped.body', { n: tuning.attempts.length })}
-          </Callout>
-        )}
+        {tuning.stoppedBy && <StoppedNote tuning={tuning} />}
         {top && <UsersRecommended row={top} n={n} text={comboText(top.combo, kind, label)} />}
       </Card>
       {top ? (

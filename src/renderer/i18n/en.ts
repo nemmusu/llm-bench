@@ -166,6 +166,33 @@ export const en: Messages = {
     value: 'Tried on this GPU · {tps} tok/s',
     short: 'Tried · {tps} tok/s',
     tooltip: 'You measured it on {date}: {tps} tok/s generation.',
+    spill: 'Tried: it used shared RAM',
+    spillShort: 'Tried: shared RAM',
+    spillTooltip: 'On {date} it did not fully fit in the card’s memory: Windows used shared RAM, so that test does not count.',
+  },
+  spill: {
+    title: 'The model did not fully fit in the card’s memory',
+    shared: 'Windows used {size} of shared RAM, which is why it runs about {times} times slower than normal ({tps} tok/s instead of {normal}).',
+    sharedNoNormal: 'Windows used {size} of shared RAM: in this case everything runs about 10–15 times slower than normal.',
+    collapse: 'It generates {tps} tok/s instead of the usual {normal}, about {times} times slower: Windows put part of the model in shared RAM.',
+    notReal: 'These are not the card’s real numbers.',
+    tune: 'Find the best settings',
+    q4: 'Try again with q4_0 cache',
+    context: 'Try again with less context ({ctx})',
+    kpi: '+ {size} in shared RAM',
+    badge: 'Shared RAM',
+    badgeHelp: 'The model did not fully fit in the card’s memory: Windows used shared RAM and these numbers are much lower than the real ones.',
+    live: {
+      title: 'It is using shared RAM: the numbers will be much lower',
+      shared: 'The model does not fully fit in the card’s memory: Windows put {size} of it in the PC’s RAM. You can cancel and try again with less context or with the q4_0 cache.',
+      collapse: 'It generates {tps} tok/s instead of the usual {normal}: Windows probably put part of the model in the PC’s RAM. You can cancel and try again with less context or with the q4_0 cache.',
+      cancel: 'Cancel test',
+    },
+    fix: {
+      q4: 'Use q4_0 cache',
+      context: 'Largest context that fits: {ctx}',
+      applied: 'Settings updated in the advanced parameters.',
+    },
   },
   codeblock: {
     shell: 'Command format',
@@ -269,6 +296,11 @@ export const en: Messages = {
     itl: { label: 'Gap between tokens', help: 'The time between one token and the next while writing. Low, steady values give fluid text.' },
   },
   validity: {
+    shared_memory_spill: {
+      title: 'The model did not fully fit in the card’s memory',
+      body: 'Windows put part of the model in the PC’s shared RAM, which is much slower: these are not the card’s real numbers.',
+      action: 'Find the best settings',
+    },
     gpu_shared: {
       title: 'Other programs were using the GPU',
       body: 'During the test other programs were holding graphics memory. The numbers may be slightly lower than usual.',
@@ -418,6 +450,14 @@ export const en: Messages = {
     partial_offload: {
       title: 'The model does not fully fit on the graphics card',
       body: 'Only {maxGpuLayers} layers will fit in graphics memory, the rest goes to RAM: it works, but more slowly.',
+    },
+    spill_risk: {
+      title: 'The model does not fully fit on the graphics card',
+      body: 'It needs about {need} and {available} are free. Windows will put the rest in shared RAM: everything will be much slower (about 10–15 times) and the numbers will not be the card’s real ones.',
+    },
+    oom_risk: {
+      title: 'The model does not fit on the graphics card',
+      body: 'It needs about {need} and {available} are free. With every layer on the card the engine will stop with out of memory.',
     },
     slow_shared_filesystem: {
       title: 'The model is on a slow folder',
@@ -859,7 +899,7 @@ export const en: Messages = {
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variable',
-      tune: '5–20 min',
+      tune: 'depends on the model',
     },
     profileDesc: {
       quick: 'A fast measurement to get an idea: one load and one test text.',
@@ -1143,6 +1183,7 @@ export const en: Messages = {
       stabilityGood: 'Excellent',
       stabilityOk: 'Good',
       stabilityBad: 'Variable',
+      stabilitySpill: 'Distorted by shared RAM',
       stabilityHelp: 'How similar the repetitions of the same measurement are (generation and prompt reading; the most variable one counts). Under 2% variation the numbers are reliable.',
     },
     kpis: 'Key numbers',
@@ -1363,9 +1404,10 @@ export const en: Messages = {
       budget: 'How long to search',
       budgetHelp: 'Every attempt starts the engine with different settings. More attempts = more combinations compared, but it takes longer.',
       fast: 'Fast',
-      fastTime: '~5 min',
+      fastTime: 'fewer combinations',
       thorough: 'Thorough',
-      thoroughTime: '~20 min',
+      thoroughTime: 'more combinations',
+      modelTime: 'about {time} for this model',
       fastDesc: 'The settings that matter most, few attempts.',
       thoroughDesc: 'More values for each setting and more repetitions.',
       fidelity: 'Fidelity check',
@@ -1382,7 +1424,7 @@ export const en: Messages = {
       perUserContext: 'Context per user (tokens)',
       perUserContextHelp: 'How much text the server keeps in mind for each one, question and answer together (1K = 1,024 tokens, about 750 words).',
       recheck: 'Quick recheck',
-      recheckTime: '~3 min',
+      recheckTime: 'two attempts',
       recheckDesc: 'The last search was made with {build}; you now use {current}. I reload only the recommended configuration and the runner-up and check whether the numbers are still the same.',
     },
     outcome: {
@@ -1429,6 +1471,12 @@ export const en: Messages = {
       budget: 'I stopped early: time is up',
       launches: 'I stopped early: maximum number of attempts reached',
       body: 'I made {n} attempts. With “Thorough” I try more combinations.',
+      bodyLimit: 'I made {n} attempts in the expected time ({limit}). The “partly measured” combinations have the numbers taken so far, compared by the same rules.',
+    },
+    partial: {
+      budget: 'Partly measured (time is up)',
+      launches: 'Partly measured (too many attempts)',
+      help: 'The search stopped before measuring this combination’s whole context: you have the numbers taken so far (at least the 1K check at the largest context).',
     },
     rec: {
       title: 'Recommended combination',
@@ -1510,6 +1558,7 @@ export const en: Messages = {
       vram: 'peak VRAM {size} GB',
       shared: 'shared RAM {size} GB',
       command: 'Command of attempt {n}: {settings}, context {ctx}',
+      skipped: 'Not measured at {depths}: it would have ended after the expected time (about {time}).',
     },
     capacity: {
       title: 'Largest context per cache type',
@@ -1521,6 +1570,13 @@ export const en: Messages = {
       noFit: 'does not fit',
       none: 'No context fit entirely in graphics memory.',
       measuredNote: 'Measured by starting the engine.',
+      atLeast: 'at least {ctx}',
+      bound: {
+        found: 'Limit found: at {next} it no longer fits.',
+        model: 'It reaches the model’s largest context.',
+        estimate: 'At least {ctx}: larger not tried (the estimate goes up to {est}).',
+        budget: 'At least {ctx}: larger not tried (time is up).',
+      },
       inferred: 'Deduced without starting the engine: it already reaches the model’s limit.',
       skipped: {
         estimate: 'Not tried: the memory estimate ruled it out.',

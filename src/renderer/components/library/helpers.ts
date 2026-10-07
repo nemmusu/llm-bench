@@ -1,6 +1,6 @@
 import type { GpuInfo } from '../../../contract/hardware';
 import type { HubFile } from '../../../contract/models';
-import type { RunSummary } from '../../../contract/results';
+import { spilledRun, type RunSummary } from '../../../contract/results';
 import type { CuratedModel } from '../../../contract/views';
 
 export const HF_BASE = 'https://huggingface.co';
@@ -20,20 +20,29 @@ export function curatedWeakKey(m: Pick<CuratedModel, 'repo' | 'file' | 'quant' |
 }
 
 export interface TriedHere {
-  tps: number;
+  /** Its generation speed; undefined when every run of it here spilled to shared memory (numbers that do not count). */
+  tps?: number;
   date: string;
   runId: string;
+  /** Only runs that spilled exist here: "Provato: usava la RAM condivisa". */
+  spilled?: boolean;
 }
 
-/** Best completed run on this GPU (same card, or the same model of card), by generation speed. */
+/**
+ * Best completed run on this GPU (same card, or the same model of card), by generation speed. Runs that
+ * spilled to shared memory never count: when they are the only ones, the newest of them says so.
+ */
 export function bestRunHere(runs: readonly RunSummary[] | undefined, gpu: Pick<GpuInfo, 'uuid' | 'name'> | undefined): TriedHere | undefined {
   let best: RunSummary | undefined;
+  let spilled: RunSummary | undefined;
   for (const r of runs ?? []) {
     if (r.status !== 'completed' || r.decodeTps === undefined || !gpu) continue;
     if (r.gpuUuid !== gpu.uuid && r.gpuName !== gpu.name) continue;
-    if (!best || r.decodeTps > (best.decodeTps as number)) best = r;
+    if (spilledRun(r)) spilled = !spilled || r.createdAt > spilled.createdAt ? r : spilled;
+    else if (!best || r.decodeTps > (best.decodeTps as number)) best = r;
   }
-  return best ? { tps: best.decodeTps as number, date: best.createdAt, runId: best.id } : undefined;
+  if (best) return { tps: best.decodeTps as number, date: best.createdAt, runId: best.id };
+  return spilled ? { date: spilled.createdAt, runId: spilled.id, spilled: true } : undefined;
 }
 
 export interface TriedModel {
@@ -41,8 +50,10 @@ export interface TriedModel {
   owner: string;
   name: string;
   quant: string | undefined;
-  /** Best generation speed on this GPU, when a run completed. */
+  /** Best generation speed on this GPU, when a run completed (runs that spilled to shared memory never count). */
   tps: number | undefined;
+  /** A completed run here spilled to shared memory (its speed does not count). */
+  spilled: boolean;
   /** Latest run. */
   date: string;
   runs: number;
@@ -55,13 +66,15 @@ export function triedModels(runs: readonly RunSummary[] | undefined, gpu: Pick<G
     const parts = r.modelWeakKey.split('/');
     if (!gpu || parts.length < 5 || (r.gpuUuid !== gpu.uuid && r.gpuName !== gpu.name)) continue;
     const repo = `${parts[0]}/${parts[1]}`;
-    const tps = r.status === 'completed' ? r.decodeTps : undefined;
+    const spill = r.status === 'completed' && spilledRun(r);
+    const tps = r.status === 'completed' && !spill ? r.decodeTps : undefined;
     const seen = out.get(repo);
     if (!seen) {
-      out.set(repo, { repo, owner: parts[0] as string, name: parts[1] as string, quant: r.quant, tps, date: r.createdAt, runs: 1 });
+      out.set(repo, { repo, owner: parts[0] as string, name: parts[1] as string, quant: r.quant, tps, spilled: spill, date: r.createdAt, runs: 1 });
       continue;
     }
     seen.runs++;
+    seen.spilled ||= spill;
     if (r.createdAt > seen.date) seen.date = r.createdAt;
     if (tps !== undefined && (seen.tps === undefined || tps > seen.tps)) {
       seen.tps = tps;

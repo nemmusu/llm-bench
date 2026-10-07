@@ -3,8 +3,9 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { CircleCheck, Download, GitCompareArrows, ListChecks, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
-import type { RunSummary } from '../../contract/results';
+import { spilledRun, type RunSummary } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
+import { SpillBadge } from '../components/bench/spill';
 import { countKey, MIB_PER_GB, prettyEngineLabel, shortGpuName } from '../components/bench/format';
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS, type RunFilters } from '../components/bench/history';
 import { ConfigsView } from '../components/configs/configs-view';
@@ -215,9 +216,11 @@ export function ResultsPage() {
       }),
       col.accessor('status', {
         header: t('results.columns.status'),
-        // Completed is the norm: a quiet check. Only failures and cancellations get a badge.
+        // Completed is the norm: a quiet check. Only failures, cancellations and runs that spilled to shared memory get a badge.
         cell: (c) =>
-          c.getValue() === 'completed' ? (
+          c.getValue() === 'completed' && spilledRun(c.row.original) ? (
+            <SpillBadge />
+          ) : c.getValue() === 'completed' ? (
             <span className="inline-flex text-success-text">
               <CircleCheck aria-hidden className="size-4" />
               <span className="sr-only">{t('result.status.completed')}</span>

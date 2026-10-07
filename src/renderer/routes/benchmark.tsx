@@ -1,6 +1,7 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { Check, ChevronsUpDown, Download, HardDrive, Play, Server, Timer, TriangleAlert } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import type { RunPlan, StartRunRequest } from '../../contract/api';
 import type { Settings } from '../../contract/settings';
 import type { EngineKind } from '../../contract/engines';
@@ -11,8 +12,8 @@ import { ExpertPanel } from '../components/bench/expert-panel';
 import { formFromParams, formFromScenario, hasCustomParams, paramsFromForm, scenarioFromForm, type ParamsForm, type ScenarioForm } from '../components/bench/expert-form';
 import { MIB_PER_GB, shortGpuName } from '../components/bench/format';
 import { BenchModelPicker } from '../components/bench/model-picker';
-import { initialModelKey, modelOptions, requestModel, savedModelId, type ModelOption } from '../components/bench/model-options';
-import { PlanCard } from '../components/bench/plan-card';
+import { initialModelKey, modelOptions, newestTried, requestModel, savedModelId, triedHere, type ModelOption } from '../components/bench/model-options';
+import { PlanCard, type FitPatch } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
 import { ServersPanel } from '../components/bench/servers';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
@@ -31,7 +32,7 @@ import { SegmentedControl } from '../components/ui/segmented-control';
 import { Select } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
 import { Switch } from '../components/ui/switch';
-import { TriedBadge } from '../components/ui/tried-badge';
+import { TriedHereBadge } from '../components/ui/tried-badge';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/cn';
 import {
@@ -123,7 +124,8 @@ function SelectedModel({
   const fitLevel = (fit.data ?? planFit)?.level;
   const tried = useTried(local ? { weakKey: local.identity.weakKey, ...(local.identity.sha256 ? { sha256: local.identity.sha256 } : {}) } : undefined);
   const gpuName = system.data?.gpus[0]?.name;
-  const best = tried.data?.find((r) => r.status === 'completed' && r.decodeTps !== undefined && r.gpuName === gpuName);
+  // A run that spilled to shared memory never stands for "tried here", unless it is the only one (then it says so).
+  const best = newestTried((tried.data ?? []).filter((r) => r.gpuName === gpuName));
   const detail = [option.quant, option.sizeBytes === undefined ? undefined : bytes(option.sizeBytes)].filter(Boolean).join(' · ');
   return (
     <>
@@ -146,7 +148,7 @@ function SelectedModel({
             {option.preset ? t('presets.badge') : t('benchmark.pickModel.suggested')}
           </Badge>
         )}
-        {best && <TriedBadge tps={best.decodeTps!} date={best.createdAt} size="sm" />}
+        {best && <TriedHereBadge tried={triedHere(best)} short={false} size="sm" />}
       </div>
     </>
   );
@@ -264,6 +266,20 @@ function BenchmarkScreen() {
       engineLabel,
       onStarted: () => remember({ lastProfile: effProfile }),
     });
+  };
+
+  /**
+   * "Usa cache q4_0" / "Contesto massimo che entra" of a "does not fit" warning: into the advanced
+   * parameters (turned on: only they are sent), the preview follows.
+   */
+  const applyFix = (patch: FitPatch) => {
+    setParamsForm((cur) => ({
+      ...cur,
+      ...(patch.kvCacheType ? { kvCacheType: patch.kvCacheType, flashAttention: 'on' as const } : {}),
+      ...(patch.contextSize !== undefined ? { contextSize: String(patch.contextSize) } : {}),
+    }));
+    if (!expert) update({ expertMode: true });
+    toast.success(t('spill.fix.applied'));
   };
 
   /** The same engine, model and expert parameters, without a test: the core fills in the rest for this card. */
@@ -444,7 +460,7 @@ function BenchmarkScreen() {
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
-              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} />}
+              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} />}
             </ChoiceCard>
           </div>
 
@@ -477,7 +493,7 @@ function BenchmarkScreen() {
             />
           )}
 
-          <PlanCard plan={planData} loading={planJson !== '' && plan.isFetching} error={planError} needs={needs} expert={expert} />
+          <PlanCard plan={planData} loading={planJson !== '' && plan.isFetching} error={planError} needs={needs} expert={expert} onFix={applyFix} />
         </div>
 
         <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>

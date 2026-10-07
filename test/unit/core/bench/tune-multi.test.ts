@@ -126,6 +126,18 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
     expect(r16.multi?.fittingUsers).toBe(8);
   });
 
+  it('every user at once that would end past the time limit is not started (recorded); the forecast counts the screenings', async () => {
+    // f16 runs out of memory (200 s to fail), q8_0 loads in 200 s more: its users would end past 5 min.
+    const { t } = await tune({ ...multi(), limitMs: 300_000 }, machine({ loadMs: 200_000 }));
+    expect(t.attempts.find((a) => a.skipped)).toMatchObject({ stage: 'capacity', outcome: 'ok', skipped: [{ depth: 8048, predictedMs: expect.any(Number) }] });
+    expect(t.stoppedBy).toBe('budget');
+    expect(t.combinations).toEqual([]);
+    // Planned: a screening per value of every dimension, then users 1 … 4; more with a reference launch (Windows).
+    const plain = new MultiTuner(input(multi()), { lab: machine(), now: () => 0 }).time().estimateMs;
+    expect(new MultiTuner(input({ ...multi(), spillPossible: true }), { lab: machine(), now: () => 0 }).time().estimateMs).toBeGreaterThan(plain);
+    expect(t.capacity.every((c) => c.bound === undefined)).toBe(true);
+  });
+
   it('a context per user too small for the conversations: users at once only', async () => {
     const { t } = await tune({ ...multi(4, 800), modelContext: undefined }, machine());
     const rec = t.combinations[t.recommended!]!;
