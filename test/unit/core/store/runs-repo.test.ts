@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, sy
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { launchParamsSchema } from '../../../../src/contract/engines';
 import { AppError } from '../../../../src/contract/errors';
 import { contextOf, fileStamp, parseRun, RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
 import { hardware, latencyPoint, makeRun, modelIdentity, stat } from './fixtures';
@@ -54,7 +55,7 @@ describe('context and parallel users in the summary', () => {
   it('the most users served at once, with their combined speed; nothing for single-user tests', () => {
     const point = (level: number, aggregateTps: number) => ({ level, requests: level * 4, aggregateTps, perRequestDecodeTpsP50: 90, ttftP50Ms: 40, ttftP95Ms: 80, errors: 0 });
     const run = makeRun({ launch: launch(['llama-server'], { contextSize: 6144 }), metrics: { ...makeRun().metrics, concurrency: [point(1, 210), point(4, 640), point(2, 380)] } });
-    expect(summaryOf(run, 'f')).toMatchObject({ contextSize: 6144, parallelUsers: 4, parallelTps: 640 });
+    expect(summaryOf(run, 'f')).toMatchObject({ contextSize: 6144, parallelUsers: 4, parallelTps: 640, parallelPerUserTps: 90 });
     const single = summaryOf(makeRun({ metrics: { ...makeRun().metrics, concurrency: [point(1, 210)] } }), 'f');
     expect(single).not.toHaveProperty('parallelUsers');
     expect(single).not.toHaveProperty('contextSize');
@@ -62,6 +63,33 @@ describe('context and parallel users in the summary', () => {
 });
 
 describe('summaryOf', () => {
+  it('tune runs: the recommended combination (its context sweep, context, KV cache, VRAM) and how many were measured', () => {
+    const sweep = [latencyPoint(1024, 150, 9000), latencyPoint(4096, 140, 8000), latencyPoint(40816, 100, 5000)];
+    const params = launchParamsSchema.parse({ contextSize: 40960, kvCacheType: 'q4_0' });
+    const combination = {
+      params,
+      kvType: 'q4_0' as const,
+      maxContext: 40960,
+      vramPeakMiB: 13950,
+      sweep,
+      command: { argv: [], powershell: '', bash: '' },
+      outcome: 'ok' as const,
+      tags: [],
+    };
+    const run = makeRun({
+      scenario: { profile: 'tune', seed: 42, steps: [] },
+      launch: { ...makeRun().launch, params },
+      metrics: { ...makeRun().metrics, latency: [], contextSweep: sweep },
+      tuning: { budget: 'fast', maxLaunches: 24, dimensions: [], capacity: [], depths: [], attempts: [], combinations: [combination, { ...combination, kvType: 'f16' }], recommended: 0, fastestByDepth: [] },
+    });
+    expect(summaryOf(run, 'f')).toMatchObject({ profile: 'tune', decodeTps: 150, prefillTps: 5000, contextSize: 40960, kvCacheType: 'q4_0', tunedCombinations: 2, vramPeakMiB: 13950 });
+    // Raw, unparsed JSON of an older run has no context sweep at all.
+    const old = makeRun({ metrics: { ...makeRun().metrics, latency: [] } });
+    delete (old.metrics as Partial<typeof old.metrics>).contextSweep;
+    expect(summaryOf(old, 'f')).not.toHaveProperty('decodeTps');
+    expect(summaryOf(old, 'f')).not.toHaveProperty('tunedCombinations');
+  });
+
   it('headline numbers from the 512 point, prefill from the largest, VRAM delta', () => {
     const s = summaryOf(makeRun({ metrics: { ...makeRun().metrics, score: { value: 812, referenceVersion: 1 } } }), 'f.json');
     expect(s).toMatchObject({

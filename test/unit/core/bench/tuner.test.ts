@@ -31,8 +31,8 @@ interface LabOptions {
   flavor?: 'llamacpp' | 'vllm';
   loadMs?: number;
   requestMs?: number;
-  /** Shared GPU memory reported for a launch (Windows counters). */
-  shared?: (p: LaunchParams) => number | undefined;
+  /** Shared GPU memory reported for a launch (Windows counters); `requests` = requests measured so far on it. */
+  shared?: (p: LaunchParams, requests: number) => number | undefined;
   /** Start failures by launch number (1-based). */
   fail?: (p: LaunchParams, n: number) => AppErrorData | undefined;
   /** A request that throws (engine died, cancelled…). */
@@ -91,17 +91,19 @@ class Lab implements TuneLab {
         if (plan.outcome === 'kv-too-small') {
           return { ok: false, error: { code: 'MODEL_TOO_LARGE', message: 'kv', params: { reason: 'kv-cache', estimatedMaxModelLen: plan.capacity! } } };
         }
+        let requests = 0;
         const engine: LabEngine = {
           measure: async (depth) => {
             const err = o.throwOn?.(params, depth);
             if (err) throw err;
+            requests++;
             this.t += o.requestMs ?? 500;
             const spill = plan.outcome === 'spill' && (!o.deepSpillOnly || depth > 8192);
             const s = speeds(profile, { depth, flashAttn: params.flashAttention, kvType: params.kvCacheType, ubatch: params.ubatchSize ?? params.batchSize, spill, cpuShare: plan.cpuShare });
             return point(depth, o.decode?.(params, depth) ?? s.decode, { prefill: s.prefill });
           },
           memory: () => {
-            const shared = o.shared?.(params);
+            const shared = o.shared?.(params, requests);
             return { ...(o.noVram ? {} : { vramPeakMiB: plan.vramMiB }), ...(shared !== undefined ? { sharedPeakMiB: shared } : {}) };
           },
           capacityHint: () => plan.capacity,
@@ -258,6 +260,15 @@ describe('Tuner: spills (Windows)', () => {
     // Without the counters the collapse gives it away.
     const blind = await tune({ spillPossible: true }, new Lab({ profile: TUNE_PROFILE }));
     expect(blind.t.attempts.find((a) => a.kvType === 'q8_0' && a.contextSize === 40960)).toMatchObject({ outcome: 'spill', spill: 'decode-collapse' });
+  });
+
+  it('shared memory that only grows while measuring still counts as a spill (and its sweep is not kept)', async () => {
+    // q4_0 at 40K with ub 2048: fine after the probe, spilling once the deep prompts fill the KV cache.
+    const shared = (p: LaunchParams, requests: number) => (p.kvCacheType === 'q4_0' && p.ubatchSize === 2048 && requests > 1 ? 4000 : 10);
+    const { t } = await tune({ spillPossible: true }, new Lab({ shared }));
+    expect(t.attempts.find((a) => a.kvType === 'q4_0' && a.params.ubatchSize === 2048)).toMatchObject({ outcome: 'spill', spill: 'shared-memory', sharedPeakMiB: 4000 });
+    expect(t.combinations.find((c) => c.kvType === 'q4_0')?.params.ubatchSize).toBe(512);
+    expect(t.combinations.every((c) => c.outcome === 'ok')).toBe(true);
   });
 
   it('the reference moves down the ladder when f16 does not load at 4K (or is pruned)', async () => {

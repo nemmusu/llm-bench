@@ -502,15 +502,22 @@ export class Tuner {
       att.points.push(probe);
       const hint = engine.capacityHint();
       if (hint !== undefined) live.hint = hint;
-      const shared = engine.memory().sharedPeakMiB;
-      const spill = this.input.spillPossible;
-      if (spill && shared !== undefined && shared >= Math.max(SPILL_SHARED_MIN_MIB, (this.refShared ?? 0) + SPILL_SHARED_OVER_MIB)) {
+      if (this.sharedSpill(engine)) {
         att.outcome = 'spill';
         att.spill = 'shared-memory';
-      } else if (spill && this.refDecode !== undefined && probe.decodeTps.median < SPILL_RATIO * this.refDecode) {
+      } else if (this.input.spillPossible && this.refDecode !== undefined && probe.decodeTps.median < SPILL_RATIO * this.refDecode) {
         att.outcome = 'spill';
         att.spill = 'decode-collapse';
-      } else if (work) await work(engine, live);
+      } else if (work) {
+        await work(engine, live);
+        // Memory taken while measuring (the KV cache filling up, compute buffers) can spill too.
+        if (att.outcome === 'ok' && this.sharedSpill(engine)) {
+          att.outcome = 'spill';
+          att.spill = 'shared-memory';
+          this.screens.delete(variantKey(live.variant, att.contextSize));
+          delete live.sweep;
+        }
+      }
     } catch (e) {
       const data = toAppErrorData(e);
       if (data.code === 'CANCELLED') throw e;
@@ -522,6 +529,12 @@ export class Tuner {
       if (mem.sharedPeakMiB !== undefined) att.sharedPeakMiB = mem.sharedPeakMiB;
       await engine.stop();
     }
+  }
+
+  /** Windows: the engine uses shared GPU memory (system RAM) well beyond the reference launch's. */
+  private sharedSpill(engine: LabEngine): boolean {
+    const shared = engine.memory().sharedPeakMiB;
+    return this.input.spillPossible && shared !== undefined && shared >= Math.max(SPILL_SHARED_MIN_MIB, (this.refShared ?? 0) + SPILL_SHARED_OVER_MIB);
   }
 
   /** Marks the attempt as a spill when the generation speed collapsed between two of these points. */

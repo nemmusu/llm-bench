@@ -22,9 +22,8 @@ import {
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
 import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
-import { parseKvCapacity } from '../engines/shared/kv-capacity';
+import { parseKvCapacity, vllmKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
-import { parseVllmLoadReport } from '../engines/shared/vllm-logs';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
@@ -817,7 +816,8 @@ export class BenchRunner {
     return {
       measure: (depth, outputTokens, reps, kind) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt }),
       memory: () => this.launchMemory(s, from),
-      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : parseVllmLoadReport(inst.logTail()).kvCacheTokens),
+      // vLLM's KV pool does not depend on max-model-len: what it holds is the largest context. (llama.cpp just echoes -c.)
+      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : vllmKvCapacity(inst.logTail())?.tokens),
       generate: async (promptTokens, tokens) => {
         this.step(s, { kind: 'fidelity', promptTokens, outputTokens: tokens });
         const seed = s.input.scenario.seed;
