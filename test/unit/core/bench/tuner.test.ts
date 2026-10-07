@@ -163,8 +163,8 @@ describe('Tuner: spills (Windows)', () => {
   });
 
   it('a collapse between screening depths shows only in the full sweep: that variant is dropped', async () => {
-    // q4_0 with ub 2048 slows down terribly around 8–16K only (screened at 1K and 40K, it looked fine).
-    const decode = (p: LaunchParams, d: number) => (p.kvCacheType === 'q4_0' && p.ubatchSize === 2048 && d > 2048 && d < 20_000 ? 10 : undefined);
+    // q4_0 with ub 2048 slows down terribly around 8K only (screened at 1K, 16K and 40K, it looked fine).
+    const decode = (p: LaunchParams, d: number) => (p.kvCacheType === 'q4_0' && p.ubatchSize === 2048 && d > 6000 && d < 12_000 ? 10 : undefined);
     const { t } = await tune({ spillPossible: true }, new Lab({ decode }));
     const bad = t.attempts.find((a) => a.kvType === 'q4_0' && a.params.ubatchSize === 2048 && a.stage === 'variant');
     expect(bad).toMatchObject({ outcome: 'spill', spill: 'decode-collapse' });

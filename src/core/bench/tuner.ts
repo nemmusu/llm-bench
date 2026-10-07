@@ -884,7 +884,8 @@ export class Tuner {
       return out;
     };
     const ref = await generate(space.params(this.base(refKv), this.min), this.base(refKv));
-    const cmp = ref ? await generate(chosen.params, chosen.variant ?? { kv: chosen.kvType }) : undefined;
+    // Every combination of this run records its variant.
+    const cmp = ref ? await generate(chosen.params, chosen.variant as Variant) : undefined;
     if (!ref || !cmp) return;
     const n = Math.min(ref.length, cmp.length);
     let identical = 0;

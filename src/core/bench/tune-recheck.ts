@@ -9,7 +9,7 @@
  * fits, and `suggestFull` says when a full search should be run instead (numbers moved, or it does
  * not fit any more).
  */
-import type { ConcurrencyPoint, TuneCombination, TuneRecheck, Tuning } from '../../contract/results';
+import type { ConcurrencyPoint, LatencyPoint, TuneCombination, TuneRecheck, Tuning } from '../../contract/results';
 import { movedLevels, movedPoints, usersWithoutErrors } from './tune-rank';
 import { screenDepths, Tuner, type LabEngine, type Live, type TunerDeps, type TunerInput } from './tuner';
 
@@ -53,7 +53,7 @@ export class RecheckTuner extends Tuner {
       if (live?.sweep || live?.users) {
         check.fits = true;
         check.combination = this.combos.length;
-        check.moved = live.users ? movedLevels(previous.concurrency as ConcurrencyPoint[], live.users.concurrency) : movedPoints(previous.sweep, live.sweep ?? []);
+        check.moved = live.users ? movedLevels(previous.concurrency as ConcurrencyPoint[], live.users.concurrency) : movedPoints(previous.sweep, live.sweep as LatencyPoint[]);
         this.addCombination(live);
       }
       this.checks.push(check);

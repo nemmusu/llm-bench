@@ -126,6 +126,31 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
     expect(r16.multi?.fittingUsers).toBe(8);
   });
 
+  it('a context per user too small for the conversations: users at once only', async () => {
+    const { t } = await tune({ ...multi(4, 800), modelContext: undefined }, machine());
+    const rec = t.combinations[t.recommended!]!;
+    expect(rec.sessions).toEqual([]);
+    expect(rec.concurrency!.map((p) => [p.level, p.promptTokens])).toEqual([
+      [1, 656],
+      [2, 656],
+      [3, 656],
+      [4, 656],
+    ]);
+    expect(t.attempts.every((a) => a.sessions === undefined)).toBe(true);
+  });
+
+  it('a type known to hold the users that fails when screened is given up; the biggest ubatch only where it fits', async () => {
+    const crash = machine({ fail: (p) => (p.kvCacheType === 'q4_0' ? { code: 'ENGINE_EXITED', message: 'crash' } : undefined) });
+    const { t } = await tune(multi(), crash);
+    expect(t.capacity.find((c) => c.kvType === 'q4_0')?.measuredMax).toBeUndefined();
+    expect(t.combinations.every((c) => c.kvType === 'q8_0')).toBe(true);
+    const thorough = llamaSpace({ budget: 'thorough', params: P(), users: 4, flags: FLAGS });
+    const predict = (p: LaunchParams) => ({ ...input().predict!(p)!, needMiB: 1000 + (p.ubatchSize === 4096 ? 50_000 : 0) });
+    const big = await tune({ ...multi(), budget: 'thorough', space: thorough, predict }, machine());
+    expect(big.t.dimensions.find((d) => d.key === 'ub')!.values).toContain(4096);
+    expect(big.t.attempts.some((a) => a.params.ubatchSize === 4096)).toBe(false);
+  });
+
   it('conversations only when the context per user holds them', () => {
     const lab = machine();
     const t = new MultiTuner(input({ ...multi(4, 800), modelContext: undefined }), { lab, now: lab.now });
@@ -146,5 +171,14 @@ describe('MultiTuner: vLLM, 4 users × 8K', () => {
     const rec = t.combinations[t.recommended!]!;
     expect(rec).toMatchObject({ kvType: 'fp8', kvLayout: 'unified', maxContext: 8192, params: { maxModelLen: 8192, parallel: 4, gpuMemoryUtilization: 0.9, extraArgs: ['--enable-prompt-tokens-details'] } });
     expect(rec.concurrency!.map((p) => p.level)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('more batched tokens take KV pool from the users: that variant does not fit', async () => {
+    // Activations of 150 MiB per 512 batched tokens: 8192 leave fp8 2664 MiB, less than 4 × 8K needs.
+    const heavy: FakeProfile = { ...vprof, memory: { ...vprof.memory!, computeMiBPer512: 150 } };
+    const space = vllmSpace({ budget: 'fast', params: P(), users: 4, utilizations: [0.9] });
+    const { t } = await tune({ goal: 'multi', multi: { users: 4, perUserContext: 8192, turns: 3 }, space, modelContext: 131072 }, new Lab({ profile: heavy, flavor: 'vllm' }));
+    expect(t.attempts.find((a) => a.kvType === 'fp8' && a.params.batchSize === 8192)).toMatchObject({ outcome: 'oom', error: { params: { reason: 'kv-cache', needTokens: 32768 } } });
+    expect(t.combinations[t.recommended!]).toMatchObject({ kvType: 'fp8', params: { batchSize: 2048 } });
   });
 });

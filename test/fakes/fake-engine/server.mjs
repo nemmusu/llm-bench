@@ -49,7 +49,7 @@ import * as L from './logs.mjs';
  * @property {number} totalMiB
  * @property {number} weightsMiB
  * @property {number} kvMiBPer1k
- * @property {number} [computeMiBPer512] default 300
+ * @property {number} [computeMiBPer512] llama.cpp compute buffer per 512 ubatch tokens (default 300); vLLM activations per 512 batched tokens, taken from the KV pool (default 0)
  * @property {number} [spillMiB]         default 0 (no spill: over the limit = OOM)
  * @property {number} [layers]           default 32 (offload granularity)
  * @property {number} [freeMiB]          vLLM: free VRAM at start-up (default totalMiB)
@@ -89,7 +89,9 @@ export function memoryPlan(m, o) {
     const util = o.gpuMemoryUtilization ?? 0.9;
     if (util * m.totalMiB > (m.freeMiB ?? m.totalMiB)) return { cpuShare: cpu, needMiB: util * m.totalMiB, vramMiB: 0, capacity: 0, outcome: 'busy' };
     const graphs = o.eager ? 0 : 512 * Math.min(1, (o.graphSizes?.length ?? VLLM_DEFAULT_GRAPHS) / VLLM_DEFAULT_GRAPHS);
-    const pool = util * m.totalMiB - weights - 1024 - graphs;
+    // The activation peak of the profiling run grows with --max-num-batched-tokens (vLLM: no default buffer).
+    const activations = (m.computeMiBPer512 ?? 0) * ((o.ubatch ?? 512) / 512);
+    const pool = util * m.totalMiB - weights - 1024 - graphs - activations;
     // An explicit block size rounds the pool down to whole blocks.
     const block = o.blockSize ?? 1;
     const capacity = Math.max(0, Math.floor(pool / kvPerToken / block) * block);

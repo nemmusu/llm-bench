@@ -5,7 +5,7 @@ import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
-import type { Scenario } from '../../contract/results';
+import type { Scenario, TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { serverApiName } from '../engines/types';
@@ -379,7 +379,8 @@ export class BenchService {
       return {
         runId: last.id,
         createdAt: last.createdAt,
-        budget: last.tuneBudget ?? 'fast',
+        // A tune run's summary always says its budget.
+        budget: last.tuneBudget as TuneBudget,
         ...(last.engineBuild !== undefined ? { build: last.engineBuild } : {}),
         ...(current !== undefined ? { currentBuild: current } : {}),
         sameBuild: last.engineBuild === current,

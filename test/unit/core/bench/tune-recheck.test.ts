@@ -141,6 +141,13 @@ describe('RecheckTuner: goal "Più utenti"', () => {
     expect(r.t.combinations[0]!.concurrency![0]!.promptTokens).toBe(8048);
     const noQuestion = await tune({ ...multi, budget: 'recheck', recheck: { ...recheckOf(before, { checks: [{ role: 'recommended', combination: bare }] }), multi: undefined } }, new Lab({ profile: MULTI_PROFILE }));
     expect(noQuestion.t.combinations[0]!.concurrency![0]!.promptTokens).toBe(32768);
+    // Saved without a layout (an engine whose pool is always shared) and without builds.
+    const { kvLayout: _l, cacheReuse: _c, ...plain } = rec;
+    const { previousBuild: _p, currentBuild: _b, ...noBuilds } = recheckOf(before, { checks: [{ role: 'recommended', combination: plain }] });
+    const r2 = await tune({ ...multi, budget: 'recheck', recheck: noBuilds }, new Lab({ profile: MULTI_PROFILE }));
+    expect(r2.t.combinations[0]).not.toHaveProperty('kvLayout');
+    expect(r2.t.recheck).not.toHaveProperty('previousBuild');
+    expect(r2.t.recheck).not.toHaveProperty('currentBuild');
   });
 });
 

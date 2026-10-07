@@ -52,6 +52,8 @@ export class MultiTuner extends Tuner {
   private readonly asked: number;
   /** Context per user (at most the model's trained context). */
   private readonly perUser: number;
+  /** Messages per conversation of the sessions measurement. */
+  private readonly turns: number;
   private fittingUsers: number | undefined;
   private readonly usersScreens = new Map<string, UsersScreen>();
 
@@ -61,6 +63,7 @@ export class MultiTuner extends Tuner {
     this.asked = m.users;
     this.users = m.users;
     this.perUser = Math.min(m.perUserContext, this.cap);
+    this.turns = m.turns;
   }
 
   private get out(): number {
@@ -74,7 +77,7 @@ export class MultiTuner extends Tuner {
 
   /** The short conversations of `users` users: each fills its own context over MULTI_TURNS messages. */
   sessionsStep(users: number): SessionsStep | undefined {
-    const step = { kind: 'sessions' as const, depth: 0, levels: [users], turns: this.input.multi?.turns ?? MULTI_TURNS, followupTokens: MULTI_FOLLOWUP, outputTokens: this.out };
+    const step = { kind: 'sessions' as const, depth: 0, levels: [users], turns: this.turns, followupTokens: MULTI_FOLLOWUP, outputTokens: this.out };
     const depth = this.perUser - sessionExtras(step);
     return depth >= 1 ? { ...step, depth } : undefined;
   }
@@ -188,18 +191,18 @@ export class MultiTuner extends Tuner {
    * screening when there is one). A middle level is skipped when the rest of the budget would not
    * leave room for level N.
    */
-  private async fullWork(engine: LabEngine, live: Live, screened?: UsersScreen): Promise<void> {
+  private async fullWork(engine: LabEngine, live: Live, screened: UsersScreen): Promise<void> {
     this.deps.onPhase?.('concurrency');
     const level = this.levelOf(live);
     const deadline = this.started + Math.max(this.rules.ms, this.deps.now() - this.started + MIN_SWEEP_MS);
-    const levelMs = screened?.levelMs ?? 0;
+    const levelMs = screened.levelMs;
     const points: ConcurrencyPoint[] = [];
     for (let n = 1; n <= level; n++) {
       if (n < level && this.deps.now() + (levelMs * n) / level + levelMs > deadline) continue;
       points.push(await engine.concurrency(n, this.prompt, this.out, 1));
     }
     live.att.concurrency = [...(live.att.concurrency ?? []), ...points];
-    let sessions: SessionsPoint[] = screened?.measure.sessions && screened.attempt === live.index ? [screened.measure.sessions] : [];
+    let sessions: SessionsPoint[] = screened.measure.sessions && screened.attempt === live.index ? [screened.measure.sessions] : [];
     const step = this.sessionsStep(level);
     if (!sessions.length && step) {
       this.deps.onPhase?.('sessions');
@@ -282,7 +285,7 @@ export class MultiTuner extends Tuner {
   }
 
   protected override goalFields(): Partial<Tuning> {
-    const turns = this.input.multi?.turns ?? MULTI_TURNS;
+    const turns = this.turns;
     return {
       goal: 'multi',
       multi: {

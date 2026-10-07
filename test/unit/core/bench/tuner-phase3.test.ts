@@ -7,10 +7,10 @@ import { describe, expect, it } from 'vitest';
 import type { LaunchParams } from '../../../../src/contract/engines';
 import type { FitEstimate } from '../../../../src/contract/models';
 import { llamaSpace, vllmSpace } from '../../../../src/core/bench/tune-space';
-import { screenDepths, startupRefused } from '../../../../src/core/bench/tuner';
+import { BUDGETS, screenDepths, startupRefused, Tuner } from '../../../../src/core/bench/tuner';
 import { VLLM_TUNE_PROFILE } from '../../../fakes/fake-engine/profiles.mjs';
 import type { FakeProfile } from '../../../fakes/fake-engine/server.mjs';
-import { capacityOf, Lab, optimistic, P, tune } from './tune-lab';
+import { capacityOf, input, Lab, optimistic, P, tune } from './tune-lab';
 
 const UB_FLAGS = new Set(['-ub', '--ubatch-size']);
 
@@ -100,6 +100,19 @@ describe('Tuner: vLLM phase 3', () => {
     expect(startupRefused({ code: 'VRAM_BUSY', message: '' })).toBe(false);
     expect(startupRefused({ code: 'VRAM_BUSY', message: '', params: { utilization: 0.9 } })).toBe(true);
     expect(startupRefused({ code: 'ENGINE_OOM', message: '', params: { utilization: 0.9 } })).toBe(false);
+  });
+
+  it('the budget ends before the descent: the extensions start from the base settings (and stop at once)', async () => {
+    const space = vllmSpace({ budget: 'fast', params: P(), utilizations: [0.9], flags });
+    const lab = new Lab({ profile: vprof, flavor: 'vllm' });
+    const tuner = new Tuner(input({ space, modelContext: 131072 }), { lab, now: lab.now });
+    // Capacity of auto (2 launches) and the top of fp8 (1): fp8 is left with the context auto proved, unscreened.
+    (tuner as unknown as { rules: object }).rules = { ...BUDGETS.fast, maxLaunches: 3 };
+    const t = await tuner.run();
+    expect(t.stoppedBy).toBe('launches');
+    expect(t.attempts).toHaveLength(3);
+    expect(t.capacity.find((c) => c.kvType === 'fp8')).toMatchObject({ measuredMax: 25600, inferred: true, skipped: 'budget' });
+    expect(t.combinations.filter((c) => c.variant?.graphs === 'small')).toEqual([]);
   });
 
   it('without a start-up ladder the variants keep vLLM’s default share', async () => {

@@ -82,7 +82,7 @@ export async function learnedOrder(
 ): Promise<{ prefer: Record<string, DimValue[]>; learned: NonNullable<Tuning['learned']> } | undefined> {
   const keys = isLlamaCpp(kind) ? ['ub', 'b'] : ['bt'];
   const past = (await runs.list())
-    .filter((r) => r.profile === 'tune' && r.status === 'completed' && (r.tunedCombinations ?? 0) > 0 && r.tuneBudget !== 'recheck' && r.engineKind === kind && sameGpu(r, here))
+    .filter((r) => r.profile === 'tune' && r.status === 'completed' && Number(r.tunedCombinations) > 0 && r.tuneBudget !== 'recheck' && r.engineKind === kind && sameGpu(r, here))
     .slice(0, LEARNED_RUNS);
   const counts = new Map<string, Map<DimValue, number>>(keys.map((k) => [k, new Map()]));
   let used = 0;
@@ -278,7 +278,7 @@ export async function tunedServerParams(
   const currentBuild = list.length && currentBuildOf ? await currentBuildOf().catch(() => undefined) : undefined;
   // The newest run with this build decides, even when it found nothing that fits (then: the estimate).
   const sameBuild = currentBuild !== undefined ? list.find((r) => r.engineBuild === currentBuild) : undefined;
-  const hit = sameBuild ?? list.find((r) => (r.tunedCombinations ?? 0) > 0);
+  const hit = sameBuild ?? list.find((r) => Number(r.tunedCombinations) > 0);
   const run = hit ? await runs.get(hit.id).catch(() => undefined) : undefined;
   const t = run?.tuning;
   const combo = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
