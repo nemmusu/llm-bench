@@ -1443,6 +1443,7 @@ export const en: Messages = {
       prefill: 'reading {tps} tok/s',
       vram: 'peak VRAM {size} GB',
       shared: 'shared RAM {size} GB',
+      command: 'Command of attempt {n}: {settings}, context {ctx}',
     },
     capacity: {
       title: 'Largest context per cache type',

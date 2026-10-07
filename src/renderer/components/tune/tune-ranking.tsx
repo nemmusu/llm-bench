@@ -107,7 +107,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
         )}
       </div>
       <p className="px-card pt-1.5 text-sm text-fg-2">{t('tune.ranking.subtitle', { depth: depthLabel(depth, f) })}</p>
-      <div className="mt-3 overflow-x-auto">
+      <div role="region" aria-label={t('tune.ranking.caption', { depth: depthLabel(depth, f) })} tabIndex={0} className="mt-3 overflow-x-auto focus-ring">
         <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{t('tune.ranking.caption', { depth: depthLabel(depth, f) })}</caption>
           <thead>

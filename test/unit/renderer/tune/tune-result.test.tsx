@@ -146,7 +146,7 @@ describe('tune result', () => {
     expect(screen.getByText(/Windows ha spostato 2,0 GB nella RAM condivisa/)).toBeTruthy();
     expect(screen.getByText('contesto 48K · generazione 31,0 tok/s · lettura 2400 tok/s · VRAM picco 31,1 GB · RAM condivisa 2,0 GB')).toBeTruthy();
     expect(screen.getByText('Il motore non riconosce un parametro')).toBeTruthy();
-    expect(screen.getAllByRole('region', { name: /^Comando di / }).length).toBeGreaterThanOrEqual(7);
+    expect(screen.getByRole('region', { name: 'Comando della prova 2: Cache KV f16 · flash attention, contesto 32K' })).toBeTruthy();
     const capacity = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
     expect(within(capacity).getAllByRole('row').map((r) => r.textContent)).toEqual([
       'Cache KVStima (token)Massimo trovato (token)Note',

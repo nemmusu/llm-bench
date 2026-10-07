@@ -173,9 +173,9 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="border-t border-border">
+    <div className="border-t border-border">
       <h3 className="px-card pt-3 pb-1 text-xs font-semibold tracking-wide text-fg-3 uppercase">{title}</h3>
       {children}
-    </section>
+    </div>
   );
 }

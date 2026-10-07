@@ -89,8 +89,9 @@ export function TuneLive({ tuning, current, engineKind }: TuneLiveProps) {
             <span className="ml-auto text-sm text-fg-3 tabular-nums">{t('tune.live.count', { n: attempts.length, max: tuning?.maxLaunches ?? '–' })}</span>
           </div>
           {rows.length ? (
-            <div role="region" tabIndex={0} aria-label={t('tune.live.attempts')} className="max-h-96 overflow-y-auto border-t border-border focus-ring">
+            <div className="border-t border-border">
               <MeasureTable
+                className="max-h-96 overflow-y-auto"
                 caption={t('tune.live.attempts')}
                 columns={[
                   { label: t('tune.columns.outcome') },

@@ -1444,6 +1444,7 @@ export const it = {
       prefill: 'lettura {tps} tok/s',
       vram: 'VRAM picco {size} GB',
       shared: 'RAM condivisa {size} GB',
+      command: 'Comando della prova {n}: {settings}, contesto {ctx}',
     },
     capacity: {
       title: 'Contesto massimo per tipo di cache',

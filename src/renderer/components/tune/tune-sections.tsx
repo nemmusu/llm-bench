@@ -59,7 +59,7 @@ export function DiscardedAttempts({ tuning, engineKind }: { tuning: Pick<Tuning,
                   </div>
                   <p className="text-sm text-fg-2">{discardReason(a, f)}</p>
                   <p className="text-xs text-fg-3 tabular-nums">{numbers.join(' · ')}</p>
-                  <CodeBlock commands={a.command} label={t('tune.measures.command', { settings })} />
+                  <CodeBlock commands={a.command} label={t('tune.discarded.command', { n: index + 1, settings, ctx: depthLabel(a.contextSize, f) })} />
                 </li>
               );
             })}
@@ -82,7 +82,7 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
         <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.capacity.title')}</h2>
         <HelpTip term={t('tune.help.kvTerm')}>{t('tune.help.kv')}</HelpTip>
       </div>
-      <div className="mt-3 overflow-x-auto">
+      <div role="region" aria-label={t('tune.capacity.title')} tabIndex={0} className="mt-3 overflow-x-auto focus-ring">
         <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{t('tune.capacity.title')}</caption>
           <thead>
