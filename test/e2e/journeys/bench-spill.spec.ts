@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SPILL_PROFILE, TUNE_SLOW_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
+import { BORDERLINE_PROFILE, SPILL_PROFILE, TUNE_SLOW_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
 import { buildGguf, llamaLikeGguf } from '../../fakes/fake-hub/model-files.mjs';
 import type { Page } from '@playwright/test';
-import { expect, launchApp, test, type AppHandle } from '../fixtures';
+import { expect, launchApp, ROOT, test, type AppHandle } from '../fixtures';
 import type { LatencyPoint, RunResult, Stat } from '../../../src/contract/results';
 import { h1, scan, seedRuns, skipWelcome } from './bench-helpers';
 
@@ -14,12 +14,12 @@ test.describe.configure({ timeout: 300_000 });
  * The app with one GGUF in its library (and no other model): `file` in models/local, a llama-like
  * model of `layers` × 8 KV heads × 128 (KV: layers × 4 KiB per token).
  */
-async function withModel(file: string, gguf: { name: string; sizeLabel: string; layers: number; ctx: number }, profile: object): Promise<AppHandle> {
+async function withModel(file: string, gguf: { name: string; sizeLabel: string; layers: number; ctx: number }, profile: object, env: Record<string, string> = {}): Promise<AppHandle> {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-spill-'));
   const local = path.join(userData, 'models', 'local');
   mkdirSync(local, { recursive: true });
   writeFileSync(path.join(local, file), buildGguf({ ...llamaLikeGguf({ ...gguf, kvHeads: 8, headDim: 128 }), totalSize: 96 * 1024 }));
-  const handle = await launchApp({ userData, seedModel: false, env: { FAKE_ENGINE_PROFILE: JSON.stringify(profile) } });
+  const handle = await launchApp({ userData, seedModel: false, env: { FAKE_ENGINE_PROFILE: JSON.stringify(profile), ...env } });
   return {
     ...handle,
     close: async () => {
@@ -117,6 +117,46 @@ test('a search that runs out of time keeps what it measured: partial combination
     await expect(h1(page, 'Benchmark')).toBeVisible();
     await expect(page.getByText('Impostazioni copiate nel Benchmark')).toBeVisible();
     await expect(page.getByLabel('Contesto (token)')).toHaveValue('16384');
+  } finally {
+    await gb.close();
+  }
+});
+
+test('a launch of the search that spills while it runs (240K: clean once loaded, starved by its first request) is given up at once; the search goes on lower and ends', async () => {
+  // 34 layers × 8 KV heads × 128: 136 KiB of f16 KV per token, so the estimate puts f16 at ~244K (240K tried
+  // first). The per-process readings (dedicated and shared memory) come from the fake monitor.
+  const monitor = path.join(ROOT, 'test', 'fakes', 'fake-nvidia-smi', 'fake-gpu-memory.mjs');
+  const gb = await withModel('Qwen3-27B-Q4_K_XL.gguf', { name: 'Qwen3 27B', sizeLabel: '27B', layers: 34, ctx: 262_144 }, BORDERLINE_PROFILE, {
+    GPUBENCH_GPU_MEMORY_MONITOR: JSON.stringify([process.execPath, monitor]),
+  });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+    await expect(page.getByRole('radio', { name: /^Veloce/ })).toBeChecked();
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    await page.getByRole('button', { name: 'Scarica e avvia' }).click();
+    await expect(h1(page, 'Test in corso')).toBeVisible({ timeout: 30_000 });
+
+    // Live: 240K is in the list the moment it is given up (its probe never answers), and the search goes on.
+    const attempts = page.getByRole('table', { name: 'Prove fatte' });
+    const border = attempts.getByRole('row').filter({ hasText: '240K' }).filter({ hasText: 'Usa la RAM condivisa (lento)' });
+    await expect(border).toBeVisible({ timeout: 120_000 });
+    await expect(attempts.getByRole('row').filter({ hasText: '224K' }).filter({ hasText: 'Caricato' }).first()).toBeVisible({ timeout: 120_000 });
+    await scan(page, 'live tune run with a launch given up');
+
+    // It ends, on its own: f16 holds 224K (240K did not fit), q8_0 the whole 256K.
+    await expect(h1(page, /Qwen3-27B/)).toBeVisible({ timeout: 240_000 });
+    await expect(page.getByText(/^Mi sono fermato prima/)).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Combinazione consigliata' })).toBeVisible();
+    const capacity = page.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
+    const f16 = capacity.getByRole('row').filter({ hasText: 'f16' });
+    await expect(f16).toContainText('224K');
+    await expect(f16).toContainText('Limite trovato: a 240K non entra più.');
+    await expect(capacity.getByRole('row').filter({ hasText: 'q8_0' })).toContainText('256K');
+    await page.getByRole('button', { name: /Prove scartate/ }).click();
+    await expect(page.getByText(/Con contesto 240K non stava tutto nella memoria video: Windows ha spostato 1,3 GB nella RAM condivisa/)).toBeVisible();
+    await scan(page, 'tune result after a launch given up');
   } finally {
     await gb.close();
   }

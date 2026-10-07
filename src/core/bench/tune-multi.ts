@@ -106,7 +106,10 @@ export class MultiTuner extends Tuner {
     const ctx = this.contextFor(this.users);
     this.deps.onPhase?.('tune-capacity');
     if (this.input.spillPossible) await this.reference(space.contextFor(this.users, Math.min(this.perUser, MULTI_REFERENCE_CONTEXT)));
-    for (const kv of space.kvLadder) await this.holdsUsers(kv, ctx);
+    for (const kv of space.kvLadder) {
+      await this.holdsUsers(kv, ctx);
+      this.capacityEnded.add(kv);
+    }
     let fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
     if (fitting.length === 0) fitting = await this.mostUsers();
     for (const kv of fitting) {
@@ -336,6 +339,9 @@ export class MultiTuner extends Tuner {
   protected override boundOf(): Partial<Tuning['capacity'][number]> {
     return {};
   }
+
+  /** Every combination of this goal measured its users: an unfinished screening is not one (nothing "misurata in parte"). */
+  protected override addPartials(): void {}
 
   protected override forget(live: Live): void {
     super.forget(live);

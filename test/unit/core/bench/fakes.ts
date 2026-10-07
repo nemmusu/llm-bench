@@ -110,6 +110,11 @@ export interface ClientOptions {
   silent?: (n: number) => boolean;
   /** Called before each request (e.g. to abort a run at a precise point). */
   onRequest?: (n: number) => void;
+  /**
+   * Requests (1-based) that never answer, until aborted: 'ticking' = virtual time goes on meanwhile
+   * (250 ms per macrotask: telemetry and the per-process counters keep coming), 'still' = it does not.
+   */
+  hang?: (n: number) => 'ticking' | 'still' | undefined;
   /** Chunks carry their token ids (llama.cpp return_tokens) or only their text pieces. */
   pieces?: 'ids' | 'text';
   /** vLLM /metrics: the prefix-cache counters at the n-th reading (1-based); absent = no counters. */
@@ -157,6 +162,14 @@ export class FakeClient implements InferenceClient {
     this.o.onRequest?.(n);
     const err = this.o.failOn?.(n, req);
     if (err) throw err;
+    const hang = this.o.hang?.(n);
+    if (hang) {
+      while (!signal?.aborted) {
+        if (hang === 'ticking') c.advance(250);
+        await new Promise<void>((r) => setImmediate(r));
+      }
+      throw new AppError('CANCELLED', 'Request aborted');
+    }
     const p = req.promptIds?.length ?? Math.ceil((req.promptText?.length ?? 0) / 4);
     c.advance((p / (this.o.prefillTps ?? 10_000)) * 1000 + (this.o.firstChunkDelayMs ?? 5));
     if (this.o.silent?.(n)) {
@@ -200,6 +213,8 @@ export interface InstanceOptions {
   exitRejects?: boolean;
   /** PID of the engine process (absent: an engine with no process of ours). */
   pid?: number;
+  /** The load moves the clock in this many steps (the heartbeats between them see the counters' readings). */
+  readySteps?: number;
 }
 
 export class FakeInstance implements EngineInstance {
@@ -229,9 +244,13 @@ export class FakeInstance implements EngineInstance {
     for (const text of o.logs ?? []) this.logs.push({ t: (t += o.logGapMs ?? 1), stream: 'stderr', text });
     if (o.failLogs) this.logs.fail(o.failLogs);
   }
-  async waitReady(): Promise<{ tReady: number; phases: PhaseMark[] }> {
+  async waitReady(signal?: AbortSignal): Promise<{ tReady: number; phases: PhaseMark[] }> {
     if (this.o.failReady) throw this.o.failReady;
-    this.world.clock.advance(this.o.loadMs);
+    const steps = this.o.readySteps ?? 1;
+    for (let i = 0; i < steps; i++) {
+      this.world.clock.advance(this.o.loadMs / steps);
+      if (signal?.aborted) throw new AppError('CANCELLED', 'Wait for ready aborted');
+    }
     return { tReady: this.world.clock.now(), phases: this.o.phases?.(this.t0) ?? [] };
   }
   /** The process dies on its own (crash). */
@@ -359,8 +378,8 @@ export interface TelemetryOptions {
     others?: (t: number) => GpuProcessMemory[];
     /** The engine's memory as the OS reports it (default world.modelMiB); null = not listed (WSL). */
     engineMiB?: number | null;
-    /** Shared GPU memory reported for the engine (Windows counters). */
-    sharedMiB?: number;
+    /** Shared GPU memory reported for the engine (Windows counters), or read at every reading. */
+    sharedMiB?: number | (() => number);
     startThrows?: boolean;
     stopThrows?: boolean;
   };
@@ -442,7 +461,12 @@ export class FakeTelemetry implements TelemetrySampler {
     const source = new ClockSource(w.clock, (t) => [
       ...w.running
         .filter((r) => pv.engineMiB !== null && r.pid !== undefined && t >= r.from && (r.to === undefined || t <= r.to))
-        .map((r) => ({ pid: r.pid as number, mib: pv.engineMiB ?? w.modelMiB, name: 'llama-server', ...(pv.sharedMiB !== undefined ? { sharedMib: pv.sharedMiB } : {}) })),
+        .map((r) => ({
+          pid: r.pid as number,
+          mib: pv.engineMiB ?? w.modelMiB,
+          name: 'llama-server',
+          ...(pv.sharedMiB !== undefined ? { sharedMib: typeof pv.sharedMiB === 'function' ? pv.sharedMiB() : pv.sharedMiB } : {}),
+        })),
       ...(pv.others?.(t) ?? []),
     ]);
     const rec = new ProcessVramRecorder({ source, clock: w.clock, pids, intervalMs });

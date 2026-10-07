@@ -130,8 +130,19 @@ export function liveReducer(s: LiveState, e: ServerEvent, runId: string, now = D
     case 'run.tune': {
       if (e.runId !== runId) return s;
       const next: LiveState = { ...s, tuning: e.tuning };
-      if (e.current) next.tuneCurrent = e.current;
-      else delete next.tuneCurrent;
+      if (e.current) {
+        // Another launch: the speeds on the gauges were the previous one's ("in attesa della prima misura").
+        if (e.current.atMs !== s.tuneCurrent?.atMs) {
+          delete next.decodeTps;
+          delete next.prefillTps;
+          delete next.ttftMs;
+        }
+        next.tuneCurrent = e.current;
+      } else {
+        // No launch in progress (one just ended, or was given up): no request in flight either.
+        delete next.tuneCurrent;
+        delete next.current;
+      }
       return next;
     }
     case 'telemetry': {

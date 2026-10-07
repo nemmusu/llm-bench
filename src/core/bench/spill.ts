@@ -34,6 +34,22 @@ export const SHALLOW_DEPTH = 4096;
 /** Earlier runs (newest first) whose median generation speed is the usual one. */
 export const NORMAL_RUNS = 5;
 
+/**
+ * A card is full when its dedicated memory in use is within max(3 % of it, 1 GiB) of its whole memory:
+ * what WDDM does not fit there goes to shared memory. On a 32 GB card (32 607 MiB): from 31 583 MiB up.
+ * Such a peak is also censored for the VRAM calibration (models/calibration.ts): the card capped it.
+ */
+export const CEILING_SHARE = 0.03;
+export const CEILING_MIN_MIB = 1024;
+
+/** The peak is at the ceiling of a card of `totalMiB` (see CEILING_SHARE). */
+export function atCeiling(peakMiB: number, totalMiB: number | undefined): boolean {
+  return totalMiB !== undefined && peakMiB >= totalMiB - Math.max(CEILING_SHARE * totalMiB, CEILING_MIN_MIB);
+}
+
+/** With the card full, Shared Usage this much above the reference launch's is a spill already. */
+export const SPILL_AT_CEILING_OVER_MIB = 512;
+
 /** Shared Usage of a launch that did not spill, and its context (the tuner's reference launch). */
 export interface SharedReference {
   sharedMiB?: number | undefined;
@@ -48,6 +64,32 @@ export interface SharedReference {
 export function spillThresholdMiB(ref: SharedReference | undefined, context: number | undefined): number {
   const growth = context === undefined ? 0 : (Math.max(0, context - (ref?.context ?? 0)) / 1024) * SHARED_MIB_PER_1K;
   return Math.round(Math.max(SPILL_SHARED_MIN_MIB, (ref?.sharedMiB ?? 0) + growth + SPILL_SHARED_OVER_MIB));
+}
+
+/** What the monitor read of a tune launch so far (peaks), MiB. */
+export interface LaunchReading {
+  /** Shared Usage of the engine process. */
+  sharedMiB?: number | undefined;
+  /** Dedicated memory in use on the card: every process (nvidia-smi), else the engine's own. */
+  dedicatedMiB?: number | undefined;
+  /** The card's whole memory. */
+  totalMiB?: number | undefined;
+}
+
+/**
+ * A tune launch of `context` tokens has spilled (Windows), judged live while it runs:
+ *  - its Shared Usage reached spillThresholdMiB (max(1024, reference + 1 MiB per 1K of context more + 768));
+ *  - or the card is full (atCeiling) and its Shared Usage is 512 MiB above the reference launch's: the
+ *    borderline case, a launch that just fits in the VRAM and puts its compute buffers in shared memory
+ *    (an RTX 5090 at 240K: 31 160 MiB of the engine's own + the desktop's on a 32 607 MiB card, 1 338
+ *    MiB shared, generation starved).
+ * Nothing is known without the Shared Usage (no per-process counters).
+ */
+export function launchSpilled(ref: SharedReference | undefined, context: number, r: LaunchReading): boolean {
+  const shared = r.sharedMiB;
+  if (shared === undefined) return false;
+  if (shared >= spillThresholdMiB(ref, context)) return true;
+  return r.dedicatedMiB !== undefined && atCeiling(r.dedicatedMiB, r.totalMiB) && shared >= (ref?.sharedMiB ?? 0) + SPILL_AT_CEILING_OVER_MIB;
 }
 
 /** WDDM moves what does not fit to shared memory instead of failing: Windows, and WSL which uses it. */

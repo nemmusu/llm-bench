@@ -96,11 +96,19 @@ export function windowsMonitorScript(o: { intervalMs: number; parentPid: number 
   ].join('\n');
 }
 
-/** Windows PowerShell 5.1 from System32 (absolute: a planted powershell.exe on PATH is never picked). */
+/**
+ * Windows PowerShell 5.1 from System32 (absolute: a planted powershell.exe on PATH is never picked).
+ * A stand-in monitor (`o.command`, CoreEndpoints.gpuMemoryMonitor: tests, fakes) speaks the same
+ * protocol and gets the interval and the parent as `--interval-ms N --parent PID`.
+ */
 export function windowsMonitorCommand(
   env: Record<string, string | undefined>,
-  o: { intervalMs: number; parentPid: number },
+  o: { intervalMs: number; parentPid: number; command?: readonly string[] | undefined },
 ): { cmd: string; args: string[] } {
+  if (o.command) {
+    const [cmd, ...args] = o.command as [string, ...string[]];
+    return { cmd, args: [...args, '--interval-ms', String(Math.round(o.intervalMs)), '--parent', String(Math.trunc(o.parentPid))] };
+  }
   const root = envGet(env, 'SystemRoot', 'win32') ?? 'C:\\Windows';
   return {
     cmd: path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
@@ -147,6 +155,8 @@ export interface WindowsGpuMemoryOptions {
   retryMs?: number;
   /** The monitor exits when this process is gone (default: the core itself). */
   parentPid?: number;
+  /** A stand-in monitor's argv prefix instead of PowerShell (see windowsMonitorCommand). */
+  command?: readonly string[];
 }
 
 interface Reading {
@@ -218,7 +228,7 @@ export class WindowsGpuMemory implements GpuMemorySource {
     if (this.failedAt !== undefined && this.o.clock.now() - this.failedAt < (this.o.retryMs ?? WIN_MONITOR_RETRY_MS)) return false;
     let child: ManagedProcess;
     try {
-      const command = windowsMonitorCommand(this.o.env, { intervalMs: this.intervalMs, parentPid: this.o.parentPid ?? process.pid });
+      const command = windowsMonitorCommand(this.o.env, { intervalMs: this.intervalMs, parentPid: this.o.parentPid ?? process.pid, command: this.o.command });
       child = this.o.proc.spawn({ ...command, owner: { ...PROCESS_MEMORY_OWNER } });
     } catch (e) {
       this.fail(String(e));
@@ -533,13 +543,22 @@ export interface ProcessMemoryDeps {
    * the real GPU, not the fake one, so they are not used.
    */
   overridden: boolean;
+  /**
+   * A stand-in for the Windows counters' monitor (CoreEndpoints.gpuMemoryMonitor: tests, fakes), on any
+   * OS: the engine's dedicated and shared memory come from it (never the other processes' list).
+   */
+  monitor?: readonly string[] | undefined;
   windows?: Pick<WindowsGpuMemoryOptions, 'intervalMs' | 'idleMs' | 'firstReadingMs' | 'retryMs' | 'parentPid'>;
   procFs?: ProcFsReader;
   procRoot?: string;
 }
 
-/** Per-OS sources: Windows counters (not with a stand-in nvidia-smi), nvidia-smi + /proc on Linux, none elsewhere. */
+/**
+ * Per-OS sources: Windows counters (not with a stand-in nvidia-smi), nvidia-smi + /proc on Linux, none
+ * elsewhere; a stand-in monitor anywhere.
+ */
 export function createProcessMemory(d: ProcessMemoryDeps): ProcessMemorySetup {
+  if (d.monitor) return { processMemory: new WindowsGpuMemory({ proc: d.proc, clock: d.clock, env: d.env, ...(d.log ? { log: d.log } : {}), ...d.windows, command: d.monitor }) };
   if (d.platform === 'win32') {
     if (d.overridden) return {};
     const monitor = new WindowsGpuMemory({ proc: d.proc, clock: d.clock, env: d.env, ...(d.log ? { log: d.log } : {}), ...d.windows });

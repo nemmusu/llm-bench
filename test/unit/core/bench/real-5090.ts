@@ -20,6 +20,13 @@ export const REAL = {
   predicted: { f16: 247_552, q8_0: 262_144, q4_0: 262_144 },
   /** A Rapido with -c 262144 -ctk f16 -ctv f16 -fa auto -ngl all: it spilled. */
   spill: { ctx: 262_144, sharedMiB: 4_666, dedicatedMiB: 29_349, decode: 3.5, prefill: 32, ttftMs: 15_800 },
+  /**
+   * "Trova le impostazioni migliori" (b11460, Veloce): f16 at 240K (the estimate rounded down to 8K)
+   * loaded with this much of its own on the 32 607 MiB card and this much shared; its 1K probe ran at
+   * 99 % GPU but ~147 W and had not finished after 6 minutes. The reference before it: 53.4 tok/s,
+   * prompt reading 2 142 tok/s, 18.4 GB.
+   */
+  borderline: { ctx: 245_760, dedicatedMiB: 31_160, sharedMiB: 1_338, totalMiB: 32_607, refDecode: 53.4, refPrefill: 2142 },
 } as const;
 
 /**

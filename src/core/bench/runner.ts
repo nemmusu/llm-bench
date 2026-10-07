@@ -27,7 +27,7 @@ import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer
 import { parseKvCapacity, vllmKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
-import type { GenerateRequest, StreamEvent } from '../inference/types';
+import type { GenerateRequest, InferenceClient, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
 import { contextOf, engineLabelOf, summaryOf } from '../store/runs-repo';
 import { PROCESS_VRAM_INTERVAL_MS } from '../telemetry/process-vram';
@@ -49,7 +49,7 @@ import {
   type RequestMetrics,
   type Window,
 } from './metrics';
-import { buildPrompt, buildTextPrompt, getCorpusTokens } from './prompts';
+import { buildPrompt, buildTextPrompt, CHARS_PER_TOKEN, getCorpusTokens } from './prompts';
 import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
@@ -57,8 +57,9 @@ import { runSessions } from './steps/sessions';
 import { cpuOffloaded, spillOf, spillPossible, type NormalDecode } from './spill';
 import { runSweep } from './sweep';
 import { createTuner } from './tune-run';
-import type { LabEngine, Tuner, TuneLab, TunerInput } from './tuner';
+import type { LabEngine, LaunchGuard, LaunchMemory, Tuner, TuneLab, TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
+import { STALL_RULES, watchStream, type StallRules } from './watchdog';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
 
@@ -108,6 +109,8 @@ export interface RunnerDeps {
   telemetryIntervalMs?: number;
   /** Max wait for VRAM to drop back to the baseline between loads. */
   vramSettleMs?: number;
+  /** When a streamed request counts as stalled (default STALL_RULES: no event for a minute; tests use less). */
+  stall?: StallRules;
 }
 
 export interface RunInput {
@@ -245,6 +248,18 @@ interface RunState {
   lastPhaseAt: number;
   /** Normal runs: the spill shown on the live screen so far (run.spill). */
   liveSpill?: LiveSpill;
+  /** Profile "tune": the launch in progress, watched from its start to its stop (see watchLaunch). */
+  launchWatch?: LaunchWatch;
+}
+
+/** A tune launch under the search's spill watch: given up (its signal aborted) the moment the guard says so. */
+interface LaunchWatch {
+  /** Monotonic ms of the engine start (its memory is read from here). */
+  from: number;
+  guard?: LaunchGuard;
+  abort: AbortController;
+  /** The run's signal and the launch's: every request and the wait for ready of this launch. */
+  signal: AbortSignal;
 }
 
 function checkAbort(signal: AbortSignal): void {
@@ -471,8 +486,10 @@ export class BenchRunner {
       s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => {
         s.liveSamples.push(...samples);
         d.publish({ type: 'telemetry', samples });
-        // Telemetry is the heartbeat: a spill shows as soon as the counters say, a long tune request keeps its time left current.
+        // Telemetry is the heartbeat: a spill shows as soon as the counters say (a tune launch is given up
+        // at once), a long tune request keeps its time left current.
         this.watchSpill(s);
+        this.watchLaunch(s);
         if (s.tuner && d.clock.now() - s.lastPhaseAt >= PHASE_HEARTBEAT_MS) this.publishPhase(s);
       });
       // Started before the first load: its first reading is the reference for other processes' drift.
@@ -573,7 +590,7 @@ export class BenchRunner {
     };
     this.step(s, { kind: 'first-token', outputTokens: 1 });
     const sentAt = this.deps.clock.now();
-    const events = await this.collect(inst, req, s.signal);
+    const events = await this.collect(s, inst, req);
     const first = events.find((e) => e.kind === 'chunk' && ((e.tokens ?? 0) > 0 || e.textLen > 0));
     if (first) s.firstTokenMs = first.t - sentAt;
   }
@@ -648,6 +665,8 @@ export class BenchRunner {
       attempt?: number;
       /** Asked before every repetition after the first: false = stop here (the point keeps the ones made). */
       more?: () => boolean;
+      /** Deadline of each request, ms (tune requests). */
+      timeoutMs?: number;
     },
     onRequest?: () => void,
   ): Promise<LatencyPoint> {
@@ -656,14 +675,14 @@ export class BenchRunner {
     const warmup = o.warmup ?? 0;
     for (let w = 0; w < warmup; w++) {
       this.step(s, { kind: o.kind, ...shape, ...depth, rep: w + 1, reps: warmup, warmup: true });
-      await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind);
+      await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind, o.timeoutMs);
       onRequest?.();
     }
     const results: RequestMetrics[] = [];
     for (let r = 0; r < o.reps; r++) {
       if (r > 0 && o.more && !o.more()) break;
       this.step(s, { kind: o.kind, ...shape, ...depth, rep: r + 1, reps: o.reps });
-      const m = await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind);
+      const m = await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind, o.timeoutMs);
       this.record(s, m);
       results.push(m);
       this.deps.publish({
@@ -729,7 +748,8 @@ export class BenchRunner {
           if (!m.tokensExact) s.tokensApproximate = true;
           results.push(m);
         } catch (e) {
-          if (s.signal.aborted) throw e;
+          // Cancelled, or the tune launch was given up (it spilled): not a failed request.
+          if (this.requestSignal(s).aborted) throw e;
           results.push(null);
         }
         progress();
@@ -761,10 +781,14 @@ export class BenchRunner {
   private sessionsOn(s: RunState, inst: EngineInstance, plan: LaunchPlan, step: SessionsStep): ReturnType<typeof runSessions> {
     const d = this.deps;
     const client = inst.client;
+    // The same client, every message under the stall guard.
+    const watched: InferenceClient = Object.assign(Object.create(client) as InferenceClient, {
+      generate: (req: GenerateRequest, signal: AbortSignal) => this.watched(client, req, signal),
+    });
     return runSessions(step, {
-      client: inst.client,
+      client: watched,
       now: () => d.clock.now(),
-      signal: s.signal,
+      signal: this.requestSignal(s),
       seed: s.input.scenario.seed,
       ...(s.tokens ? { tokens: s.tokens } : {}),
       ...(s.bos !== undefined ? { bos: s.bos } : {}),
@@ -817,7 +841,13 @@ export class BenchRunner {
       },
       onPhase: (phase) => this.setPhase(s, phase),
     }));
-    s.tuning = await tuner.run();
+    try {
+      s.tuning = await tuner.run();
+    } catch (e) {
+      // Cancelled, or a failure that would repeat on every launch: the result keeps what the search knew.
+      s.tuning = tuner.interrupted(s.signal.aborted ? 'cancelled' : 'failed');
+      throw e;
+    }
   }
 
   /**
@@ -834,7 +864,7 @@ export class BenchRunner {
         s.tuneRecords.set(info.attempt, record);
         return {
           command: { argv: record.argv, ...record.display },
-          start: async () => {
+          start: async (guard) => {
             await this.waitVramSettled(s);
             checkAbort(s.signal);
             const label = `tune ${info.attempt + 1} (${info.stage})`;
@@ -848,9 +878,13 @@ export class BenchRunner {
             }
             this.attach(s, inst, label);
             s.marks.push({ t: inst.t0, label });
+            // From now until it is stopped, the search's guard reads its memory at every heartbeat.
+            const abort = new AbortController();
+            const watch: LaunchWatch = { from: inst.t0, abort, signal: AbortSignal.any([s.signal, abort.signal]), ...(guard ? { guard } : {}) };
+            s.launchWatch = watch;
             let tReady: number;
             try {
-              tReady = (await inst.waitReady(s.signal)).tReady;
+              tReady = (await inst.waitReady(watch.signal)).tReady;
             } catch (e) {
               await this.stopInstance(s);
               checkAbort(s.signal);
@@ -868,7 +902,7 @@ export class BenchRunner {
 
   private labEngine(s: RunState, inst: EngineInstance, plan: LaunchPlan, attempt: number, from: number): LabEngine {
     return {
-      measure: (depth, outputTokens, reps, kind, more) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt, ...(more ? { more } : {}) }),
+      measure: (depth, outputTokens, reps, kind, o = {}) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt, ...o }),
       // "Più utenti": every user at once with the prompts of the whole context each one needs.
       concurrency: (level, promptTokens, outputTokens, requestsPerWorker) =>
         this.concurrencyLevel(s, inst, level, { promptTokens, outputTokens, requestsPerWorker, shape: { promptTokens, outputTokens, ...userContext(plan) } }),
@@ -883,7 +917,7 @@ export class BenchRunner {
         const prompt: Pick<GenerateRequest, 'promptIds' | 'promptText'> = s.tokens
           ? { promptIds: buildPrompt(s.tokens, promptTokens, 0, { seed, salt: 'fidelity', ...(s.bos !== undefined ? { bos: s.bos } : {}) }) }
           : { promptText: buildTextPrompt(s.corpus, promptTokens, 0, { seed, salt: 'fidelity' }) };
-        const events = await this.collect(inst, { ...prompt, outputTokens: tokens, seed, ...this.modelField(s) }, s.signal);
+        const events = await this.collect(s, inst, { ...prompt, outputTokens: tokens, seed, ...this.modelField(s) });
         return events.flatMap((e): (number | string)[] => (e.kind !== 'chunk' ? [] : (e.ids ?? (e.text !== undefined ? [e.text] : []))));
       },
       stop: () => this.stopInstance(s),
@@ -891,20 +925,47 @@ export class BenchRunner {
   }
 
   /**
-   * VRAM of the launch started at `from`: the engine process's own peak (and shared memory) when the
-   * OS attributes it, else the peak total minus the baseline.
+   * Memory of the launch started at `from`: the engine process's own VRAM peak (and shared memory) when
+   * the OS attributes it, else the peak total minus the baseline; and the card's dedicated memory in use
+   * (every process, nvidia-smi) with its whole memory.
    */
-  private launchMemory(s: RunState, from: number): { vramPeakMiB?: number; sharedPeakMiB?: number } {
+  private launchMemory(s: RunState, from: number): LaunchMemory {
+    const samples = s.liveSamples.filter((x) => x.t >= from);
+    const gpu = primaryGpu(s.baseline, samples);
+    const card = samples.filter((x) => x.gpu === gpu);
+    const used = card.map((x) => x.memUsedMiB).filter((v): v is number => v !== null);
+    const total = card.map((x) => x.memTotalMiB).find((v): v is number => v !== null);
+    const cardMemory: LaunchMemory = {
+      ...(used.length ? { cardPeakMiB: Math.round(Math.max(...used)) } : {}),
+      ...(total !== undefined ? { totalMiB: total } : {}),
+    };
     const ticks = (s.procVram?.samples ?? []).filter((t) => t.t >= from && t.engine.length > 0 && t.engineMiB > 0);
     if (ticks.length > 0) {
       const shared = ticks.map((t) => t.engineSharedMiB).filter((v): v is number => v !== undefined);
       return {
         vramPeakMiB: Math.round(Math.max(...ticks.map((t) => t.engineMiB))),
         ...(shared.length ? { sharedPeakMiB: Math.round(Math.max(...shared)) } : {}),
+        ...cardMemory,
       };
     }
-    const delta = vram(s.baseline, s.liveSamples.filter((x) => x.t >= from)).deltaMiB;
-    return delta === undefined ? {} : { vramPeakMiB: Math.round(delta) };
+    const delta = vram(s.baseline, samples).deltaMiB;
+    return { ...(delta === undefined ? {} : { vramPeakMiB: Math.round(delta) }), ...cardMemory };
+  }
+
+  /**
+   * The search's spill watch of the tune launch in progress, at every telemetry heartbeat: the first
+   * reading its guard says spilled gives the launch up at once (its load or the request in flight is
+   * aborted, every later request fails; the search then stops it). Once given up, never asked again.
+   */
+  private watchLaunch(s: RunState): void {
+    const w = s.launchWatch;
+    if (!w?.guard || w.abort.signal.aborted) return;
+    if (w.guard(this.launchMemory(s, w.from))) w.abort.abort(new AppError('CANCELLED', 'Launch given up: it spilled into shared memory'));
+  }
+
+  /** The signal of a request now: the run's, and the tune launch's while one is up. */
+  private requestSignal(s: RunState): AbortSignal {
+    return s.launchWatch?.signal ?? s.signal;
   }
 
   // ---- requests ---------------------------------------------------------------------------
@@ -913,14 +974,22 @@ export class BenchRunner {
     return s.input.model.servedName ? { model: s.input.model.servedName } : {};
   }
 
-  private async collect(inst: EngineInstance, req: GenerateRequest, signal: AbortSignal): Promise<StreamEvent[]> {
+  /** One streamed request, whole, under the stall guard (and its deadline, if any). */
+  private async collect(s: RunState, inst: EngineInstance, req: GenerateRequest, timeoutMs?: number): Promise<StreamEvent[]> {
     const events: StreamEvent[] = [];
-    for await (const e of inst.client.generate(req, signal)) events.push(e);
+    for await (const e of this.watched(inst.client, req, this.requestSignal(s), timeoutMs)) events.push(e);
     return events;
   }
 
+  /** client.generate under the watchdogs (watchdog.ts): an engine that stops answering fails the request. */
+  private watched(client: InferenceClient, req: GenerateRequest, signal: AbortSignal, timeoutMs?: number): AsyncIterable<StreamEvent> {
+    // Every request is sent as token ids or, without a tokenizer, as text.
+    const promptTokens = req.promptIds ? req.promptIds.length : Math.ceil((req.promptText as string).length / CHARS_PER_TOKEN);
+    return watchStream((sig) => client.generate(req, sig), { signal, promptTokens, rules: this.deps.stall ?? STALL_RULES, timeoutMs });
+  }
+
   /** One request with a fresh prompt (unique offset: never a prefix-cache hit). */
-  private async measure(s: RunState, inst: EngineInstance, promptTokens: number, outputTokens: number, salt: string) {
+  private async measure(s: RunState, inst: EngineInstance, promptTokens: number, outputTokens: number, salt: string, timeoutMs?: number) {
     const rep = s.requestSeq++;
     const seed = s.input.scenario.seed;
     const prompt: Pick<GenerateRequest, 'promptIds' | 'promptText'> = s.tokens
@@ -929,7 +998,7 @@ export class BenchRunner {
     const req: GenerateRequest = { ...prompt, outputTokens, seed, ...this.modelField(s) };
     s.requestExample ??= exampleBody(inst.client.requestBody(req));
     const sentAt = this.deps.clock.now();
-    const events = await this.collect(inst, req, s.signal);
+    const events = await this.collect(s, inst, req, timeoutMs);
     return fromStream(events, { sentAt, promptTokens, expectedOutput: outputTokens });
   }
 
@@ -1000,6 +1069,8 @@ export class BenchRunner {
     const inst = s.instance;
     if (!inst) return;
     s.instance = undefined;
+    // A tune launch's watch ends with it.
+    s.launchWatch = undefined;
     try {
       await inst.stop();
     } catch (e) {

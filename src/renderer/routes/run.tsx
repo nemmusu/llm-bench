@@ -164,6 +164,8 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   };
 
   const dash = (v: number | undefined, fmt: (n: number) => string) => (v === undefined ? '–' : fmt(v));
+  // A speed not measured yet (or not yet on this tune launch) says so under its dash.
+  const waiting = (v: number | undefined) => (v === undefined ? t('run.gaugeWaiting') : undefined);
   return (
     <Page
       width="wide"
@@ -238,6 +240,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
               label={t('metrics.decode.label')}
               help={t('metrics.decode.help')}
               unit="tok/s"
+              caption={waiting(live.decodeTps)}
               format={() => dash(live.decodeTps, (v) => number(v, 1))}
             />
             <RadialGauge
@@ -247,6 +250,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
               label={t('metrics.prefill.label')}
               help={t('metrics.prefill.help')}
               unit="tok/s"
+              caption={waiting(live.prefillTps)}
               format={() => dash(live.prefillTps, integer)}
             />
             <RadialGauge

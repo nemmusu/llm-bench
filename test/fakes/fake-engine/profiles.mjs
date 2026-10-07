@@ -101,3 +101,37 @@ export const SPILL_PROFILE = {
  * parte" (the screening's 1K, 4K… points, not the whole sweep).
  */
 export const TUNE_SLOW_PROFILE = { ...TUNE_PROFILE, decodeTps: 20, tokensPerChunk: 1 };
+
+/**
+ * "Trova le impostazioni migliori" meets the borderline spill of the bug report (RTX 5090 32 GB, a 27B
+ * Q4 model, llama.cpp b11460, Veloce): f16 at 240K — the estimate rounded down to 8K — loads with the
+ * card full but little shared memory (360 MiB: clean for the check after the load), then its first
+ * request puts the compute buffers in shared memory (1 338 MiB) and never answers (99 % GPU, ~147 W).
+ * Scaled to the E2E's test model (34 layers × 8 KV heads × 128: 136 KiB of f16 KV per token, so the
+ * estimate puts f16 at ~244K on the fake 5090) with 31 000 MiB free:
+ *   - f16 at 240K needs 33 040 MiB: it spills, borderline as above; 224K (30 864 MiB) fits;
+ *   - q8_0 holds the whole 256K (18 896 MiB): q4_0 is not needed;
+ *   - shared memory without a spill: 120 MiB + 1 MiB per 1K of context (124 at 4K, 360 at 240K), like the real card.
+ * The per-process readings come from test/fakes/fake-nvidia-smi/fake-gpu-memory.mjs (GPUBENCH_GPU_MEMORY_MONITOR).
+ * The search gives 240K up the moment the monitor reads 1 338 MiB, steps down and ends: f16 at 224K
+ * ("Limite trovato: a 240K non entra più"), q8_0 at 256K.
+ */
+export const BORDERLINE_PROFILE = {
+  loadMsCold: 400,
+  loadMsWarm: 300,
+  prefillTps: 400_000,
+  decodeTps: 1500,
+  tokensPerChunk: 4,
+  spillStall: true,
+  memory: {
+    totalMiB: 31_000,
+    weightsMiB: 300,
+    kvMiBPer1k: 136,
+    computeMiBPer512: 100,
+    spillMiB: 1_000_000,
+    sharedMiB: 120,
+    sharedMiBPer1k: 1,
+    spillShared: { loadMiB: 0, requestMiB: 978 },
+  },
+  speed: { depthSlowdown: 0.125, prefillDepthSlowdown: 0.134 },
+};

@@ -36,6 +36,15 @@
  *     the only way to a larger context.
  *  7. Optional "fedeltà": the same greedy generation with the most precise KV and the recommended one.
  *
+ * Spills (Windows): the engine's memory is watched live from its start to its stop (launchSpilled in
+ * spill.ts: Shared Usage over the threshold, or the card full with Shared Usage 512 MiB over the
+ * reference's): the moment it crosses the rule the launch is given up — the load or the request in
+ * flight aborted, the engine stopped — and counts as "does not fit"; the check right after the load and
+ * after the measurements stay. Every probe, screening or sweep request also has a deadline: max(30 s,
+ * 5 × its time predicted from the reference launch's speeds); past it (or with no token for a minute,
+ * the stall guard of every run) the launch is given up as 'too-slow': that slow, it reads from shared
+ * memory. Either way the search goes on (the binary search steps down).
+ *
  * Time: the search forecasts itself from the predicted contexts, the expected speeds (earlier runs of
  * this model, else its size) and the launches; its time limit is that estimate × 1.5. Every request is
  * predicted from the speeds measured so far: one longer than a minute is made once (n = 1), one that
@@ -64,27 +73,51 @@ import {
   type TuneTag,
   type Tuning,
 } from '../../contract/results';
-import { spillThresholdMiB, SPILL_RATIO } from './spill';
+import { launchSpilled, SPILL_RATIO } from './spill';
 import { anchorOf, depthGrid, maxDepth, requestMsAt, sweepDepths, type GridStep, type SpeedAnchor } from './sweep';
 import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt, recommendedCombination, screenBetter } from './tune-rank';
+import { watchdogFired } from './watchdog';
 
 export { SPILL_RATIO };
 
 // ---- engine access ------------------------------------------------------------------------------
 
+/** Peaks of one launch so far, MiB. */
+export interface LaunchMemory {
+  /** VRAM of the launch: the engine process's own when the OS attributes it, else the total minus the baseline. */
+  vramPeakMiB?: number;
+  /** Shared GPU memory of the engine process (Windows counters). */
+  sharedPeakMiB?: number;
+  /** Dedicated memory in use on the card, every process (nvidia-smi). */
+  cardPeakMiB?: number;
+  /** The card's whole memory. */
+  totalMiB?: number;
+}
+
+/**
+ * The live spill watch of a launch: called with its memory peaks at every reading of the monitor while
+ * its engine is up, from its start to its stop. true = give the launch up at once: the load or the
+ * request in flight is aborted, every later request on it fails, and it is stopped.
+ */
+export type LaunchGuard = (m: LaunchMemory) => boolean;
+
+export interface MeasureOptions {
+  /** Asked before every repetition after the first: false = stop there (the point keeps the ones made). */
+  more?: () => boolean;
+  /** Deadline of each request, ms: past it the request is aborted (ENGINE_TIMEOUT, reason 'deadline'). */
+  timeoutMs?: number;
+}
+
 /** A loaded engine of one attempt. */
 export interface LabEngine {
-  /**
-   * `reps` requests of `depth` prompt tokens and `outputTokens` answer tokens, as one point. `more` is
-   * asked before every repetition after the first: false = stop there (the point keeps the ones made).
-   */
-  measure(depth: number, outputTokens: number, reps: number, kind: 'tune-probe' | 'tune-screen' | 'context-sweep', more?: () => boolean): Promise<LatencyPoint>;
+  /** `reps` requests of `depth` prompt tokens and `outputTokens` answer tokens, as one point. */
+  measure(depth: number, outputTokens: number, reps: number, kind: 'tune-probe' | 'tune-screen' | 'context-sweep', o?: MeasureOptions): Promise<LatencyPoint>;
   /** `level` users at once, each sending `requestsPerWorker` requests back to back (goal 'multi'). */
   concurrency(level: number, promptTokens: number, outputTokens: number, requestsPerWorker: number): Promise<ConcurrencyPoint>;
   /** "Conversazioni lunghe" on this engine (goal 'multi'): one point per level. */
   sessions(step: SessionsStep): Promise<SessionsPoint[]>;
-  /** Peaks of this launch so far: VRAM (process or total minus baseline) and shared GPU memory (Windows). */
-  memory(): { vramPeakMiB?: number; sharedPeakMiB?: number };
+  /** Peaks of this launch so far: VRAM, shared GPU memory (Windows), the card's memory in use. */
+  memory(): LaunchMemory;
   /** KV cache capacity the engine reported, in tokens (vLLM "GPU KV cache size"). */
   capacityHint(): number | undefined;
   /** Greedy generation after a fixed prompt: token ids when the engine returns them, else text pieces. */
@@ -97,7 +130,8 @@ export type LabStart = { ok: true; engine: LabEngine; loadMs: number } | { ok: f
 /** One planned launch: its exact command is known before the engine starts. */
 export interface LabLaunch {
   command: TuneCommand;
-  start(): Promise<LabStart>;
+  /** Starts the engine; `guard` watches its memory until it is stopped (a launch given up while it loads: ok false). */
+  start(guard?: LaunchGuard): Promise<LabStart>;
 }
 
 export interface TuneLab {
@@ -185,6 +219,9 @@ export const SCREEN_SHALLOW = 1024;
 export const MAX_EXTRA_SWEEPS = 2;
 /** A started users measurement (goal 'multi') gets what is left of the time, never less than this. */
 export const MIN_SWEEP_MS = 60_000;
+/** A tune request is given up after max(30 s, 5 × its predicted time): a launch that slow reads from shared memory. */
+export const REQUEST_TIMEOUT_MIN_MS = 30_000;
+export const REQUEST_TIMEOUT_FACTOR = 5;
 /** Fidelity check: prompt and greedy tokens compared. */
 export const FIDELITY_PROMPT = 1024;
 export const FIDELITY_TOKENS = 128;
@@ -322,6 +359,8 @@ export interface TunerInput {
   expect?: TuneExpect;
   /** The time limit, overriding estimate × TIME_MARGIN (never below the budget's minimum). */
   limitMs?: number;
+  /** The shortest deadline of a request (default REQUEST_TIMEOUT_MIN_MS; tests use less). */
+  minRequestTimeoutMs?: number;
 }
 
 export interface TunerDeps {
@@ -343,7 +382,9 @@ export interface Capacity {
   launched: Set<number>;
   measuredMax?: number;
   inferred: boolean;
-  skipped?: 'estimate' | 'no-gain' | 'budget';
+  skipped?: 'estimate' | 'no-gain' | 'budget' | 'cancelled' | 'failed';
+  /** The run ended while this type was being searched (see Tuner.interrupted). */
+  cut?: 'cancelled' | 'failed';
   /** The engine reported how many tokens its KV cache holds (vLLM): the limit is known, nothing to refine. */
   hinted?: boolean;
 }
@@ -369,6 +410,8 @@ export interface Live {
   users?: { concurrency: ConcurrencyPoint[]; sessions: SessionsPoint[] };
   /** A request of this launch was not made (the time limit): its sweep is only part of one. */
   cut?: boolean;
+  /** The live watch saw it spill (what the monitor had read then): the launch is being given up. */
+  tripped?: LaunchMemory;
 }
 
 export type Work = (engine: LabEngine, live: Live) => Promise<void>;
@@ -421,6 +464,8 @@ export class Tuner {
   protected refDecode: number | undefined;
   /** The reference launch's shared memory and context (what a launch that does not spill uses). */
   protected refShared: { sharedMiB?: number; context: number } | undefined;
+  /** The reference launch's speeds (its 1K probe): every request's deadline is predicted from them. */
+  protected refAnchor: SpeedAnchor | undefined;
   private fidelity: Tuning['fidelity'];
   /** Index of the start-up setting's value in use (space.startup). */
   private startupAt = 0;
@@ -439,6 +484,8 @@ export class Tuner {
   // ---- what is done (the forecast counts the rest)
   protected refDone = false;
   protected readonly capacityDone = new Set<TuneKvType>();
+  /** KV types whose capacity search came to its end (the others were not started, or are being searched). */
+  protected readonly capacityEnded = new Set<TuneKvType>();
   /** Screens left of a KV type whose descent is under way; done types are in `descended`. */
   protected readonly descentLeft = new Map<TuneKvType, number>();
   protected readonly descended = new Set<TuneKvType>();
@@ -556,6 +603,17 @@ export class Tuner {
     return this.requestMs(depth, outputTokens) > SLOW_REQUEST_MS ? 1 : reps;
   }
 
+  /**
+   * Deadline of one request: max(30 s, 5 × its time predicted from the reference launch's speeds,
+   * moved to its depth like every forecast); before the reference is measured (or without one, on
+   * Linux) from the speeds measured nearest to that depth.
+   */
+  protected timeoutMs(depth: number, outputTokens: number): number {
+    const anchor = this.refAnchor ?? (nearestAnchor([...this.anchors.values()], depth) as SpeedAnchor);
+    const min = this.input.minRequestTimeoutMs ?? REQUEST_TIMEOUT_MIN_MS;
+    return Math.round(Math.max(min, REQUEST_TIMEOUT_FACTOR * requestMsAt(depth, outputTokens, anchor)));
+  }
+
   /** A request of `ms` started now ends within the limit (plus the grace). */
   protected fitsInTime(ms: number): boolean {
     return this.deps.now() - this.started + ms <= this.limitMs + TIME_GRACE_MS;
@@ -593,7 +651,7 @@ export class Tuner {
     const n = this.repsFor(depth, reps, out);
     this.busy(one * n);
     try {
-      const p = await engine.measure(depth, out, n, kind, () => this.fitsInTime(one));
+      const p = await engine.measure(depth, out, n, kind, { more: () => this.fitsInTime(one), timeoutMs: this.timeoutMs(depth, out) });
       this.learn(p);
       live.att.points.push(p);
       return p;
@@ -711,7 +769,9 @@ export class Tuner {
       cap.status.set(ctx, live.att.outcome === 'ok');
       cap.launched.add(ctx);
       if (live.att.outcome === 'ok') {
-        this.refDecode = (live.att.points[0] as LatencyPoint).decodeTps.median;
+        const probe = live.att.points[0] as LatencyPoint;
+        this.refDecode = probe.decodeTps.median;
+        this.refAnchor = anchorOf(probe);
         this.refShared = { ...(live.att.sharedPeakMiB !== undefined ? { sharedMiB: live.att.sharedPeakMiB } : {}), context: ctx };
         return;
       }
@@ -730,6 +790,12 @@ export class Tuner {
 
   private async searchCapacity(kv: TuneKvType): Promise<void> {
     this.capacityDone.add(kv);
+    await this.findCapacity(kv);
+    this.capacityEnded.add(kv);
+  }
+
+  /** The capacity search of one KV type (searchCapacity). */
+  private async findCapacity(kv: TuneKvType): Promise<void> {
     const cap = this.capacity.get(kv) as Capacity;
     const floor = this.bestPrecise(kv);
     const ladder = this.input.space.kvLadder;
@@ -810,7 +876,7 @@ export class Tuner {
     return true;
   }
 
-  private highestOk(cap: Capacity): number {
+  protected highestOk(cap: Capacity): number {
     return cap.candidates.reduce((m, c, i) => (cap.status.get(c) === true ? i : m), -1);
   }
 
@@ -855,10 +921,10 @@ export class Tuner {
       const planned = await this.deps.lab.prepare(p, { stage, attempt: index });
       const pending = { stage, params: p, kvType: v.kv as TuneKvType, contextSize: ctx, points: [], command: planned.command, atMs: this.deps.now() - this.started, variant: { ...v } };
       this.update(pending);
-      this.busy(this.loadMs());
-      const started = await planned.start();
-      this.settle();
       const live: Live = { att: { ...pending, outcome: 'ok', points: [] }, index, variant: v };
+      this.busy(this.loadMs());
+      const started = await planned.start(this.guardOf(live));
+      this.settle();
       let retry = false;
       if (started.ok) {
         live.att.loadMs = started.loadMs;
@@ -866,15 +932,21 @@ export class Tuner {
         await this.drive(started.engine, live, work);
       } else {
         const e = started.error;
-        retry = !params && this.stepDown(e);
-        if (!retry && FATAL_CODES.has(e.code)) throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
-        live.att.outcome = memoryError(e) ? 'oom' : 'error';
-        live.att.error = e;
         if (started.loadMs !== undefined) live.att.loadMs = started.loadMs;
-        const hint = failureHint(e);
-        if (hint !== undefined) live.hint = hint;
+        if (live.tripped) {
+          // Given up while it loaded: it was already in shared memory.
+          markSpill(live.att, 'shared-memory');
+          recordMemory(live.att, live.tripped);
+        } else {
+          retry = !params && this.stepDown(e);
+          if (!retry && FATAL_CODES.has(e.code)) throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
+          live.att.outcome = memoryError(e) ? 'oom' : 'error';
+          live.att.error = e;
+          const hint = failureHint(e);
+          if (hint !== undefined) live.hint = hint;
+        }
+        this.attempts.push(live.att);
       }
-      this.attempts.push(live.att);
       this.queue = [];
       this.update();
       if (!retry) return live;
@@ -889,13 +961,31 @@ export class Tuner {
     return true;
   }
 
-  /** Probe, spill checks and the work of a loaded engine; always stops it. */
+  /**
+   * The live spill watch of a launch (Windows only, where a launch that does not fit spills instead of
+   * failing): the first reading that crosses the rule marks it, and the runner gives the launch up.
+   */
+  private guardOf(live: Live): LaunchGuard | undefined {
+    if (!this.input.spillPossible) return undefined;
+    return (m) => {
+      if (!live.tripped && this.spills(m, live.att.contextSize)) live.tripped = m;
+      return live.tripped !== undefined;
+    };
+  }
+
+  /**
+   * Probe, spill checks and the work of a loaded engine; always stops it, after recording the attempt
+   * (shown at once: a starved engine can take a while to stop).
+   */
   private async drive(engine: LabEngine, live: Live, work: Work | undefined): Promise<void> {
     const att = live.att;
+    const ctx = att.contextSize;
     try {
+      // What the monitor read while it loaded: the live watch may not have had a reading yet.
+      if (live.tripped || this.spills(engine.memory(), ctx)) return markSpill(att, 'shared-memory');
       // Never skipped: a second at most, and the spill checks need it.
       this.busy(this.requestMs(PROBE_DEPTH, PROBE_OUTPUT));
-      const probe = await engine.measure(PROBE_DEPTH, PROBE_OUTPUT, 1, 'tune-probe');
+      const probe = await engine.measure(PROBE_DEPTH, PROBE_OUTPUT, 1, 'tune-probe', { timeoutMs: this.timeoutMs(PROBE_DEPTH, PROBE_OUTPUT) });
       this.settle();
       this.learn(probe);
       att.points.push(probe);
@@ -904,33 +994,38 @@ export class Tuner {
         live.hint = hint;
         att.kvTokens = hint;
       }
-      if (this.sharedSpill(engine, att.contextSize)) {
-        att.outcome = 'spill';
-        att.spill = 'shared-memory';
-      } else if (this.input.spillPossible && this.refDecode !== undefined && probe.decodeTps.median < SPILL_RATIO * this.refDecode) {
+      if (live.tripped || this.spills(engine.memory(), ctx)) markSpill(att, 'shared-memory');
+      else if (this.input.spillPossible && this.refDecode !== undefined && probe.decodeTps.median < SPILL_RATIO * this.refDecode) {
         // The same 1K prompt as the reference's probe: a slower generation here is not the context filling up.
-        att.outcome = 'spill';
-        att.spill = 'decode-collapse';
+        markSpill(att, 'decode-collapse');
       } else if (work) {
         await work(engine, live);
         // Memory taken while measuring (the KV cache filling up, compute buffers) can spill too.
-        if (att.outcome === 'ok' && this.sharedSpill(engine, att.contextSize)) {
-          att.outcome = 'spill';
-          att.spill = 'shared-memory';
+        if (att.outcome === 'ok' && (live.tripped || this.spills(engine.memory(), ctx))) {
+          markSpill(att, 'shared-memory');
           this.forget(live);
         }
       }
     } catch (e) {
       const data = toAppErrorData(e);
-      if (data.code === 'CANCELLED') throw e;
-      att.outcome = memoryError(data) ? 'oom' : 'error';
-      att.error = data;
+      // The live watch gave it up in the middle of a request (that request was aborted).
+      if (live.tripped) markSpill(att, 'shared-memory');
+      else if (watchdogFired(data)) {
+        // Past its deadline, or no token for a minute: that slow, it reads from shared memory.
+        markSpill(att, 'too-slow');
+        att.error = data;
+      } else if (data.code === 'CANCELLED') throw e;
+      else {
+        att.outcome = memoryError(data) ? 'oom' : 'error';
+        att.error = data;
+      }
       this.forget(live);
     } finally {
       this.settle();
-      const mem = engine.memory();
-      if (mem.vramPeakMiB !== undefined) att.vramPeakMiB = mem.vramPeakMiB;
-      if (mem.sharedPeakMiB !== undefined) att.sharedPeakMiB = mem.sharedPeakMiB;
+      recordMemory(att, engine.memory());
+      this.attempts.push(att);
+      this.queue = [];
+      this.update();
       await engine.stop();
     }
   }
@@ -943,19 +1038,18 @@ export class Tuner {
   }
 
   /**
-   * Windows: the engine uses shared GPU memory (system RAM) beyond what a launch of this context uses
-   * without spilling: max(1024, the reference's + ~1 MiB per 1K tokens more + 768) MiB (spill.ts).
+   * Windows: the launch spilled to shared GPU memory (system RAM), judged on its peaks so far with
+   * launchSpilled (spill.ts): Shared Usage over max(1024, the reference's + ~1 MiB per 1K tokens more
+   * + 768) MiB, or the card full and Shared Usage 512 MiB over the reference's.
    */
-  private sharedSpill(engine: LabEngine, ctx: number): boolean {
-    const shared = engine.memory().sharedPeakMiB;
-    return this.input.spillPossible && shared !== undefined && shared >= spillThresholdMiB(this.refShared, ctx);
+  protected spills(m: LaunchMemory, ctx: number): boolean {
+    return this.input.spillPossible && launchSpilled(this.refShared, ctx, { sharedMiB: m.sharedPeakMiB, dedicatedMiB: m.cardPeakMiB ?? m.vramPeakMiB, totalMiB: m.totalMiB });
   }
 
   /** Marks the attempt as a spill when the generation speed collapsed between two of these points. */
   protected collapsed(att: TuneAttempt, points: readonly LatencyPoint[]): boolean {
     if (!this.input.spillPossible || collapsedAt(points) === undefined) return false;
-    att.outcome = 'spill';
-    att.spill = 'decode-collapse';
+    markSpill(att, 'decode-collapse');
     return true;
   }
 
@@ -1149,7 +1243,7 @@ export class Tuner {
    * combination, what its launches measured there becomes one, "misurata in parte" — every screened
    * variant still in the running, else the launch that found the context (its 1K check).
    */
-  private addPartials(): void {
+  protected addPartials(): void {
     const why = this.stoppedBy;
     if (!why) return;
     for (const kv of this.input.space.kvLadder) {
@@ -1259,17 +1353,44 @@ export class Tuner {
 
   /** What is known above a KV type's largest context (see Tuning.capacity.bound). */
   protected boundOf(c: Capacity): Pick<Tuning['capacity'][number], 'bound' | 'failedAt'> {
-    if (c.measuredMax === undefined) return {};
     // Candidates are kept sorted.
-    const above = c.candidates.filter((x) => x > (c.measuredMax as number));
+    const above = c.candidates.filter((x) => x > (c.measuredMax ?? 0));
     const failed = above.find((x) => c.status.get(x) === false);
     const known = failed !== undefined ? { failedAt: failed } : {};
+    // The run ended while nothing tried for this type had loaded (at least one had failed: see interrupted).
+    if (c.measuredMax === undefined) return c.cut ? { bound: c.cut, ...known } : {};
     // The very next context up did not fit: this is the limit.
     if (failed !== undefined && failed === above[0]) return { bound: 'found', ...known };
     if (c.measuredMax >= this.cap) return { bound: 'model' };
+    // The run ended before the search of this type did.
+    if (c.cut) return { bound: c.cut, ...known };
     // A search leaves contexts untried above its largest only when the time limit or the launch cap cut it.
     if (c.skipped === 'budget') return { bound: 'budget', ...known };
     return { bound: 'estimate' };
+  }
+
+  /**
+   * The run ended before the search did (cancelled, or a failure that would repeat on every launch):
+   * the result keeps what was known. A KV type being searched (or not searched yet) holds at least the
+   * largest context that loaded so far (bound 'cancelled' / 'failed'; none of those tried loaded: no
+   * maximum, the same bound); one never launched says why it was not tried; what each type measured at
+   * that context becomes a combination "misurata in parte", as when the time runs out.
+   */
+  interrupted(why: 'cancelled' | 'failed'): Tuning {
+    this.stoppedBy = why;
+    for (const [kv, cap] of this.capacity) {
+      if (this.capacityEnded.has(kv)) continue;
+      const ok = this.highestOk(cap);
+      if (ok >= 0) {
+        cap.measuredMax = cap.candidates[ok] as number;
+        cap.inferred = !cap.launched.has(cap.measuredMax);
+      }
+      // Tried: one of its candidates is known to load or not (goal 'multi': its reference launch is not one).
+      if (ok >= 0 || cap.candidates.some((c) => cap.status.get(c) === false)) cap.cut = why;
+      else cap.skipped ??= why;
+    }
+    this.addPartials();
+    return this.snapshot();
   }
 
   protected snapshot(): Tuning {
@@ -1315,4 +1436,16 @@ export class Tuner {
   protected update(current?: Omit<TuneAttempt, 'outcome'>): void {
     this.deps.onUpdate?.(this.snapshot(), current);
   }
+}
+
+/** The attempt spilled, seen this way. */
+function markSpill(att: TuneAttempt, how: NonNullable<TuneAttempt['spill']>): void {
+  att.outcome = 'spill';
+  att.spill = how;
+}
+
+/** The launch's memory peaks on its attempt. */
+function recordMemory(att: TuneAttempt, m: LaunchMemory): void {
+  if (m.vramPeakMiB !== undefined) att.vramPeakMiB = m.vramPeakMiB;
+  if (m.sharedPeakMiB !== undefined) att.sharedPeakMiB = m.sharedPeakMiB;
 }

@@ -14,11 +14,12 @@ import { CodeBlock } from '../ui/code-block';
 import { HelpTip } from '../ui/help-tip';
 import { Tooltip } from '../ui/tooltip';
 import { depthLabel, discardReason, kvName, outcomeText, roughDuration, settingsText } from './tune-format';
-import { discardedAttempts, lastPoint } from './tune-logic';
+import { discardedAttempts, lastPoint, searchCut } from './tune-logic';
 
 /**
- * The search stopped early: why, how many launches it made in how much time, and the requests it left
- * out because they would have ended after the time limit.
+ * The search stopped early: why (its time limit, its launch cap, or the run was cancelled or failed),
+ * how many launches it made in how much time, and the requests it left out because they would have
+ * ended after the time limit.
  */
 export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'attempts' | 'limitSeconds'> }) {
   const f = useI18n();
@@ -26,10 +27,13 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
   const why = tuning.stoppedBy as NonNullable<Tuning['stoppedBy']>;
   const skipped = tuning.attempts.flatMap((a) => a.skipped ?? []);
   const depths = [...new Set(skipped.map((s) => nominalDepth(s.depth)))].sort((a, b) => a - b);
+  const n = tuning.attempts.length;
   const body =
-    tuning.limitSeconds !== undefined
-      ? t('tune.stopped.bodyLimit', { n: tuning.attempts.length, limit: duration(tuning.limitSeconds * 1000) })
-      : t('tune.stopped.body', { n: tuning.attempts.length });
+    why === 'cancelled' || why === 'failed'
+      ? t('tune.stopped.bodyEnded', { n })
+      : tuning.limitSeconds !== undefined
+        ? t('tune.stopped.bodyLimit', { n, limit: duration(tuning.limitSeconds * 1000) })
+        : t('tune.stopped.body', { n });
   return (
     <Callout className="mt-4" tone="info" title={t(`tune.stopped.${why}`)}>
       <p>{body}</p>
@@ -114,13 +118,20 @@ export function DiscardedAttempts({ tuning, engineKind }: { tuning: Pick<Tuning,
 }
 
 /**
- * The note of a KV type's largest context: why it was not tried, that it was deduced, or what is known
- * above it — "Limite trovato" (the next context up did not fit) against "Almeno …" (larger ones were
- * not tried: the estimate stopped there, or the time ran out). Runs before the bound was saved: "measured".
+ * The note of a KV type's largest context: why it was not tried ("Non provato (test annullato | tempo
+ * finito | non serviva)"…), that it was deduced, or what is known above it — "Limite trovato" (the next
+ * context up did not fit) against "Almeno …" (larger ones were not tried: the estimate stopped there, the
+ * time ran out, or the run ended mid-search). "Nessun contesto è entrato" only when every context tried
+ * failed and the search came to its end. Runs before the bound was saved: "measured".
  */
 export function capacityNote(c: Tuning['capacity'][number], f: Pick<Formatters, 't' | 'number' | 'integer'>): string {
   const { t } = f;
-  if (c.measuredMax === undefined) return c.skipped ? t(`tune.capacity.skipped.${c.skipped}`) : t('tune.capacity.none');
+  if (c.measuredMax === undefined) {
+    if (c.skipped) return t(`tune.capacity.skipped.${c.skipped}`);
+    // The run ended mid-search: nothing tried so far had loaded (a cut search always has a failed context).
+    if (c.bound === 'cancelled' || c.bound === 'failed') return t(`tune.capacity.cut.${c.bound}`, { next: depthLabel(c.failedAt as number, f) });
+    return t('tune.capacity.none');
+  }
   if (c.inferred) return t('tune.capacity.inferred');
   const ctx = depthLabel(c.measuredMax, f);
   switch (c.bound) {
@@ -132,7 +143,9 @@ export function capacityNote(c: Tuning['capacity'][number], f: Pick<Formatters, 
       // A type is only searched up to its estimate.
       return t('tune.capacity.bound.estimate', { ctx, est: depthLabel(c.predictedMax as number, f) });
     case 'budget':
-      return t('tune.capacity.bound.budget', { ctx });
+    case 'cancelled':
+    case 'failed':
+      return t(`tune.capacity.bound.${c.bound}`, { ctx });
     default:
       return c.skipped ? t(`tune.capacity.skipped.${c.skipped}`) : t('tune.capacity.measuredNote');
   }
@@ -173,7 +186,7 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
                 </td>
                 <td className="h-row border-b border-border px-3 text-right font-semibold tabular-nums" title={c.measuredMax === undefined ? undefined : integer(c.measuredMax)}>
                   {/* Larger contexts left untried: it holds at least this much. */}
-                  {c.measuredMax !== undefined && (c.bound === 'estimate' || c.bound === 'budget') ? t('tune.capacity.atLeast', { ctx: ctx(c.measuredMax) }) : ctx(c.measuredMax)}
+                  {c.measuredMax !== undefined && (c.bound === 'estimate' || c.bound === 'budget' || searchCut(c)) ? t('tune.capacity.atLeast', { ctx: ctx(c.measuredMax) }) : ctx(c.measuredMax)}
                 </td>
                 <td className="h-row border-b border-border px-3 pr-card text-fg-2">{capacityNote(c, f)}</td>
               </tr>

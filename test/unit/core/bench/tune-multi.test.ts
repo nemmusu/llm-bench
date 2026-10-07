@@ -194,3 +194,21 @@ describe('MultiTuner: vLLM, 4 users × 8K', () => {
     expect(t.combinations[t.recommended!]).toMatchObject({ kvType: 'fp8', params: { batchSize: 2048 } });
   });
 });
+
+describe('MultiTuner: a search the run ends', () => {
+  it('cancelled while the first KV type is checked: none was tried with the users (the reference is not one), nothing "misurata in parte"', async () => {
+    // Windows: the reference (4 users × 1K) loads, then the run is cancelled as f16 starts with 4 × 8K.
+    const lab = machine({ fail: (_p, n) => (n === 2 ? { code: 'CANCELLED', message: 'Run cancelled' } : undefined) });
+    const tuner = new MultiTuner(input({ ...multi(), spillPossible: true }), { lab, now: lab.now });
+    await expect(tuner.run()).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(lab.started[0]).toMatchObject({ contextSize: 4 * MULTI_REFERENCE_CONTEXT });
+    const t = tuner.interrupted('cancelled');
+    expect(t.stoppedBy).toBe('cancelled');
+    expect(t.capacity.map((c) => [c.kvType, c.measuredMax, c.bound, c.skipped])).toEqual([
+      ['f16', undefined, undefined, 'cancelled'],
+      ['q8_0', undefined, undefined, 'cancelled'],
+      ['q4_0', undefined, undefined, 'cancelled'],
+    ]);
+    expect(t.combinations).toEqual([]);
+  });
+});

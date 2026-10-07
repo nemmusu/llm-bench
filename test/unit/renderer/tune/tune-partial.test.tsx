@@ -108,8 +108,8 @@ describe('capacity notes', () => {
     expect(capacityNote({ ...base, measuredMax: 128 * K, predictedMax: 247_552, bound: 'estimate' }, f)).toBe('Almeno 128K: oltre non provato (la stima arriva a 241,8K).');
     expect(capacityNote({ ...base, measuredMax: 128 * K, bound: 'budget', failedAt: 240 * K }, f)).toBe('Almeno 128K: oltre non provato (tempo finito).');
     expect(capacityNote({ ...base, measuredMax: 128 * K }, f)).toBe('Misurato avviando il motore.');
-    expect(capacityNote({ ...base, measuredMax: 128 * K, skipped: 'budget' }, f)).toBe('Non provata: tempo finito.');
-    expect(capacityNote({ ...base, skipped: 'estimate' }, f)).toBe('Non provata: la stima della memoria la escludeva.');
+    expect(capacityNote({ ...base, measuredMax: 128 * K, skipped: 'budget' }, f)).toBe('Non provato (tempo finito).');
+    expect(capacityNote({ ...base, skipped: 'estimate' }, f)).toBe('Non provato (la stima della memoria lo escludeva).');
     expect(capacityNote(base, f)).toBe('Nessun contesto è entrato tutto nella memoria video.');
   });
 

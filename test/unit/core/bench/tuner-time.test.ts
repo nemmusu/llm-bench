@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { LaunchParams } from '../../../../src/contract/engines';
 import { llamaSpace } from '../../../../src/core/bench/tune-space';
 import { createTuner, FORECAST_ONLY, tuneTime } from '../../../../src/core/bench/tune-run';
-import { BUDGETS, nearestAnchor, pointsByDepth, SLOW_REQUEST_MS, TIME_GRACE_MS, TIME_MARGIN, type TunerInput } from '../../../../src/core/bench/tuner';
+import { BUDGETS, nearestAnchor, pointsByDepth, SLOW_REQUEST_MS, TIME_GRACE_MS, TIME_MARGIN, type MeasureOptions, type TunerInput } from '../../../../src/core/bench/tuner';
 import { memoryPlan } from '../../../fakes/fake-engine/server.mjs';
 import { REAL, REAL_PROFILE, realPredict } from './real-5090';
 import { point } from './tune-helpers';
@@ -50,7 +50,10 @@ describe('capacity: quick checks, the estimate rounded to 8K, a search down to 8
       'capacity q8_0@262144 on/512 ok',
     ]);
     const checks = t.attempts.filter((a) => a.stage === 'reference' || a.stage === 'capacity');
-    expect(checks.every((a) => a.points.length === 1 && a.points[0]!.promptTokens === 1024 && a.points[0]!.outputTokens === 32)).toBe(true);
+    const loaded = checks.filter((a) => a.outcome === 'ok');
+    expect(loaded.every((a) => a.points.length === 1 && a.points[0]!.promptTokens === 1024 && a.points[0]!.outputTokens === 32)).toBe(true);
+    // A launch already in shared memory once loaded is given up at once: no probe (it would take a minute there).
+    expect(checks.filter((a) => a.outcome === 'spill').every((a) => a.points.length === 0)).toBe(true);
     expect(checks.find((a) => a.contextSize === 245_760)).toMatchObject({ spill: 'shared-memory', sharedPeakMiB: 4666 });
     // 376 MiB at 256K is the natural growth, not a spill.
     expect(checks.find((a) => a.kvType === 'q8_0')).toMatchObject({ outcome: 'ok', sharedPeakMiB: 376 });
@@ -138,10 +141,11 @@ describe('time: the forecast, the limit and every request within it', () => {
 
   it('a request that would end past the limit is not started (recorded); a started one is never cut', async () => {
     const log: { depth: number; reps: number; made: number; at: number }[] = [];
-    // The 0.3.0 run had 5 minutes.
-    const { t, lab } = await tune(real({ limitMs: 5 * 60_000 }), realLab(log));
+    // The 0.3.0 run had 5 minutes; its two launches that spilled are given up at once now, without the
+    // slow probe they used to measure: the same work is 30 s earlier.
+    const { t, lab } = await tune(real({ limitMs: 4.5 * 60_000 }), realLab(log));
     expect(t.stoppedBy).toBe('budget');
-    expect(lab.t).toBeLessThanOrEqual(5 * 60_000 + TIME_GRACE_MS);
+    expect(lab.t).toBeLessThanOrEqual(4.5 * 60_000 + TIME_GRACE_MS);
     const cut = t.attempts.find((a) => a.skipped);
     expect(cut!.skipped).toEqual([{ depth: 262_000, predictedMs: expect.any(Number) }]);
     expect(cut!.skipped![0]!.predictedMs).toBeGreaterThan(SLOW_REQUEST_MS);
@@ -179,21 +183,21 @@ describe('time: the forecast, the limit and every request within it', () => {
       const r = await prepare(params);
       return {
         ...r,
-        start: async () => {
-          const s = await r.start();
+        start: async (guard) => {
+          const s = await r.start(guard);
           if (!s.ok) return s;
           const m = s.engine.measure;
           return {
             ...s,
             engine: {
               ...s.engine,
-              measure: async (d: number, o: number, n: number, k: Parameters<typeof m>[3], more?: () => boolean) => {
+              measure: async (d: number, o: number, n: number, k: Parameters<typeof m>[3], mo?: MeasureOptions) => {
                 // In the middle of a 64K request: much later than it should have ended.
                 if (d === 65_536 && during.length === 0) {
                   lab.t += 1_000_000;
                   during = [holder.tuner!.forecast().remainingMs];
                 }
-                return m(d, o, n, k, more);
+                return m(d, o, n, k, mo);
               },
             },
           };
@@ -220,13 +224,13 @@ describe('time: the forecast, the limit and every request within it', () => {
       const r = await prepare(params);
       return {
         ...r,
-        start: async () => {
-          const s = await r.start();
+        start: async (guard) => {
+          const s = await r.start(guard);
           if (!s.ok) return s;
           const m = s.engine.measure;
           // Every 1K probe comes back empty (no token ids, no timings).
-          const empty = async (d: number, o: number, n: number, k: Parameters<typeof m>[3], more?: () => boolean) => {
-            const p = await m(d, o, n, k, more);
+          const empty = async (d: number, o: number, n: number, k: Parameters<typeof m>[3], mo?: MeasureOptions) => {
+            const p = await m(d, o, n, k, mo);
             return d === 1024 && o === 32 ? { ...p, decodeTps: { ...p.decodeTps, n: 0 } } : p;
           };
           return { ...s, engine: { ...s.engine, measure: empty } };
@@ -259,8 +263,8 @@ describe('time: the forecast, the limit and every request within it', () => {
 });
 
 describe('results when the time runs out', () => {
-  it('the 0.3.0 run again (5 minutes): partly measured combinations, ranked by the same rules, and a recommendation', async () => {
-    const { t } = await tune(real({ limitMs: 5 * 60_000 }), realLab());
+  it('the 0.3.0 run again (its 5 minutes, less the 30 s its spills no longer cost): partly measured combinations, ranked by the same rules, and a recommendation', async () => {
+    const { t } = await tune(real({ limitMs: 4.5 * 60_000 }), realLab());
     expect(t.combinations.length).toBeGreaterThan(0);
     expect(t.combinations.every((c) => c.partial === 'budget')).toBe(true);
     const rec = t.combinations[t.recommended!]!;

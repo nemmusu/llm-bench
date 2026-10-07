@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import type { RunSummary } from '../../../../src/contract/results';
-import { cpuOffloaded, normalDecode, NORMAL_RUNS, shallowPoint, spillOf, spillPossible, spillThresholdMiB } from '../../../../src/core/bench/spill';
+import { atCeiling, cpuOffloaded, launchSpilled, normalDecode, NORMAL_RUNS, shallowPoint, spillOf, spillPossible, spillThresholdMiB } from '../../../../src/core/bench/spill';
 import { REAL } from './real-5090';
 import { point } from './tune-helpers';
 
@@ -60,6 +60,38 @@ describe('the shared-memory threshold', () => {
     expect(spillPossible({ platform: 'linux', isWsl: true })).toBe(true);
     expect(spillPossible({ platform: 'linux', isWsl: false })).toBe(false);
     expect(spillPossible(undefined)).toBe(false);
+  });
+});
+
+describe('launchSpilled: a tune launch, judged live', () => {
+  const ref = { sharedMiB: REAL.reference.sharedMiB, context: REAL.reference.ctx };
+  const b = REAL.borderline;
+  /** What the desktop and the other programs held on the card besides the engine. */
+  const desktop = 1_300;
+
+  it('240K: under the threshold once loaded (360 MiB, ~1 MiB per 1K), 1 338 MiB during the probe crosses max(1024, 124 + 236 + 768) = 1 128', () => {
+    expect(spillThresholdMiB(ref, b.ctx)).toBe(1128);
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: 360, dedicatedMiB: b.dedicatedMiB + desktop, totalMiB: b.totalMiB })).toBe(false);
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: b.sharedMiB, dedicatedMiB: b.dedicatedMiB + desktop, totalMiB: b.totalMiB })).toBe(true);
+    // The full spill, and no spill at all at 256K with q8_0 (376 MiB).
+    expect(launchSpilled(ref, REAL.spill.ctx, { sharedMiB: REAL.spill.sharedMiB, dedicatedMiB: REAL.spill.dedicatedMiB })).toBe(true);
+    expect(launchSpilled(ref, REAL.q8At256K.ctx, { sharedMiB: REAL.q8At256K.sharedMiB, dedicatedMiB: REAL.q8At256K.vramMiB + desktop, totalMiB: b.totalMiB })).toBe(false);
+  });
+
+  it('the card full (within max(3 %, 1 GiB) of 32 607 MiB) and 512 MiB more shared than the reference: a spill before the threshold', () => {
+    const full = b.dedicatedMiB + desktop;
+    expect(atCeiling(full, b.totalMiB)).toBe(true);
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: REAL.reference.sharedMiB + 512, dedicatedMiB: full, totalMiB: b.totalMiB })).toBe(true);
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: REAL.reference.sharedMiB + 511, dedicatedMiB: full, totalMiB: b.totalMiB })).toBe(false);
+    // The engine's own 31 160 MiB alone is not the ceiling (31 583): the card's whole use counts.
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: 700, dedicatedMiB: b.dedicatedMiB, totalMiB: b.totalMiB })).toBe(false);
+    // Without the card's size, or without a reference (0 MiB), the rule still holds as it can.
+    expect(launchSpilled(ref, b.ctx, { sharedMiB: 700, dedicatedMiB: full })).toBe(false);
+    expect(launchSpilled(undefined, 4096, { sharedMiB: 512, dedicatedMiB: full, totalMiB: b.totalMiB })).toBe(true);
+  });
+
+  it('without the shared memory nothing is known (no per-process counters)', () => {
+    expect(launchSpilled(ref, b.ctx, { dedicatedMiB: b.totalMiB, totalMiB: b.totalMiB })).toBe(false);
   });
 });
 

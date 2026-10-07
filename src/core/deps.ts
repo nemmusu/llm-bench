@@ -98,6 +98,8 @@ export interface CoreEndpoints {
   huggingface: string;
   dockerHub: string;
   nvidiaSmi?: string[];
+  /** A stand-in for the per-process GPU memory monitor (Windows counters), speaking its protocol (tests, fakes). */
+  gpuMemoryMonitor?: string[];
   docker?: string[];
   /** Docker Engine API endpoint override (named pipe or unix socket path, or tcp URL). */
   dockerHost?: string;

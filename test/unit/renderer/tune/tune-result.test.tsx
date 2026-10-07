@@ -190,11 +190,11 @@ describe('tune result', () => {
     expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: /Prove scartate/ })).toBeNull();
     const capacity = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
-    expect(capacity.textContent).toContain('Non provata: la stima della memoria la escludeva.');
+    expect(capacity.textContent).toContain('Non provato (la stima della memoria lo escludeva).');
     expect(capacity.textContent).toContain('Dedotto senza avviare il motore');
-    expect(capacity.textContent).toContain('Non provata: non avrebbe dato più contesto.');
+    expect(capacity.textContent).toContain('Non provato (non serviva): non avrebbe dato più contesto.');
     expect(capacity.textContent).toContain('Nessun contesto è entrato tutto nella memoria video.');
-    expect(capacity.textContent).toContain('Non provata: tempo finito.');
+    expect(capacity.textContent).toContain('Non provato (tempo finito).');
     expect(capacity.textContent).toContain('non ci sta');
     expect(capacity.textContent).toContain('automatica');
     // No first divergence reported: the one after the identical ones.
@@ -216,12 +216,18 @@ describe('tune result', () => {
     second.unmount();
 
     const empty = tunedRun({ combinations: [], recommended: undefined, fastestByDepth: [], capacity: [], attempts: [attempt('capacity', 'f16', 8 * K, 'oom')], fidelity: undefined });
-    open({ ...empty, status: 'failed', error: { code: 'ENGINE_OOM', message: 'oom' } });
+    const third = open(empty);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Nessuna combinazione è arrivata fino in fondo: guarda le prove scartate qui sotto.')).toBeTruthy();
     expect(screen.getByText('Nessuna combinazione è stata misurata fino in fondo.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Combinazione consigliata' })).toBeNull();
     expect(screen.getByRole('button', { name: /Prove scartate/ })).toBeTruthy();
+    third.unmount();
+    // The same search ended by an error (saved before the search said so): the summary says how it ended.
+    open({ ...empty, status: 'failed', error: { code: 'ENGINE_OOM', message: 'oom' } });
+    await h1(/Qwen3 8B/);
+    expect(screen.getByText('Il test si è fermato per un errore prima che una combinazione fosse misurata: qui sotto le prove fatte fin lì.')).toBeTruthy();
+    expect(screen.getByText('Test interrotto da un errore')).toBeTruthy();
   });
 
   it('the recommendation says only what was measured; many combinations fold to the top five', async () => {

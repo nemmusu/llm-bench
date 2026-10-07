@@ -3,7 +3,7 @@
  * Good performance = the highest number measured among the launch combinations of this run: no
  * absolute thresholds. Differences within the measurement noise count as ties.
  */
-import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
+import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
 import { prefillStat } from '../bench/format';
 
 /** More precise KV cache first (ties go to the more precise one). */
@@ -327,6 +327,16 @@ export interface CapacityLead {
   next?: { kvType: TuneKvType; max: number };
   /** Every measured type reached the same context. */
   allSame: boolean;
+  /**
+   * The run ended while some type was being searched: 'best' = the best one's maximum is only a lower
+   * bound, 'other' = another one's is (comparisons with it would say too much).
+   */
+  unfinished?: 'best' | 'other';
+}
+
+/** The run ended (cancelled / failed) while this type was being searched: its maximum is only "at least". */
+export function searchCut(c: Pick<Tuning['capacity'][number], 'bound'>): boolean {
+  return c.bound === 'cancelled' || c.bound === 'failed';
 }
 
 /** Which KV cache reaches the largest context, and against which one (from the measured maxima only). */
@@ -337,11 +347,34 @@ export function capacityLead(tuning: Pick<Tuning, 'capacity'>): CapacityLead | u
   const top = measured[0];
   if (!top) return undefined;
   const next = measured.find((c) => c.measuredMax < top.measuredMax);
+  const unfinished = searchCut(top) ? 'best' : measured.some(searchCut) ? 'other' : undefined;
   return {
     best: { kvType: top.kvType, max: top.measuredMax },
     ...(next ? { next: { kvType: next.kvType, max: next.measuredMax } } : {}),
     allSame: measured.length > 1 && next === undefined,
+    ...(unfinished ? { unfinished } : {}),
   };
+}
+
+/**
+ * A tune run that ended early (cancelled or failed) as the search now records it: runs saved before it
+ * did get `stoppedBy` from their status, and each KV type with no maximum and no reason what its
+ * reference and capacity launches say — at least the largest context that loaded (else the smallest
+ * that did not, as a cut search), or "not tried" when it was never launched. Anything else is unchanged.
+ */
+export function withRunEnd(tuning: Tuning, status: RunStatus): Tuning {
+  if (status === 'completed' || tuning.stoppedBy === 'cancelled' || tuning.stoppedBy === 'failed') return tuning;
+  const why = status;
+  const capacity = tuning.capacity.map((c) => {
+    if (c.measuredMax !== undefined || c.skipped) return c;
+    const launched = tuning.attempts.filter((a) => a.kvType === c.kvType && (a.stage === 'reference' || a.stage === 'capacity'));
+    if (!launched.length) return { ...c, skipped: why };
+    const ok = launched.filter((a) => a.outcome === 'ok').map((a) => a.contextSize);
+    const max = ok.length ? Math.max(...ok) : undefined;
+    const failed = launched.filter((a) => a.outcome !== 'ok' && (max === undefined || a.contextSize > max)).map((a) => a.contextSize);
+    return { ...c, ...(max !== undefined ? { measuredMax: max } : {}), bound: why, ...(failed.length ? { failedAt: Math.min(...failed) } : {}) };
+  });
+  return { ...tuning, stoppedBy: why, capacity };
 }
 
 /** "il doppio" (2), "il triplo" (3), "N volte" (whole multiples ≥ 4), else "+N%". */

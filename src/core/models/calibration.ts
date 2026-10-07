@@ -19,6 +19,7 @@
  */
 import type { EngineKind, LaunchParams } from '../../contract/engines';
 import { spilledRun, type RunResult } from '../../contract/results';
+import { atCeiling, CEILING_MIN_MIB, CEILING_SHARE } from '../bench/spill';
 import type { HereIdentity, RunsRepo } from '../store/runs-repo';
 import { CUDA_CONTEXT_MIB, estimateFit, fitParamsFrom, type FitCalibration } from './fit';
 import type { ModelFactsEx } from './types';
@@ -47,18 +48,13 @@ export interface VramSample {
 
 /**
  * Censored measurements: a dedicated peak within max(3 % of the card's memory, 1 GiB) of the card's
- * whole memory says nothing about what the settings need. At the ceiling the reading is capped by the
- * card itself (Windows moves the rest to shared memory, or the launch barely fit), so the real need may
- * be far higher. On a 32 GB card (32 607 MiB): peaks from 31 583 MiB up. Old and new runs, spilled or
- * not (spilled runs are left out anyway); a run without a card is never at it.
+ * whole memory (atCeiling, shared with the tuner's spill watch) says nothing about what the settings
+ * need. At the ceiling the reading is capped by the card itself (Windows moves the rest to shared
+ * memory, or the launch barely fit), so the real need may be far higher. On a 32 GB card (32 607 MiB):
+ * peaks from 31 583 MiB up. Old and new runs, spilled or not (spilled runs are left out anyway); a run
+ * without a card is never at it.
  */
-export const CEILING_SHARE = 0.03;
-export const CEILING_MIN_MIB = 1024;
-
-/** The peak is at the ceiling of a card of `totalMiB` (see CEILING_SHARE). */
-export function atCeiling(peakMiB: number, totalMiB: number | undefined): boolean {
-  return totalMiB !== undefined && peakMiB >= totalMiB - Math.max(CEILING_SHARE * totalMiB, CEILING_MIN_MIB);
-}
+export { atCeiling, CEILING_MIN_MIB, CEILING_SHARE };
 
 /** Scale and offset are kept within these bounds (a wild fit says more about noise than about the model). */
 export const SCALE_RANGE = [0.25, 4] as const;

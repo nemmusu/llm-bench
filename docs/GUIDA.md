@@ -46,6 +46,8 @@ Premi **Avvia benchmark**. Se serve scaricare qualcosa, GPU Bench ti mostra cosa
 
 Durante il test vedi in tempo reale le fasi, la velocità, la memoria video, la temperatura e i watt. Puoi annullare in qualsiasi momento.
 
+Se il motore smette di rispondere (nessuna parola per un minuto; prima della prima parola, il tempo che servirebbe per leggere il prompt anche molto lentamente) GPU Bench ferma il test con **Il motore non ha risposto in tempo** invece di aspettare per sempre.
+
 ### Quando il modello non entra nella scheda (RAM condivisa)
 
 Su Windows, se il modello con il contesto scelto non entra tutto nella memoria video, il driver non dà errore: mette il resto nella **RAM condivisa** del PC e tutto diventa circa 10–15 volte più lento. I numeri di un test così non sono quelli veri della scheda.
@@ -83,7 +85,13 @@ Per il contesto più grande GPU Bench non misura tutto a ogni tentativo: avvia i
 
 Su Windows, quando un modello non entra nella memoria video, il driver non dà errore: sposta una parte nella RAM del PC e tutto diventa circa 10–15 volte più lento. GPU Bench se ne accorge (memoria condivisa usata dal motore, oppure velocità crollata rispetto alla prima prova) e conta quella configurazione come "non entra".
 
-La ricerca ha un **tempo massimo** (la sua stima, con un po' di margine). Prima di ogni richiesta GPU Bench controlla se finirebbe in tempo: se no, non la inizia (non interrompe mai una misura a metà) e lo scrive nel risultato. Se il tempo finisce prima di aver misurato tutto, il risultato tiene quello che ha misurato: le combinazioni **Misurata in parte (tempo finito)** sono confrontate con le stesse regole, una è comunque consigliata e **Usa questo preset** usa quella. Le richieste molto lunghe (oltre un minuto) vengono fatte una volta sola invece di ripeterle.
+La memoria del motore è controllata **per tutta la prova**, dal caricamento all'ultima misura, non solo all'inizio: certe prove entrano appena caricate e finiscono nella RAM condivisa alla prima richiesta, quando il motore prepara i suoi buffer di calcolo. Appena la RAM condivisa usata dal motore supera di oltre 768 MB quella di una prova che entra (la prima, più circa 1 MB ogni 1K di contesto in più; almeno 1 GB in tutto), oppure di 512 MB quando la memoria video è già piena (a meno di 1 GB, o del 3 %, dal totale), GPU Bench ferma subito quella prova, anche a metà di una richiesta, e la segna **Usa la RAM condivisa (lento)**.
+
+Ogni richiesta della ricerca ha anche un suo **limite di tempo**: 5 volte quanto dovrebbe durare secondo le velocità della prima prova (mai meno di 30 secondi; minuti per i prompt molto lunghi). Se una richiesta lo supera, o il motore non manda nulla per un minuto, la prova è **Troppo lento: probabilmente usa la RAM condivisa**. In entrambi i casi la prova fermata compare subito nell'elenco delle prove, con il motivo, il motore viene spento e la ricerca continua con un contesto più piccolo. Mentre una prova aspetta la sua prima misura, gli indicatori di velocità dicono "in attesa della prima misura" invece di mostrare i numeri della prova precedente.
+
+La ricerca ha un **tempo massimo** (la sua stima, con un po' di margine). Prima di ogni richiesta GPU Bench controlla se finirebbe in tempo: se no, non la inizia (per il tempo massimo della ricerca non interrompe mai una misura a metà: lo fanno solo la RAM condivisa e il limite di tempo di una richiesta, qui sopra) e lo scrive nel risultato. Se il tempo finisce prima di aver misurato tutto, il risultato tiene quello che ha misurato: le combinazioni **Misurata in parte (tempo finito)** sono confrontate con le stesse regole, una è comunque consigliata e **Usa questo preset** usa quella. Le richieste molto lunghe (oltre un minuto) vengono fatte una volta sola invece di ripeterle.
+
+Se **annulli** la ricerca (o si ferma per un errore), il risultato tiene quello che aveva misurato fino a quel momento, con le stesse regole del tempo finito (**Misurata in parte (test annullato)**). Nella tabella **Contesto massimo per tipo di cache** le cache non ancora provate dicono **Non provato (test annullato)**, quella che stava cercando "Almeno …" con il contesto più grande che era entrato; "Nessun contesto è entrato tutto nella memoria video" compare solo quando ogni contesto provato con quella cache non entrava e la ricerca era finita. Allo stesso modo **Non provato (tempo finito)** e **Non provato (non serviva)** dicono perché una cache non è stata provata.
 
 Solo se il modello non entra nemmeno con 4K di contesto e cache *q4_0*, GPU Bench prova a tenere una parte del modello sulla CPU (*--n-cpu-moe* per i modelli MoE, meno *-ngl* per gli altri): funziona, ma è più lento, e lo trovi segnato così.
 
@@ -153,6 +161,7 @@ In **Impostazioni → Cartella dei risultati** puoi scegliere una cartella condi
 | "Driver NVIDIA mancante o troppo vecchio" | Premi il pulsante per aprire la pagina NVIDIA, installa l'ultimo driver e premi **Ricontrolla** |
 | "La memoria video è occupata" | Chiudi gli altri programmi che usano la GPU (giochi, altri modelli, macchine virtuali) oppure premi **Continua comunque** |
 | "Memoria video esaurita" | Scegli un modello più piccolo o una versione più compressa; in modalità esperto riduci il contesto |
+| "Il motore non ha risposto in tempo" | Riprova; se succede ancora, il modello probabilmente non entra nella memoria video: usa la cache q4_0, meno contesto o **Trova le impostazioni migliori** |
 | "Docker non è avviato" | Premi **Avvia Docker** |
 | "Serve accettare la licenza" | Apri la pagina del modello su Hugging Face, accetta e salva il tuo token in Impostazioni |
 

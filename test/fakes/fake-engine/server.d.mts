@@ -9,6 +9,8 @@ export interface FakeProfile {
   noKernelImage?: boolean;
   crashAfterTokens?: number;
   stallAfterTokens?: number;
+  /** A launch that spills never answers a generation request, until the client gives up. */
+  spillStall?: boolean;
   httpErrorRate?: number;
   badFlag?: string;
   eosAfter?: number;
@@ -30,6 +32,11 @@ export interface FakeMemory {
   spillMiB?: number;
   layers?: number;
   freeMiB?: number;
+  /** Shared GPU memory of a launch that does not spill (plus sharedMiBPer1k per 1K tokens of context). */
+  sharedMiB?: number;
+  sharedMiBPer1k?: number;
+  /** A spilled launch's shared memory on top of that, once loaded and from its first request on. */
+  spillShared?: { loadMiB: number; requestMiB: number };
 }
 
 export interface FakeSpeed {

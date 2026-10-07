@@ -18,6 +18,8 @@ import * as L from './logs.mjs';
  * @property {boolean} [noKernelImage]  vLLM-style "no kernel image" failure at start-up.
  * @property {number} [crashAfterTokens] Die (exit 134) after this many generated tokens in total.
  * @property {number} [stallAfterTokens] Stop streaming (connection left open) after this many tokens.
+ * @property {boolean} [spillStall]     A launch that spills (FakeMemory) never answers a generation request: the GPU stays busy
+ *   at a fraction of its power, the prompt is never read, until the client gives up (the starved RTX 5090 at 240K).
  * @property {number} [httpErrorRate]   Fraction 0..1 of generation requests answered with HTTP 500 (seeded).
  * @property {string} [badFlag]         Reject this flag like llama-server does ("error: invalid argument").
  * @property {number} [eosAfter]        Tokens before a natural EOS when ignore_eos is false (default 48).
@@ -53,6 +55,12 @@ import * as L from './logs.mjs';
  * @property {number} [spillMiB]         default 0 (no spill: over the limit = OOM)
  * @property {number} [layers]           default 32 (offload granularity)
  * @property {number} [freeMiB]          vLLM: free VRAM at start-up (default totalMiB)
+ * @property {number} [sharedMiB]        Shared GPU memory (the Windows counters' Shared Usage) of a launch that does not spill,
+ *   plus sharedMiBPer1k per 1024 tokens of context (default 0 and 0). Written to the engine's GpuState sidecar, where the
+ *   fake per-process monitor (test/fakes/fake-nvidia-smi/fake-gpu-memory.mjs) reads it.
+ * @property {number} [sharedMiBPer1k]
+ * @property {{ loadMiB: number, requestMiB: number }} [spillShared] A spilled launch's shared memory on top of that, once loaded
+ *   and from its first generation request on (default: what does not fit, need − totalMiB, both times).
  */
 
 /**
@@ -270,6 +278,15 @@ export async function startFakeEngine(o = {}) {
   const mem = p.memory
     ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
     : undefined;
+  /** Shared GPU memory of this launch once loaded, or once it generates (a spill's grows with its compute buffers). */
+  const sharedOf = (generating) => {
+    const m = p.memory;
+    if (!m || !mem) return 0;
+    const natural = (m.sharedMiB ?? 0) + ((m.sharedMiBPer1k ?? 0) * ctx) / 1024;
+    if (mem.outcome !== 'spill') return Math.round(natural);
+    const extra = m.spillShared ? (generating ? m.spillShared.requestMiB : m.spillShared.loadMiB) : mem.needMiB - m.totalMiB;
+    return Math.round(natural + extra);
+  };
   const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816 };
   /** vLLM without a CUDA graph for this many requests at once runs eagerly. */
   const eagerAt = (busy) => flavor === 'vllm' && (o.eager === true || (o.graphSizes !== undefined && busy > Math.max(...o.graphSizes)));
@@ -380,7 +397,18 @@ export async function startFakeEngine(o = {}) {
     });
     if (flavor === 'llamacpp') out(L.llamaTaskStart(slot, task, promptN, ctx));
     gpu.setLoad(busyLoad);
+    // The first inference allocates the compute buffers: a launch that barely fit puts them in shared memory.
+    gpu.setShared(sharedOf(true));
     const release = await prefillTurn();
+    if (p.spillStall && mem?.outcome === 'spill') {
+      // Starved: 99 % busy at a fraction of its power, the prompt never read, until the client gives up.
+      gpu.setLoad({ utilPct: 99, powerW: 147 });
+      while (!aborted && !closed) await sleep(50);
+      release();
+      releaseSlot(slot);
+      if (busySlots() === 0) gpu.setLoad(null);
+      return;
+    }
     const cached = cachedFor(ids, slot, usePromptCache);
     const t0 = performance.now();
     const rate = rates(promptN, busySlots());
@@ -708,6 +736,7 @@ export async function startFakeEngine(o = {}) {
     }
     out(L.llamaContext(c));
     gpu.setMem(c.vramMiB);
+    gpu.setShared(sharedOf(false));
     await sleep(loadMs * 0.15);
     out(L.llamaWarmup());
     gpu.setLoad(busyLoad);

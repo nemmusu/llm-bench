@@ -649,6 +649,27 @@ describe('createProcessMemory', () => {
     expect(createProcessMemory({ ...base, platform: 'win32', overridden: true })).toEqual({});
   });
 
+  it('a stand-in monitor (tests, fakes), on any OS: its own command with the interval and the parent; only the engine’s memory', async () => {
+    expect(windowsMonitorCommand({}, { intervalMs: 500.4, parentPid: 42, command: ['node', 'fake-gpu-memory.mjs'] })).toEqual({
+      cmd: 'node',
+      args: ['fake-gpu-memory.mjs', '--interval-ms', '500', '--parent', '42'],
+    });
+    const proc = new FakeRunner();
+    const linux = createProcessMemory({ ...base, proc, platform: 'linux', overridden: true, monitor: ['node', 'fake-gpu-memory.mjs'], windows: { parentPid: 7 } });
+    expect(linux.processMemory).toBeInstanceOf(WindowsGpuMemory);
+    expect(linux.userMemory).toBeUndefined();
+    expect(linux.expandPids).toBeUndefined();
+    const seen: GpuProcessMemory[][] = [];
+    const watch = linux.processMemory!.watch(1000, (_t, procs) => seen.push([...procs]));
+    expect(proc.spawned[0]!.spec).toMatchObject({ cmd: 'node', args: ['fake-gpu-memory.mjs', '--interval-ms', '1000', '--parent', '7'] });
+    proc.spawned[0]!.emit('S 9=1048576/2097152');
+    await tick();
+    expect(seen).toEqual([[{ pid: 9, mib: 1, sharedMib: 2 }]]);
+    await watch.stop();
+    const win = createProcessMemory({ ...base, platform: 'win32', overridden: true, log: memoryLogger(), monitor: ['fake'] });
+    expect(win.processMemory).toBeInstanceOf(WindowsGpuMemory);
+  });
+
   it('Linux: nvidia-smi per process plus /proc descendants; nothing elsewhere', async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'gb-proc-'));
     dirs.push(root);

@@ -8,7 +8,7 @@ import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
 import { capacitySentence, comboText, depthLabel, recommendedOf, speedSentence } from './tune-format';
-import { deepestPoint, defaultDepth, depthOptions, rankAt } from './tune-logic';
+import { deepestPoint, defaultDepth, depthOptions, rankAt, withRunEnd } from './tune-logic';
 import { RecheckOverview } from './tune-recheck';
 import { TuneRanking } from './tune-ranking';
 import { UsersOverview } from './tune-users';
@@ -25,14 +25,19 @@ export interface TuneOverviewProps {
 
 /**
  * Result of "Trova le impostazioni migliori": a "Ricontrollo rapido" (before and now), goal
- * "Più utenti" (every user busy), else the one-user search with the largest context.
+ * "Più utenti" (every user busy), else the one-user search with the largest context. A run cancelled
+ * or failed before the search recorded why is read as the search records it now (withRunEnd).
  */
-export function TuneOverview({ run, errorCard, onFullSearch }: TuneOverviewProps) {
+export function TuneOverview({ run: saved, errorCard, onFullSearch }: TuneOverviewProps) {
+  const run = useMemo(() => ({ ...saved, tuning: withRunEnd(saved.tuning, saved.status) }), [saved]);
   const extra = errorCard ? { errorCard } : {};
   if (run.tuning.recheck) return <RecheckOverview run={run} {...extra} onFullSearch={onFullSearch} />;
   if (run.tuning.goal === 'multi') return <UsersOverview run={run} {...extra} />;
   return <ContextOverview run={run} {...extra} />;
 }
+
+/** "Nessuna combinazione…" in the words of how the search ended. */
+const NONE = { cancelled: 'tune.summary.noneCancelled', failed: 'tune.summary.noneFailed' } as const;
 
 /**
  * One user, the largest context, top to bottom: the summary sentence (numbers only) and the
@@ -58,7 +63,9 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
       {errorCard}
       <Card className="hero-wash p-7 compact:p-5">
         <p className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('tune.summary.title')}</p>
-        <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">{sentences.length ? sentences.join(' ') : t('tune.summary.none')}</p>
+        <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">
+          {sentences.length ? sentences.join(' ') : t(tuning.stoppedBy === 'cancelled' || tuning.stoppedBy === 'failed' ? NONE[tuning.stoppedBy] : 'tune.summary.none')}
+        </p>
         {tuning.stoppedBy && <StoppedNote tuning={tuning} />}
         {rec && <RecommendedCard run={run} index={rec.index} text={comboText(rec.combo, kind, label)} />}
       </Card>

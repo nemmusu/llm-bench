@@ -136,7 +136,7 @@ describe('live screen of a tune run', () => {
     expect(within(capacity).getByText('provo 48K…')).toBeTruthy();
     expect(within(capacity).getByText('24K')).toBeTruthy();
     expect(within(capacity).getByText('stima 72K')).toBeTruthy();
-    expect(within(capacity).getByText('Non provata: tempo finito.')).toBeTruthy();
+    expect(within(capacity).getByText('Non provato (tempo finito).')).toBeTruthy();
     expect(within(capacity).getByText('in attesa')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Velocità al crescere del contesto (finora)' })).toBeTruthy();
 

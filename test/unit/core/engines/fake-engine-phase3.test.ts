@@ -1,10 +1,13 @@
 // Phase 3 behaviour of the fake engine: llama.cpp KV layout and --cache-reuse, vLLM --help, memory
 // share refused at start, block size, CUDA graph sizes, fp8 formats, --max-num-seqs and /metrics.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { memoryPlan, speeds, startFakeEngine, type FakeEngine } from '../../../fakes/fake-engine/server.mjs';
-import { MULTI_PROFILE, VLLM_TUNE_PROFILE } from '../../../fakes/fake-engine/profiles.mjs';
+import { BORDERLINE_PROFILE, MULTI_PROFILE, VLLM_TUNE_PROFILE } from '../../../fakes/fake-engine/profiles.mjs';
 
 const CLI = fileURLToPath(new URL('../../../fakes/fake-engine/cli.mjs', import.meta.url));
 const engines: FakeEngine[] = [];
@@ -110,5 +113,53 @@ describe('vLLM fake: options', () => {
     const fresh = await start({ flavor: 'vllm', alias: 'm', ctx: 8192, profile: { loadMsWarm: 1, vllmMetrics: 'gauge' } });
     await fresh.loaded;
     expect(await (await fetch(`${fresh.url}/metrics`)).text()).toContain('vllm:gpu_prefix_cache_hit_rate{engine="0",model_name="m"} 0');
+  });
+});
+
+describe('llama.cpp: a borderline spill (the RTX 5090 at 240K) and the per-process monitor', () => {
+  const MONITOR = fileURLToPath(new URL('../../../fakes/fake-nvidia-smi/fake-gpu-memory.mjs', import.meta.url));
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  /** The first `S` reading of the monitor that lists `pid`: dedicated and shared MiB. */
+  function monitorReading(state: string, pid: number): Promise<{ dedicatedMiB: number; sharedMiB: number }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [MONITOR, '--interval-ms', '50', '--parent', String(process.pid)], { env: { ...process.env, FAKE_NVIDIA_SMI_STATE: state } });
+      let buf = '';
+      child.stdout.on('data', (d: Buffer) => {
+        buf += d.toString();
+        const m = new RegExp(String.raw`^S .*\b${pid}=(\d+)/(\d+)`, 'm').exec(buf);
+        if (!m) return;
+        child.kill();
+        resolve({ dedicatedMiB: Number(m[1]) / 2 ** 20, sharedMiB: Number(m[2]) / 2 ** 20 });
+      });
+      child.on('error', reject);
+    });
+  }
+
+  it('clean once loaded (360 MiB shared), 1 338 MiB from the first request, which never answers until the client gives up', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-borderline-'));
+    dirs.push(dir);
+    const state = path.join(dir, 'smi.json');
+    writeFileSync(state, JSON.stringify({ gpus: [{ memUsedMiB: 1600 }] }));
+    const sidecar = () => JSON.parse(readFileSync(`${state}.engine-${process.pid}.json`, 'utf8')) as { memMiB: number; sharedMiB: number };
+    const e = await start({ ctx: 245_760, kvType: 'f16', stateFile: state, watchdog: false, profile: { ...BORDERLINE_PROFILE, loadMsWarm: 1 } });
+    await e.loaded;
+    expect(sidecar()).toMatchObject({ memMiB: 31_000, sharedMiB: 360 });
+    expect(await monitorReading(state, process.pid)).toEqual({ dedicatedMiB: 31_000, sharedMiB: 360 });
+    const ac = new AbortController();
+    // Nothing comes back (not even the headers) until the client gives up.
+    const res = fetch(`${e.url}/completion`, { method: 'POST', body: JSON.stringify({ prompt: [1, 2, 3], n_predict: 32, stream: true }), signal: ac.signal }).then((r) => r.text());
+    await new Promise((r) => setTimeout(r, 300));
+    expect(sidecar().sharedMiB).toBe(1338);
+    expect(JSON.parse(readFileSync(state, 'utf8')).gpus[0]).toMatchObject({ utilPct: 99, powerW: 147 });
+    ac.abort();
+    await expect(res).rejects.toThrow();
+    // A launch that fits: what it uses without spilling (~1 MiB per 1K of context).
+    const clean = await start({ ctx: 4096, kvType: 'f16', stateFile: path.join(dir, 'clean.json'), watchdog: false, profile: { ...BORDERLINE_PROFILE, loadMsWarm: 1 } });
+    await clean.loaded;
+    expect(memoryPlan(BORDERLINE_PROFILE.memory!, { flavor: 'llamacpp', ctx: 229_376, kvType: 'f16' }).outcome).toBe('ok');
   });
 });

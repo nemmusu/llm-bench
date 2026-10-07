@@ -77,6 +77,8 @@ export class GpuState {
     this.file = file;
     this.sidecar = file ? `${file}.engine-${process.pid}.json` : undefined;
     this.memMiB = 0;
+    /** Shared GPU memory of this engine (the Windows counters' Shared Usage), read by fake-gpu-memory.mjs. */
+    this.sharedMiB = 0;
     this.busy = false;
     this.idle = { utilPct: 0, powerW: 30 };
     if (!file) return;
@@ -89,7 +91,14 @@ export class GpuState {
 
   save() {
     if (!this.sidecar) return;
-    fs.writeFileSync(this.sidecar, JSON.stringify({ memMiB: this.memMiB, busy: this.busy, idle: this.idle }));
+    fs.writeFileSync(this.sidecar, JSON.stringify({ memMiB: this.memMiB, sharedMiB: this.sharedMiB, busy: this.busy, idle: this.idle }));
+  }
+
+  /** This engine's shared GPU memory becomes `mib` (only in its sidecar: nvidia-smi never reports it). */
+  setShared(mib) {
+    if (!this.file || this.sharedMiB === mib) return;
+    this.sharedMiB = mib;
+    this.save();
   }
 
   /** Our VRAM contribution becomes `mib` (the delta is applied to whatever else is there). */

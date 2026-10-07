@@ -31,7 +31,7 @@ export interface Telemetry extends TelemetrySampler {
 }
 
 export type TelemetryDeps = Pick<CoreDeps, 'clock' | 'proc' | 'platform' | 'env'> & {
-  endpoints: Pick<CoreDeps['endpoints'], 'nvidiaSmi'>;
+  endpoints: Pick<CoreDeps['endpoints'], 'nvidiaSmi' | 'gpuMemoryMonitor'>;
   log?: CoreDeps['log'];
 };
 
@@ -89,6 +89,7 @@ export async function detectTelemetry(deps: TelemetryDeps, opts: CreateTelemetry
         ...(deps.log ? { log: deps.log } : {}),
         cli,
         overridden: location.source === 'override',
+        monitor: deps.endpoints.gpuMemoryMonitor,
         ...opts.processMemory,
       }),
     });

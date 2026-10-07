@@ -474,6 +474,15 @@ export const TUNE_TAGS = ['cpu-offload', 'eager', 'draft'] as const;
 export const tuneTagSchema = z.enum(TUNE_TAGS);
 export type TuneTag = z.infer<typeof tuneTagSchema>;
 
+/** How a tune launch was seen to spill (TuneAttempt.spill). */
+export const TUNE_SPILLS = ['shared-memory', 'decode-collapse', 'too-slow'] as const;
+
+/**
+ * Why a search ended before its plan: its time limit, its launch cap, or the run itself ended early
+ * (cancelled by the user, or failed with an error that would repeat on every launch).
+ */
+export const TUNE_STOPS = ['budget', 'launches', 'cancelled', 'failed'] as const;
+
 /** One engine launch of the search, with what it measured. */
 export const tuneAttemptSchema = z.object({
   stage: tuneStageSchema,
@@ -482,8 +491,13 @@ export const tuneAttemptSchema = z.object({
   kvType: tuneKvTypeSchema,
   contextSize: z.number().int().positive(),
   outcome: tuneOutcomeSchema,
-  /** How the spill was seen. */
-  spill: z.enum(['shared-memory', 'decode-collapse']).optional(),
+  /**
+   * How the spill was seen: 'shared-memory' (the engine's Shared Usage crossed the rule, even in the
+   * middle of a request: the launch is given up at once), 'decode-collapse' (generation far slower than
+   * the reference's), 'too-slow' (a request took more than its deadline, or the engine stopped
+   * streaming: a launch that slow is reading from shared memory). `error` says which deadline for 'too-slow'.
+   */
+  spill: z.enum(TUNE_SPILLS).optional(),
   error: appErrorSchema.optional(),
   /** Start → ready, ms. */
   loadMs: z.number().optional(),
@@ -549,11 +563,11 @@ export const tuneCombinationSchema = z.object({
   /** llama.cpp --cache-reuse (tokens): reuses cached chunks that are not a plain prefix. Absent = off. */
   cacheReuse: z.number().int().positive().optional(),
   /**
-   * "Misurata in parte": the search stopped (time limit or launch cap) before this configuration got
-   * its own full sweep; `sweep` holds what one of its launches did measure (its quick check at the
-   * largest context, or its screening depths). Ranked by the same rules as the others.
+   * "Misurata in parte": the search stopped (time limit, launch cap, or the run was cancelled / failed)
+   * before this configuration got its own full sweep; `sweep` holds what one of its launches did
+   * measure (its quick check at the largest context, or its screening depths). Ranked by the same rules as the others.
    */
-  partial: z.enum(['budget', 'launches']).optional(),
+  partial: z.enum(TUNE_STOPS).optional(),
 });
 export type TuneCombination = z.infer<typeof tuneCombinationSchema>;
 
@@ -642,8 +656,8 @@ export const tuningSchema = z.object({
   /** Expected length of the whole search when it started, and its time limit (the estimate times a margin), seconds. */
   estimateSeconds: z.number().min(0).optional(),
   limitSeconds: z.number().min(0).optional(),
-  /** The search stopped before the end: time budget or launch cap spent. */
-  stoppedBy: z.enum(['budget', 'launches']).optional(),
+  /** The search stopped before the end: time budget or launch cap spent, or the run was cancelled or failed. */
+  stoppedBy: z.enum(TUNE_STOPS).optional(),
   /** Searched dimensions with the values tried, in search order (kv, fa, ubatch, batch, draft, batchTokens…). */
   dimensions: z.array(z.object({ key: z.string(), values: z.array(z.union([z.string(), z.number(), z.boolean()])) })).default([]),
   /** Per KV type: the estimate before loading anything, and the largest context measured. */
@@ -657,15 +671,20 @@ export const tuningSchema = z.object({
         measuredMax: z.number().int().optional(),
         /** Known without a launch (a less precise type than one that already reached the model's limit). */
         inferred: z.boolean().default(false),
-        /** Why it was not searched: pruned by the estimate, or it could not add context. */
-        skipped: z.enum(['estimate', 'no-gain', 'budget']).optional(),
+        /**
+         * Why it was not searched: pruned by the estimate, it could not add context, the time ran out
+         * before it, or the run was cancelled / failed before it was launched at all.
+         */
+        skipped: z.enum(['estimate', 'no-gain', 'budget', 'cancelled', 'failed']).optional(),
         /**
          * What is known above measuredMax: 'found' = a larger context was tried and ran out of memory
          * or spilled (failedAt), so measuredMax is the limit; 'model' = it is the model's trained
          * context; 'estimate' = nothing larger was tried, the VRAM estimate says it does not fit;
-         * 'budget' = larger contexts were left untried (time limit or launch cap). Absent on old runs.
+         * 'budget' = larger contexts were left untried (time limit or launch cap); 'cancelled' / 'failed'
+         * = the run ended while this type was being searched (measuredMax, when set, is the largest
+         * context that loaded so far; absent = none of the contexts tried so far loaded). Absent on old runs.
          */
-        bound: z.enum(['found', 'model', 'estimate', 'budget']).optional(),
+        bound: z.enum(['found', 'model', 'estimate', 'budget', 'cancelled', 'failed']).optional(),
         /** The smallest context known not to fit (out of memory or spill), when one was tried (with 'budget': contexts in between were left untried). */
         failedAt: z.number().int().optional(),
       }),

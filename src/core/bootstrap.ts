@@ -101,6 +101,7 @@ export function buildDeps(b: BootEnv): CoreDeps {
       huggingface: env.GPUBENCH_HF_ENDPOINT ?? 'https://huggingface.co',
       dockerHub: env.GPUBENCH_DOCKERHUB ?? 'https://hub.docker.com',
       nvidiaSmi: toolOverride(env.GPUBENCH_NVIDIA_SMI),
+      gpuMemoryMonitor: toolOverride(env.GPUBENCH_GPU_MEMORY_MONITOR),
       docker: toolOverride(env.GPUBENCH_DOCKER),
       dockerHost: env.GPUBENCH_DOCKER_HOST,
       dockerInstaller: env.GPUBENCH_DOCKER_INSTALLER_URL,

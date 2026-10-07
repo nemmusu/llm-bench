@@ -3,12 +3,13 @@
  * (test/fakes/fake-engine/server.mjs memoryPlan/speeds), virtual time, no processes.
  */
 import { launchParamsSchema, type LaunchParams } from '../../../../src/contract/engines';
-import type { AppErrorData } from '../../../../src/contract/errors';
+import { AppError, type AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate } from '../../../../src/contract/models';
 import type { TuneAttempt, Tuning } from '../../../../src/contract/results';
 import { createTuner } from '../../../../src/core/bench/tune-run';
 import { llamaSpace } from '../../../../src/core/bench/tune-space';
-import type { LabEngine, LabLaunch, LabStart, TuneLab, TunerInput } from '../../../../src/core/bench/tuner';
+import type { LabEngine, LabLaunch, LabStart, LaunchMemory, TuneLab, TunerInput } from '../../../../src/core/bench/tuner';
+import { deadlineError, STALL_RULES, stalledError } from '../../../../src/core/bench/watchdog';
 import { memoryPlan, speeds, type FakeProfile } from '../../../fakes/fake-engine/server.mjs';
 import { TUNE_PROFILE } from '../../../fakes/fake-engine/profiles.mjs';
 import { concurrencyPoint, point, sessionsPoint } from './tune-helpers';
@@ -20,8 +21,21 @@ export interface LabOptions {
   flavor?: 'llamacpp' | 'vllm';
   loadMs?: number;
   requestMs?: number;
-  /** Shared GPU memory reported for a launch (Windows counters); `requests` = requests measured so far on it. */
+  /**
+   * Shared GPU memory reported for a launch (Windows counters); `requests` = requests started on it so far
+   * (0 = just loaded). The monitor reads it at the load and as every request starts (the live spill watch).
+   */
   shared?: (p: LaunchParams, requests: number) => number | undefined;
+  /** Dedicated memory in use on the card (every process, nvidia-smi) and its whole memory, MiB. */
+  card?: (p: LaunchParams, requests: number) => number | undefined;
+  totalMiB?: number;
+  /**
+   * Requests that never end: 'deadline' = until their deadline (the tuner gives every request one),
+   * 'stalled' = until the stall guard (no token for a minute).
+   */
+  stall?: (p: LaunchParams, depth: number) => 'deadline' | 'stalled' | undefined;
+  /** The monitor reads nothing while a request runs (it is quicker than the interval): only the checks after it see the memory. */
+  noLiveReadings?: boolean;
   /** Start failures by launch number (1-based). */
   fail?: (p: LaunchParams, n: number) => AppErrorData | undefined;
   /** A request that throws (engine died, cancelled…). */
@@ -70,12 +84,15 @@ export class Lab implements TuneLab {
   constructor(private readonly o: LabOptions = {}) {}
   now = (): number => this.t;
 
+  /** The deadline given with each request, in order. */
+  readonly timeouts: { depth: number; ms: number }[] = [];
+
   async prepare(params: LaunchParams): Promise<LabLaunch> {
     const o = this.o;
     const argv = ['engine', JSON.stringify({ c: params.contextSize ?? params.maxModelLen, kv: params.kvCacheType, fa: params.flashAttention, ub: params.ubatchSize, b: params.batchSize, x: params.extraArgs })];
     return {
       command: { argv, powershell: argv.join(' '), bash: argv.join(' ') },
-      start: async (): Promise<LabStart> => {
+      start: async (guard): Promise<LabStart> => {
         this.started.push(params);
         const n = this.started.length;
         this.t += o.loadMs ?? 1000;
@@ -121,16 +138,40 @@ export class Lab implements TuneLab {
             ...(block !== undefined ? { blockSize: Number(block) } : {}),
           });
         let requests = 0;
+        const memory = (): LaunchMemory => {
+          const shared = o.shared?.(params, requests);
+          const card = o.card?.(params, requests);
+          return {
+            ...(o.noVram ? {} : { vramPeakMiB: plan.vramMiB }),
+            ...(shared !== undefined ? { sharedPeakMiB: shared } : {}),
+            ...(card !== undefined ? { cardPeakMiB: card } : {}),
+            ...(o.totalMiB !== undefined ? { totalMiB: o.totalMiB } : {}),
+          };
+        };
+        // The monitor's reading once loaded: the watch may give the launch up before it is ever used.
+        if (guard?.(memory())) return { ok: false, error: { code: 'CANCELLED', message: 'Launch given up' }, loadMs: o.loadMs ?? 1000 };
         const engine: LabEngine = {
-          measure: async (depth, out, reps, _kind, more) => {
+          measure: async (depth, out, reps, _kind, mo = {}) => {
             const err = o.throwOn?.(params, depth);
             if (err) throw err;
             const s = rates(depth, { spill: plan.outcome === 'spill' && (!o.deepSpillOnly || depth > 8192) });
             const decode = o.decode?.(params, depth) ?? s.decode;
             let made = 0;
             for (let r = 0; r < (o.timed ? reps : 1); r++) {
-              if (r > 0 && more && !more()) break;
+              if (r > 0 && mo.more && !mo.more()) break;
               requests++;
+              this.timeouts.push({ depth, ms: mo.timeoutMs as number });
+              // The memory this request takes, as the monitor reads it while it runs.
+              if (!o.noLiveReadings && guard?.(memory())) throw new AppError('CANCELLED', 'Launch given up: it spilled into shared memory');
+              const stall = o.stall?.(params, depth);
+              if (stall === 'deadline') {
+                this.t += mo.timeoutMs as number;
+                throw deadlineError(mo.timeoutMs as number);
+              }
+              if (stall === 'stalled') {
+                this.t += STALL_RULES.idleMs;
+                throw stalledError(STALL_RULES.idleMs);
+              }
               made++;
               this.t += o.timed ? Math.round((depth / s.prefill + out / decode) * 1000) : (o.requestMs ?? 500);
             }
@@ -138,10 +179,7 @@ export class Lab implements TuneLab {
             const p = { ...point(depth, decode, { prefill: s.prefill }), outputTokens: out };
             return o.timed ? { ...p, decodeTps: { ...p.decodeTps, n: made }, prefillTps: { ...p.prefillTps, n: made } } : p;
           },
-          memory: () => {
-            const shared = o.shared?.(params, requests);
-            return { ...(o.noVram ? {} : { vramPeakMiB: plan.vramMiB }), ...(shared !== undefined ? { sharedPeakMiB: shared } : {}) };
-          },
+          memory,
           concurrency: async (level, promptTokens, outputTokens) => {
             requests += level;
             this.t += (o.requestMs ?? 500) * level;

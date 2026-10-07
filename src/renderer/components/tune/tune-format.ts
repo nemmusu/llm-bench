@@ -48,10 +48,11 @@ export function comboText(combo: Pick<TuneCombination, 'params' | 'tags'>, engin
   return label(combo.params, engineKind, { context: false, tags: combo.tags }).text;
 }
 
-/** ✓ caricato / memoria esaurita / usa la RAM condivisa (lento) / errore / scartata. */
-export function outcomeText(a: Pick<TuneAttempt, 'outcome' | 'screen' | 'error'>, f: Pick<Formatters, 't'>): string {
+/** ✓ caricato / memoria esaurita / usa la RAM condivisa (lento) / troppo lento / errore / scartata. */
+export function outcomeText(a: Pick<TuneAttempt, 'outcome' | 'screen' | 'error' | 'spill'>, f: Pick<Formatters, 't'>): string {
   if (a.outcome === 'ok') return f.t(a.screen === 'lost' ? 'tune.outcome.lost' : 'tune.outcome.ok');
   if (a.outcome === 'error' && a.error) return f.t('tune.outcome.errorCode', { title: f.t(`errors.${a.error.code}.title`) });
+  if (a.spill === 'too-slow') return f.t('tune.outcome.tooSlow');
   return f.t(`tune.outcome.${a.outcome}`);
 }
 
@@ -60,6 +61,11 @@ export function discardReason(a: TuneAttempt, f: F & Pick<Formatters, 'bytes'>):
   const ctx = depthLabel(a.contextSize, f);
   if (a.outcome === 'oom') return f.t('tune.discard.oom', { ctx });
   if (a.outcome === 'spill') {
+    if (a.spill === 'too-slow') {
+      // The watchdog that gave it up says how long it waited (ms).
+      const time = roughDuration(Number(a.error?.params?.ms) / 1000);
+      return f.t(a.error?.params?.reason === 'stalled' ? 'tune.discard.tooSlowStalled' : 'tune.discard.tooSlowDeadline', { ctx, time });
+    }
     if (a.spill === 'shared-memory' && a.sharedPeakMiB !== undefined) return f.t('tune.discard.sharedMemory', { ctx, size: f.bytes(a.sharedPeakMiB * K * K) });
     return f.t(a.spill === 'shared-memory' ? 'tune.discard.sharedMemoryNoSize' : 'tune.discard.decodeCollapse', { ctx });
   }
@@ -81,6 +87,9 @@ export function capacitySentence(tuning: Pick<Tuning, 'capacity'>, f: F): string
   if (!lead) return undefined;
   const kv = kvName(lead.best.kvType, f);
   const ctx = depthLabel(lead.best.max, f);
+  // A search the run's end cut short: only what is certain, no comparison.
+  if (lead.unfinished === 'best') return f.t('tune.summary.capacityAtLeast', { kv, ctx });
+  if (lead.unfinished) return f.t('tune.summary.capacityOne', { kv, ctx });
   if (lead.allSame) return f.t('tune.summary.capacityAll', { ctx });
   if (!lead.next) return f.t('tune.summary.capacityOne', { kv, ctx });
   const r = ratioOf(lead.best.max, lead.next.max);
