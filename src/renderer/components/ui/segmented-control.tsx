@@ -52,7 +52,8 @@ export function SegmentedControl<V extends string>({
             value={o.value}
             {...(o.disabled ? { disabled: true } : {})}
             className={cn(
-              'group flex h-11 items-center gap-3 rounded-lg border border-border bg-surface px-3 text-left text-sm transition-colors hover:border-border-strong focus-ring disabled:opacity-50',
+              // A long label wraps onto a second line instead of overflowing the row.
+              'group flex min-h-11 items-center gap-3 rounded-lg border border-border bg-surface px-3 py-1.5 text-left text-sm transition-colors hover:border-border-strong focus-ring disabled:opacity-50',
               'data-[state=checked]:border-accent data-[state=checked]:bg-accent-soft data-[state=checked]:ring-1 data-[state=checked]:ring-accent',
             )}
           >
@@ -63,8 +64,8 @@ export function SegmentedControl<V extends string>({
               <span className="size-1.5 rounded-full bg-white opacity-0 group-data-[state=checked]:opacity-100" />
             </span>
             {o.icon}
-            <span className="flex-1 font-medium text-fg">{o.label}</span>
-            {o.sublabel && <span className="text-xs font-medium text-fg-3 tabular-nums group-data-[state=checked]:text-accent-text">{o.sublabel}</span>}
+            <span className="flex-1 leading-5 font-medium text-fg">{o.label}</span>
+            {o.sublabel && <span className="shrink-0 text-xs font-medium whitespace-nowrap text-fg-3 tabular-nums group-data-[state=checked]:text-accent-text">{o.sublabel}</span>}
           </R.Item>
         ))}
       </R.Root>

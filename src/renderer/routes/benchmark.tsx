@@ -20,6 +20,7 @@ import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
+import { DEFAULT_TUNE, TuneOptions, type TuneRequest } from '../components/tune/tune-options';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -48,7 +49,7 @@ import {
 } from '../lib/queries-runs';
 import { useSettings } from '../lib/settings';
 
-const PROFILES = ['quick', 'standard', 'full'] as const;
+const PROFILES = ['quick', 'standard', 'full', 'tune'] as const;
 
 function ChoiceCard({ step, title, help, badge, children, footer }: { step: number; title: string; help: string; badge?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
@@ -179,6 +180,7 @@ function BenchmarkScreen() {
   const [profile, setProfile] = useState<Profile>(draft?.profile ?? settings.lastProfile);
   const [paramsForm, setParamsForm] = useState<ParamsForm>(() => formFromParams(draft?.params ?? settings.lastParams));
   const [scenarioForm, setScenarioForm] = useState<ScenarioForm>(() => formFromScenario(draft?.scenario));
+  const [tune, setTune] = useState<TuneRequest>(DEFAULT_TUNE);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -215,6 +217,7 @@ function BenchmarkScreen() {
     ...(custom ? { scenario: parsedScenario.scenario } : {}),
     ...(sendParams ? { params: parsedParams.params } : {}),
     allowSharedGpu: false,
+    ...(effProfile === 'tune' ? { tune: { budget: tune.budget, fidelity: expert && tune.fidelity } } : {}),
   };
   const baseJson = JSON.stringify(base);
   const planJson = useDebounced(valid ? baseJson : '', 400);
@@ -436,6 +439,7 @@ function BenchmarkScreen() {
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
+              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} />}
             </ChoiceCard>
           </div>
 

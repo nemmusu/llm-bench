@@ -6,6 +6,7 @@ import { ChartCard } from '../charts/chart-card';
 import { EChart } from '../charts/echart';
 import type { ChartTokens } from '../charts/echarts';
 import { SegmentedControl } from '../ui/segmented-control';
+import { soloDecode, usersSentence, usersTable } from './concurrency-users';
 import { MIB_PER_GB, prefillStat } from './format';
 import { phaseBands } from './phases';
 
@@ -52,10 +53,15 @@ export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
   );
 }
 
-/** Total vs per-user throughput as users are added. */
+/**
+ * Several users at once: total and per-user writing speed (the slowest users dashed) as users are
+ * added; the table says what each user gets at every level; the sentence reads the highest level.
+ */
 export function ConcurrencyChart({ run }: { run: Pick<RunResult, 'metrics'> }) {
-  const { t, integer } = useI18n();
-  const c = run.metrics.concurrency;
+  const f = useI18n();
+  const { t, integer } = f;
+  const c = useMemo(() => [...run.metrics.concurrency].sort((a, b) => a.level - b.level), [run.metrics.concurrency]);
+  const hasSlowest = c.some((p) => p.perRequestDecodeTpsP5 !== undefined);
   const build = useCallback(
     (tk: ChartTokens) =>
       concurrencyOption(
@@ -63,19 +69,25 @@ export function ConcurrencyChart({ run }: { run: Pick<RunResult, 'metrics'> }) {
         c.map((p) => p.level),
         c.map((p) => p.aggregateTps),
         c.map((p) => p.perRequestDecodeTpsP50),
-        { aggregateName: t('result.aggregate'), perUserName: t('result.perUser'), format: (v) => `${integer(v)} tok/s`, xName: t('result.users'), axis: integer },
+        {
+          aggregateName: t('result.aggregate'),
+          perUserName: t('result.perUser'),
+          format: (v) => `${integer(v)} tok/s`,
+          xName: t('result.users'),
+          axis: integer,
+          ...(hasSlowest ? { slowest: { name: t('result.slowestUser'), values: c.map((p) => p.perRequestDecodeTpsP5 ?? null) } } : {}),
+        },
       ),
-    [c, t, integer],
+    [c, t, integer, hasSlowest],
   );
+  const table = usersTable(c, f);
+  const top = c[c.length - 1]!;
   return (
     <ChartCard
       title={t('result.chartConcurrency')}
       help={t('result.chartConcurrencyHelp')}
-      table={{
-        columns: [t('result.users'), `${t('result.aggregate')} (tok/s)`, `${t('result.perUser')} (tok/s)`, `${t('result.details.ttftP95')} (ms)`],
-        numeric: [0, 1, 2, 3],
-        rows: c.map((p) => [p.level, integer(p.aggregateTps), integer(p.perRequestDecodeTpsP50), integer(p.ttftP95Ms)]),
-      }}
+      table={{ columns: table.columns, numeric: table.columns.map((_, i) => i), rows: table.rows.map((r) => r.cells) }}
+      footer={<p className="text-sm text-fg-2">{usersSentence(top, soloDecode(c), f)}</p>}
     >
       <EChart build={build} height={260} label={t('result.chartConcurrency')} />
     </ChartCard>

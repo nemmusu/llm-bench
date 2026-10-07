@@ -144,7 +144,7 @@ describe('phases', () => {
       'llama-bench',
       'cleanup',
     ]);
-    expect(relevantPhases(undefined)).toHaveLength(8);
+    expect(relevantPhases(undefined)).toHaveLength(10);
     expect(relevantPhases({ profile: 'custom', seed: 1, steps: [{ kind: 'latency', promptTokens: [4096], outputTokens: 8, warmup: 0, reps: 1 }] })).toEqual([
       'prepare',
       'prefill',

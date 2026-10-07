@@ -9,6 +9,8 @@ import { apiErrorData, SERVERS_KEY, useServers } from '../../lib/queries-runs';
 import { Button, IconButton } from '../ui/button';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
+import { engineKindOfLabel } from './live-now';
+import { LoadLine } from './load-line';
 
 export async function copyText(text: string, done: string, failed: string): Promise<void> {
   try {
@@ -101,7 +103,7 @@ export function ServersPanel() {
                 {t('servers.stop')}
               </Button>
             </div>
-            <Address url={s.openaiUrl} label={t('servers.copyUrl')} />
+            {s.loading ? <LoadLine progress={s.loading} engineKind={engineKindOfLabel(s.engineLabel)} /> : <Address url={s.openaiUrl} label={t('servers.copyUrl')} />}
           </li>
         ))}
       </ul>

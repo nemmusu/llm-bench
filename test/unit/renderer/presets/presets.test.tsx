@@ -72,11 +72,12 @@ describe('result page header: the configuration and its preset', () => {
     const a = api();
     const { router } = renderApp(`/results/${TUNE_ID}`, a);
     expect(await screen.findByText(/^· Contesto 65\.536 · cache KV q8_0 · flash attention · decodifica speculativa$/)).toBeTruthy();
-    await userEvent.click(await screen.findByRole('button', { name: 'Avvia il server così' }));
+    // The header's actions come first (every row of the tune ranking has its own too).
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Avvia il server così' }))[0]!);
     expect(await screen.findByRole('dialog', { name: 'Avvia il server' })).toBeTruthy();
     expect(posted(a, '/api/servers/plan')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 65536, kvCacheType: 'q8_0' } });
     await userEvent.click(within(screen.getByRole('dialog', { name: 'Avvia il server' })).getByRole('button', { name: 'Annulla' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Usa questo preset' }));
+    await userEvent.click(screen.getAllByRole('button', { name: 'Usa questo preset' })[0]!);
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     const banner = await screen.findByRole('region', { name: 'Preset' });
     expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();

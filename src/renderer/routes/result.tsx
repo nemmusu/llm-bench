@@ -15,6 +15,7 @@ import { useStartFlow } from '../components/bench/start-flow';
 import { configLabelOf } from '../components/presets/config-label';
 import { PresetActions } from '../components/presets/preset-actions';
 import { usePreset } from '../components/presets/use-preset';
+import { TuneOverview, type TunedRun } from '../components/tune/tune-result';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -164,7 +165,11 @@ function ResultView({ run }: { run: RunResult }) {
           <TabsTrigger value="log">{t('result.tabs.log')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <Overview run={run} onRerun={() => doRerun()} {...(errorCard ? { errorCard } : {})} />
+          {run.tuning ? (
+            <TuneOverview run={run as TunedRun} {...(errorCard ? { errorCard } : {})} />
+          ) : (
+            <Overview run={run} onRerun={() => doRerun()} {...(errorCard ? { errorCard } : {})} />
+          )}
         </TabsContent>
         <TabsContent value="details">
           <Details run={run} />

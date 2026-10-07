@@ -18,6 +18,18 @@ import { ErrorCard, fixFor } from './error-card';
 import type { Need } from './needs';
 import { FitSummary, PlanWarnings } from './plan-card';
 import { ServerReady, useStopServer } from './servers';
+import { Link } from '@tanstack/react-router';
+import { useServers } from '../../lib/queries-runs';
+import { depthLabel, kvName } from '../tune/tune-format';
+import { engineKindOfLabel } from './live-now';
+import { LoadLine } from './load-line';
+
+/** While "Avvia solo il server" waits: what the engine is doing (the core lists a server as soon as it is launched). */
+function ServerLoading() {
+  const servers = useServers(1000);
+  const s = servers.data?.filter((x) => x.loading).at(-1);
+  return s?.loading ? <LoadLine progress={s.loading} engineKind={engineKindOfLabel(s.engineLabel)} className="mt-3" /> : null;
+}
 
 /** What is being started: a benchmark (then the live screen) or only the server (then its address). */
 export type Job =
@@ -185,6 +197,20 @@ function stageKey(stage: string | undefined): 'resolve' | 'download' | 'extract'
   }
 }
 
+/** "Contesto 64K e cache q4_0 dal test «Trova le impostazioni migliori» del 07/10", with a link to that result. */
+function TunedContext({ tuned }: { tuned: NonNullable<ServerPlan['tuned']> }) {
+  const f = useI18n();
+  const date = new Intl.DateTimeFormat(f.locale, { day: '2-digit', month: '2-digit' }).format(new Date(tuned.createdAt));
+  return (
+    <>
+      {f.t('servers.flow.contextTuned', { ctx: depthLabel(tuned.contextSize, f), kv: kvName(tuned.kvCacheType, f), date })}{' '}
+      <Link to="/results/$runId" params={{ runId: tuned.runId }} className="rounded-xs font-medium text-accent-text underline-offset-4 hover:underline focus-ring">
+        {f.t('servers.flow.contextTunedLink')}
+      </Link>
+    </>
+  );
+}
+
 /**
  * "Avvia il server": always asked, even with nothing to download. The context in plain words, the
  * VRAM verdict, what is fetched first, warnings and the exact command.
@@ -206,7 +232,7 @@ function ServeConfirm({ request, opts }: { request: StartServerRequest; opts: Fl
                 <HelpTip term={t('servers.flow.context')}>{t('servers.flow.contextHelp')}</HelpTip>
               </dt>
               <dd className="text-md font-semibold text-fg tabular-nums">{t('servers.flow.contextValue', { n: integer(plan.contextSize) })}</dd>
-              <dd className="text-fg-2">{t(own ? 'servers.flow.contextOwn' : 'servers.flow.contextAuto')}</dd>
+              <dd className="text-fg-2">{!own && plan.tuned ? <TunedContext tuned={plan.tuned} /> : t(own ? 'servers.flow.contextOwn' : 'servers.flow.contextAuto')}</dd>
             </div>
           )}
           {plan.fit && (
@@ -365,6 +391,7 @@ export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServe
           <Loader aria-hidden className="size-4 animate-spin text-accent" />
           {t(body)}
         </p>
+        {flow.job.mode === 'serve' && !flow.planning && <ServerLoading />}
       </DialogContent>
     );
   } else if (flow.step === 'error') {

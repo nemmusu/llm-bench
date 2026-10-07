@@ -87,7 +87,10 @@ export function ResultsPage() {
         cell: (c) => (
           <span className="flex flex-col leading-5">
             <span className="text-fg-2 tabular-nums">{dateTime(c.getValue())}</span>
-            <span className="text-xs text-fg-3">{t(`benchmark.profiles.${c.row.original.profile}`)}</span>
+            <span className="text-xs text-fg-3">
+              {t(`benchmark.profiles.${c.row.original.profile}`)}
+              {c.row.original.tunedCombinations !== undefined && ` · ${t(countKey(c.row.original.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: c.row.original.tunedCombinations })}`}
+            </span>
           </span>
         ),
       }),
@@ -161,11 +164,15 @@ export function ResultsPage() {
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
+          const kv = c.row.original.kvCacheType;
           return v === undefined ? (
             <span className="text-fg-3">–</span>
           ) : (
-            <span className="whitespace-nowrap">
-              {integer(v)} <Unit>{t('results.tokens')}</Unit>
+            <span className="flex flex-col items-end leading-5 whitespace-nowrap">
+              <span>
+                {integer(v)} <Unit>{t('results.tokens')}</Unit>
+              </span>
+              {kv && <span className="text-xs text-fg-3">{t('results.tuning.kv', { kv })}</span>}
             </span>
           );
         },

@@ -7,7 +7,14 @@ import { toast } from 'sonner';
 import type { ActiveRun } from '../../contract/api';
 import type { RunPhase } from '../../contract/events';
 import { MIB_PER_GB, prettyEngineLabel } from '../components/bench/format';
-import { initialLive, liveReducer, type LiveState } from '../components/bench/live-state';
+import { initialLive, liveReducer, seedFromActive, type LiveState } from '../components/bench/live-state';
+import { engineKindOfLabel, nowText } from '../components/bench/live-now';
+import { LiveConfig, LivePoints } from '../components/bench/live-panels';
+import { LoadLine } from '../components/bench/load-line';
+import { finishedStages } from '../components/bench/load-progress';
+import { TuneLive } from '../components/tune/tune-live';
+import { stageText } from '../components/tune/tune-format';
+import { useConfigLabel } from '../components/presets/config-label';
 import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../components/bench/phases';
 import { readRunContext, type RunContext } from '../components/bench/run-context';
 import { timelineOption } from '../components/charts/builders';
@@ -75,8 +82,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
     setPrevActive(active.data);
     if (activeRun?.runId === runId) {
       setInfo(activeRun);
-      // Until the first event arrives (screen reopened mid-run), show where the core says the run is.
-      setLive((s) => (s.marks.length ? s : { ...s, phase: activeRun.phase, progress: Math.max(s.progress, activeRun.progress) }));
+      setLive((s) => seedFromActive(s, activeRun));
     }
   }
   const over = active.data !== undefined && activeRun?.runId !== runId;
@@ -95,8 +101,13 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   }, [live.log.length, logOpen]);
 
   const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario ?? info?.scenario;
-  const phases = relevantPhases(scenario, ctx?.pre);
+  const phases = relevantPhases(scenario, ctx?.pre, { fidelity: ctx?.request.tune?.fidelity === true || live.phase === 'fidelity' });
   const current: RunPhase = displayPhase(live.phase, live.detail);
+  const tune = scenario?.profile === 'tune';
+  const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
+  const label = useConfigLabel();
+  const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f) : undefined;
+  const nowLine = live.current ? nowText(live.current, f) : undefined;
   const states = phaseStates(phases, current);
   const at = Math.max(0, phases.indexOf(current));
   const startedAt = ctx?.startedAt ?? (info ? Date.parse(info.startedAt) : undefined);
@@ -193,9 +204,15 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
               <Loader aria-hidden className="mt-0.5 size-5 shrink-0 animate-spin text-accent [animation-duration:2.4s]" />
               <div className="flex min-w-0 flex-col gap-0.5">
                 <p className="text-md font-medium text-fg">{t(`phases.${current}.status`)}</p>
-                {detail && <p className="text-sm text-fg-3 tabular-nums">{t(detail.key, { ...detail.params, ...('tokens' in detail.params ? { tokens: integer(detail.params.tokens) } : {}) })}</p>}
+                {stage && <p className="text-sm font-medium text-accent-text">{stage}</p>}
+                {nowLine ? (
+                  <p className="text-sm text-fg-2 tabular-nums">{nowLine}</p>
+                ) : (
+                  detail && <p className="text-sm text-fg-3 tabular-nums">{t(detail.key, { ...detail.params, ...('tokens' in detail.params ? { tokens: integer(detail.params.tokens) } : {}) })}</p>
+                )}
               </div>
             </div>
+            {live.load && <LoadLine progress={live.load.current} engineKind={engineKind} stages={finishedStages(live.load)} className="pl-8" />}
             <div className="flex items-center gap-4">
               <Progress value={live.progress * 100} label={t('run.progress')} valueText={`${integer(live.progress * 100)}%`} className="flex-1" />
               <span className="w-10 text-right text-sm font-semibold tabular-nums">{integer(live.progress * 100)}%</span>
@@ -262,6 +279,13 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
             />
           </Card>
         </section>
+
+        {tune && <TuneLive tuning={live.tuning} current={live.tuneCurrent} engineKind={engineKind} />}
+
+        <div className="grid items-start gap-section xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+          <LivePoints points={live.points} current={live.current} scenario={scenario} tune={tune} />
+          <LiveConfig launch={live.launch} engineKind={engineKind} />
+        </div>
 
         <ChartCard
           title={t('run.telemetry')}
