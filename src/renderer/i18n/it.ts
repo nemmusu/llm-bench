@@ -176,6 +176,8 @@ export const it = {
     shared: 'Windows ha usato {size} di RAM condivisa, per questo va circa {times} volte più lento del normale ({tps} tok/s invece di {normal}).',
     sharedNoNormal: 'Windows ha usato {size} di RAM condivisa: in questi casi tutto va circa 10–15 volte più lento del normale.',
     collapse: 'Genera {tps} tok/s invece dei soliti {normal}, circa {times} volte più lento: Windows ha messo una parte del modello nella RAM condivisa.',
+    inferredTitle: 'Probabilmente il modello non è entrato tutto nella memoria della scheda',
+    inferred: 'Questo test è stato circa {times} volte più lento degli altri dello stesso modello su questa scheda ({tps} tok/s invece di {normal}): con ogni probabilità il modello è finito nella RAM condivisa.',
     notReal: 'Questi numeri non sono quelli veri della scheda.',
     tune: 'Trova le impostazioni migliori',
     q4: 'Riprova con cache q4_0',

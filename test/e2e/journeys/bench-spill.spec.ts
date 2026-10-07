@@ -1,11 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SPILL_PROFILE, TUNE_SLOW_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
 import { buildGguf, llamaLikeGguf } from '../../fakes/fake-hub/model-files.mjs';
 import type { Page } from '@playwright/test';
 import { expect, launchApp, test, type AppHandle } from '../fixtures';
-import { h1, scan, skipWelcome } from './bench-helpers';
+import type { LatencyPoint, RunResult, Stat } from '../../../src/contract/results';
+import { h1, scan, seedRuns, skipWelcome } from './bench-helpers';
 
 test.describe.configure({ timeout: 300_000 });
 
@@ -118,5 +119,54 @@ test('a search that runs out of time keeps what it measured: partial combination
     await expect(page.getByLabel('Contesto (token)')).toHaveValue('16384');
   } finally {
     await gb.close();
+  }
+});
+
+test('an older run saved before the shared memory was measured, far slower than the others here: a probable spill', async () => {
+  // The seeded Gemma 4 31B Standard (58,6 tok/s) and the same test an hour earlier, saved by GPU Bench
+  // 0.3.0 while it spilled: 3,5 tok/s and nothing in its file that says why.
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-legacy-'));
+  const results = path.join(userData, 'results');
+  const [seeded] = seedRuns(results, (f) => f.includes('01K6WQ8D3N7B2X5C9V4M6K1JHT'));
+  const clean = JSON.parse(readFileSync(path.join(results, seeded as string), 'utf8')) as RunResult;
+  const slow = (s: Stat): Stat => ({ ...s, median: 3.5, mean: 3.5, min: 3.4, max: 3.6, values: s.values.map(() => 3.5) });
+  const spilled: RunResult = {
+    ...clean,
+    id: '01K6WM0LEGACY0SPILL0000000',
+    createdAt: '2026-10-05T17:10:00.000Z',
+    finishedAt: '2026-10-05T17:25:00.000Z',
+    metrics: {
+      ...clean.metrics,
+      latency: clean.metrics.latency.map((p): LatencyPoint => ({ ...p, decodeTps: slow(p.decodeTps), ...(p.decodeTpsEngine ? { decodeTpsEngine: slow(p.decodeTpsEngine) } : {}) })),
+    },
+  };
+  const file = path.join(results, `2026-10-05_17-10-00_${spilled.id}.json`);
+  writeFileSync(file, JSON.stringify(spilled));
+  const saved = readFileSync(file, 'utf8');
+  const gb = await launchApp({ userData });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    // "Ultimi risultati" and Risultati: the badge on the older run only.
+    await expect(page.getByRole('heading', { name: 'Ultimi risultati' })).toBeVisible();
+    await expect(page.getByText('RAM condivisa', { exact: true })).toHaveCount(1);
+    await nav(page, 'Risultati');
+    await expect(page.getByText('2 risultati')).toBeVisible();
+    await expect(page.getByText('RAM condivisa', { exact: true })).toHaveCount(1);
+
+    // Its page says so first, as a probability, with the numbers.
+    await page.getByRole('row').filter({ hasText: 'RAM condivisa' }).getByRole('link', { name: /Gemma 4 31B/ }).click();
+    await expect(h1(page, /Gemma 4 31B/)).toBeVisible();
+    const warning = page.getByRole('alert').filter({ hasText: 'Probabilmente il modello non è entrato tutto nella memoria della scheda' });
+    await expect(warning).toContainText('Questo test è stato circa 17 volte più lento degli altri dello stesso modello su questa scheda (3,5 tok/s invece di 58,6)');
+    await expect(warning).toContainText('con ogni probabilità il modello è finito nella RAM condivisa');
+    await expect(warning.getByRole('button', { name: 'Trova le impostazioni migliori' })).toBeVisible();
+    await expect(page.getByText('Falsata dalla RAM condivisa')).toBeVisible();
+    await scan(page, 'probable spill of an older run');
+    // The file stays as it was saved.
+    expect(readFileSync(file, 'utf8')).toBe(saved);
+  } finally {
+    await gb.close();
+    rmSync(userData, { recursive: true, force: true });
   }
 });

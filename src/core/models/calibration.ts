@@ -3,8 +3,9 @@
  *
  * Every saved run is a source of measurements (GPU, model, engine kind, KV type, context, ubatch,
  * slots, measured peak MiB): a normal run's engine peak (vram.processPeakMiB, else the total minus the
- * baseline; never a run that spilled to shared memory: its peak is capped at the VRAM), and every
- * tune attempt that loaded without spilling (vramPeakMiB). For each one the estimator is run again
+ * baseline; never a run that spilled to shared memory, flagged or found when read: its peak is capped
+ * at the VRAM), and every tune attempt that loaded without spilling (vramPeakMiB). A peak at the
+ * card's ceiling is left out too (atCeiling). For each one the estimator is run again
  * with the same settings; the weights and the CUDA context are taken as they are and the rest — KV
  * cache + compute buffer, the part that depends on the settings — is fitted:
  *
@@ -44,6 +45,21 @@ export interface VramSample {
   measuredMiB: number;
 }
 
+/**
+ * Censored measurements: a dedicated peak within max(3 % of the card's memory, 1 GiB) of the card's
+ * whole memory says nothing about what the settings need. At the ceiling the reading is capped by the
+ * card itself (Windows moves the rest to shared memory, or the launch barely fit), so the real need may
+ * be far higher. On a 32 GB card (32 607 MiB): peaks from 31 583 MiB up. Old and new runs, spilled or
+ * not (spilled runs are left out anyway); a run without a card is never at it.
+ */
+export const CEILING_SHARE = 0.03;
+export const CEILING_MIN_MIB = 1024;
+
+/** The peak is at the ceiling of a card of `totalMiB` (see CEILING_SHARE). */
+export function atCeiling(peakMiB: number, totalMiB: number | undefined): boolean {
+  return totalMiB !== undefined && peakMiB >= totalMiB - Math.max(CEILING_SHARE * totalMiB, CEILING_MIN_MIB);
+}
+
 /** Scale and offset are kept within these bounds (a wild fit says more about noise than about the model). */
 export const SCALE_RANGE = [0.25, 4] as const;
 /** The offset is fitted only when the measured contexts' KV + compute estimates differ by this much. */
@@ -66,17 +82,18 @@ export function samplesOf(run: RunResult): VramSample[] {
     facts,
     ...(run.model.sizeBytes ? { fileBytes: run.model.sizeBytes } : {}),
   };
+  const usable = (peak: number | undefined): peak is number => peak !== undefined && peak > 0 && !atCeiling(peak, gpu?.memoryTotalMiB);
   const out: VramSample[] = [];
   if (run.tuning) {
     for (const a of run.tuning.attempts) {
-      if (a.outcome === 'ok' && a.vramPeakMiB !== undefined && a.vramPeakMiB > 0) out.push({ ...common, params: a.params, measuredMiB: a.vramPeakMiB });
+      if (a.outcome === 'ok' && usable(a.vramPeakMiB)) out.push({ ...common, params: a.params, measuredMiB: a.vramPeakMiB });
     }
     return out;
   }
   const v = run.metrics.vram;
   const peak = v.processPeakMiB ?? v.deltaMiB;
   // A run that spilled to shared memory did not fit: its dedicated peak is capped at the VRAM, not what it needed.
-  if (run.status === 'completed' && !spilledRun(run) && peak !== undefined && peak > 0) out.push({ ...common, params: run.launch.params, measuredMiB: peak });
+  if (run.status === 'completed' && !spilledRun(run) && usable(peak)) out.push({ ...common, params: run.launch.params, measuredMiB: peak });
   return out;
 }
 
@@ -151,7 +168,7 @@ export function calibrationFor(
 
 /**
  * Calibrations from the saved runs, read once and again only when the list of runs changes (a run
- * file is never rewritten: new ids are the only change that matters).
+ * file is never rewritten: new ids matter, and an older run found to have spilled once a clean one arrives).
  */
 export class FitCalibrator {
   private cache: { ids: string; samples: VramSample[] } | undefined;
@@ -166,7 +183,7 @@ export class FitCalibrator {
     const list = (await this.runs.list()).filter(
       (r) => (r.engineKind === 'llamacpp-native' || r.engineKind === 'llamacpp-docker') && (here.gpuUuid && r.gpuUuid ? r.gpuUuid === here.gpuUuid : r.gpuName === here.gpuName),
     );
-    const ids = list.map((r) => r.id).join('|');
+    const ids = list.map((r) => (spilledRun(r) ? `${r.id}!` : r.id)).join('|');
     if (this.cache?.ids === ids) return this.cache.samples;
     const samples: VramSample[] = [];
     for (const r of list) {

@@ -54,7 +54,9 @@ Su Windows, se il modello con il contesto scelto non entra tutto nella memoria v
 - **Durante il test**, appena GPU Bench se ne accorge (la RAM condivisa usata dal motore, oppure una generazione molto più lenta dei tuoi test precedenti con lo stesso modello) compare un avviso con **Annulla test**.
 - **Nel risultato**, l'avviso è in cima, con quanta RAM condivisa è stata usata e quanto era più lento del normale, e tre pulsanti: **Trova le impostazioni migliori**, **Riprova con cache q4_0** e **Riprova con meno contesto**. La memoria video mostra anche "+ … nella RAM condivisa" e la stabilità dice "Falsata dalla RAM condivisa".
 
-Questi test sono segnati **RAM condivisa** in Risultati, in Configurazioni e negli Ultimi risultati, e non contano per le stime: durata prevista, memoria, "Provato su questa GPU" e il server consigliato usano solo i test che entravano nella scheda.
+- **Test fatti con versioni precedenti**, che non misuravano la RAM condivisa: GPU Bench li controlla quando li legge. Se uno è stato molto più lento (meno di 0,4 volte) degli altri dello stesso modello su questa scheda, con ogni probabilità il modello era finito nella RAM condivisa: il risultato lo dice in cima ("Probabilmente il modello non è entrato tutto…", con quante volte era più lento) con gli stessi pulsanti, e il test è segnato come gli altri. Il file del test non viene modificato.
+
+Questi test sono segnati **RAM condivisa** in Risultati, in Configurazioni e negli Ultimi risultati, e non contano per le stime: durata prevista, memoria, "Provato su questa GPU" e il server consigliato usano solo i test che entravano nella scheda. La stima della memoria ignora anche le misure arrivate al limite della scheda (a meno di 1 GB, o del 3 % sulle schede più grandi, dalla sua memoria totale): lì è la scheda stessa a tagliare il numero, che non dice quanto serviva davvero.
 
 ### Usare il modello nei tuoi programmi
 

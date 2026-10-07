@@ -6,6 +6,7 @@ import { launchParamsSchema } from '../../../../src/contract/engines';
 import { AppError } from '../../../../src/contract/errors';
 import { contextOf, fileStamp, parseRun, RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
 import { hardware, latencyPoint, makeRun, modelIdentity, stat } from './fixtures';
+import { cleanQ4, legacySpill, tuneRun } from './real-5090-runs';
 
 const dirs: string[] = [];
 function tmp(): string {
@@ -299,5 +300,53 @@ describe('RunsRepo', () => {
     const err = await repo.importBundle({ format: 'gpubench-export', version: 2, runs: [] }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppError);
     expect((err as AppError).params).toEqual({ reason: 'export_too_new', version: 2 });
+  });
+});
+
+describe('RunsRepo: older runs that spilled unnoticed (saved before the shared memory was measured)', () => {
+  it('the bug report: flagged in every list, the run "probabile" with its numbers and fixes; the files untouched', async () => {
+    const dir = tmp();
+    const repo = new RunsRepo(() => dir);
+    const files = [await repo.save(legacySpill()), await repo.save(cleanQ4()), await repo.save(tuneRun())];
+    const before = files.map((f) => readFileSync(f, 'utf8'));
+    const here = { hostId: 'host-a', gpuUuid: 'GPU-aaaa', gpuName: 'NVIDIA GeForce RTX 5090' };
+    const list = await repo.list();
+    const flagged = (l: { id: string; validity: string[] }[]) => l.filter((s) => s.validity.includes('shared_memory_spill')).map((s) => s.id);
+    expect(flagged(list)).toEqual([legacySpill().id]);
+    expect(flagged(await repo.tried({ weakKey: legacySpill().model.weakKey }, here))).toEqual([legacySpill().id]);
+    // ConfigsIndex keys on the summary object: the same one while nothing changes.
+    const again = await repo.list();
+    expect(again.find((s) => s.id === legacySpill().id)).toBe(list.find((s) => s.id === legacySpill().id));
+    expect(again.find((s) => s.id === cleanQ4().id)).toBe(list.find((s) => s.id === cleanQ4().id));
+
+    const run = (await repo.get(legacySpill().id))!;
+    expect(run.validity).toEqual(['shared_memory_spill']);
+    expect(run.metrics.spill).toMatchObject({ by: ['decode-collapse'], inferred: true, decodeTps: 3.5, normalRunIds: [cleanQ4().id, tuneRun().id], fixes: { kvCacheType: 'q4_0' } });
+    expect(run.metrics.spill!.normalDecodeTps).toBeCloseTo(54.15, 6);
+    const viaSummary = (await repo.read(list.find((s) => s.id === legacySpill().id)!))!;
+    expect(viaSummary.metrics.spill?.inferred).toBe(true);
+    expect((await repo.get(cleanQ4().id))!.metrics).not.toHaveProperty('spill');
+    // Exports carry the files as they are: another PC finds the spill again by itself.
+    const bundle = await repo.exportRuns([legacySpill().id]);
+    expect(bundle.runs[0]!.validity).toEqual([]);
+    expect(bundle.runs[0]!.metrics).not.toHaveProperty('spill');
+    expect(files.map((f) => readFileSync(f, 'utf8'))).toEqual(before);
+  });
+
+  it('checked again when the runs change: a clean run arrives, it is deleted', async () => {
+    const dir = tmp();
+    const repo = new RunsRepo(() => dir);
+    await repo.save(legacySpill());
+    // Nothing to compare with yet: its numbers count.
+    const alone = await repo.list();
+    expect(alone[0]!.validity).toEqual([]);
+    expect((await repo.get(legacySpill().id))!.metrics).not.toHaveProperty('spill');
+    await repo.save(cleanQ4());
+    const withClean = await repo.list();
+    expect(withClean.find((s) => s.id === legacySpill().id)!.validity).toEqual(['shared_memory_spill']);
+    expect(await repo.delete(cleanQ4().id)).toBe(true);
+    const back = await repo.list();
+    // The very same object as before the clean run: unchanged files keep their summaries.
+    expect(back[0]).toBe(alone[0]);
   });
 });

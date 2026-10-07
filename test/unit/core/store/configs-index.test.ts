@@ -8,6 +8,7 @@ import type { ConcurrencyPoint, LatencyPoint, RunResult, RunSummary, TuneCombina
 import { comboSources, ConfigsIndex, depthPointsOf, mergeSources, queryConfigs, sourcesOf, type RunSources } from '../../../../src/core/store/configs-index';
 import { RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
 import { hardware, latencyPoint, makeRun, modelIdentity, stat } from './fixtures';
+import { cleanQ4, legacySpill } from './real-5090-runs';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -351,6 +352,22 @@ describe('ConfigsIndex', () => {
     expect(r.configs).toHaveLength(1);
     expect(r.configs[0]!.sources.map((s) => s.runId)).toEqual(['S2', 'S1']);
     expect(await repo.read({ file: 'missing.json' })).toBeUndefined();
+  });
+
+  it('an older run found to have spilled when read is its own marked entry, also once a clean run arrives later', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-configs-'));
+    dirs.push(dir);
+    const repo = new RunsRepo(() => dir);
+    const index = new ConfigsIndex(repo);
+    await repo.save(legacySpill());
+    // Alone, nothing says it spilled: its numbers count.
+    expect((await index.query({}, HERE)).configs.map((e) => e.spill ?? false)).toEqual([false]);
+    await repo.save(cleanQ4());
+    const r = await index.query({}, HERE);
+    const spilled = r.configs.find((e) => e.sources[0]!.runId === legacySpill().id)!;
+    expect(spilled.spill).toBe(true);
+    expect(spilled.points[0]).toMatchObject({ depth: 512, decodeTps: 3.5 });
+    expect(r.configs.find((e) => e.sources[0]!.runId === cleanQ4().id)).not.toHaveProperty('spill');
   });
 });
 

@@ -214,7 +214,8 @@ export type ValidityFlag = z.infer<typeof validityFlagSchema>;
 /**
  * The run spilled into shared system memory: its numbers are not the card's. Such runs never feed
  * what is expected of the model here (durations, load times, the VRAM calibration, "Provato su questa
- * GPU", the speed a later spill is compared with).
+ * GPU", the speed a later spill is compared with). Runs saved before the shared memory was measured get
+ * the flag when they are read, if they were far slower than the others (Spill.inferred).
  */
 export function spilledRun(r: { validity: readonly ValidityFlag[] }): boolean {
   return r.validity.includes('shared_memory_spill');
@@ -293,6 +294,13 @@ export const spillSchema = z.object({
   normalRunIds: z.array(z.string()).optional(),
   /** What would fit, from the (calibrated) VRAM estimate made when the run started. */
   fixes: fitFixesSchema.optional(),
+  /**
+   * "Probabile": not seen during the run but recognized when it is read, never saved in its file. A run
+   * saved before the shared memory was measured (no metrics.vram.sharedPeakMiB) whose generation on a
+   * short prompt was below 0.4 × the median of the clean runs of the same model and engine kind on this
+   * PC and card (by ['decode-collapse']; normalRunIds = those runs). Fixes from the run's own uncalibrated estimate.
+   */
+  inferred: z.boolean().optional(),
 });
 export type Spill = z.infer<typeof spillSchema>;
 

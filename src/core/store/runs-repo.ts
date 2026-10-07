@@ -11,6 +11,7 @@ import {
   type RunSummary,
 } from '../../contract/results';
 import { readJsonFile, writeFileAtomic } from './atomic';
+import { flaggedSummary, inferSpills, spillFactsOf, withInferredSpill, type InferredSpill, type SpillFacts } from './legacy-spill';
 
 export const EXPORT_FORMAT = 'gpubench-export';
 export const EXPORT_VERSION = 1;
@@ -166,15 +167,30 @@ interface CacheEntry {
   mtimeMs: number;
   size: number;
   summary: RunSummary | null;
+  /** What the check for spills of older runs reads (legacy-spill.ts); null when unreadable. */
+  facts: SpillFacts | null;
+  /** The summary flagged as a probable spill, kept while the file does not change (ConfigsIndex keys on the object). */
+  flagged?: RunSummary;
+}
+
+interface Listed {
+  file: string;
+  entry: CacheEntry & { summary: RunSummary; facts: SpillFacts };
 }
 
 /**
  * One JSON file per run in the results folder, which can be shared or synced between PCs:
  * names are unique and a file is never rewritten, so two PCs never conflict.
+ *
+ * Runs saved before the shared memory was measured are checked for a spill nobody saw when they are
+ * read (legacy-spill.ts): list(), tried(), get() and read() flag them, so every consumer (badges,
+ * expected durations, the VRAM calibration, the configurations) sees the same. Their files stay as they are.
  */
 export class RunsRepo {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly resolveDir: () => string | Promise<string>;
+  /** The spills of older runs found by the last list(), by file; recomputed when a file of the folder changes. */
+  private inference: { entries: CacheEntry[]; spills: Map<string, InferredSpill> } | undefined;
 
   /** `resolveDir` is called on every operation: the folder comes from settings and can change. */
   constructor(resolveDir: () => string | Promise<string>) {
@@ -207,15 +223,16 @@ export class RunsRepo {
     }
     const present = new Set(names.map((n) => path.join(dir, n)));
     for (const key of this.cache.keys()) if (path.dirname(key) === dir && !present.has(key)) this.cache.delete(key);
-    const out: RunSummary[] = [];
+    const listed: Listed[] = [];
     await forEachLimit([...present], 16, async (file) => {
-      const s = await this.summaryFor(file);
-      if (s) out.push(s);
+      const entry = await this.entryFor(file);
+      if (entry?.summary) listed.push({ file, entry: entry as Listed['entry'] });
     });
-    return out.sort(newestFirst);
+    const spills = this.spillsOf(listed);
+    return listed.map(({ file, entry }) => (spills.has(file) ? (entry.flagged ??= flaggedSummary(entry.summary)) : entry.summary)).sort(newestFirst);
   }
 
-  private async summaryFor(file: string): Promise<RunSummary | null> {
+  private async entryFor(file: string): Promise<CacheEntry | null> {
     let st: { mtimeMs: number; size: number; isFile(): boolean };
     try {
       st = await fs.stat(file);
@@ -224,11 +241,29 @@ export class RunsRepo {
     }
     if (!st.isFile()) return null;
     const hit = this.cache.get(file);
-    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.summary;
+    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
     const run = parseRun(await readJsonFile(file).catch(() => null));
-    const summary = run ? summaryOf(run, path.basename(file)) : null;
-    this.cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, summary });
-    return summary;
+    const entry = { mtimeMs: st.mtimeMs, size: st.size, summary: run ? summaryOf(run, path.basename(file)) : null, facts: run ? spillFactsOf(run) : null };
+    this.cache.set(file, entry);
+    return entry;
+  }
+
+  /** Spills of older runs among the listed files: the same files unchanged give the same answer without redoing it. */
+  private spillsOf(listed: Listed[]): Map<string, InferredSpill> {
+    listed.sort((a, b) => (a.file < b.file ? -1 : 1));
+    const entries = listed.map((l) => l.entry);
+    const last = this.inference;
+    if (last && last.entries.length === entries.length && last.entries.every((e, i) => e === entries[i])) return last.spills;
+    const spills = inferSpills(new Map(listed.map((l) => [l.file, l.entry.facts])));
+    this.inference = { entries, spills };
+    return spills;
+  }
+
+  /** A run file as it is shown and counted: a spill of an older run found by the last list() is added. */
+  private async load(file: string): Promise<RunResult | undefined> {
+    const run = parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+    const spill = this.inference?.spills.get(file);
+    return run && spill ? withInferredSpill(run, spill) : run;
   }
 
   /** Path of the run's file; only files directly inside the current results folder are considered. */
@@ -243,14 +278,12 @@ export class RunsRepo {
 
   /** The whole run behind a summary of list() (no folder scan): undefined when gone or unreadable. */
   async read(summary: Pick<RunSummary, 'file'>): Promise<RunResult | undefined> {
-    const file = path.join(await this.dir(), path.basename(summary.file));
-    return parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+    return this.load(path.join(await this.dir(), path.basename(summary.file)));
   }
 
   async get(id: string): Promise<RunResult | undefined> {
     const file = await this.fileOf(id);
-    if (!file) return undefined;
-    return parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+    return file ? this.load(file) : undefined;
   }
 
   /** Deletes the run's file. false when the id is unknown. */
@@ -281,10 +314,12 @@ export class RunsRepo {
     return matches.sort((a, b) => rank(a) - rank(b));
   }
 
+  /** The runs as their files hold them: a spill found when reading an older run is not exported (the other PC finds it again). */
   async exportRuns(ids: readonly string[]): Promise<ExportBundle> {
     const runs: RunResult[] = [];
     for (const id of ids) {
-      const run = await this.get(id);
+      const file = await this.fileOf(id);
+      const run = file ? parseRun(await readJsonFile(file).catch(() => null)) : null;
       if (run) runs.push(run);
     }
     return { format: EXPORT_FORMAT, version: EXPORT_VERSION, runs };

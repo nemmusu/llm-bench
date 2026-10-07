@@ -1,12 +1,16 @@
 /** "Stima tarata su N misure": the fit estimate corrected with VRAM peaks measured on this GPU. */
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { launchParamsSchema, type LaunchParams } from '../../../../src/contract/engines';
 import type { RunResult, TuneAttempt } from '../../../../src/contract/results';
-import { calibrationFor, FitCalibrator, fitSamples, SCALE_RANGE, samplesOf, type VramSample } from '../../../../src/core/models/calibration';
+import { atCeiling, calibrationFor, FitCalibrator, fitSamples, SCALE_RANGE, samplesOf, type VramSample } from '../../../../src/core/models/calibration';
 import { CUDA_CONTEXT_MIB, estimateFit, fitParamsFrom } from '../../../../src/core/models/fit';
 import type { ModelFactsEx } from '../../../../src/core/models/types';
-import { summaryOf } from '../../../../src/core/store/runs-repo';
+import { RunsRepo, summaryOf } from '../../../../src/core/store/runs-repo';
 import { hardware, makeRun, modelIdentity } from '../store/fixtures';
+import { cleanQ4, FACTS_27B, GPU_TOTAL_MIB, legacySpill, tuneRun } from '../store/real-5090-runs';
 
 const P = (o: Partial<LaunchParams> = {}) => launchParamsSchema.parse(o);
 const facts: ModelFactsEx = { architecture: 'llama', blockCount: 32, headCount: 32, headCountKv: 8, keyLength: 128, valueLength: 128, embeddingLength: 4096, vocabSize: 152064, feedForwardLength: 12288 };
@@ -166,5 +170,61 @@ describe('measurements from saved runs', () => {
     expect(await broken.for({ weakKey: 'w' }, 'llamacpp-native')).toBeUndefined();
     const missing = new FitCalibrator({ ...repo, get: () => Promise.reject(new Error('x')) }, async () => ({ hostId: 'h', gpuUuid: 'GPU-aaaa' }));
     expect(await missing.for({ weakKey: 'w' }, 'llamacpp-native')).toBeUndefined();
+  });
+});
+
+describe('the bug report (RTX 5090, a 27B at 256K): what a capped peak does to the calibration', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  const here = { hostId: 'host-a', gpuUuid: 'GPU-aaaa', gpuName: 'NVIDIA GeForce RTX 5090' };
+  const key = { weakKey: legacySpill().model.weakKey, architecture: FACTS_27B.architecture };
+  /** What the calibrated estimate says 256K of f16 cache needs, MiB. */
+  const f16At256K = (calibration: ReturnType<typeof calibrationFor>) =>
+    estimateFit({
+      facts: FACTS_27B,
+      fileBytes: 17_600_000_000,
+      gpu: { totalMiB: GPU_TOTAL_MIB, freeMiB: GPU_TOTAL_MIB - 1600 },
+      engine: 'llamacpp-native',
+      params: fitParamsFrom(P({ contextSize: 262_144, kvCacheType: 'f16', flashAttention: 'auto' })),
+      ...(calibration ? { calibration } : {}),
+    }).needMiB;
+
+  it('an older run that spilled (found when read) is left out: 33,4 GB instead of the 29,9 GB its 28,7 GB peak made it look', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-cal-'));
+    dirs.push(dir);
+    const repo = new RunsRepo(() => dir);
+    for (const r of [legacySpill(), cleanQ4(), tuneRun()]) await repo.save(r);
+    const calibrator = new FitCalibrator(repo, async () => here);
+    const samples = await calibrator.samples();
+    // The clean q4_0 run and the tune run's three launches; not the spill.
+    expect(samples.map((s) => s.measuredMiB).sort()).toEqual([16_796, 22_835, 24_856, 26_478]);
+    const cal = (await calibrator.for(key, 'llamacpp-native'))!;
+    expect(cal).toMatchObject({ samples: 4, scope: 'model' });
+    expect(f16At256K(cal) / 1024).toBeCloseTo(33.4, 1);
+    // With the spill, as before: the capped peak pulled the whole estimate down.
+    const polluted = calibrationFor([...samples, ...samplesOf(legacySpill())], key, 'llamacpp-native', here)!;
+    expect(polluted.samples).toBe(5);
+    expect(f16At256K(polluted) / 1024).toBeCloseTo(29.9, 1);
+  });
+
+  it('a peak at the ceiling of the card is censored: max(3 %, 1 GiB) of its memory', () => {
+    // 32 607 MiB: from 31 583 MiB up (1 GiB is more than 3 %); an 80 GB card: 3 % (2 457,6 MiB).
+    expect(atCeiling(31_583, GPU_TOTAL_MIB)).toBe(true);
+    expect(atCeiling(31_582, GPU_TOTAL_MIB)).toBe(false);
+    expect(atCeiling(29_349, GPU_TOTAL_MIB)).toBe(false);
+    expect(atCeiling(79_463, 81_920)).toBe(true);
+    expect(atCeiling(79_462, 81_920)).toBe(false);
+    expect(atCeiling(7_168, 8_192)).toBe(true);
+    expect(atCeiling(99_999, undefined)).toBe(false);
+    // Old or new, flagged or not: a normal run's engine peak, a tune launch's peak.
+    const full = { ...cleanQ4(), metrics: { ...cleanQ4().metrics, vram: { processPeakMiB: 31_900, sharedPeakMiB: 376 } } };
+    expect(samplesOf(full)).toEqual([]);
+    const delta = { ...legacySpill(), metrics: { ...legacySpill().metrics, vram: { deltaMiB: 31_700 } } };
+    expect(samplesOf(delta)).toEqual([]);
+    const tune = tuneRun();
+    tune.tuning!.attempts.push({ ...tune.tuning!.attempts[2]!, contextSize: 300_000, vramPeakMiB: 32_100 });
+    expect(samplesOf(tune).map((s) => s.measuredMiB)).toEqual([16_796, 24_856, 26_478]);
   });
 });

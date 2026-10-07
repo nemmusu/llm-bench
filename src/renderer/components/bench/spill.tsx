@@ -22,9 +22,10 @@ const gb = (mib: number, f: F) => `${f.number(mib / MIB_PER_GB, 1)} GB`;
 
 /**
  * What happened, in one or two sentences with the numbers: the shared memory Windows used and how much
- * slower it was than usual (when an earlier run says what usual is), or the collapse alone.
+ * slower it was than usual (when an earlier run says what usual is), or the collapse alone. A spill
+ * found later in an older run (Spill.inferred) says how much slower than the others it was, as a probability.
  */
-export function spillText(spill: Pick<Spill, 'by' | 'sharedPeakMiB' | 'decodeTps' | 'normalDecodeTps'>, f: F): string {
+export function spillText(spill: Pick<Spill, 'by' | 'sharedPeakMiB' | 'decodeTps' | 'normalDecodeTps' | 'inferred'>, f: F): string {
   const { decodeTps: tps, normalDecodeTps: normal, sharedPeakMiB: shared } = spill;
   const times = tps && normal ? Math.round(normal / tps) : 0;
   // "Circa N volte più lento" only when it is (a collapse always is: below 0.4×).
@@ -33,7 +34,7 @@ export function spillText(spill: Pick<Spill, 'by' | 'sharedPeakMiB' | 'decodeTps
     return speeds ? f.t('spill.shared', { size: gb(shared, f), ...speeds }) : f.t('spill.sharedNoNormal', { size: gb(shared, f) });
   }
   // A collapse is only ever seen against the usual speed: both are there.
-  return f.t('spill.collapse', speeds as NonNullable<typeof speeds>);
+  return f.t(spill.inferred ? 'spill.inferred' : 'spill.collapse', speeds as NonNullable<typeof speeds>);
 }
 
 export interface SpillWarningProps {
@@ -56,7 +57,7 @@ export function SpillWarning({ spill, onFindSettings, onRetry, className }: Spil
         <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-warning-text" />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <h2 id="spill-title" className="text-md font-semibold text-fg">
-            {t('spill.title')}
+            {t(spill.inferred ? 'spill.inferredTitle' : 'spill.title')}
           </h2>
           <p className="text-sm text-fg-2">
             {spillText(spill, f)} <span className="font-medium text-fg">{t('spill.notReal')}</span>

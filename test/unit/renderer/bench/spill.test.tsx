@@ -123,6 +123,24 @@ describe('the result page of a run that spilled', () => {
     expect(await h1('Test in corso')).toBeTruthy();
   });
 
+  it('an older run found to have spilled when it was read: said as a probability, with the same ways out', async () => {
+    // Saved before the shared memory was measured: only its speed against the clean runs of the model here.
+    const run = spilled({ by: ['decode-collapse'], inferred: true, decodeTps: 3.5, normalDecodeTps: 54.15, normalRunIds: [IDS.quick], fixes: { kvCacheType: 'q4_0', maxContext: 195_584 } });
+    delete run.metrics.vram.sharedPeakMiB;
+    renderApp(`/results/${IDS.full}`, withLibrary([run]));
+    await h1(/Qwen3 8B/);
+    const warning = screen.getByRole('alert', { name: 'Probabilmente il modello non è entrato tutto nella memoria della scheda' });
+    expect(warning.textContent).toContain(
+      'Questo test è stato circa 15 volte più lento degli altri dello stesso modello su questa scheda (3,5 tok/s invece di 54,2): con ogni probabilità il modello è finito nella RAM condivisa.',
+    );
+    expect(within(warning).getByRole('button', { name: 'Trova le impostazioni migliori' })).toBeTruthy();
+    expect(within(warning).getByRole('button', { name: 'Riprova con cache q4_0' })).toBeTruthy();
+    expect(within(warning).getByRole('button', { name: 'Riprova con meno contesto (191K)' })).toBeTruthy();
+    // No shared memory was read: none is quoted. The stability is still not the card's.
+    expect(screen.queryByText(/nella RAM condivisa$/)).toBeNull();
+    expect(screen.getByText('Falsata dalla RAM condivisa')).toBeTruthy();
+  });
+
   it('the words of each way it was seen', () => {
     const f = createFormatters('it');
     expect(spillText({ by: ['shared-memory'], sharedPeakMiB: 4666 }, f)).toBe('Windows ha usato 4,6 GB di RAM condivisa: in questi casi tutto va circa 10–15 volte più lento del normale.');
@@ -132,6 +150,9 @@ describe('the result page of a run that spilled', () => {
       'Genera 3,5 tok/s invece dei soliti 53,7, circa 15 volte più lento: Windows ha messo una parte del modello nella RAM condivisa.',
     );
     expect(spillText({ by: ['decode-collapse'], decodeTps: 3.5, normalDecodeTps: 53.7 }, createFormatters('en'))).toContain('about 15 times slower');
+    expect(spillText({ by: ['decode-collapse'], inferred: true, decodeTps: 3.5, normalDecodeTps: 54.15 }, createFormatters('en'))).toBe(
+      'This test was about 15 times slower than the others with the same model on this card (3.5 tok/s instead of 54.2): the model most likely ended up in shared RAM.',
+    );
   });
 });
 

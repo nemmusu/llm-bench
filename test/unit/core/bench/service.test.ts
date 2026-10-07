@@ -4,6 +4,7 @@ import type { FitEstimate } from '../../../../src/contract/models';
 import { BenchService } from '../../../../src/core/bench/service';
 import { isRunId } from '../../../../src/core/store/runs-id';
 import { hardware, latencyPoint, makeRun, modelIdentity, stat } from '../store/fixtures';
+import { cleanQ4, legacySpill, MODEL_27B, tuneRun } from '../store/real-5090-runs';
 import { deferred, modelTarget } from './fakes';
 import { request, serviceSetup, TempDirs } from './service-helpers';
 
@@ -450,5 +451,50 @@ describe('BenchService.here', () => {
     expect(calls).toBe(1);
     const noGpu = serviceSetup(tmp, { deps: { fingerprint: async () => hardware({ gpus: [] }) } });
     expect(await new BenchService(noGpu.deps).here()).toEqual({ hostId: 'host-a' });
+  });
+});
+
+describe('BenchService: an older run that spilled unnoticed (the bug report: 3,5 tok/s saved by 0.3.0)', () => {
+  /** The legacy Rapido as the newest run of all, with the slow start a spill also brings. */
+  const newestSpill = () => {
+    const r = legacySpill();
+    return { ...r, createdAt: '2026-10-07T08:00:00.000Z', metrics: { ...r.metrics, load: { coldMs: stat(95_000), warmMs: stat(60_000), phases: [] } } };
+  };
+  const setup = (o: Parameters<typeof serviceSetup>[1] = {}) =>
+    serviceSetup(tmp, { ...o, deps: { resolveModel: async () => modelTarget({ identity: MODEL_27B }), ...o.deps } });
+
+  it('the Rapido and Standard estimates go back to the clean runs’ speed; the usual load time too', async () => {
+    const s = setup();
+    const svc = new BenchService(s.deps);
+    await s.runs.save(cleanQ4());
+    await s.runs.save(tuneRun());
+    const rapido = (await svc.plan(request())).estimatedSeconds;
+    // "~42 s" in the report.
+    expect(rapido).toBeGreaterThanOrEqual(40);
+    expect(rapido).toBeLessThanOrEqual(45);
+    const standard = (await svc.plan(request({ profile: 'standard' }))).estimatedSeconds;
+    await s.runs.save(newestSpill());
+    expect((await svc.plan(request())).estimatedSeconds).toBe(rapido);
+    expect((await svc.plan(request({ profile: 'standard' }))).estimatedSeconds).toBe(standard);
+    expect(await svc.expectedLoad(modelTarget({ identity: MODEL_27B }), 'llamacpp-native')).toEqual({ expectedLoadMs: { cold: 9_900, warm: 9_900 } });
+    // What it did before: the spilled run, alone and unrecognized, drives the estimate ("≈ 4 min 04 s" in the report).
+    const alone = setup();
+    await alone.runs.save(legacySpill());
+    const polluted = (await new BenchService(alone.deps).plan(request())).estimatedSeconds;
+    expect(polluted).toBeGreaterThan(230);
+    expect(polluted).toBeLessThan(250);
+  });
+
+  it('a new run is compared with the clean runs only: 3,5 tok/s against 54,6, not against the median with the spill', async () => {
+    const s = setup({ adapter: { client: { decodeMsPerToken: 1000 / 3.5 } } });
+    await s.runs.save(cleanQ4());
+    await s.runs.save(newestSpill());
+    const svc = new BenchService(s.deps);
+    const { runId } = await svc.start(request());
+    await svc.whenIdle();
+    const run = (await s.runs.get(runId))!;
+    expect(run.validity[0]).toBe('shared_memory_spill');
+    expect(run.metrics.spill).toMatchObject({ by: ['decode-collapse'], normalDecodeTps: 54.6, normalRunIds: [cleanQ4().id] });
+    expect(run.metrics.spill).not.toHaveProperty('inferred');
   });
 });

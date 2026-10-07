@@ -3,6 +3,7 @@
  * not fit in VRAM is not refused: part of it goes to the system RAM the GPU can address (the engine's
  * "Shared Usage") and everything gets ~10–15× slower, with no error anywhere. Normal runs flag it
  * (validity 'shared_memory_spill', metrics.spill); the tuner counts such a launch as "does not fit".
+ * Runs saved before the shared memory was measured are checked when they are read (store/legacy-spill.ts).
  *
  * Measured on an RTX 5090 (Windows, driver 617.14, a 27B Q4 model): without a spill the engine's
  * Shared Usage was 124 / 248 / 376 MiB with 4K / 128K / 256K of context (~1 MiB per 1K tokens); a
@@ -13,7 +14,12 @@ import type { EngineKind, LaunchParams } from '../../contract/engines';
 import type { OsInfo } from '../../contract/hardware';
 import type { FitFixes } from '../../contract/models';
 import { spilledRun, type LatencyPoint, type RunSummary, type Spill } from '../../contract/results';
-import type { HereIdentity } from '../store/runs-repo';
+
+/** This PC and card (RunsRepo's HereIdentity; the store reads runs with these rules, so it is not imported). */
+export interface SpillHere {
+  hostId: string;
+  gpuUuid?: string | undefined;
+}
 
 /** Shared Usage of at least this much is a spill… */
 export const SPILL_SHARED_MIN_MIB = 1024;
@@ -71,7 +77,7 @@ const median = (xs: readonly number[]): number => {
  * Median generation speed of the NORMAL_RUNS newest completed runs of this model (the list RunsRepo.tried
  * gives) with this engine kind on this PC and card that did not spill; undefined when there is none.
  */
-export function normalDecode(runs: readonly RunSummary[], here: HereIdentity, kind: EngineKind): NormalDecode | undefined {
+export function normalDecode(runs: readonly RunSummary[], here: SpillHere, kind: EngineKind): NormalDecode | undefined {
   const ok = runs
     .filter(
       (r) =>

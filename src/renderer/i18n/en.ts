@@ -175,6 +175,8 @@ export const en: Messages = {
     shared: 'Windows used {size} of shared RAM, which is why it runs about {times} times slower than normal ({tps} tok/s instead of {normal}).',
     sharedNoNormal: 'Windows used {size} of shared RAM: in this case everything runs about 10–15 times slower than normal.',
     collapse: 'It generates {tps} tok/s instead of the usual {normal}, about {times} times slower: Windows put part of the model in shared RAM.',
+    inferredTitle: 'The model probably did not fully fit in the card’s memory',
+    inferred: 'This test was about {times} times slower than the others with the same model on this card ({tps} tok/s instead of {normal}): the model most likely ended up in shared RAM.',
     notReal: 'These are not the card’s real numbers.',
     tune: 'Find the best settings',
     q4: 'Try again with q4_0 cache',
