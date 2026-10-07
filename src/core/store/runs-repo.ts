@@ -223,6 +223,12 @@ export class RunsRepo {
     return undefined;
   }
 
+  /** The whole run behind a summary of list() (no folder scan): undefined when gone or unreadable. */
+  async read(summary: Pick<RunSummary, 'file'>): Promise<RunResult | undefined> {
+    const file = path.join(await this.dir(), path.basename(summary.file));
+    return parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+  }
+
   async get(id: string): Promise<RunResult | undefined> {
     const file = await this.fileOf(id);
     if (!file) return undefined;

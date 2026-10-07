@@ -72,6 +72,41 @@ async function stopServers(info) {
   for (const s of await api(info, 'GET', '/api/servers')) await api(info, 'DELETE', `/api/servers/${encodeURIComponent(s.id)}`);
 }
 
+/** Risultati → Configurazioni: the tests behind the configuration measured twice. */
+async function openConfigTests(page) {
+  await page.getByRole('button', { name: /^Mostra i 2 test/ }).click();
+  await page.getByRole('dialog', { name: 'Test di questa configurazione' }).waitFor({ timeout: 30000 });
+}
+
+/** "Usa questo preset" on the fastest configuration: the Benchmark page with its banner and the exact command. */
+async function presetFromConfigs(page) {
+  await page.getByRole('button', { name: 'Usa questo preset' }).first().click();
+  await page.getByRole('region', { name: 'Preset' }).waitFor({ timeout: 30000 });
+  await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+}
+
+/**
+ * More tests of Qwen3 8B (the seeded Full run) so Configurazioni has settings to compare: the same
+ * configuration once more, then a q8_0 and a q4_0 KV cache with longer contexts.
+ */
+function configRuns(base) {
+  const head = base.launch.argv.slice(0, base.launch.argv.indexOf('-c'));
+  const variant = (id, createdAt, args, params, k) => {
+    const run = structuredClone(base);
+    Object.assign(run, { id, createdAt, finishedAt: createdAt });
+    run.launch.argv = [...head, ...args, '--fit', 'off', '--no-webui'];
+    run.launch.params = { ...params, extraArgs: [], env: {} };
+    const scale = (s, by) => ({ ...s, median: s.median * by, mean: s.mean * by, values: s.values.map((v) => v * by) });
+    run.metrics.latency = run.metrics.latency.map((p) => ({ ...p, decodeTps: scale(p.decodeTps, k), prefillTps: scale(p.prefillTps, 2 - k), ttftMs: scale(p.ttftMs, k) }));
+    return run;
+  };
+  return [
+    variant('01K6ZA2B3C4D5E6F7G8H9J0KMN', '2026-10-06T18:20:00.000Z', ['-c', '8192', '-ngl', 'all', '-fa', 'on', '-ub', '512', '-b', '2048'], { contextSize: 8192, flashAttention: 'on' }, 1.02),
+    variant('01K6ZB2B3C4D5E6F7G8H9J0KMN', '2026-10-07T08:10:00.000Z', ['-c', '32768', '-ngl', 'all', '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0', '-ub', '1024'], { contextSize: 32768, flashAttention: 'on', kvCacheType: 'q8_0', ubatchSize: 1024 }, 1.06),
+    variant('01K6ZC2B3C4D5E6F7G8H9J0KMN', '2026-10-07T08:40:00.000Z', ['-c', '65536', '-ngl', 'all', '-fa', 'on', '-ctk', 'q4_0', '-ctv', 'q4_0', '-ub', '2048', '-b', '4096'], { contextSize: 65536, flashAttention: 'on', kvCacheType: 'q4_0', ubatchSize: 2048, batchSize: 4096 }, 0.97),
+  ];
+}
+
 /** This PC's id as the core computes it (core/sysinfo/fingerprint.ts), for the seeded runs made "here". */
 function thisHostId() {
   let machineId;
@@ -113,6 +148,9 @@ const SCREENS = [
   { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
   { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
   { n: 19, name: 'serve-ready', route: '/', wait: 'Pronto a misurare', act: openServeReady, after: stopServers },
+  { n: 20, name: 'results-configs', route: '/results?view=configs', wait: 'Confronta a', settle: 1500, small: true },
+  { n: 21, name: 'configs-tests', route: '/results?view=configs', wait: 'Confronta a', act: openConfigTests },
+  { n: 22, name: 'benchmark-preset', route: '/results?view=configs', wait: 'Confronta a', act: presetFromConfigs, full: true },
 ];
 
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
@@ -149,6 +187,12 @@ async function fakeWorld(dataDir) {
   for (const f of readdirSync(seeds).filter((x) => x.endsWith('.json'))) {
     writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname()));
   }
+  // The Qwen3 8B tests point at the library copy of this fake world, so their presets find the model.
+  const fullFile = path.join(results, readdirSync(results).find((f) => f.includes(RESULT_ID)));
+  const full = JSON.parse(readFileSync(fullFile, 'utf8'));
+  full.model.path = path.join(models, 'Qwen3-8B-Q4_K_M.gguf');
+  writeFileSync(fullFile, JSON.stringify(full));
+  for (const run of configRuns(full)) writeFileSync(path.join(results, `${run.id}.json`), JSON.stringify(run));
   writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
   const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
   writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));

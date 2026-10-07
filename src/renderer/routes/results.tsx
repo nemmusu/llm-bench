@@ -1,12 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { CircleCheck, Download, GitCompareArrows, Search, Trash2, Upload } from 'lucide-react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { CircleCheck, Download, GitCompareArrows, ListChecks, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
 import type { RunSummary } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
 import { countKey, MIB_PER_GB, prettyEngineLabel, shortGpuName } from '../components/bench/format';
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS, type RunFilters } from '../components/bench/history';
+import { ConfigsView } from '../components/configs/configs-view';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -20,6 +21,7 @@ import { Select } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
 import { Sparkline } from '../components/ui/sparkline';
 import { Switch } from '../components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useI18n } from '../i18n';
 import { useApi } from '../lib/api-context';
 import { bundleRequest } from '../lib/export';
@@ -41,6 +43,8 @@ export function ResultsPage() {
   const api = useApi();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const view = useSearch({ from: '/results' }).view ?? 'runs';
+  const setView = (v: string) => void navigate({ to: '/results', search: v === 'configs' ? { view: 'configs' } : {}, replace: true });
   const runs = useRuns();
   const system = useBenchSystem();
   useRunsLiveRefresh();
@@ -172,12 +176,14 @@ export function ResultsPage() {
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          const tps = c.row.original.parallelTps;
+          const { parallelTps: tps, parallelPerUserTps: each } = c.row.original;
           if (v === undefined) return <span className="text-fg-3">–</span>;
+          // "4 utenti" / "43 tok/s ciascuno · 155 tok/s in tutto": what each user gets, then everyone together (older runs: what they have).
+          const detail = [each !== undefined ? t('results.usersEach', { tps: integer(each) }) : undefined, tps !== undefined ? t('results.usersTotal', { tps: integer(tps) }) : undefined].filter(Boolean);
           return (
             <span className="flex flex-col items-end leading-5 whitespace-nowrap">
               <span>{t('results.users', { n: v })}</span>
-              {tps !== undefined && <span className="text-xs text-fg-3">{t('results.usersTotal', { tps: integer(tps) })}</span>}
+              {detail.length > 0 && <span className="text-xs text-fg-3">{detail.join(' · ')}</span>}
             </span>
           );
         },
@@ -272,115 +278,135 @@ export function ResultsPage() {
       subtitle={t('results.subtitle')}
       width="wide"
       actions={
-        <>
-          <input ref={fileRef} type="file" accept=".gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
-          <Button onClick={() => fileRef.current?.click()}>
-            <Upload aria-hidden />
-            {t('results.import')}
-          </Button>
-          <Button disabled={chosen.length === 0} onClick={() => void onExport()}>
-            <Download aria-hidden />
-            {chosen.length ? t('results.exportSelected', { n: chosen.length }) : t('results.export')}
-          </Button>
-          <Button disabled={chosen.length === 0} variant="danger-outline" onClick={() => setConfirmDelete(true)}>
-            <Trash2 aria-hidden />
-            {chosen.length ? t('results.deleteSelected', { n: chosen.length }) : t('results.delete')}
-          </Button>
-          <Button variant="primary" disabled={chosen.length !== 2} onClick={compare} title={chosen.length !== 2 ? t('results.compareHint') : undefined}>
-            <GitCompareArrows aria-hidden />
-            {t('results.compareSelected')}
-          </Button>
-        </>
+        // Import, export, delete and compare work on tests: the Configurazioni view has its own actions per row.
+        view === 'runs' && (
+          <>
+            <input ref={fileRef} type="file" accept=".gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
+            <Button onClick={() => fileRef.current?.click()}>
+              <Upload aria-hidden />
+              {t('results.import')}
+            </Button>
+            <Button disabled={chosen.length === 0} onClick={() => void onExport()}>
+              <Download aria-hidden />
+              {chosen.length ? t('results.exportSelected', { n: chosen.length }) : t('results.export')}
+            </Button>
+            <Button disabled={chosen.length === 0} variant="danger-outline" onClick={() => setConfirmDelete(true)}>
+              <Trash2 aria-hidden />
+              {chosen.length ? t('results.deleteSelected', { n: chosen.length }) : t('results.delete')}
+            </Button>
+            <Button variant="primary" disabled={chosen.length !== 2} onClick={compare} title={chosen.length !== 2 ? t('results.compareHint') : undefined}>
+              <GitCompareArrows aria-hidden />
+              {t('results.compareSelected')}
+            </Button>
+          </>
+        )
       }
     >
-      {all.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="relative w-64">
-            <Search aria-hidden className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
-            <Input value={filters.q} onChange={(e) => set({ q: e.target.value })} placeholder={t('results.searchPlaceholder')} aria-label={t('common.search')} className="pl-9" />
-          </div>
-          <Select
-            aria-label={t('results.filterModel')}
-            value={filters.model}
-            onValueChange={(v) => set({ model: v })}
-            className="w-52"
-            options={[{ value: ALL, label: t('results.allModels') }, ...distinct(all, (r) => r.modelName).map((m) => ({ value: m, label: m }))]}
-          />
-          <Select
-            aria-label={t('results.filterGpu')}
-            value={filters.gpu}
-            onValueChange={(v) => set({ gpu: v })}
-            className="w-48"
-            options={[{ value: ALL, label: t('results.allGpus') }, ...distinct(all, (r) => r.gpuName).map((g) => ({ value: g, label: shortGpuName(g) }))]}
-          />
-          <Select
-            aria-label={t('results.filterEngine')}
-            value={filters.engine}
-            onValueChange={(v) => set({ engine: v })}
-            className="w-48"
-            options={[{ value: ALL, label: t('results.allEngines') }, ...engines.map((e) => ({ value: e, label: t(`benchmark.engines.${e as 'external'}`) }))]}
-          />
-          <Select
-            aria-label={t('results.filterStatus')}
-            value={filters.status}
-            onValueChange={(v) => set({ status: v })}
-            className="w-44"
-            options={[
-              { value: ALL, label: t('results.allStatuses') },
-              ...(['completed', 'failed', 'cancelled'] as const).map((s) => ({ value: s, label: t(`result.status.${s}`) })),
-            ]}
-          />
-          <label className="flex items-center gap-2 text-sm font-medium text-fg">
-            <Switch checked={filters.thisPc} onCheckedChange={(v) => set({ thisPc: v })} />
-            {t('results.thisPc')}
-          </label>
-          <span className="ml-auto text-sm text-fg-3 tabular-nums">
-            {[
-              t(countKey(data.length, 'results.countOne', 'results.count'), { n: data.length }),
-              ...(chosen.length ? [t(countKey(chosen.length, 'results.selectedOne', 'results.selected'), { n: chosen.length })] : []),
-            ].join(' · ')}
-          </span>
-        </div>
-      )}
-      {runs.isError ? (
-        <ErrorCard error={apiErrorData(runs.error)} handlers={{ retry: () => void runs.refetch() }} />
-      ) : (
-        <Card className="overflow-hidden">
-          {runs.isPending ? (
-            <div className="flex flex-col gap-2 p-card">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-9 w-full" />
-              ))}
+      <Tabs value={view} onValueChange={setView}>
+        <TabsList aria-label={t('configs.viewLabel')}>
+          <TabsTrigger value="runs">
+            <ListChecks aria-hidden />
+            {t('configs.views.runs')}
+          </TabsTrigger>
+          <TabsTrigger value="configs">
+            <SlidersHorizontal aria-hidden />
+            {t('configs.views.configs')}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="configs">
+          <ConfigsView />
+        </TabsContent>
+        <TabsContent value="runs">
+          {all.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="relative w-64">
+                <Search aria-hidden className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
+                <Input value={filters.q} onChange={(e) => set({ q: e.target.value })} placeholder={t('results.searchPlaceholder')} aria-label={t('common.search')} className="pl-9" />
+              </div>
+              <Select
+                aria-label={t('results.filterModel')}
+                value={filters.model}
+                onValueChange={(v) => set({ model: v })}
+                className="w-52"
+                options={[{ value: ALL, label: t('results.allModels') }, ...distinct(all, (r) => r.modelName).map((m) => ({ value: m, label: m }))]}
+              />
+              <Select
+                aria-label={t('results.filterGpu')}
+                value={filters.gpu}
+                onValueChange={(v) => set({ gpu: v })}
+                className="w-48"
+                options={[{ value: ALL, label: t('results.allGpus') }, ...distinct(all, (r) => r.gpuName).map((g) => ({ value: g, label: shortGpuName(g) }))]}
+              />
+              <Select
+                aria-label={t('results.filterEngine')}
+                value={filters.engine}
+                onValueChange={(v) => set({ engine: v })}
+                className="w-48"
+                options={[{ value: ALL, label: t('results.allEngines') }, ...engines.map((e) => ({ value: e, label: t(`benchmark.engines.${e as 'external'}`) }))]}
+              />
+              <Select
+                aria-label={t('results.filterStatus')}
+                value={filters.status}
+                onValueChange={(v) => set({ status: v })}
+                className="w-44"
+                options={[
+                  { value: ALL, label: t('results.allStatuses') },
+                  ...(['completed', 'failed', 'cancelled'] as const).map((s) => ({ value: s, label: t(`result.status.${s}`) })),
+                ]}
+              />
+              <label className="flex items-center gap-2 text-sm font-medium text-fg">
+                <Switch checked={filters.thisPc} onCheckedChange={(v) => set({ thisPc: v })} />
+                {t('results.thisPc')}
+              </label>
+              <span className="ml-auto text-sm text-fg-3 tabular-nums">
+                {[
+                  t(countKey(data.length, 'results.countOne', 'results.count'), { n: data.length }),
+                  ...(chosen.length ? [t(countKey(chosen.length, 'results.selectedOne', 'results.selected'), { n: chosen.length })] : []),
+                ].join(' · ')}
+              </span>
             </div>
-          ) : all.length === 0 ? (
-            <EmptyState
-              title={t('results.emptyTitle')}
-              description={t('results.emptyBody')}
-              action={
-                <Button variant="primary" asChild>
-                  <Link to="/">{t('results.emptyAction')}</Link>
-                </Button>
-              }
-            />
-          ) : data.length === 0 ? (
-            <EmptyState
-              illustration="search"
-              title={t('results.noMatchTitle')}
-              description={t('results.noMatchBody')}
-              action={<Button onClick={() => setFilters(NO_FILTERS)}>{t('results.resetFilters')}</Button>}
-            />
-          ) : (
-            <DataTable
-              caption={t('results.title')}
-              columns={columns}
-              data={data}
-              getRowId={(r) => r.id}
-              initialSorting={[{ id: 'createdAt', desc: true }]}
-              onRowClick={(r) => void navigate({ to: '/results/$runId', params: { runId: r.id } })}
-            />
           )}
-        </Card>
-      )}
+          {runs.isError ? (
+            <ErrorCard error={apiErrorData(runs.error)} handlers={{ retry: () => void runs.refetch() }} />
+          ) : (
+            <Card className="overflow-hidden">
+              {runs.isPending ? (
+                <div className="flex flex-col gap-2 p-card">
+                  {[0, 1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-9 w-full" />
+                  ))}
+                </div>
+              ) : all.length === 0 ? (
+                <EmptyState
+                  title={t('results.emptyTitle')}
+                  description={t('results.emptyBody')}
+                  action={
+                    <Button variant="primary" asChild>
+                      <Link to="/">{t('results.emptyAction')}</Link>
+                    </Button>
+                  }
+                />
+              ) : data.length === 0 ? (
+                <EmptyState
+                  illustration="search"
+                  title={t('results.noMatchTitle')}
+                  description={t('results.noMatchBody')}
+                  action={<Button onClick={() => setFilters(NO_FILTERS)}>{t('results.resetFilters')}</Button>}
+                />
+              ) : (
+                <DataTable
+                  caption={t('results.title')}
+                  columns={columns}
+                  data={data}
+                  getRowId={(r) => r.id}
+                  initialSorting={[{ id: 'createdAt', desc: true }]}
+                  onRowClick={(r) => void navigate({ to: '/results/$runId', params: { runId: r.id } })}
+                />
+              )}
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

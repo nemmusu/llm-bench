@@ -1,19 +1,20 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Copy, GitCompareArrows } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { configParamsOf } from '../../contract/configs';
 import type { RunResult } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
 import { ExportMenu } from '../components/bench/export-menu';
 import { engineLabelOf, modelLabelOf, shortGpuName } from '../components/bench/format';
-import { rerunOf } from '../components/bench/rerun';
 import { Details } from '../components/bench/result-details';
 import { Launch } from '../components/bench/result-launch';
 import { Overview } from '../components/bench/result-overview';
-import { saveDraft } from '../components/bench/run-context';
 import { copyText } from '../components/bench/servers';
 import { useStartFlow } from '../components/bench/start-flow';
+import { configLabelOf } from '../components/presets/config-label';
+import { PresetActions } from '../components/presets/preset-actions';
+import { usePreset } from '../components/presets/use-preset';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -21,10 +22,31 @@ import { Card, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useI18n } from '../i18n';
-import { apiErrorData, useBenchLocalModels, useBenchSystem, useRun } from '../lib/queries-runs';
-import { useSettings } from '../lib/settings';
+import { apiErrorData, useRun } from '../lib/queries-runs';
 
 const statusTone = { completed: 'success', failed: 'danger', cancelled: 'neutral' } as const;
+
+/** The configuration the run measured (a tune run: its recommended combination), in configuration words. */
+function ConfigLine({ run, combo }: { run: RunResult; combo: number | undefined }) {
+  const f = useI18n();
+  const combination = combo === undefined ? undefined : run.tuning?.combinations[combo];
+  const launch = combination ? { params: combination.params, argv: combination.command.argv } : run.launch;
+  const params = configParamsOf({
+    engineKind: run.engine.kind,
+    params: launch.params,
+    argv: launch.argv,
+    image: run.engine.image,
+    blockCount: run.model.facts?.blockCount,
+    modelContext: run.model.facts?.contextLength,
+  });
+  const label = configLabelOf(run.engine.kind, params, f, { tags: combination?.tags });
+  return (
+    <span className="block text-sm text-fg-2">
+      <span className="font-medium text-fg">{engineLabelOf(run.engine)}</span>
+      {label.text && <span>{` · ${label.text}`}</span>}
+    </span>
+  );
+}
 
 /** One benchmark explained: score, plain-language sentence, KPIs, charts, launch command, log. */
 export function ResultPage() {
@@ -64,13 +86,11 @@ function ResultView({ run }: { run: RunResult }) {
   const f = useI18n();
   const { t, dateTime } = f;
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const { update } = useSettings();
-  const local = useBenchLocalModels();
-  const system = useBenchSystem();
   const flow = useStartFlow();
+  // "Usa queste impostazioni" / "Avvia solo il server così": the same preset logic as everywhere (presets/).
+  const launch = usePreset(run);
   const [tab, setTab] = useState('overview');
-  const rerun = local.data ? rerunOf(run, local.data, system.data?.paths.enginesDir) : undefined;
+  const rerun = launch.preset;
   const modelLabel = modelLabelOf(run.model);
   const engineLabel = engineLabelOf(run.engine);
 
@@ -81,16 +101,6 @@ function ResultView({ run }: { run: RunResult }) {
       return;
     }
     flow.start({ ...rerun.request, allowSharedGpu }, { needs: [], modelLabel, engineLabel });
-  };
-  // The launch tab only offers this once the library is loaded (rerun known) and the model is there.
-  // The run's exact parameters: the core only fills in what they leave unset.
-  const serve = () => flow.serve({ engine: rerun!.request.engine, model: rerun!.request.model, params: run.launch.params }, { modelLabel, engineLabel });
-  // The launch tab only enables this once the library is loaded (rerun known).
-  const useSettingsHere = () => {
-    saveDraft(qc, rerun!.draft);
-    if (rerun!.needsExpert) update({ expertMode: true });
-    toast.success(t('result.launch.appliedToast'));
-    void navigate({ to: '/' });
   };
 
   const errorCard = run.error ? (
@@ -107,6 +117,8 @@ function ResultView({ run }: { run: RunResult }) {
     />
   ) : undefined;
   const gpu = run.hardware.gpus[0];
+  // A "Trova le impostazioni migliori" test is used through its recommended combination.
+  const combo = run.tuning?.recommended;
 
   return (
     <Page
@@ -121,18 +133,21 @@ function ResultView({ run }: { run: RunResult }) {
         </span>
       }
       subtitle={
-        <span className="flex flex-wrap items-center gap-x-2 text-sm text-fg-2">
-          <span>{engineLabel}</span>
-          <span aria-hidden className="text-fg-3">·</span>
-          <span>{gpu ? shortGpuName(gpu.name) : '–'}</span>
-          <span aria-hidden className="text-fg-3">·</span>
-          <span>{dateTime(run.createdAt)}</span>
-          <span aria-hidden className="text-fg-3">·</span>
-          <span>{t(`benchmark.profiles.${run.scenario.profile}`)}</span>
+        <span className="flex flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-x-2 text-sm text-fg-2">
+            <span>{gpu ? shortGpuName(gpu.name) : '–'}</span>
+            <span aria-hidden className="text-fg-3">·</span>
+            <span>{dateTime(run.createdAt)}</span>
+            <span aria-hidden className="text-fg-3">·</span>
+            <span>{t(`benchmark.profiles.${run.scenario.profile}`)}</span>
+          </span>
+          {/* How the engine ran, always in sight: engine · context · cache · what differs from the defaults. */}
+          <ConfigLine run={run} combo={combo} />
         </span>
       }
       actions={
         <>
+          {run.status === 'completed' && <PresetActions run={run} combo={combo} />}
           <Button onClick={() => void navigate({ to: '/compare', search: { a: run.id } })}>
             <GitCompareArrows aria-hidden />
             {t('result.compareWith')}
@@ -155,7 +170,7 @@ function ResultView({ run }: { run: RunResult }) {
           <Details run={run} />
         </TabsContent>
         <TabsContent value="launch">
-          <Launch run={run} rerun={rerun} onRerun={() => doRerun()} onUseSettings={useSettingsHere} onServe={serve} />
+          <Launch run={run} rerun={rerun} onRerun={() => doRerun()} onUseSettings={launch.apply} onServe={launch.serve} />
         </TabsContent>
         <TabsContent value="log">
           <Card className="overflow-hidden">
@@ -178,6 +193,7 @@ function ResultView({ run }: { run: RunResult }) {
         </TabsContent>
       </Tabs>
       {flow.ui}
+      {launch.ui}
     </Page>
   );
 }

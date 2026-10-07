@@ -30,7 +30,35 @@ export function readRunContext(qc: QueryClient, runId: string): RunContext | und
   return qc.getQueryData<RunContext>(key(runId));
 }
 
-/** Choices handed from a result ("Usa queste impostazioni") to the Benchmark page, read once. */
+/** Where a preset comes from: shown by the Benchmark page's banner ("Preset da «…» del 07/10: …"). */
+export interface PresetProvenance {
+  runId: string;
+  /** Index into the run's tuning.combinations. */
+  combo?: number;
+  /** The test, as its model is named ("Qwen3 8B · Q4_K_M"). */
+  label: string;
+  /** When the test ran (ISO). */
+  date: string;
+  /** Generation speed measured at `depth` tokens. */
+  decodeTps?: number;
+  depth?: number;
+  /** Context the configuration was started with. */
+  contextSize?: number;
+}
+
+/** A model to download first (hub GGUF, or a vLLM repo), when it is not on the PC any more. */
+export interface DraftHubModel {
+  repo: string;
+  /** GGUF file in the repo; absent for a vLLM repo. */
+  file?: string;
+  revision: string;
+  name: string;
+  quant?: string;
+  sizeBytes?: number;
+  paramsB?: number;
+}
+
+/** Choices handed from a result ("Usa queste impostazioni", "Usa questo preset") to the Benchmark page, read once. */
 export interface BenchDraft {
   engine: StartRunRequest['engine'];
   localId?: string;
@@ -39,6 +67,9 @@ export interface BenchDraft {
   profile: Profile;
   scenario?: Scenario;
   params?: LaunchParams;
+  /** A preset's model that must be downloaded first. */
+  hub?: DraftHubModel;
+  provenance?: PresetProvenance;
 }
 
 const DRAFT_KEY = ['bench', 'draft'] as const;

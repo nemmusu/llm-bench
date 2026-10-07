@@ -35,6 +35,7 @@ import { profileSchema, scenarioSchema, tuneBudgetSchema, tuneKvTypeSchema, tuni
  *   POST   /api/runs/plan                    (StartRunRequest) -> RunPlan (preview: command, downloads, duration)
  *   GET    /api/runs/active                  -> ActiveRunResponse
  *   GET    /api/runs/tried?weakKey=&sha256=  -> RunSummary[] (results for a model, this GPU first)
+ *   GET    /api/configs?gpu=&model=&engine=&minContext= -> ConfigsResponse (results by configuration, contract/configs.ts)
  *   GET    /api/servers                      -> ServerInfo[] ("Avvia solo il server", "Avvia solo il server così")
  *   POST   /api/servers/plan                 (StartServerRequest) -> ServerPlan (preview: command, downloads, context, fit)
  *   POST   /api/servers                      (StartServerRequest) -> ServerInfo (when ready)
