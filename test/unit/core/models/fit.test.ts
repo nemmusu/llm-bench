@@ -210,6 +210,9 @@ describe('estimateFit — vLLM', () => {
     expect(fp8.kvMiB).toBe(1024);
     const q8 = estimateFit({ facts: llama8b, fileBytes: 16e9, gpu: GPU, engine: 'vllm-native', params: { contextSize: 8192, kvCacheType: 'q8_0' } });
     expect(q8.kvMiB).toBe(512);
+    // vLLM's own fp8 name, and llama.cpp reading it as an 8-bit cache too (1 byte per element).
+    expect(estimateFit({ facts: llama8b, fileBytes: 16e9, gpu: GPU, engine: 'vllm-native', params: { contextSize: 8192, kvCacheType: 'fp8' } }).kvMiB).toBe(512);
+    expect(estimateFit({ facts: llama8b, fileBytes: MIB, gpu: GPU, engine: 'llamacpp-native', params: { contextSize: 8192, kvCacheType: 'fp8' } }).kvMiB).toBe(512);
   });
 
   it('refuses a budget above the free VRAM', () => {

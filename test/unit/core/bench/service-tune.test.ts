@@ -37,12 +37,12 @@ describe('BenchService — tune runs', () => {
 
   it('runs the search and shows it live: the search, the engine in use, the request in flight, the measurements so far', async () => {
     let seen: ActiveRun | undefined;
-    let svc!: BenchService;
+    const holder: { svc?: BenchService } = {};
     const s = serviceSetup(tmp, {
       deps: { resolveModel: async () => small() },
-      adapter: { client: { onRequest: (n) => (n === 6 ? (seen = svc.active()) : undefined) } },
+      adapter: { client: { onRequest: (n) => (n === 6 ? (seen = holder.svc!.active()) : undefined) } },
     });
-    svc = new BenchService(s.deps);
+    const svc = (holder.svc = new BenchService(s.deps));
     const { runId } = await svc.start(request({ profile: 'tune' }));
     await svc.whenIdle();
     expect(seen).toMatchObject({ runId, profile: 'tune', estimatedSeconds: 300 });
