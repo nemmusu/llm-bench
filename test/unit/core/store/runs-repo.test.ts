@@ -100,6 +100,7 @@ describe('summaryOf', () => {
         formulaVersion: 1,
         load: { phases: [] },
         latency: [{ ...latencyPoint(128), decodeTps: stat(), ttftMs: stat(), prefillTps: stat() }],
+        contextSweep: [],
         concurrency: [],
         llamaBench: [],
         vram: { peakMiB: 3000 },

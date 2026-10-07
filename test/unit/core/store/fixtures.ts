@@ -81,6 +81,7 @@ export function makeRun(over: Partial<RunResult> = {}): RunResult {
       formulaVersion: 1,
       load: { coldMs: stat(9000), warmMs: stat(1500), phases: [] },
       latency: [latencyPoint(512), latencyPoint(4096, 180, 12000)],
+      contextSweep: [],
       concurrency: [],
       llamaBench: [],
       vram: { baselineMiB: 1600, peakMiB: 5600, deltaMiB: 4000 },

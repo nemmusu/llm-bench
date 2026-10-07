@@ -22,7 +22,7 @@ export const settingsSchema = z.object({
   /** Last benchmark choices, restored on the home screen. */
   lastEngine: engineConfigSchema.optional(),
   lastModelId: z.string().optional(),
-  lastProfile: z.enum(['quick', 'standard', 'full', 'custom']).default('quick'),
+  lastProfile: z.enum(['quick', 'standard', 'full', 'custom', 'tune']).default('quick'),
   lastParams: launchParamsSchema.optional(),
   /** HF token is never stored here (main process keeps it encrypted with safeStorage). */
   hasHfToken: z.boolean().default(false),

@@ -16,7 +16,8 @@ export const launchParamsSchema = z.object({
   contextSize: z.number().int().positive().optional(),
   gpuLayers: z.number().int().min(0).optional(),
   flashAttention: z.enum(['auto', 'on', 'off']).optional(),
-  kvCacheType: z.enum(['f16', 'q8_0', 'q4_0', 'auto']).optional(),
+  /** llama.cpp -ctk/-ctv (K = V, a quantized type turns flash attention on); vLLM --kv-cache-dtype (q8_0/q4_0 → fp8). */
+  kvCacheType: z.enum(['f16', 'q8_0', 'q4_0', 'fp8', 'auto']).optional(),
   batchSize: z.number().int().positive().optional(),
   ubatchSize: z.number().int().positive().optional(),
   threads: z.number().int().positive().optional(),

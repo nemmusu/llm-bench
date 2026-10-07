@@ -60,7 +60,7 @@ export const FIT_NOTES = {
 export interface FitParams {
   /** Tokens per sequence (llama.cpp -c per slot, vLLM max_model_len when maxModelLen is unset). */
   contextSize?: number;
-  kvCacheType?: 'f16' | 'q8_0' | 'q4_0' | 'auto';
+  kvCacheType?: 'f16' | 'q8_0' | 'q4_0' | 'fp8' | 'auto';
   ubatchSize?: number;
   /** llama.cpp slots (-np) / vLLM concurrent sequences the user wants. */
   parallel?: number;
@@ -101,7 +101,8 @@ function family(engine: EngineKind): 'llamacpp' | 'vllm' {
 }
 
 /** KV cache bytes per element. vLLM has no q8_0/q4_0: both map to its fp8 cache (1 byte). */
-function kvElementBytes(fam: 'llamacpp' | 'vllm', type: FitParams['kvCacheType']): number {
+export function kvElementBytes(fam: 'llamacpp' | 'vllm', type: FitParams['kvCacheType']): number {
+  if (type === 'fp8') return 1;
   if (type === 'q8_0') return fam === 'vllm' ? 1 : 34 / 32;
   if (type === 'q4_0') return fam === 'vllm' ? 1 : 18 / 32;
   return 2;

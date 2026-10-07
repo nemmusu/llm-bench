@@ -747,6 +747,7 @@ export class BenchRunner {
       },
       ...(s.firstTokenMs !== undefined ? { firstTokenAfterLoadMs: s.firstTokenMs } : {}),
       latency,
+      contextSweep: [],
       concurrency: s.concurrency,
       llamaBench: s.llamaBench,
       vram: {

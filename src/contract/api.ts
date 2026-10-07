@@ -3,7 +3,7 @@ import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './en
 import { runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
-import { profileSchema, scenarioSchema } from './results';
+import { profileSchema, scenarioSchema, tuneBudgetSchema, tuneKvTypeSchema, tuningSchema } from './results';
 
 /**
  * HTTP API between renderer and core. All routes live under /api, need
@@ -98,6 +98,8 @@ export const startRunRequestSchema = z.object({
   /** Proceed even if other LLM servers hold VRAM. */
   allowSharedGpu: z.boolean().default(false),
   note: z.string().optional(),
+  /** Profile "tune" ("Trova le impostazioni migliori"): time budget and the optional "fedeltà" check. */
+  tune: z.object({ budget: tuneBudgetSchema.default('fast'), fidelity: z.boolean().default(false) }).optional(),
 });
 export type StartRunRequest = z.infer<typeof startRunRequestSchema>;
 
@@ -136,6 +138,8 @@ export const activeRunSchema = z.object({
   engineLabel: z.string(),
   /** The scenario being run, already fitted to the engine and model. */
   scenario: scenarioSchema,
+  /** Profile "tune": the search so far (attempts, combinations measured), for a reopened live screen. */
+  tuning: tuningSchema.optional(),
 });
 export type ActiveRun = z.infer<typeof activeRunSchema>;
 export const activeRunResponseSchema = z.object({ active: activeRunSchema.nullable() });
@@ -201,6 +205,11 @@ export const serverPlanSchema = z.object({
   params: launchParamsSchema,
   /** Tokens the server can take at once (prompt + answer): llama.cpp ctx-size, vLLM max-model-len. */
   contextSize: z.number().int().optional(),
+  /**
+   * The context and KV cache came from the latest completed "Trova le impostazioni migliori" run of
+   * this model on this GPU (its recommended combination), instead of the VRAM estimate.
+   */
+  tuned: z.object({ runId: z.string(), createdAt: z.string(), contextSize: z.number().int(), kvCacheType: tuneKvTypeSchema }).optional(),
   fit: fitEstimateSchema.optional(),
   warnings: runPlanSchema.shape.warnings,
 });

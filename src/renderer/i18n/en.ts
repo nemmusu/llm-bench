@@ -192,8 +192,21 @@ export const en: Messages = {
     'warm-load': { label: 'Warm load', status: 'Reloading the model: it is now in the PC’s memory, so it should be much faster.' },
     prefill: { label: 'Prompt reading', status: 'The model is reading sample texts of different lengths. I am measuring how fast it reads them.' },
     decode: { label: 'Generation', status: 'The model is writing sample text. I am measuring how many words per second it can produce.' },
+    'context-sweep': {
+      label: 'Context step by step',
+      status: 'Filling the context a bit at a time (1K, 4K, 8K… tokens) and measuring how much it slows down as it fills.',
+    },
     concurrency: { label: 'Many users', status: 'Simulating several people using the model at the same time.' },
     'llama-bench': { label: 'Standard test', status: 'Running llama-bench, llama.cpp’s official test, to compare with community numbers.' },
+    'tune-capacity': {
+      label: 'Largest context',
+      status: 'Looking for how much context the card holds with each KV cache type: starting the engine with bigger and bigger contexts while there is room.',
+    },
+    'tune-variants': {
+      label: 'Settings',
+      status: 'Trying the settings one at a time (flash attention, batch…) and keeping the fastest.',
+    },
+    fidelity: { label: 'Fidelity', status: 'Comparing the text generated with the most precise cache and with the chosen one, for the same prompt.' },
     cleanup: { label: 'Cleaning up', status: 'Closing the engine and freeing the graphics memory.' },
     state: {
       done: 'Done',
@@ -803,18 +816,21 @@ export const en: Messages = {
       standard: 'Standard',
       full: 'Full',
       custom: 'Custom',
+      tune: 'Find the best settings',
     },
     profileTime: {
       quick: '~2 min',
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variable',
+      tune: '5–20 min',
     },
     profileDesc: {
       quick: 'A fast measurement to get an idea: one load and one test text.',
       standard: 'Cold and warm loads, short and long texts, several users at once.',
       full: 'Every measurement, repeated several times, for maximum precision.',
       custom: 'Choose what to measure in the advanced parameters below.',
+      tune: 'I try the settings myself (cache, context, batch…) and show you which one is fastest and how much context your card can hold.',
     },
     scenario: {
       cold1: '1 cold load',
@@ -824,6 +840,7 @@ export const en: Messages = {
       latency: '{prompts}-token prompts, {output} tokens generated, {reps} repetitions',
       concurrency: '{levels} users at once',
       llamaBench: 'llama-bench standard test',
+      contextSweep: 'speed as the context fills up',
     },
     plan: {
       title: 'Preview',

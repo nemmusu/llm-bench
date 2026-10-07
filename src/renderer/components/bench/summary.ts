@@ -56,6 +56,8 @@ export function scenarioLines(scenario: Scenario, f: Pick<Formatters, 't' | 'int
         return t('benchmark.scenario.concurrency', { levels: list(s.levels) });
       case 'llama-bench':
         return t('benchmark.scenario.llamaBench');
+      case 'context-sweep':
+        return t('benchmark.scenario.contextSweep');
     }
   });
 }

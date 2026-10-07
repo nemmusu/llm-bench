@@ -23,9 +23,13 @@ const PROFILES: Record<BuiltinProfile, Step[]> = {
     { kind: 'load', cache: 'cold', reps: 3 },
     { kind: 'load', cache: 'warm', reps: 3 },
     { kind: 'latency', promptTokens: [128, 512, 2048, 8192, 32768], outputTokens: 512, warmup: 2, reps: 10 },
+    { kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2, maxSeconds: 300 },
     { kind: 'concurrency', levels: [1, 2, 4, 8, 16], promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
     { kind: 'llama-bench', pp: 512, tg: 128, reps: 5 },
   ],
+  // "Trova le impostazioni migliori": the tuner launches the engine several times (see tuner.ts);
+  // this step is the template of every context sweep it runs.
+  tune: [{ kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2 }],
 };
 
 export function buildScenario(profile: BuiltinProfile, seed = DEFAULT_SEED): Scenario {
@@ -199,6 +203,10 @@ export function stepSeconds(step: Step, e: Expectations): number {
       );
     case 'llama-bench':
       return e.warmLoadSec + step.reps * (step.pp / e.prefillTps + step.tg / e.decodeTps + 1);
+    case 'context-sweep': {
+      const all = step.depths.reduce((s, d) => s + step.reps * requestSeconds(d, step.outputTokens, e), 0);
+      return step.maxSeconds === undefined ? all : Math.min(all, step.maxSeconds);
+    }
   }
 }
 

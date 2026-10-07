@@ -22,9 +22,27 @@ export const statSchema = z.object({
 });
 export type Stat = z.infer<typeof statSchema>;
 
-export const PROFILES = ['quick', 'standard', 'full', 'custom'] as const;
+/** 'tune' = "Trova le impostazioni migliori": several engine launches, see RunResult.tuning. */
+export const PROFILES = ['quick', 'standard', 'full', 'custom', 'tune'] as const;
 export const profileSchema = z.enum(PROFILES);
 export type Profile = z.infer<typeof profileSchema>;
+
+/**
+ * "Contesto per gradi": with the engine loaded once, prompts that fill the context to increasing
+ * depths. `depths` empty = the default grid (1K, 4K, 8K, 16K, 32K, … up to the launched context
+ * minus output and margin, plus that exact maximum); fitScenario resolves it once the context is known.
+ */
+export const contextSweepStepSchema = z.object({
+  kind: z.literal('context-sweep'),
+  depths: z.array(z.number().int().positive()).default([]),
+  /** Also 25 / 50 / 75 / 100 % of the launched context. */
+  fractions: z.boolean().default(false),
+  outputTokens: z.number().int().positive(),
+  reps: z.number().int().min(1),
+  /** Time budget of the step in seconds: deeper points are skipped once it is spent. */
+  maxSeconds: z.number().int().positive().optional(),
+});
+export type ContextSweepStep = z.infer<typeof contextSweepStepSchema>;
 
 export const stepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('load'), cache: z.enum(['cold', 'warm']), reps: z.number().int().min(1) }),
@@ -43,6 +61,7 @@ export const stepSchema = z.discriminatedUnion('kind', [
     requestsPerWorker: z.number().int().positive(),
   }),
   z.object({ kind: z.literal('llama-bench'), pp: z.number().int(), tg: z.number().int(), reps: z.number().int() }),
+  contextSweepStepSchema,
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -113,6 +132,8 @@ export const metricsSchema = z.object({
   }),
   firstTokenAfterLoadMs: z.number().optional(),
   latency: z.array(latencyPointSchema).default([]),
+  /** "Contesto per gradi": one point per depth (promptTokens = how full the context was), shallow first. */
+  contextSweep: z.array(latencyPointSchema).default([]),
   concurrency: z.array(concurrencyPointSchema).default([]),
   llamaBench: z.array(z.object({ test: z.string(), tps: z.number(), stddev: z.number() })).default([]),
   vram: z.object({
@@ -181,6 +202,138 @@ export const telemetrySeriesSchema = z.object({
 });
 export type TelemetrySeries = z.infer<typeof telemetrySeriesSchema>;
 
+// ---- "Trova le impostazioni migliori" (profile 'tune') ------------------------------------------
+
+/** "Veloce ~5 min" / "Accurata ~20 min": time budget and how many values each dimension tries. */
+export const TUNE_BUDGETS = ['fast', 'thorough'] as const;
+export const tuneBudgetSchema = z.enum(TUNE_BUDGETS);
+export type TuneBudget = z.infer<typeof tuneBudgetSchema>;
+
+/** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8. */
+export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8'] as const;
+export const tuneKvTypeSchema = z.enum(TUNE_KV_TYPES);
+export type TuneKvType = z.infer<typeof tuneKvTypeSchema>;
+
+/**
+ * How one engine launch went. 'spill' = it loaded but did not fit in VRAM: the Windows driver moved
+ * part of it to shared system memory (Shared Usage of the engine process, or a collapse of the
+ * generation speed). It counts as "does not fit", like 'oom'.
+ */
+export const TUNE_OUTCOMES = ['ok', 'oom', 'spill', 'error'] as const;
+export const tuneOutcomeSchema = z.enum(TUNE_OUTCOMES);
+export type TuneOutcome = z.infer<typeof tuneOutcomeSchema>;
+
+/**
+ * Why a launch was made: 'reference' (smallest context, the speed a spill is compared with),
+ * 'capacity' (search of the largest context of a KV type), 'variant' (one dimension changed at that
+ * context), 'sweep' (the full context sweep of a combination), 'offload' (last resort: part of the
+ * model on the CPU), 'fidelity' (optional same-prompt comparison).
+ */
+export const TUNE_STAGES = ['reference', 'capacity', 'variant', 'sweep', 'offload', 'fidelity'] as const;
+export const tuneStageSchema = z.enum(TUNE_STAGES);
+export type TuneStage = z.infer<typeof tuneStageSchema>;
+
+/** Ready-to-paste command of a launch (secrets redacted), as in the run's launch record. */
+export const tuneCommandSchema = z.object({ argv: z.array(z.string()), powershell: z.string(), bash: z.string() });
+export type TuneCommand = z.infer<typeof tuneCommandSchema>;
+
+/** Labels of combinations that are slower by design. */
+export const TUNE_TAGS = ['cpu-offload', 'eager', 'draft'] as const;
+export const tuneTagSchema = z.enum(TUNE_TAGS);
+export type TuneTag = z.infer<typeof tuneTagSchema>;
+
+/** One engine launch of the search, with what it measured. */
+export const tuneAttemptSchema = z.object({
+  stage: tuneStageSchema,
+  /** Exact launch parameters (every searched dimension, contextSize included). */
+  params: launchParamsSchema,
+  kvType: tuneKvTypeSchema,
+  contextSize: z.number().int().positive(),
+  outcome: tuneOutcomeSchema,
+  /** How the spill was seen. */
+  spill: z.enum(['shared-memory', 'decode-collapse']).optional(),
+  error: appErrorSchema.optional(),
+  /** Start → ready, ms. */
+  loadMs: z.number().optional(),
+  /** Peak VRAM of this launch (engine process when attributable, else total minus baseline), MiB. */
+  vramPeakMiB: z.number().optional(),
+  /** Peak shared GPU memory (system RAM) of the engine process, Windows only, MiB. */
+  sharedPeakMiB: z.number().optional(),
+  /** Numbers measured on this launch: the quick probe, the screening depths or the full sweep. */
+  points: z.array(latencyPointSchema).default([]),
+  command: tuneCommandSchema,
+  /** Coordinate descent: this value was kept, or lost against the current best (stage 'variant'). */
+  screen: z.enum(['kept', 'lost']).optional(),
+  /** The combination (index into `combinations`) this launch measured, if any. */
+  combination: z.number().int().min(0).optional(),
+  /** ms from the start of the run. */
+  atMs: z.number().optional(),
+});
+export type TuneAttempt = z.infer<typeof tuneAttemptSchema>;
+
+/** A launch configuration that loaded and was measured with the full context sweep. */
+export const tuneCombinationSchema = z.object({
+  /** Every searched dimension's value (kv, fa, ubatch, batch, offload, draft…) and contextSize = maxContext: ready to launch. */
+  params: launchParamsSchema,
+  kvType: tuneKvTypeSchema,
+  /** Largest context that loaded fully on the GPU without spilling (for this KV type). */
+  maxContext: z.number().int().positive(),
+  vramPeakMiB: z.number().optional(),
+  /** Context sweep at maxContext: one point per depth of the shared grid it can reach (promptTokens = depth). */
+  sweep: z.array(latencyPointSchema).default([]),
+  command: tuneCommandSchema,
+  /** 'ok' = measured; a failure here means the sweep launch itself failed (the attempts say why). */
+  outcome: z.enum(['ok', 'oom', 'spill', 'error', 'skipped']),
+  tags: z.array(tuneTagSchema).default([]),
+});
+export type TuneCombination = z.infer<typeof tuneCombinationSchema>;
+
+export const tuningSchema = z.object({
+  budget: tuneBudgetSchema,
+  /** Hard cap on engine launches. */
+  maxLaunches: z.number().int().positive(),
+  /** The search stopped before the end: time budget or launch cap spent. */
+  stoppedBy: z.enum(['budget', 'launches']).optional(),
+  /** Searched dimensions with the values tried, in search order (kv, fa, ubatch, batch, draft, batchTokens…). */
+  dimensions: z.array(z.object({ key: z.string(), values: z.array(z.union([z.string(), z.number(), z.boolean()])) })).default([]),
+  /** Per KV type: the estimate before loading anything, and the largest context measured. */
+  capacity: z
+    .array(
+      z.object({
+        kvType: tuneKvTypeSchema,
+        /** VRAM-estimate prediction (capped at the model's trained context); undefined = cannot fit. */
+        predictedMax: z.number().int().optional(),
+        /** Largest context that loaded fully on the GPU; undefined = none did (or not tried). */
+        measuredMax: z.number().int().optional(),
+        /** Known without a launch (a less precise type than one that already reached the model's limit). */
+        inferred: z.boolean().default(false),
+        /** Why it was not searched: pruned by the estimate, or it could not add context. */
+        skipped: z.enum(['estimate', 'no-gain', 'budget']).optional(),
+      }),
+    )
+    .default([]),
+  /** Sweep depths shared by all combinations (each combination stops at its own maximum). */
+  depths: z.array(z.number().int().positive()).default([]),
+  attempts: z.array(tuneAttemptSchema).default([]),
+  combinations: z.array(tuneCombinationSchema).default([]),
+  /** Index into combinations: among those reaching the largest context, the fastest at its deepest point. */
+  recommended: z.number().int().min(0).optional(),
+  /** At each depth, the fastest combination (decode, then prefill, then TTFT, then the more precise KV; noise-aware). */
+  fastestByDepth: z.array(z.object({ depth: z.number().int().positive(), combination: z.number().int().min(0) })).default([]),
+  /** Optional "fedeltà" check: greedy tokens with the most precise KV that fits vs the recommended one. An indication, not a quality test. */
+  fidelity: z
+    .object({
+      referenceKv: tuneKvTypeSchema,
+      comparedKv: tuneKvTypeSchema,
+      promptTokens: z.number().int(),
+      tokens: z.number().int(),
+      identical: z.number().int(),
+      firstDivergence: z.number().int().optional(),
+    })
+    .optional(),
+});
+export type Tuning = z.infer<typeof tuningSchema>;
+
 export const runResultSchema = z.object({
   schema: z.literal(RESULT_SCHEMA_VERSION),
   id: z.string(),
@@ -212,6 +365,8 @@ export const runResultSchema = z.object({
   telemetry: telemetrySeriesSchema.optional(),
   logExcerpt: z.string().default(''),
   note: z.string().optional(),
+  /** Profile 'tune' only: the search, every launch and the measured combinations. */
+  tuning: tuningSchema.optional(),
 });
 export type RunResult = z.infer<typeof runResultSchema>;
 
@@ -238,8 +393,15 @@ export const runSummarySchema = z.object({
   warmLoadMs: z.number().optional(),
   vramPeakMiB: z.number().optional(),
   score: z.number().optional(),
-  /** Context the engine was started with (llama.cpp --ctx-size, vLLM --max-model-len), when known. */
+  /**
+   * Context the engine was started with (llama.cpp --ctx-size, vLLM --max-model-len), when known.
+   * Tune runs: the recommended combination's largest context.
+   */
   contextSize: z.number().int().optional(),
+  /** KV cache precision of the launch (tune runs: of the recommended combination), when set. */
+  kvCacheType: z.string().optional(),
+  /** Tune runs: how many combinations were measured. */
+  tunedCombinations: z.number().int().optional(),
   /** Most users served at once in the test (concurrency above 1) and their combined generation speed. */
   parallelUsers: z.number().int().optional(),
   parallelTps: z.number().optional(),

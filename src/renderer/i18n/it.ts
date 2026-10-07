@@ -193,8 +193,21 @@ export const it = {
     'warm-load': { label: 'A caldo', status: 'Ricarico il modello: ora è già nella memoria del PC, quindi dovrebbe essere molto più veloce.' },
     prefill: { label: 'Lettura prompt', status: 'Il modello sta leggendo testi di prova di varie lunghezze. Misuro quanto velocemente li legge.' },
     decode: { label: 'Generazione', status: 'Il modello sta scrivendo testo di prova. Misuro quante parole al secondo riesce a produrre.' },
+    'context-sweep': {
+      label: 'Contesto per gradi',
+      status: 'Riempio il contesto un po’ alla volta (1K, 4K, 8K… token) e misuro quanto rallenta man mano che si riempie.',
+    },
     concurrency: { label: 'Più utenti', status: 'Simulo più persone che usano il modello nello stesso momento.' },
     'llama-bench': { label: 'Test standard', status: 'Eseguo llama-bench, il test ufficiale di llama.cpp, per confrontarti con i numeri della community.' },
+    'tune-capacity': {
+      label: 'Contesto massimo',
+      status: 'Cerco quanto contesto regge la scheda con ogni tipo di cache KV: avvio il motore con contesti sempre più grandi finché c’è posto.',
+    },
+    'tune-variants': {
+      label: 'Impostazioni',
+      status: 'Provo le impostazioni una alla volta (flash attention, batch…) e tengo quella che va più veloce.',
+    },
+    fidelity: { label: 'Fedeltà', status: 'Confronto il testo generato con la cache più precisa e con quella scelta, a parità di prompt.' },
     cleanup: { label: 'Pulizia', status: 'Chiudo il motore e libero la memoria della scheda video.' },
     state: {
       done: 'Completata',
@@ -804,18 +817,21 @@ export const it = {
       standard: 'Standard',
       full: 'Completo',
       custom: 'Personalizzato',
+      tune: 'Trova le impostazioni migliori',
     },
     profileTime: {
       quick: '~2 min',
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variabile',
+      tune: '5–20 min',
     },
     profileDesc: {
       quick: 'Una misura veloce per farti un’idea: un caricamento e un testo di prova.',
       standard: 'Caricamento a freddo e a caldo, testi corti e lunghi, più utenti insieme.',
       full: 'Tutte le misure, ripetute più volte, per la massima precisione.',
       custom: 'Scegli tu cosa misurare nei parametri avanzati qui sotto.',
+      tune: 'Provo da solo le impostazioni (cache, contesto, batch…) e ti mostro quale va più veloce e quanto contesto regge la tua scheda.',
     },
     scenario: {
       cold1: '1 caricamento a freddo',
@@ -825,6 +841,7 @@ export const it = {
       latency: 'prompt da {prompts} token, {output} token generati, {reps} ripetizioni',
       concurrency: '{levels} utenti insieme',
       llamaBench: 'test standard llama-bench',
+      contextSweep: 'velocità con il contesto sempre più pieno',
     },
     plan: {
       title: 'Anteprima',

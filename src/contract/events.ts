@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
-import { runSummarySchema } from './results';
+import { runSummarySchema, tuneAttemptSchema, tuningSchema } from './results';
 
 /** Phases of a benchmark run, in order. Shown as the stepper on the live screen. */
 export const RUN_PHASES = [
@@ -13,8 +13,13 @@ export const RUN_PHASES = [
   'warm-load',
   'prefill',
   'decode',
+  'context-sweep',
   'concurrency',
   'llama-bench',
+  // "Trova le impostazioni migliori": largest context per KV type, then one setting at a time.
+  'tune-capacity',
+  'tune-variants',
+  'fidelity',
   'cleanup',
 ] as const;
 export const runPhaseSchema = z.enum(RUN_PHASES);
@@ -42,6 +47,11 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     tokens: z.number().optional(),
   }),
   z.object({ type: z.literal('run.log'), runId: z.string(), lines: z.array(z.string()) }),
+  /**
+   * Profile "tune": the search so far after every change (an attempt started or ended, a combination
+   * measured). `current` = the launch in progress (no outcome yet: shown as "in corso").
+   */
+  z.object({ type: z.literal('run.tune'), runId: z.string(), tuning: tuningSchema, current: tuneAttemptSchema.omit({ outcome: true }).optional() }),
   z.object({ type: z.literal('run.done'), runId: z.string(), summary: runSummarySchema }),
   z.object({ type: z.literal('run.error'), runId: z.string(), error: appErrorSchema }),
   z.object({ type: z.literal('telemetry'), samples: z.array(gpuSampleSchema) }),
