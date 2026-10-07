@@ -137,9 +137,15 @@ export function usePlan(request: StartRunRequest | undefined) {
 }
 
 /** GET /api/servers: engines started with "Avvia solo il server così". */
-export function useServers() {
+export function useServers(pollMs?: number) {
   const api = useApi();
-  return useQuery({ queryKey: SERVERS_KEY, queryFn: () => api.get<ServerInfo[]>('/api/servers'), staleTime: 5_000 });
+  return useQuery({
+    queryKey: SERVERS_KEY,
+    queryFn: () => api.get<ServerInfo[]>('/api/servers'),
+    staleTime: 5_000,
+    // A server still starting: follow its loading line.
+    refetchInterval: (q) => pollMs ?? (q.state.data?.some((s) => s.loading) ? 1000 : false),
+  });
 }
 
 /** The core's error, or a generic INTERNAL one for anything else. */

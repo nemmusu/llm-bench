@@ -13,12 +13,16 @@ export interface PreSteps {
  * The phases this run goes through, in order. Without a scenario (screen reopened while a run
  * was already going) every measuring phase is listed.
  */
-export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {}): RunPhase[] {
+export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {}, opts: { fidelity?: boolean } = {}): RunPhase[] {
   const has = new Set<RunPhase>(['prepare', 'cleanup']);
   if (pre.install) has.add('install');
   if (pre.download) has.add('download');
   if (!scenario) {
-    for (const p of ['cold-load', 'warm-load', 'prefill', 'decode', 'concurrency', 'llama-bench'] as const) has.add(p);
+    for (const p of ['cold-load', 'warm-load', 'prefill', 'decode', 'context-sweep', 'concurrency', 'llama-bench'] as const) has.add(p);
+  } else if (scenario.profile === 'tune') {
+    // "Trova le impostazioni migliori": largest context per cache, one setting at a time, then the sweeps.
+    for (const p of ['tune-capacity', 'tune-variants', 'context-sweep'] as const) has.add(p);
+    if (opts.fidelity) has.add('fidelity');
   } else {
     for (const step of scenario.steps) {
       if (step.kind === 'load') has.add(step.cache === 'cold' ? 'cold-load' : 'warm-load');
@@ -27,6 +31,7 @@ export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {
         if (step.promptTokens.some((p) => p > 1024)) has.add('prefill');
         if (step.promptTokens.some((p) => p <= 1024)) has.add('decode');
       } else if (step.kind === 'concurrency') has.add('concurrency');
+      else if (step.kind === 'context-sweep') has.add('context-sweep');
       else has.add('llama-bench');
     }
   }
