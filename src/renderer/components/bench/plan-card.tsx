@@ -31,15 +31,27 @@ export interface PlanCardProps {
 
 const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
 
-/** The VRAM verdict and its estimate ("Stima: 6,8 GB su 30,4 GB disponibili"). */
+/**
+ * The VRAM verdict and its estimate ("Stima: 6,8 GB su 30,4 GB disponibili"), and "stima tarata su N
+ * misure" when the measured peaks of this card corrected it.
+ */
 export function FitSummary({ fit }: { fit: FitEstimate }) {
-  const { t, number } = useI18n();
+  const { t, number, percent } = useI18n();
+  const cal = fit.calibration;
   return (
     <span className="flex flex-wrap items-center gap-2">
       <FitBadge level={fit.level} size="sm" />
       <span className="text-fg-2 tabular-nums">
         {t('fit.estimate', { need: `${number(fit.needMiB / MIB_PER_GB, 1)} GB`, available: `${number(fit.availableMiB / MIB_PER_GB, 1)} GB` })}
       </span>
+      {cal && (
+        <span className="inline-flex items-center gap-1 text-xs text-fg-3 tabular-nums">
+          {t('fit.calibrated', { n: cal.samples, err: percent(cal.errorPct / 100, 1) })}
+          <HelpTip term={t('fit.calibrated', { n: cal.samples, err: percent(cal.errorPct / 100, 1) })}>
+            {t('fit.calibratedHelp', { scope: t(cal.scope === 'model' ? 'fit.calibratedModel' : 'fit.calibratedArchitecture') })}
+          </HelpTip>
+        </span>
+      )}
     </span>
   );
 }

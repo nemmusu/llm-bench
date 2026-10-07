@@ -3,6 +3,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import type { RunResult, TuneCombination } from '../../../contract/results';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { UsersTable } from '../bench/concurrency-users';
 import { SweepTable } from '../bench/context-sweep';
 import { MIB_PER_GB } from '../bench/format';
 import { PresetActions } from '../presets/preset-actions';
@@ -15,7 +16,7 @@ import { HelpTip } from '../ui/help-tip';
 import { SegmentedControl } from '../ui/segmented-control';
 import { comboText, depthLabel } from './tune-format';
 import { TuneGlossary } from './tune-sections';
-import { bestValues, CONTEXT_COLUMNS, sortRows, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
+import { bestValues, CONTEXT_COLUMNS, reaches as reachesRow, sortRows, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 
@@ -40,8 +41,13 @@ export const CONTEXT_VIEWS: readonly ColumnView[] = [
 export interface RankingProps {
   run: RunResult & { tuning: NonNullable<RunResult['tuning']> };
   rows: readonly RankRow[];
-  depth: number;
+  /** The compared depth (goal "Un utente"); absent for goal "Più utenti". */
+  depth?: number | undefined;
   depths: readonly number[];
+  /** What the order means and how to read it (default: ranked by generation at the compared depth). */
+  subtitle?: string;
+  /** Accessible name of the table (default: the ranking at the compared depth). */
+  caption?: string;
   onDepth: (depth: number) => void;
   recommended: number | undefined;
   /** The metric columns, in order (default: the one-user context search). */
@@ -53,9 +59,10 @@ export interface RankingProps {
  * any column can sort; those that stop earlier sit greyed at the bottom. Every row opens its
  * measurements and the exact command, and has the preset actions.
  */
-export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, views = CONTEXT_VIEWS }: RankingProps) {
+export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, views = CONTEXT_VIEWS, subtitle, caption }: RankingProps) {
   const f = useI18n();
   const { t } = f;
+  const tableCaption = caption ?? t('tune.ranking.caption', { depth: depthLabel(depth as number, f) });
   // key undefined = the ranking's own order.
   const [sort, setSort] = useState<{ key: string | undefined; dir: SortDir }>({ key: undefined, dir: 'asc' });
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
@@ -132,7 +139,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
           <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.ranking.title')}</h2>
           <HelpTip term={t('tune.ranking.title')}>{t('tune.ranking.help')}</HelpTip>
         </div>
-        {depths.length > 1 && (
+        {depth !== undefined && depths.length > 1 && (
           <div className="flex flex-wrap items-center gap-2">
             <span aria-hidden className="text-sm text-fg-2">
               {t('tune.ranking.compareAt')}
@@ -148,10 +155,10 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
           </div>
         )}
       </div>
-      <p className="px-card pt-1.5 text-sm text-fg-2">{t('tune.ranking.subtitle', { depth: depthLabel(depth, f) })}</p>
-      <div role="region" aria-label={t('tune.ranking.caption', { depth: depthLabel(depth, f) })} tabIndex={0} className="mt-3 overflow-x-auto focus-ring">
+      <p className="px-card pt-1.5 text-sm text-fg-2">{subtitle ?? t('tune.ranking.subtitle', { depth: depthLabel(depth as number, f) })}</p>
+      <div role="region" aria-label={tableCaption} tabIndex={0} className="mt-3 overflow-x-auto focus-ring">
         <table className="w-full border-separate border-spacing-0 text-sm">
-          <caption className="sr-only">{t('tune.ranking.caption', { depth: depthLabel(depth, f) })}</caption>
+          <caption className="sr-only">{tableCaption}</caption>
           <thead>
             <tr>
               {head(undefined, 'asc', t('tune.columns.rank'), false)}
@@ -163,7 +170,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
           </thead>
           <tbody>
             {sorted.map((r) => {
-              const reaches = r.point !== undefined;
+              const reaches = reachesRow(r);
               const expanded = open.has(r.index);
               const text = comboText(r.combo, kind, label);
               return (
@@ -228,6 +235,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
 /** Every depth a combination measured, with repetitions and spread, its memory and the exact command. */
 export function Measures({ combo, title }: { combo: TuneCombination; title: string }) {
   const { t, number, integer, percent } = useI18n();
+  if (combo.concurrency?.length) return <UsersMeasures combo={combo} title={title} />;
   const cvs = combo.sweep.map((p) => p.decodeTps.cv);
   const reps = combo.sweep.map((p) => p.decodeTps.n);
   return (
@@ -238,6 +246,28 @@ export function Measures({ combo, title }: { combo: TuneCombination; title: stri
           combo.vramPeakMiB === undefined ? undefined : t('tune.measures.vram', { size: number(combo.vramPeakMiB / MIB_PER_GB, 1) }),
           t('tune.measures.maxContext', { n: integer(combo.maxContext) }),
           t('tune.measures.reps', { n: Math.min(...reps), cv: percent(Math.max(...cvs), 1) }),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </p>
+      <CodeBlock commands={combo.command} label={t('tune.measures.command', { settings: title })} />
+    </div>
+  );
+}
+
+/** Goal "Più utenti": users 1 … N in order with what each one got, its memory and the exact command. */
+function UsersMeasures({ combo, title }: { combo: TuneCombination; title: string }) {
+  const { t, number, integer } = useI18n();
+  const points = combo.concurrency as NonNullable<TuneCombination['concurrency']>;
+  const n = Math.max(...points.map((p) => p.level));
+  return (
+    <div className="flex flex-col gap-3">
+      <UsersTable caption={t('tune.users.measuresCaption', { settings: title })} points={points} framed />
+      <p className="text-xs text-fg-3 tabular-nums">
+        {[
+          t('tune.users.measuresNote', { n }),
+          combo.vramPeakMiB === undefined ? undefined : t('tune.measures.vram', { size: number(combo.vramPeakMiB / MIB_PER_GB, 1) }),
+          t('tune.measures.maxContext', { n: integer(combo.maxContext) }),
         ]
           .filter(Boolean)
           .join(' · ')}

@@ -20,7 +20,7 @@ import { FitSummary, PlanWarnings } from './plan-card';
 import { ServerReady, useStopServer } from './servers';
 import { Link } from '@tanstack/react-router';
 import { useServers } from '../../lib/queries-runs';
-import { depthLabel, kvName } from '../tune/tune-format';
+import { buildLabel, depthLabel, kvName } from '../tune/tune-format';
 import { engineKindOfLabel } from './live-now';
 import { LoadLine } from './load-line';
 
@@ -201,12 +201,15 @@ function stageKey(stage: string | undefined): 'resolve' | 'download' | 'extract'
 function TunedContext({ tuned }: { tuned: NonNullable<ServerPlan['tuned']> }) {
   const f = useI18n();
   const date = new Intl.DateTimeFormat(f.locale, { day: '2-digit', month: '2-digit' }).format(new Date(tuned.createdAt));
+  const what = { ctx: depthLabel(tuned.contextSize, f), kv: kvName(tuned.kvCacheType, f), date };
   return (
     <>
-      {f.t('servers.flow.contextTuned', { ctx: depthLabel(tuned.contextSize, f), kv: kvName(tuned.kvCacheType, f), date })}{' '}
+      {tuned.users !== undefined ? f.t('servers.flow.contextTunedUsers', { ...what, users: tuned.users }) : f.t('servers.flow.contextTuned', what)}{' '}
       <Link to="/results/$runId" params={{ runId: tuned.runId }} className="rounded-xs font-medium text-accent-text underline-offset-4 hover:underline focus-ring">
         {f.t('servers.flow.contextTunedLink')}
       </Link>
+      {/* "Dal test fatto con b10997; ora usi b11438: fai un ricontrollo rapido." */}
+      {tuned.otherBuild && <span className="mt-1 block text-warning-text">{f.t('servers.flow.otherBuild', { build: buildLabel(tuned.otherBuild.build, f), current: buildLabel(tuned.otherBuild.current, f) })}</span>}
     </>
   );
 }

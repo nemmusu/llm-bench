@@ -2,7 +2,7 @@ import type { RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
-import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsSentences, sessionsTable, type SessionsTable } from './sessions-view';
+import { kvCapacityText, prefixCacheSentences, sessionsGlossary, sessionsOf, sessionsSentences, sessionsTable, type SessionsTable } from './sessions-view';
 
 /**
  * The table by sessions. Headers wrap (they carry the units and the depth); on a narrow window the
@@ -75,7 +75,7 @@ export function LongConversations({ run }: { run: RunResult }) {
     ) : null;
   }
   const table = sessionsTable(points, f);
-  const sentences = sessionsSentences(points, f);
+  const sentences = [...sessionsSentences(points, f), ...prefixCacheSentences(points, f)];
   return (
     <Card className="overflow-hidden" role="region" aria-labelledby="long-conversations-title">
       <CardHeader className="flex-col gap-2 pb-3">

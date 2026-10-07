@@ -18,6 +18,13 @@ export function depthLabel(n: number, f: Pick<Formatters, 'number' | 'integer'>)
   return f.integer(n);
 }
 
+/** An engine build or image as people read it: "b10997", a digest shortened to "sha256:1a2b3c4d5e6f"; unknown in words. */
+export function buildLabel(build: string | undefined, f: Pick<Formatters, 't'>): string {
+  if (build === undefined) return f.t('tune.recheck.unknownBuild');
+  const digest = /^sha256:([0-9a-f]{12})[0-9a-f]+$/.exec(build);
+  return digest ? `sha256:${digest[1] as string}` : build;
+}
+
 /** "q4_0", "f16"; vLLM's automatic choice in words. */
 export function kvName(kv: TuneKvType, f: Pick<Formatters, 't'>): string {
   return kv === 'auto' ? f.t('tune.kvAuto') : kv;

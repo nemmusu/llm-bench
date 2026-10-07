@@ -99,6 +99,22 @@ function lastOne(n: number, t: SessionsFormatters['t']): string {
 }
 
 /**
+ * What the engine itself counted in its prefix cache over each level (vLLM /metrics: tokens found
+ * out of tokens looked up, or its hit rate on older versions), one sentence per level.
+ */
+export function prefixCacheSentences(points: readonly SessionsPoint[], f: Pick<Formatters, 't' | 'integer' | 'percent'>): string[] {
+  return [...points]
+    .sort((a, b) => a.sessions - b.sessions)
+    .flatMap((p) => {
+      const c = p.prefixCache;
+      // The cached tokens of the responses are already the "Contesto riusato" column.
+      if (!c || c.source === 'cached-tokens') return [];
+      if (c.source === 'metrics') return [f.t('longConversations.prefixCache', { n: p.sessions, pct: f.percent(c.hitRate, 0), hits: f.integer(c.hits as number), queries: f.integer(c.queries as number) })];
+      return [f.t('longConversations.prefixCacheRate', { n: p.sessions, pct: f.percent(c.hitRate, 0) })];
+    });
+}
+
+/**
  * Numbers in plain sentences, one per level: what the first message waits, what the cache saves,
  * how long the busiest conversation queues.
  */

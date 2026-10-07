@@ -104,6 +104,18 @@ function ResultView({ run }: { run: RunResult }) {
     flow.start({ ...rerun.request, allowSharedGpu }, { needs: [], modelLabel, engineLabel });
   };
 
+  /** After a "Ricontrollo rapido": the whole search again ("Veloce"), with the same question. */
+  const fullSearch = () => {
+    if (!rerun) return;
+    if (rerun.modelMissing) {
+      toast.error(t('result.launch.modelMissing'));
+      return;
+    }
+    const m = run.tuning?.multi;
+    const tune = { budget: 'fast' as const, fidelity: false, ...(m ? { goal: 'multi' as const, users: m.users, perUserContext: m.perUserContext } : {}) };
+    flow.start({ ...rerun.request, profile: 'tune', tune }, { needs: [], modelLabel, engineLabel });
+  };
+
   const errorCard = run.error ? (
     <ErrorCard
       error={run.error}
@@ -166,7 +178,7 @@ function ResultView({ run }: { run: RunResult }) {
         </TabsList>
         <TabsContent value="overview">
           {run.tuning ? (
-            <TuneOverview run={run as TunedRun} {...(errorCard ? { errorCard } : {})} />
+            <TuneOverview run={run as TunedRun} onFullSearch={fullSearch} {...(errorCard ? { errorCard } : {})} />
           ) : (
             <Overview run={run} onRerun={() => doRerun()} {...(errorCard ? { errorCard } : {})} />
           )}

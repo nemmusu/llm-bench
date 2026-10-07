@@ -1,7 +1,7 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { Check, ChevronsUpDown, Download, HardDrive, Play, Server, Timer, TriangleAlert } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import type { StartRunRequest } from '../../contract/api';
+import type { RunPlan, StartRunRequest } from '../../contract/api';
 import type { Settings } from '../../contract/settings';
 import type { EngineKind } from '../../contract/engines';
 import type { FitEstimate } from '../../contract/models';
@@ -20,7 +20,7 @@ import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
-import { DEFAULT_TUNE, TuneOptions, type TuneRequest } from '../components/tune/tune-options';
+import { DEFAULT_TUNE, TuneOptions, tuneRequestOf, type TuneRequest } from '../components/tune/tune-options';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -181,6 +181,8 @@ function BenchmarkScreen() {
   const [paramsForm, setParamsForm] = useState<ParamsForm>(() => formFromParams(draft?.params ?? settings.lastParams));
   const [scenarioForm, setScenarioForm] = useState<ScenarioForm>(() => formFromScenario(draft?.scenario));
   const [tune, setTune] = useState<TuneRequest>(DEFAULT_TUNE);
+  // The latest tune of the same question, as the last plan said (it decides whether "Ricontrollo rapido" is offered).
+  const [previousTune, setPreviousTune] = useState<RunPlan['previousTune']>(undefined);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -217,13 +219,16 @@ function BenchmarkScreen() {
     ...(custom ? { scenario: parsedScenario.scenario } : {}),
     ...(sendParams ? { params: parsedParams.params } : {}),
     allowSharedGpu: false,
-    ...(effProfile === 'tune' ? { tune: { budget: tune.budget, fidelity: expert && tune.fidelity } } : {}),
+    // "Ricontrollo rapido" only while the plan says the last tune of this question ran with another build.
+    ...(effProfile === 'tune' ? { tune: tuneRequestOf(tune, { expert, previous: previousTune }) } : {}),
   };
   const baseJson = JSON.stringify(base);
   const planJson = useDebounced(valid ? baseJson : '', 400);
   const plan = usePlan(planJson ? (JSON.parse(planJson) as StartRunRequest) : undefined);
   const planError = plan.isError ? apiErrorData(plan.error) : undefined;
   const planData = plan.isError ? undefined : plan.data;
+  // Remembered for the next render (the request depends on it): the React way to keep what a previous render saw.
+  if (planData && JSON.stringify(planData.previousTune) !== JSON.stringify(previousTune)) setPreviousTune(planData.previousTune);
   // The preview of exactly these choices (not the previous one still on screen while typing).
   const currentPlan = planData && !plan.isPlaceholderData && planJson === baseJson ? planData : undefined;
 
@@ -439,7 +444,7 @@ function BenchmarkScreen() {
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
-              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} />}
+              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} />}
             </ChoiceCard>
           </div>
 

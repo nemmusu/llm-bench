@@ -10,17 +10,37 @@ import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
 import { capacitySentence, comboText, depthLabel, recommendedOf, speedSentence } from './tune-format';
 import { deepestPoint, defaultDepth, depthOptions, rankAt } from './tune-logic';
+import { RecheckOverview } from './tune-recheck';
 import { TuneRanking } from './tune-ranking';
+import { UsersOverview } from './tune-users';
 import { CapacityCard, DiscardedAttempts } from './tune-sections';
 
 export type TunedRun = RunResult & { tuning: Tuning };
 
+export interface TuneOverviewProps {
+  run: TunedRun;
+  errorCard?: ReactNode;
+  /** "Fai la ricerca completa" after a "Ricontrollo rapido" that found something different. */
+  onFullSearch?: () => void;
+}
+
 /**
- * Result of "Trova le impostazioni migliori", top to bottom: the summary sentence (numbers only) and
- * the recommended combination, speed against context per combination, the ranking table (the main
+ * Result of "Trova le impostazioni migliori": a "Ricontrollo rapido" (before and now), goal
+ * "Più utenti" (every user busy), else the one-user search with the largest context.
+ */
+export function TuneOverview({ run, errorCard, onFullSearch }: TuneOverviewProps) {
+  const extra = errorCard ? { errorCard } : {};
+  if (run.tuning.recheck) return <RecheckOverview run={run} {...extra} {...(onFullSearch ? { onFullSearch } : {})} />;
+  if (run.tuning.goal === 'multi') return <UsersOverview run={run} {...extra} />;
+  return <ContextOverview run={run} {...extra} />;
+}
+
+/**
+ * One user, the largest context, top to bottom: the summary sentence (numbers only) and the
+ * recommended combination, speed against context per combination, the ranking table (the main
  * element), the discarded launches and the capacity per KV cache type.
  */
-export function TuneOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactNode }) {
+function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactNode }) {
   const f = useI18n();
   const { t } = f;
   const tuning = run.tuning;
