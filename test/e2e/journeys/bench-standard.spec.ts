@@ -86,8 +86,10 @@ test('expert mode: custom plan and launch parameters, exact command, settings re
     await expect(page.getByText('Personalizzato', { exact: true })).toBeVisible();
 
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
-    await expect(page.getByText('contesto 4096')).toBeVisible();
-    await expect(page.getByText('argomenti extra: --metrics')).toBeVisible();
+    // The header says the configuration too: the sentence of this tab is the one checked here.
+    const launch = page.getByRole('tabpanel', { name: 'Come è stato avviato' });
+    await expect(launch.getByText('contesto 4096')).toBeVisible();
+    await expect(launch.getByText('argomenti extra: --metrics')).toBeVisible();
     await page.getByRole('button', { name: 'Mostra comando' }).click();
     await page.getByRole('radio', { name: 'bash' }).click();
     await expect(page.getByRole('region', { name: 'Comando' })).toContainText('GGML_CUDA_FORCE_MMQ=1');

@@ -70,7 +70,9 @@ Quando il server è pronto copi il suo indirizzo (compatibile OpenAI) e lo incol
 
 Gli avvisi gialli o azzurri ti dicono se un risultato potrebbe essere falsato, per esempio "altri programmi stavano usando la GPU", e cosa fare.
 
-Nella scheda **Come è stato avviato** trovi il comando esatto usato (PowerShell o bash) da copiare, e i pulsanti per **rifare lo stesso test**, **usare le stesse impostazioni** o **avviare solo il server** con quella configurazione.
+Nella scheda **Come è stato avviato** trovi il comando esatto usato (PowerShell o bash) da copiare, e i pulsanti per **rifare lo stesso test**, **usare le stesse impostazioni** o **avviare solo il server** con quella configurazione. In cima a ogni risultato c'è la configurazione in breve (contesto, cache KV, quello che cambia rispetto alle impostazioni predefinite) con **Usa questo preset** e **Avvia il server così** a portata di clic.
+
+Nella pagina **Risultati**, la vista **Configurazioni** raggruppa i test per modo di avvio (stesso motore, modello, scheda e impostazioni): una riga per configurazione, dalla più veloce, con la mediana dei test che l'hanno misurata. **Confronta a** sceglie la profondità (quanti token di testo ha già davanti il modello) a cui confrontarle: si vedono solo numeri misurati davvero. **Usa questo preset** porta motore, modello e impostazioni nel Benchmark (con un riquadro che dice da quale test vengono); se il modello non è più sul PC viene riscaricato prima.
 
 Puoi **confrontare** due risultati ed **esportarli** in CSV (anche nel formato per Excel italiano), JSON, Markdown o HTML.
 
