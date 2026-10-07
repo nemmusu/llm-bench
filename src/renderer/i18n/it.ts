@@ -198,6 +198,10 @@ export const it = {
       status: 'Riempio il contesto un po’ alla volta (1K, 4K, 8K… token) e misuro quanto rallenta man mano che si riempie.',
     },
     concurrency: { label: 'Più utenti', status: 'Simulo più persone che usano il modello nello stesso momento.' },
+    sessions: {
+      label: 'Conversazioni lunghe',
+      status: 'Simulo conversazioni lunghe: il primo messaggio legge tutto il contesto, i successivi riusano quanto il server ha già letto.',
+    },
     'llama-bench': { label: 'Test standard', status: 'Eseguo llama-bench, il test ufficiale di llama.cpp, per confrontarti con i numeri della community.' },
     'tune-capacity': {
       label: 'Contesto massimo',

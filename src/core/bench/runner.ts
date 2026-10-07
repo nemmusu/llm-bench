@@ -8,17 +8,22 @@ import {
   RESULT_SCHEMA_VERSION,
   type ConcurrencyPoint,
   type ContextSweepStep,
+  type KvCapacity,
   type LatencyPoint,
   type LaunchRecord,
   type Metrics,
   type RunResult,
   type RunStatus,
   type Scenario,
+  type SessionsPoint,
+  type SessionsStep,
   type Step,
   type Tuning,
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
 import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
+import { parseKvCapacity } from '../engines/shared/kv-capacity';
+import { LoadTracker } from '../engines/shared/load-progress';
 import { parseVllmLoadReport } from '../engines/shared/vllm-logs';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, StreamEvent } from '../inference/types';
@@ -47,6 +52,7 @@ import { buildPrompt, buildTextPrompt, getCorpusTokens } from './prompts';
 import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
+import { runSessions } from './steps/sessions';
 import { runSweep } from './sweep';
 import { BUDGETS, Tuner, type LabEngine, type TuneLab, type TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
@@ -122,6 +128,8 @@ export interface RunInput {
   warnings?: RunNote[];
   /** Profile "tune": what to search (see tuner.ts); the runner provides the engine launches. */
   tune?: TunerInput;
+  /** Usual start → ready time of this model with this engine on this PC (past runs), for run.load. */
+  expectedLoadMs?: { cold?: number; warm?: number };
 }
 
 /** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
@@ -208,6 +216,11 @@ interface RunState {
   contextSweep: LatencyPoint[];
   measured: RequestMetrics[];
   concurrency: ConcurrencyPoint[];
+  sessions: SessionsPoint[];
+  /** "Contesto tenuto in memoria" from the last engine start's log. */
+  kvCapacity?: KvCapacity;
+  /** The engine start in progress (run.load), until publishLaunch. */
+  loading?: LoadTracker;
   llamaBench: LlamaBenchResult[];
   outputExact: boolean;
   tokensApproximate: boolean;
@@ -245,7 +258,7 @@ export function loadSequence(scenario: Scenario): LoadKind[] {
 
 /** Steps that send requests to the running server. */
 function needsServer(step: Step): boolean {
-  return step.kind === 'latency' || step.kind === 'concurrency' || step.kind === 'context-sweep';
+  return step.kind === 'latency' || step.kind === 'concurrency' || step.kind === 'context-sweep' || step.kind === 'sessions';
 }
 
 /**
@@ -378,6 +391,7 @@ export class BenchRunner {
       contextSweep: [],
       measured: [],
       concurrency: [],
+      sessions: [],
       llamaBench: [],
       outputExact: true,
       tokensApproximate: false,
@@ -460,6 +474,7 @@ export class BenchRunner {
       if (step.kind === 'latency') await this.latencyStep(s, step);
       else if (step.kind === 'context-sweep') await this.contextSweepStep(s, step);
       else if (step.kind === 'concurrency') await this.concurrencyStep(s, step, plan);
+      else if (step.kind === 'sessions') await this.sessionsStep(s, step, plan);
     }
     const bench = input.scenario.steps.find((x): x is Extract<Step, { kind: 'llama-bench' }> => x.kind === 'llama-bench');
     if (bench) await this.llamaBenchStep(s, bench, plan);
@@ -505,8 +520,12 @@ export class BenchRunner {
     if (s.instance && s.input.scenario.steps.some(needsServer)) await this.prepareCorpus(s, s.instance);
   }
 
-  /** run.launch: the engine instance now in use (every load, every tune attempt). */
+  /** run.launch: the engine instance now in use (every load, every tune attempt). Ends its run.load. */
   private publishLaunch(s: RunState, plan: LaunchPlan): void {
+    s.loading?.ready();
+    s.loading = undefined;
+    const kv = s.instance && !s.input.tune ? parseKvCapacity(s.instance.logTail(), plan.kind) : undefined;
+    if (kv) s.kvCapacity = kv;
     const r = launchRecordOf(plan, this.deps.displayCommand, this.deps.redact);
     const contextSize = contextOf(plan);
     this.deps.publish({
@@ -677,6 +696,39 @@ export class BenchRunner {
       this.point(s, { stepKind: 'concurrency', point });
       d.publish({ type: 'run.live', runId: s.input.runId, decodeTps: point.aggregateTps });
       this.advance(s, unit);
+    }
+  }
+
+  /** "Conversazioni lunghe" (steps/sessions.ts) on the running engine: one level after the other. */
+  private async sessionsStep(s: RunState, step: SessionsStep, plan: LaunchPlan): Promise<void> {
+    const inst = this.running(s);
+    const d = this.deps;
+    this.setPhase(s, 'sessions');
+    s.marks.push({ t: d.clock.now(), label: 'sessions' });
+    const run = await runSessions(step, {
+      client: inst.client,
+      now: () => d.clock.now(),
+      signal: s.signal,
+      seed: s.input.scenario.seed,
+      ...(s.tokens ? { tokens: s.tokens } : {}),
+      ...(s.bos !== undefined ? { bos: s.bos } : {}),
+      corpus: s.corpus,
+      ...this.modelField(s),
+      nextRep: () => s.requestSeq++,
+      // llama.cpp: one slot per conversation keeps its cache; vLLM shares one prefix cache.
+      ...(isLlamaCpp(plan.kind) ? { slots: plan.params.parallel ?? 1 } : {}),
+      step: (current) => this.step(s, current),
+      point: (point) => this.point(s, { stepKind: 'sessions', point }),
+      record: (m) => this.record(s, m),
+      alive: () => {
+        if (s.instanceExit) throw this.engineExited(s.instanceExit);
+      },
+      levelDone: (n) => this.advance(s, stepSeconds({ ...step, levels: [n] }, DEFAULT_EXPECTATIONS)),
+    });
+    s.sessions = run.points;
+    if (run.skippedFrom !== undefined) {
+      s.notes.push(`long conversations stopped before ${run.skippedFrom} at once: the time budget (${step.maxSeconds} s) was spent`);
+      s.codes.push({ code: 'sessions_budget', params: { sessions: run.skippedFrom, seconds: step.maxSeconds } });
     }
   }
 
@@ -858,9 +910,20 @@ export class BenchRunner {
       },
       () => undefined,
     );
+    // run.load: what the engine is doing while it starts, from its log, until publishLaunch().
+    const expected = s.input.expectedLoadMs?.[label.startsWith('cold') ? 'cold' : 'warm'];
+    const loading = new LoadTracker({
+      kind: s.input.engineConfig.kind,
+      t0: inst.t0,
+      now: () => this.deps.clock.now(),
+      emit: (p) => this.deps.publish({ type: 'run.load', runId: s.input.runId, ...p }),
+      ...(expected !== undefined ? { expectedMs: expected } : {}),
+    });
+    s.loading = loading;
     const pump = async () => {
       try {
         for await (const line of inst.logs) {
+          loading.line(line.text, line.t);
           s.logBuffer.push(line.text);
           if (s.logBuffer.length >= LOG_BATCH_LINES || line.t - s.lastFlush >= LOG_BATCH_MS) this.flushLogs(s);
         }
@@ -1026,7 +1089,8 @@ export class BenchRunner {
       ...(s.firstTokenMs !== undefined ? { firstTokenAfterLoadMs: s.firstTokenMs } : {}),
       latency,
       contextSweep: tuned?.combination.sweep ?? s.contextSweep,
-      sessions: [],
+      sessions: s.sessions,
+      ...(s.kvCapacity ? { kvCapacity: s.kvCapacity } : {}),
       concurrency: s.concurrency,
       llamaBench: s.llamaBench,
       vram: {

@@ -212,11 +212,41 @@ export function vllmWeights(seconds) {
 }
 
 export function vllmModelLoaded(c, seconds) {
+  return [`INFO ${ts()} [gpu_model_runner.py:2007] Model loading took ${(c.vramMiB / 1024).toFixed(4)} GiB and ${seconds.toFixed(6)} seconds`];
+}
+
+/** One redraw of the checkpoint-shards bar (the real one redraws with CR on a single line). */
+export function vllmShards(done, total) {
+  const pct = Math.round((done / total) * 100);
+  return `Loading safetensors checkpoint shards: ${String(pct).padStart(3)}% Completed | ${done}/${total} [00:0${done}<00:0${total - done},  1.20it/s]`;
+}
+
+export function vllmCompile(seconds) {
   return [
-    `INFO ${ts()} [gpu_model_runner.py:2007] Model loading took ${(c.vramMiB / 1024).toFixed(4)} GiB and ${seconds.toFixed(6)} seconds`,
-    `INFO ${ts()} [gpu_worker.py:276] Available KV cache memory: 20.12 GiB`,
-    `INFO ${ts()} [kv_cache_utils.py:849] GPU KV cache size: 164,816 tokens`,
+    `INFO ${ts()} [backends.py:559] Dynamo bytecode transform time: ${(seconds / 2).toFixed(2)} s`,
+    `INFO ${ts()} [monitor.py:34] torch.compile takes ${seconds.toFixed(2)} s in total`,
   ];
+}
+
+/** KV cache sizing, with the comma-grouped numbers vLLM prints. */
+export function vllmKvCache(c) {
+  const fmt = (n) => n.toLocaleString('en-US');
+  return [
+    `INFO ${ts()} [gpu_worker.py:276] Available KV cache memory: 20.12 GiB`,
+    `INFO ${ts()} [kv_cache_utils.py:849] GPU KV cache size: ${fmt(c.kvTokens)} tokens`,
+    `INFO ${ts()} [kv_cache_utils.py:853] Maximum concurrency for ${fmt(c.ctx)} tokens per request: ${(c.kvTokens / c.ctx).toFixed(2)}x`,
+  ];
+}
+
+/** One redraw of the CUDA graphs bar. */
+export function vllmGraphs(done, total) {
+  const pct = Math.round((done / total) * 100);
+  const bar = '█'.repeat(Math.round(pct / 10)).padEnd(10);
+  return `Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): ${String(pct).padStart(3)}%|${bar}| ${done}/${total} [00:00<00:00, 19.40it/s]`;
+}
+
+export function vllmGraphsDone(seconds) {
+  return [`INFO ${ts()} [gpu_model_runner.py:3480] Graph capturing finished in ${Math.max(1, Math.round(seconds))} secs, took 0.84 GiB`];
 }
 
 export function vllmReady(c, seconds) {

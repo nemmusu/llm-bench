@@ -116,6 +116,9 @@ async function main() {
     o.port = Number(val['--port'] ?? 8000);
     o.aliases = names.length > 0 ? names : [model];
     o.ctx = Number(val['--max-model-len'] ?? 4096);
+    // Prefix caching is on by default in vLLM V1; cached tokens are reported only when asked.
+    if (val['--no-enable-prefix-caching']) o.prefixCaching = false;
+    if (val['--enable-prompt-tokens-details']) o.promptTokensDetails = true;
   }
   if (env.FAKE_NVIDIA_SMI_STATE) o.stateFile = env.FAKE_NVIDIA_SMI_STATE;
   if (env.FAKE_ENGINE_COLD_MARKER) o.coldMarker = env.FAKE_ENGINE_COLD_MARKER;

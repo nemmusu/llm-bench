@@ -3,7 +3,7 @@ import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
 import { launchParamsSchema } from './engines';
-import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, tuneAttemptSchema, tuningSchema } from './results';
+import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, sessionsPointSchema, tuneAttemptSchema, tuningSchema } from './results';
 
 /** Phases of a benchmark run, in order. Shown as the stepper on the live screen. */
 export const RUN_PHASES = [
@@ -16,6 +16,8 @@ export const RUN_PHASES = [
   'decode',
   'context-sweep',
   'concurrency',
+  // "Conversazioni lunghe": N conversations at once, the context read once and then reused.
+  'sessions',
   'llama-bench',
   // "Trova le impostazioni migliori": largest context per KV type, then one setting at a time.
   'tune-capacity',
@@ -43,7 +45,7 @@ export type RunLaunch = z.infer<typeof runLaunchSchema>;
  * What is being measured right now. 'first-token' = the 1-token probe right after the first load;
  * 'tune-probe' / 'tune-screen' = the quick checks of a tune attempt (its full sweeps are 'context-sweep').
  */
-export const CURRENT_STEP_KINDS = ['load', 'first-token', 'latency', 'context-sweep', 'concurrency', 'llama-bench', 'tune-probe', 'tune-screen', 'fidelity'] as const;
+export const CURRENT_STEP_KINDS = ['load', 'first-token', 'latency', 'context-sweep', 'concurrency', 'sessions', 'llama-bench', 'tune-probe', 'tune-screen', 'fidelity'] as const;
 export const currentStepSchema = z.object({
   kind: z.enum(CURRENT_STEP_KINDS),
   /** Prompt length of the request in flight (latency, sweeps: same as depth). */
@@ -55,8 +57,11 @@ export const currentStepSchema = z.object({
   rep: z.number().int().optional(),
   reps: z.number().int().optional(),
   warmup: z.boolean().optional(),
-  /** Concurrent users of the level being measured. */
+  /** Concurrent users of the level being measured (sessions: conversations at once). */
   concurrency: z.number().int().optional(),
+  /** Sessions: the message of the conversations being sent (1 = the whole context), out of turns. */
+  turn: z.number().int().optional(),
+  turns: z.number().int().optional(),
   /** Loads: 'cold' / 'warm'; tune attempts: the stage. */
   label: z.string().optional(),
 });
@@ -74,6 +79,8 @@ export const livePointSchema = z.union([
     attempt: z.number().int().min(0).optional(),
   }),
   z.object({ stepKind: z.literal('concurrency'), point: concurrencyPointSchema }),
+  /** "Conversazioni lunghe": one level (point.sessions conversations at once), re-sent after every message. */
+  z.object({ stepKind: z.literal('sessions'), point: sessionsPointSchema }),
 ]);
 export type LivePoint = z.infer<typeof livePointSchema>;
 

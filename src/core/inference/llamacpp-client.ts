@@ -15,6 +15,7 @@ const tokenizeSchema = z.object({ tokens: z.array(z.number()) });
 export const modelsSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
 
 const timingsSchema = z.object({
+  cache_n: z.number().optional(),
   prompt_n: z.number().optional(),
   prompt_ms: z.number().optional(),
   predicted_n: z.number().optional(),
@@ -44,6 +45,7 @@ function finishReason(stopType: string | undefined): string | undefined {
 function toTimings(t: LlamaChunk['timings']): EngineTimings | undefined {
   if (!t) return undefined;
   const out: EngineTimings = {};
+  if (t.cache_n !== undefined) out.cacheN = t.cache_n;
   if (t.prompt_n !== undefined) out.promptN = t.prompt_n;
   if (t.prompt_ms !== undefined) out.promptMs = t.prompt_ms;
   if (t.predicted_n !== undefined) out.predictedN = t.predicted_n;
@@ -75,8 +77,9 @@ function chunkEvent(c: LlamaChunk, t: number): StreamEvent {
 
 /**
  * Client for llama.cpp `llama-server` native endpoints (/health, /tokenize, /completion).
- * Prompts go as token ids, the cache is disabled and EOS ignored so every request processes
- * exactly P prompt tokens and generates exactly N tokens.
+ * Prompts go as token ids, the cache is disabled (unless a long conversation asks for it, with
+ * its own slot) and EOS ignored so every request processes exactly P prompt tokens and generates
+ * exactly N tokens.
  */
 export class LlamaCppClient implements InferenceClient {
   readonly flavor = 'llamacpp' as const;
@@ -131,7 +134,8 @@ export class LlamaCppClient implements InferenceClient {
       ignore_eos: true,
       temperature: 0,
       seed: req.seed,
-      cache_prompt: false,
+      cache_prompt: req.cachePrompt === true,
+      ...(req.slot !== undefined ? { id_slot: req.slot } : {}),
       return_tokens: true,
       stream: true,
     };

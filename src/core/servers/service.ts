@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ServerInfo, ServerPlan, StartServerRequest } from '../../contract/api';
 import { AppError } from '../../contract/errors';
 import type { Clock } from '../deps';
+import { LoadTracker } from '../engines/shared/load-progress';
 import type { EngineAdapter, EngineInstance, LaunchPlan, ModelTarget } from '../engines/types';
 
 /** A server resolved down to its exact command (BenchService.prepareServer). */
@@ -13,6 +14,8 @@ export interface ServerLaunch {
   contextSize?: number;
   /** The model name other programs use (what the server's API reports). */
   apiName?: string;
+  /** Usual start → ready time of this model with this engine on this PC, when known. */
+  expectedLoadMs?: number;
 }
 
 export interface ServeServiceDeps {
@@ -36,6 +39,8 @@ export interface ServeServiceDeps {
 interface Running {
   info: ServerInfo;
   instance: EngineInstance;
+  /** Still starting: aborts the start (DELETE while loading). */
+  cancel?: () => void;
 }
 
 /**
@@ -65,12 +70,17 @@ export class ServeService {
     const blocked = this.deps.blockedBy();
     if (blocked) throw blocked;
     const marker = `gpubench-${randomUUID()}`;
-    const { model, adapter, launch: plan, contextSize, apiName } = await this.deps.prepare(req, marker);
-    const instance = await adapter.start(plan, signal);
+    const { model, adapter, launch: plan, contextSize, apiName, expectedLoadMs } = await this.deps.prepare(req, marker);
+    // Cancelled by the caller (shutdown) or by DELETE while it is still loading.
+    const starting = new AbortController();
+    const cancel = () => starting.abort();
+    if (signal.aborted) cancel();
+    signal.addEventListener('abort', cancel, { once: true });
+    let instance: EngineInstance;
     try {
-      await instance.waitReady(signal);
+      instance = await adapter.start(plan, starting.signal);
     } catch (e) {
-      await instance.stop().catch(() => undefined);
+      signal.removeEventListener('abort', cancel);
       throw e;
     }
     const shown = this.deps.redact(plan.argv, plan.env);
@@ -84,19 +94,51 @@ export class ServeService {
       command: { argv: shown.argv, ...this.deps.displayCommand(shown.argv, shown.env) },
       contextSize,
     };
-    this.running.set(info.id, { info, instance });
+    // Listed while it loads (with what it is doing now), so the servers list can show it.
+    const entry: Running = { info, instance, cancel };
+    this.running.set(info.id, entry);
     this.deps.onChange();
+    const loading = new LoadTracker({
+      kind: plan.kind,
+      t0: instance.t0,
+      now: () => this.deps.clock.now(),
+      emit: (p) => {
+        if (entry.cancel) entry.info = { ...entry.info, loading: p };
+      },
+      ...(expectedLoadMs !== undefined ? { expectedMs: expectedLoadMs } : {}),
+    });
+    // Draining the log also keeps it from piling up while the server runs.
+    void (async () => {
+      for await (const line of instance.logs) loading.line(line.text, line.t);
+    })().catch(() => undefined);
+    try {
+      await instance.waitReady(starting.signal);
+    } catch (e) {
+      if (this.running.get(info.id) === entry) {
+        this.running.delete(info.id);
+        this.deps.onChange();
+      }
+      await instance.stop().catch(() => undefined);
+      throw e;
+    } finally {
+      signal.removeEventListener('abort', cancel);
+    }
+    delete entry.cancel;
+    loading.ready();
+    const { loading: _done, ...ready } = entry.info;
+    entry.info = ready;
     // If the engine dies on its own, forget it.
     void instance.exited.then(() => {
       if (this.running.delete(info.id)) this.deps.onChange();
     });
-    return info;
+    return entry.info;
   }
 
   async stop(id: string): Promise<void> {
     const r = this.running.get(id);
     if (!r) throw new AppError('VALIDATION', 'No such server', { params: { id, reason: 'not_found' } });
     this.running.delete(id);
+    r.cancel?.();
     try {
       await r.instance.stop();
     } finally {
