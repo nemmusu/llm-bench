@@ -4,10 +4,15 @@ import type { ApiFlavor } from '../../contract/engines';
 export interface Usage {
   promptTokens?: number;
   completionTokens?: number;
+  /** Prompt tokens taken from the prefix cache (vLLM usage.prompt_tokens_details.cached_tokens). */
+  cachedTokens?: number;
 }
 
 /** llama.cpp `timings` object (all optional: other engines don't send it). */
 export interface EngineTimings {
+  /** Prompt tokens taken from the slot's cache (not read again). */
+  cacheN?: number;
+  /** Prompt tokens actually read, and how long that took. */
   promptN?: number;
   promptMs?: number;
   predictedN?: number;
@@ -42,6 +47,13 @@ export interface GenerateRequest {
   seed: number;
   /** Model name for OpenAI-style APIs. */
   model?: string;
+  /**
+   * llama.cpp: let the server reuse what it already read (cache_prompt). Off unless asked: every
+   * other measurement must read its whole prompt. vLLM's prefix cache needs no request field.
+   */
+  cachePrompt?: boolean;
+  /** llama.cpp: run on this slot (id_slot), so a conversation finds its own cache again. */
+  slot?: number;
 }
 
 export interface InferenceClient {

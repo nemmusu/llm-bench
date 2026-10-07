@@ -130,6 +130,9 @@ async function main() {
     if (val['--max-num-batched-tokens'] !== undefined) o.ubatch = Number(val['--max-num-batched-tokens']);
     if (val['--gpu-memory-utilization'] !== undefined) o.gpuMemoryUtilization = Number(val['--gpu-memory-utilization']);
     o.eager = val['--enforce-eager'] !== undefined;
+    // Prefix caching is on by default in vLLM V1; cached tokens are reported only when asked.
+    if (val['--no-enable-prefix-caching']) o.prefixCaching = false;
+    if (val['--enable-prompt-tokens-details']) o.promptTokensDetails = true;
   }
   if (env.FAKE_NVIDIA_SMI_STATE) o.stateFile = env.FAKE_NVIDIA_SMI_STATE;
   if (env.FAKE_ENGINE_COLD_MARKER) o.coldMarker = env.FAKE_ENGINE_COLD_MARKER;

@@ -55,6 +55,94 @@ export function nominalDepth(depth: number): number {
   return up - depth <= Math.max(256, up * 0.01) ? up : depth;
 }
 
+// ---- "Conversazioni lunghe" (step 'sessions') and "Contesto tenuto in memoria" ------------------
+
+/**
+ * N conversations at once, each with its own long context (no shared prefix between them). Message 1
+ * sends `depth` tokens; every later message re-sends the conversation so far (previous prompt +
+ * previous answer) plus `followupTokens` of new text, with the engine's prefix cache ON: what the
+ * server already read should not be read again. Levels run in ascending order.
+ */
+export const sessionsStepSchema = z.object({
+  kind: z.literal('sessions'),
+  /**
+   * First-message prompt per conversation, tokens; 0 = as large as the launched per-conversation
+   * context allows (the whole conversation must fit: depth + every answer and follow-up).
+   * A depth > 0 sizes the launch context like a latency prompt does; 0 never grows it.
+   */
+  depth: z.number().int().min(0).default(0),
+  /** With depth 0: at most this many tokens (profile "Completo": 32 768). */
+  maxDepth: z.number().int().positive().optional(),
+  /** Conversations at once, e.g. [1, 2]. */
+  levels: z.array(z.number().int().positive()).min(1),
+  /** Messages per conversation, the first included. */
+  turns: z.number().int().min(1).default(4),
+  /** New text of every later message, tokens. */
+  followupTokens: z.number().int().positive().default(256),
+  outputTokens: z.number().int().positive().default(256),
+  /** Time budget: levels that would not fit in what is left are skipped. */
+  maxSeconds: z.number().int().positive().optional(),
+});
+export type SessionsStep = z.infer<typeof sessionsStepSchema>;
+
+/** One level of "Conversazioni lunghe": N conversations at once. */
+export const sessionsPointSchema = z.object({
+  /** Conversations at once. */
+  sessions: z.number().int().positive(),
+  /** First-message prompt per conversation, tokens. */
+  depth: z.number().int().positive(),
+  turns: z.number().int().positive(),
+  outputTokens: z.number().int().positive(),
+  followupTokens: z.number().int().positive(),
+  /** First message of every conversation: the whole context is read. */
+  firstTurn: z.object({
+    /** Send → first token. */
+    ttftMs: statSchema,
+    /**
+     * Each request's own reading speed on the tokens it had to read (not cached): engine timings when
+     * reported (llama.cpp), else tokens / (TTFT − queue wait when measured by the engine), else tokens / TTFT.
+     */
+    prefillTps: statSchema,
+    /** Time a request waited before its own reading started (see queueEstimated). */
+    queueWaitMs: statSchema,
+    decodeTps: statSchema,
+  }),
+  /** Messages 2…turns: the context so far should come from the cache. Absent when turns = 1. */
+  laterTurns: z
+    .object({
+      ttftMs: statSchema,
+      /** Share of the prompt the engine took from its cache (0..1); absent = the engine did not say (never guessed). */
+      cachedShare: statSchema.optional(),
+      decodeTps: statSchema,
+    })
+    .optional(),
+  /** Context tokens read per second by the server as a whole on first messages: total read / union of the reading windows. */
+  aggregatePrefillTps: z.number().optional(),
+  /**
+   * true = queue wait estimated as TTFT − tokens to read / the reading speed of one conversation alone
+   * (level 1, else the fastest request); false = TTFT − the engine's own reading time (llama.cpp timings).
+   */
+  queueEstimated: z.boolean(),
+  /** Requests sent and failed at this level. */
+  requests: z.number().int().min(0),
+  errors: z.number().int().min(0),
+});
+export type SessionsPoint = z.infer<typeof sessionsPointSchema>;
+
+/**
+ * "Contesto tenuto in memoria": tokens the KV cache can hold, read from the engine's start log
+ * (vLLM "GPU KV cache size: 889,820 tokens"; llama.cpp n_ctx / KV cells).
+ */
+export const kvCapacitySchema = z.object({
+  tokens: z.number().int().positive(),
+  /**
+   * How many requests of `tokens` tokens fit at once: vLLM "Maximum concurrency for 200,000 tokens per
+   * request: 4.45x"; llama.cpp split slots (n_ctx_seq tokens × n_seq_max).
+   */
+  maxConcurrencyAtTokens: z.object({ tokens: z.number().int().positive(), concurrency: z.number().positive() }).optional(),
+});
+export type KvCapacity = z.infer<typeof kvCapacitySchema>;
+
 export const stepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('load'), cache: z.enum(['cold', 'warm']), reps: z.number().int().min(1) }),
   z.object({
@@ -73,6 +161,7 @@ export const stepSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('llama-bench'), pp: z.number().int(), tg: z.number().int(), reps: z.number().int() }),
   contextSweepStepSchema,
+  sessionsStepSchema,
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -167,6 +256,10 @@ export const metricsSchema = z.object({
   /** "Contesto per gradi": one point per depth (promptTokens = how full the context was), shallow first. */
   contextSweep: z.array(latencyPointSchema).default([]),
   concurrency: z.array(concurrencyPointSchema).default([]),
+  /** "Conversazioni lunghe": one point per level (conversations at once), ascending. */
+  sessions: z.array(sessionsPointSchema).default([]),
+  /** "Contesto tenuto in memoria", when the engine's log said. */
+  kvCapacity: kvCapacitySchema.optional(),
   llamaBench: z.array(z.object({ test: z.string(), tps: z.number(), stddev: z.number() })).default([]),
   vram: z.object({
     baselineMiB: z.number().optional(),

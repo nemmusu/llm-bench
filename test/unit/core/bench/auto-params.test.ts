@@ -54,6 +54,7 @@ describe('limitsFor with a unified KV cache', () => {
       engineKind: 'llamacpp-native',
       contextSize: 8192,
       maxConcurrency: 4,
+      sharedPool: true,
     });
     expect(limitsFor('llamacpp-native', { ...empty, contextSize: 8192, parallel: 4 })).toMatchObject({ contextSize: 2048 });
     expect(limitsFor('llamacpp-native', empty)).toEqual({ engineKind: 'llamacpp-native', maxConcurrency: 1 });
