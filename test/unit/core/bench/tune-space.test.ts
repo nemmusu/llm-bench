@@ -70,8 +70,10 @@ describe('search spaces', () => {
     expect(s.base('f16')).toEqual({ kv: 'f16', fa: 'on', ub: 512, b: 2048, draft: false });
     const dims = Object.fromEntries(s.dimensions.map((d) => [d.key, d]));
     expect(dims.ub!.values(s.base('f16'))).toEqual([512, 256, 1024, 2048]);
-    expect(dims.b!.values({ ...s.base('f16'), ub: 512 })).toEqual([2048, 4096]);
-    expect(dims.b!.values({ ...s.base('f16'), ub: 4096 })).toEqual([4096]);
+    // b in {current, ub, 2048, 4096, 8192} with b ≥ ub (llama.cpp clamps ub to b).
+    expect(dims.b!.values({ ...s.base('f16'), ub: 512 })).toEqual([2048, 512, 4096, 8192]);
+    expect(dims.b!.values({ ...s.base('f16'), ub: 4096 })).toEqual([4096, 8192]);
+    expect(s.params({ ...s.base('f16'), ub: 4096 }, 8192)).toMatchObject({ ubatchSize: 4096, batchSize: 4096 });
     expect(dims.draft!.values(s.base('f16'))).toEqual([false, true]);
     const spec = { ...s.base('f16'), draft: true };
     expect(s.params(spec, 8192).extraArgs).toEqual(['-md', 'draft.gguf']);
@@ -79,10 +81,11 @@ describe('search spaces', () => {
   });
 
   it('vLLM: auto / fp8, batched tokens, one sequence, the fitted memory share, eager as a last resort', () => {
-    const s = vllmSpace({ budget: 'thorough', params: P({ dtype: 'bfloat16' }), gpuMemoryUtilization: 0.93 });
+    const s = vllmSpace({ budget: 'thorough', params: P({ dtype: 'bfloat16' }), utilizations: [0.93, 0.9] });
     expect(s.kvLadder).toEqual(['auto', 'fp8']);
     expect(s.dimensions.map((d) => [d.key, d.values(s.base('auto'))])).toEqual([['bt', [2048, 8192, 16384]]]);
-    expect(s.params(s.base('fp8'), 40960)).toEqual({ dtype: 'bfloat16', env: {}, maxModelLen: 40960, kvCacheType: 'fp8', batchSize: 2048, parallel: 1, gpuMemoryUtilization: 0.93, extraArgs: [] });
+    expect(s.startup).toEqual({ key: 'gmu', values: [0.93, 0.9] });
+    expect(s.params({ ...s.base('fp8'), gmu: 0.93 }, 40960)).toEqual({ dtype: 'bfloat16', env: {}, maxModelLen: 40960, kvCacheType: 'fp8', batchSize: 2048, parallel: 1, gpuMemoryUtilization: 0.93, extraArgs: [] });
     const eager = { ...s.base('fp8'), eager: true };
     expect(s.params(eager, 4096).extraArgs).toEqual(['--enforce-eager']);
     expect(s.tags(eager)).toEqual(['eager']);

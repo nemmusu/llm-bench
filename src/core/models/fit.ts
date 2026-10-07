@@ -12,7 +12,9 @@
  *  - availability starts from the FREE VRAM, not the total;
  *  - vLLM follows its own rule (gpu_memory_utilization × total must be free; the KV budget must
  *    hold at least one sequence of max_model_len) and reports the concurrency it allows;
- *  - llama.cpp partial offload reports the largest -ngl that fits.
+ *  - llama.cpp partial offload reports the largest -ngl that fits;
+ *  - llama.cpp estimates can be calibrated with the VRAM peaks measured on this GPU (calibration.ts):
+ *    the KV cache + compute buffer part is scaled (and, for the very same model, offset) to match.
  */
 import type { LaunchParams, EngineKind } from '../../contract/engines';
 import type { FitEstimate, FitLevel, HubFile } from '../../contract/models';
@@ -74,6 +76,20 @@ export interface FitParams {
   maxModelLen?: number;
 }
 
+/**
+ * Correction from measured VRAM peaks (llama.cpp only: vLLM reserves its whole memory share whatever
+ * the context). need = weights + CUDA context + offsetMiB + scale × (KV cache + compute buffer).
+ */
+export interface FitCalibration {
+  scale: number;
+  offsetMiB: number;
+  /** Measurements it comes from (at least 2). */
+  samples: number;
+  /** Median error of the corrected estimate on those measurements, % of the measured peak. */
+  errorPct: number;
+  scope: 'model' | 'architecture';
+}
+
 export interface FitInput {
   facts: ModelFactsEx;
   /** Bytes of all weight files (every shard). */
@@ -81,6 +97,7 @@ export interface FitInput {
   gpu: GpuMem;
   engine: EngineKind;
   params?: FitParams;
+  calibration?: FitCalibration;
 }
 
 export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
@@ -90,6 +107,12 @@ export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
   if (p.kvCacheType !== undefined) out.kvCacheType = p.kvCacheType;
   if (p.ubatchSize !== undefined) out.ubatchSize = p.ubatchSize;
   if (p.parallel !== undefined) out.parallel = p.parallel;
+  // llama.cpp -c is the whole context: with several slots GPU Bench shares one pool (--kv-unified)
+  // unless the extra arguments split it (each slot then gets -c / slots).
+  if (p.parallel !== undefined && p.parallel > 1) {
+    out.kvUnified = !p.extraArgs.some((a) => a === '--no-kv-unified' || a === '-no-kvu');
+    if (!out.kvUnified && p.contextSize !== undefined) out.contextSize = Math.max(1, Math.floor(p.contextSize / p.parallel));
+  }
   if (p.flashAttention !== undefined) out.flashAttention = p.flashAttention;
   if (p.gpuMemoryUtilization !== undefined) out.gpuMemoryUtilization = p.gpuMemoryUtilization;
   if (p.maxModelLen !== undefined) out.maxModelLen = p.maxModelLen;
@@ -251,8 +274,13 @@ export function estimateFit(input: FitInput): FitEstimate {
   const kvBytes = llamaKvBytes(layout, ctx, ub, seqs, unified, elem);
   const fullCells = Math.ceil(ctx / KV_PAD) * KV_PAD * (unified ? 1 : seqs);
   const computeBytes = llamaComputeBytes(facts, fullCells, ub, p.flashAttention);
-  const kvMiB = Math.round(kvBytes / MIB);
-  const overheadMiB = CUDA_CONTEXT_MIB + Math.round(computeBytes / MIB);
+  const rawKvMiB = Math.round(kvBytes / MIB);
+  const computeMiB = Math.round(computeBytes / MIB);
+  const rawNeedMiB = weightsMiB + rawKvMiB + CUDA_CONTEXT_MIB + computeMiB;
+  const cal = input.calibration;
+  // Calibrated: the measured peaks of this GPU scale the KV cache + compute buffer part.
+  const kvMiB = cal ? Math.round(cal.scale * rawKvMiB) : rawKvMiB;
+  const overheadMiB = cal ? Math.max(0, Math.round(CUDA_CONTEXT_MIB + cal.offsetMiB + cal.scale * computeMiB)) : CUDA_CONTEXT_MIB + computeMiB;
   const needMiB = weightsMiB + kvMiB + overheadMiB;
   const availableMiB = Math.max(1, gpu.freeMiB);
   const utilization = needMiB / availableMiB;
@@ -267,6 +295,7 @@ export function estimateFit(input: FitInput): FitEstimate {
     contextSize: ctx,
     basis: fromFile ? 'file-size' : 'params-heuristic',
     notes,
+    ...(cal ? { calibration: { samples: cal.samples, errorPct: cal.errorPct, scope: cal.scope, rawNeedMiB } } : {}),
   };
   const level = levelFor(utilization, true);
   if (level) {

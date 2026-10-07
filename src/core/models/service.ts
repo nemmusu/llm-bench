@@ -7,7 +7,7 @@ import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFi
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
-import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitParams, type QuantChoice } from './fit';
+import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitCalibration, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
@@ -25,6 +25,8 @@ export interface ModelsServiceOptions {
   /** Hash local models in the background after each scan (default true). */
   autoHash?: boolean;
   hub?: HubClient;
+  /** The correction from VRAM peaks measured on this GPU for a model with an engine (llama.cpp); undefined = none. */
+  calibration?: (model: { sha256?: string; weakKey: string; architecture?: string }, engine: EngineKind) => Promise<FitCalibration | undefined>;
 }
 
 export interface ModelSearchOptions extends SearchOptions {
@@ -232,9 +234,16 @@ export class ModelsService {
   async fit(req: FitRequest): Promise<FitEstimate> {
     const gpu = await this.gpu();
     const params: FitParams = fitParamsFrom(req.params);
+    // Corrected with the peaks measured here, when there are enough ("stima tarata su N misure").
+    const calibrated = async (model: { sha256?: string; weakKey: string }, facts: ModelFactsEx): Promise<{ calibration?: FitCalibration }> => {
+      const c = await this.opts.calibration?.({ ...model, ...(facts.architecture ? { architecture: facts.architecture } : {}) }, req.engine).catch(() => undefined);
+      return c ? { calibration: c } : {};
+    };
     if (req.localId) {
       const m = await this.get(req.localId);
-      return estimateFit({ facts: m.identity.facts ?? {}, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, params });
+      const facts = m.identity.facts ?? {};
+      const id = { weakKey: m.identity.weakKey, ...(m.identity.sha256 ? { sha256: m.identity.sha256 } : {}) };
+      return estimateFit({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, params, ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {
       const files = await this.hub.files(req.repo);
@@ -244,7 +253,10 @@ export class ModelsService {
       const first = [...group].sort((a, b) => a.path.localeCompare(b.path))[0] as HubFile;
       const { facts } = await this.hub.ggufFacts(req.repo, first.path);
       const fileBytes = group.reduce((a, f) => a + f.sizeBytes, 0);
-      return estimateFit({ facts, fileBytes, gpu, engine: req.engine, params });
+      // The weak key a downloaded copy will have: its measurements count once it was benchmarked.
+      const name = path.posix.basename(first.path);
+      const key = weakKey({ repo: req.repo, file: name, quant: quantFromFilename(name), sizeBytes: fileBytes });
+      return estimateFit({ facts, fileBytes, gpu, engine: req.engine, params, ...(await calibrated({ weakKey: key }, facts)) });
     }
     if (req.repo) {
       const { facts, fileBytes } = await this.hub.configFacts(req.repo);

@@ -91,10 +91,12 @@ describe('buildTuneSetup', () => {
 
   it('vLLM: auto / fp8, the memory share fitted to the free VRAM, eager as a last resort', async () => {
     const s = await buildTuneSetup(deps({ samples: [sample({ memUsedMiB: 2000 })] }), { engine: { kind: 'vllm-docker' } }, prepared({ engine: { kind: 'vllm-docker' } }));
-    expect(s.eager).toBe(true);
+    expect(s.space.extensions).toEqual([{ eager: true }]);
     expect(s.space.kvLadder).toEqual(['auto', 'fp8']);
-    expect(s.space.params(s.space.base('auto'), 8192).gpuMemoryUtilization).toBe(0.91);
+    // The memory share fitted to the free VRAM first, then the usual steps below it.
+    expect(s.space.startup).toEqual({ key: 'gmu', values: [0.91, 0.9, 0.85, 0.8] });
     const tight = await buildTuneSetup(deps({ samples: [sample({ memUsedMiB: 30000 })] }), { engine: { kind: 'vllm-native' } }, prepared());
+    expect(tight.space.startup).toBeUndefined();
     expect(tight.space.params(tight.space.base('auto'), 8192)).not.toHaveProperty('gpuMemoryUtilization');
     expect(vllmTuneUtilization(undefined)).toBeUndefined();
     expect(vllmTuneUtilization({ totalMiB: 32000, freeMiB: 31000 })).toBe(0.94);

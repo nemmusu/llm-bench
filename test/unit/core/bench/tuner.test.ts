@@ -22,7 +22,7 @@ import {
 } from '../../../../src/core/bench/tuner';
 import { memoryPlan, speeds, type FakeProfile } from '../../../fakes/fake-engine/server.mjs';
 import { TUNE_PROFILE } from '../../../fakes/fake-engine/profiles.mjs';
-import { point } from './tune-helpers';
+import { concurrencyPoint, point, sessionsPoint } from './tune-helpers';
 
 const P = (over: Partial<LaunchParams> = {}) => launchParamsSchema.parse(over);
 
@@ -44,6 +44,9 @@ interface LabOptions {
   /** Replaces the generation speed of some requests. */
   decode?: (p: LaunchParams, depth: number) => number | undefined;
   noVram?: boolean;
+  /** Users at once: failed requests of a level, and the later messages' TTFT of the conversations. */
+  usersErrors?: (p: LaunchParams, level: number) => number;
+  laterTtft?: (p: LaunchParams) => number;
 }
 
 const ncmoeOf = (p: LaunchParams) => {
@@ -105,6 +108,20 @@ class Lab implements TuneLab {
           memory: () => {
             const shared = o.shared?.(params, requests);
             return { ...(o.noVram ? {} : { vramPeakMiB: plan.vramMiB }), ...(shared !== undefined ? { sharedPeakMiB: shared } : {}) };
+          },
+          concurrency: async (level, promptTokens, outputTokens) => {
+            requests += level;
+            this.t += (o.requestMs ?? 500) * level;
+            const unified = params.parallel !== undefined && params.parallel > 1 && !params.extraArgs.includes('--no-kv-unified');
+            const s = speeds(profile, { depth: promptTokens, flashAttn: params.flashAttention, kvType: params.kvCacheType, ubatch: params.ubatchSize ?? params.batchSize, spill: plan.outcome === 'spill', cpuShare: plan.cpuShare, unified });
+            // Like the fake engine: every extra user busy at once slows each one by 15 %; prompts are read one at a time.
+            const perUser = s.decode / (1 + 0.15 * (level - 1));
+            const read = (promptTokens / s.prefill) * 1000;
+            return concurrencyPoint(level, perUser, { promptTokens, outputTokens, ttftP95: read * level, errors: o.usersErrors?.(params, level) ?? 0 });
+          },
+          sessions: async (step) => {
+            this.t += o.requestMs ?? 500;
+            return [sessionsPoint(step.levels[0] as number, step.depth, o.laterTtft?.(params) ?? 100)];
           },
           capacityHint: () => plan.capacity,
           generate: async () => o.tokens?.(params) ?? [1, 2, 3, 4],
@@ -176,7 +193,8 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
     expect(order.slice(0, 4)).toEqual(['capacity f16@40960 on/512 oom', 'capacity f16@8192 on/512 ok', 'capacity f16@16384 on/512 ok', 'capacity f16@32768 on/512 oom']);
     // q8_0 starts above f16's 16K (known to fit): the top first, then 32K (the largest if it loads: screened at once).
     expect(order.slice(4, 6)).toEqual(['capacity q8_0@40960 on/512 oom', 'capacity q8_0@32768 on/512 ok']);
-    expect(t.attempts[5]!.points.map((p) => p.promptTokens)).toEqual([256, 1024, 32624]);
+    // Screened at 1K, the middle of the grid and the deepest prompt (after the probe).
+    expect(t.attempts[5]!.points.map((p) => p.promptTokens)).toEqual([256, 1024, 16384, 32624]);
     expect(t.attempts.every((a) => a.kvType === 'f16' || a.params.flashAttention === 'on')).toBe(true);
     // The recommendation: q4_0 at the trained context with the faster ubatch.
     const rec = t.combinations[t.recommended!]!;
@@ -416,10 +434,10 @@ describe('Tuner: last resorts and the fidelity check', () => {
 
 describe('Tuner: vLLM', () => {
   const vprof: FakeProfile = { ...TUNE_PROFILE, memory: { totalMiB: 24_000, weightsMiB: 15_000, kvMiBPer1k: 200, computeMiBPer512: 0 } };
-  const vspace = (budget: 'fast' | 'thorough' = 'fast') => vllmSpace({ budget, params: P(), gpuMemoryUtilization: 0.9 });
+  const vspace = (budget: 'fast' | 'thorough' = 'fast') => vllmSpace({ budget, params: P(), utilizations: [0.9] });
 
   it('reads the KV capacity vLLM reports, tries the exact capacity, then --enforce-eager one step up', async () => {
-    const { t, lab } = await tune({ space: vspace(), modelContext: 131072, eager: true }, new Lab({ profile: vprof, flavor: 'vllm' }));
+    const { t, lab } = await tune({ space: vspace(), modelContext: 131072 }, new Lab({ profile: vprof, flavor: 'vllm' }));
     // auto: 0.9 × 24000 − 15000 − 1024 − 512 = 5064 MiB of KV = 25 927 tokens.
     expect(t.attempts[0]).toMatchObject({ kvType: 'auto', contextSize: 131072, outcome: 'oom', error: { params: { estimatedMaxModelLen: 25927 } } });
     expect(t.attempts[1]).toMatchObject({ kvType: 'auto', contextSize: 25600, outcome: 'ok' });
@@ -436,6 +454,7 @@ describe('Tuner: vLLM', () => {
     expect(t.combinations[t.recommended!]).toBe(eager);
     expect(t.dimensions).toEqual([
       { key: 'kv', values: ['auto', 'fp8'] },
+      { key: 'gmu', values: [0.9] },
       { key: 'bt', values: [2048, 8192] },
     ]);
   });
@@ -447,10 +466,10 @@ describe('Tuner: vLLM', () => {
   });
 
   it('no eager attempt once the trained context is reached, nor when it does not fit', async () => {
-    const small = await tune({ space: vspace(), modelContext: 16384, eager: true }, new Lab({ profile: vprof, flavor: 'vllm' }));
+    const small = await tune({ space: vspace(), modelContext: 16384 }, new Lab({ profile: vprof, flavor: 'vllm' }));
     expect(small.t.combinations.some((c) => c.tags.includes('eager'))).toBe(false);
     const tight: FakeProfile = { ...vprof, memory: { ...vprof.memory!, kvMiBPer1k: 2000 } };
-    const no = await tune({ space: vspace('thorough'), budget: 'thorough', modelContext: 131072, eager: true }, new Lab({ profile: tight, flavor: 'vllm' }));
+    const no = await tune({ space: vspace('thorough'), budget: 'thorough', modelContext: 131072 }, new Lab({ profile: tight, flavor: 'vllm' }));
     expect(no.t.attempts.filter((a) => a.params.extraArgs.includes('--enforce-eager')).map((a) => a.outcome)).toEqual(['oom']);
   });
 });

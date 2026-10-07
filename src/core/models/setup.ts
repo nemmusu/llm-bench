@@ -3,7 +3,7 @@ import { createDownloadsRoutes } from '../downloads/routes';
 import { DownloadService, type DownloadServiceOptions } from '../downloads/service';
 import type { RouteModule } from '../server/app';
 import { createModelsRoutes } from './routes';
-import { ModelsService } from './service';
+import { ModelsService, type ModelsServiceOptions } from './service';
 import type { GpuInfoFn } from './types';
 
 export interface ModelServicesOptions {
@@ -12,6 +12,8 @@ export interface ModelServicesOptions {
   /** Background sha256 of local models after scans (default true). Pause it during runs. */
   autoHash?: boolean;
   statfs?: DownloadServiceOptions['statfs'];
+  /** Fit estimates corrected with the VRAM peaks measured on this GPU ("stima tarata su N misure"). */
+  calibration?: ModelsServiceOptions['calibration'];
 }
 
 export interface ModelServices {
@@ -36,6 +38,7 @@ export function createModelServices(ctx: CoreContext, opts: ModelServicesOptions
     getToken,
     gpuInfo: opts.gpuInfo,
     ...(opts.autoHash !== undefined ? { autoHash: opts.autoHash } : {}),
+    ...(opts.calibration ? { calibration: opts.calibration } : {}),
   });
   const downloads = new DownloadService({
     fetch: ctx.deps.fetch,

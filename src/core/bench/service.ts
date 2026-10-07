@@ -10,7 +10,7 @@ import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { serverApiName } from '../engines/types';
 import { newRunId } from '../store/runs-id';
-import { engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
+import { engineBuildOf, engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
 import { loadCorpus } from './prompts';
 import { BenchRunner, launchRecordOf, type RunInput, type RunnerDeps } from './runner';
@@ -24,7 +24,7 @@ import {
   type ScenarioWarning,
 } from './scenarios';
 import { loadScoreReference } from './score';
-import { buildTuneSetup, tunedServerParams } from './tune-setup';
+import { buildTuneSetup, latestTuneRun, recheckInputOf, recheckSource, tuneGoalOf, tunedServerParams, type TuneSetupDeps } from './tune-setup';
 import { BUDGETS } from './tuner';
 
 export interface BenchServiceDeps {
@@ -69,6 +69,8 @@ export interface BenchServiceDeps {
   adjustEngine?: (req: StartServerRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
   /** Reason a run cannot start right now (e.g. a GPU Bench server holds the GPU), or undefined. */
   blockedBy?: () => AppError | undefined;
+  /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
+  calibration?: TuneSetupDeps['calibration'];
 }
 
 export type { ActiveRun };
@@ -211,7 +213,7 @@ export class BenchService {
     const adapter = this.deps.getAdapter(req.engine.kind);
     // No context chosen: the latest "Trova le impostazioni migliori" of this model here decides, if any.
     const userParams = req.params ?? launchParamsSchema.parse({});
-    const tuned = serverContextOf(req.engine.kind, userParams) === undefined ? await this.tunedServer(req, model) : undefined;
+    const tuned = serverContextOf(req.engine.kind, userParams) === undefined ? await this.tunedServer(req, model, adapter) : undefined;
     const params: LaunchParams = { ...(tuned?.params ?? userParams) };
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const contextSize = await this.fillServerContext(req, model, params);
@@ -232,9 +234,20 @@ export class BenchService {
     };
   }
 
-  private async tunedServer(req: StartServerRequest, model: ModelTarget): ReturnType<typeof tunedServerParams> {
+  private async tunedServer(req: StartServerRequest, model: ModelTarget, adapter: EngineAdapter): ReturnType<typeof tunedServerParams> {
     const here = await this.here().catch(() => undefined);
-    return here ? tunedServerParams(this.deps.runs, here, req, model) : undefined;
+    if (!here) return undefined;
+    return tunedServerParams(this.deps.runs, here, req, model, () => this.currentBuild(req, model, adapter, req.params ?? launchParamsSchema.parse({})));
+  }
+
+  /**
+   * The engine build or image a launch would use now (a preview plan: nothing starts), so tune results
+   * of another build are told apart. undefined when it cannot be known.
+   */
+  private async currentBuild(req: StartServerRequest, model: ModelTarget, adapter: EngineAdapter, params: LaunchParams): Promise<string | undefined> {
+    const engine = (await this.deps.adjustEngine?.(req, model).catch(() => undefined)) ?? req.engine;
+    const plan = await adapter.plan(engine, model, params, { port: 0, marker: 'gpubench-build', preview: true }).catch(() => undefined);
+    return plan ? engineBuildOf(plan.engine) : undefined;
   }
 
   /** Sets the context the user left unset to the recommended one; returns the context the server will offer. */
@@ -350,7 +363,30 @@ export class BenchService {
   async plan(req: StartRunRequest): Promise<RunPlan> {
     const p = await this.prepare(req, true);
     const preview = await this.preview(req, p);
-    return { scenario: p.scenario, ...preview, estimatedSeconds: await this.duration(req, p) };
+    const previousTune = p.scenario.profile === 'tune' ? await this.previousTune(req, p) : undefined;
+    return { scenario: p.scenario, ...preview, estimatedSeconds: await this.duration(req, p), ...(previousTune ? { previousTune } : {}) };
+  }
+
+  /** The latest tune of this model here with the same question, and whether it ran with this build. */
+  private async previousTune(req: StartRunRequest, p: Prepared): Promise<RunPlan['previousTune']> {
+    try {
+      const here = await this.here();
+      const id = p.model.identity;
+      const list = await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here);
+      const last = latestTuneRun(list, here, req.engine.kind, tuneGoalOf(req));
+      if (!last) return undefined;
+      const current = engineBuildOf(p.launch.engine);
+      return {
+        runId: last.id,
+        createdAt: last.createdAt,
+        budget: last.tuneBudget ?? 'fast',
+        ...(last.engineBuild !== undefined ? { build: last.engineBuild } : {}),
+        ...(current !== undefined ? { currentBuild: current } : {}),
+        sameBuild: last.engineBuild === current,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -391,6 +427,30 @@ export class BenchService {
     };
   }
 
+  /** What the tuner searches; "Ricontrollo rapido" needs an earlier tune of this model here (VALIDATION 'recheck_nothing'). */
+  private async tuneSetup(req: StartRunRequest, p: Prepared): Promise<RunInput['tune']> {
+    const d = this.deps;
+    let recheck: Parameters<typeof buildTuneSetup>[3];
+    if (req.tune?.budget === 'recheck') {
+      const here = await this.here();
+      const run = await recheckSource(d.runs, here, req, p.model);
+      if (!run) throw new AppError('VALIDATION', 'No earlier tune of this model here to re-check', { params: { reason: 'recheck_nothing' } });
+      recheck = recheckInputOf(run, engineBuildOf(p.launch.engine));
+    }
+    return buildTuneSetup(
+      {
+        telemetry: d.telemetry,
+        fingerprint: d.fingerprint,
+        runs: d.runs,
+        here: () => this.here(),
+        ...(d.calibration ? { calibration: d.calibration } : {}),
+      },
+      req,
+      p,
+      recheck,
+    );
+  }
+
   private corpus(): Promise<string> {
     this.corpusText ??= loadCorpus(this.deps.resourcesDir).catch((e: unknown) => {
       this.corpusText = undefined;
@@ -427,7 +487,7 @@ export class BenchService {
       p = await this.prepare(req, false);
       fit = await d.fit?.(req, p.model, p.launch).catch(() => undefined);
       interval = await d.telemetryIntervalMs?.();
-      if (p.scenario.profile === 'tune') tune = await buildTuneSetup({ telemetry: d.telemetry, fingerprint: d.fingerprint }, req, p);
+      if (p.scenario.profile === 'tune') tune = await this.tuneSetup(req, p);
       current.info = {
         startedAt,
         profile: p.scenario.profile,

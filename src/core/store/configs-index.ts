@@ -122,8 +122,11 @@ function runSource(run: RunResult): RunConfigSource[] {
 export function comboSources(run: RunResult): RunConfigSource[] {
   const out: RunConfigSource[] = [];
   (run.tuning?.combinations ?? []).forEach((combo: TuneCombination, index) => {
-    const points = combo.outcome === 'ok' ? depthPointsOf(combo.sweep) : [];
-    if (!points.length) return;
+    if (combo.outcome !== 'ok') return;
+    const points = depthPointsOf(combo.sweep);
+    // "Più utenti" combinations have no sweep: their users at once are what they measured.
+    const busiest = (combo.concurrency ?? []).filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
+    if (!points.length && !busiest) return;
     const params = paramsOf(run, { params: combo.params, argv: combo.command.argv });
     const source: ConfigSource = {
       runId: run.id,
@@ -133,6 +136,9 @@ export function comboSources(run: RunResult): RunConfigSource[] {
       points,
       contextSize: combo.maxContext,
       ...(combo.vramPeakMiB !== undefined ? { vramPeakMiB: combo.vramPeakMiB } : {}),
+      ...(busiest
+        ? { parallel: { users: busiest.level, totalTps: busiest.aggregateTps, ...(busiest.perRequestDecodeTpsP50 > 0 ? { perUserTps: busiest.perRequestDecodeTpsP50 } : {}) } }
+        : {}),
     };
     out.push({ source, params, tags: union(combo.tags, configTagsOf(params)) });
   });

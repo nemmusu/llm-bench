@@ -51,7 +51,8 @@ const space: TuneSpace = {
   kvLadder: ['f16', 'q4_0'],
   base: (kv) => ({ kv }),
   dimensions: [],
-  params: (v, ctx) => launchParamsSchema.parse({ contextSize: ctx, kvCacheType: v.kv }),
+  contextFor: (users, perUser) => users * perUser,
+  params: (v, ctx) => launchParamsSchema.parse({ contextSize: ctx, kvCacheType: v.kv, ...(typeof v.np === 'number' ? { parallel: v.np } : {}) }),
   tags: () => [],
 };
 

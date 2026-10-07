@@ -239,6 +239,8 @@ export interface RecheckInput {
   previousCreatedAt: string;
   previousBuild?: string;
   currentBuild?: string;
+  /** Goal 'multi' of the previous run (users, context per user, prompts). */
+  multi?: Tuning['multi'];
   /** The previous recommendation first, then its runner-up (if any). */
   checks: { role: 'recommended' | 'runner-up'; combination: TuneCombination }[];
 }
@@ -904,9 +906,8 @@ export class Tuner {
   protected snapshot(): Tuning {
     const combos = this.combos.map((c) => ({ ...c }));
     const rec = this.recommend(combos);
-    return {
+    const t: Tuning = {
       budget: this.input.budget,
-      ...this.goalFields(),
       ...(this.input.learned ? { learned: this.input.learned } : {}),
       maxLaunches: this.rules.maxLaunches,
       ...(this.stoppedBy ? { stoppedBy: this.stoppedBy } : {}),
@@ -925,6 +926,7 @@ export class Tuner {
       fastestByDepth: fastestByDepth(combos),
       ...(this.fidelity ? { fidelity: this.fidelity } : {}),
     };
+    return { ...t, ...this.goalFields() };
   }
 
   /** Searched dimensions with the values each KV type would try (the start-up setting: the ones tried so far). */

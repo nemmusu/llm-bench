@@ -691,6 +691,8 @@ export const runSummarySchema = z.object({
   /** Tune runs: the goal (absent on runs before phase 3 = 'single'), users of goal 'multi', and the budget ('recheck' = "Ricontrollo rapido"). */
   tuneGoal: tuneGoalSchema.optional(),
   tuneUsers: z.number().int().optional(),
+  /** Goal 'multi': the context per user asked (Tuning.multi.perUserContext). */
+  tunePerUserContext: z.number().int().optional(),
   tuneBudget: tuneBudgetSchema.optional(),
   /**
    * The engine release the run used: llama.cpp build ("b10997"), else the Docker image digest

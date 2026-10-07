@@ -58,6 +58,14 @@ export function engineLabelOf(e: Pick<EngineIdentity, 'name' | 'build' | 'versio
   return `${e.name}${release ? ` ${release}` : ''}${e.variant ? ` (${e.variant})` : ''}`;
 }
 
+/**
+ * The engine release a run used, for remembering tune results per build: the llama.cpp build
+ * ("b10997"), else the Docker image digest, else the version. undefined = unknown.
+ */
+export function engineBuildOf(e: Pick<EngineIdentity, 'build' | 'imageDigest' | 'version'>): string | undefined {
+  return e.build ?? e.imageDigest ?? e.version;
+}
+
 /** Lightweight row for lists and badges. `file` is the file's base name inside the results folder. */
 const CONTEXT_FLAGS = new Set(['-c', '--ctx-size', '--max-model-len']);
 
@@ -111,7 +119,10 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(m.score ? { score: m.score.value } : {}),
     ...(context !== undefined ? { contextSize: context } : {}),
     ...(run.launch.params.kvCacheType !== undefined ? { kvCacheType: run.launch.params.kvCacheType } : {}),
-    ...(t ? { tunedCombinations: t.combinations.length } : {}),
+    ...(t ? { tunedCombinations: t.combinations.length, tuneBudget: t.budget } : {}),
+    ...(t?.goal ? { tuneGoal: t.goal } : {}),
+    ...(t?.multi ? { tuneUsers: t.multi.users, tunePerUserContext: t.multi.perUserContext } : {}),
+    ...(engineBuildOf(e) !== undefined ? { engineBuild: engineBuildOf(e) } : {}),
     ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps, parallelPerUserTps: busiest.perRequestDecodeTpsP50 } : {}),
     validity: run.validity,
     file,

@@ -110,7 +110,19 @@ describe('KV and compute building blocks', () => {
     expect(fitParamsFrom({ extraArgs: [], env: {} })).toEqual({});
     expect(
       fitParamsFrom({ contextSize: 1, kvCacheType: 'q8_0', ubatchSize: 2, parallel: 3, flashAttention: 'on', gpuMemoryUtilization: 0.5, maxModelLen: 4, extraArgs: [], env: {} }),
-    ).toEqual({ contextSize: 1, kvCacheType: 'q8_0', ubatchSize: 2, parallel: 3, flashAttention: 'on', gpuMemoryUtilization: 0.5, maxModelLen: 4 });
+    ).toEqual({ contextSize: 1, kvCacheType: 'q8_0', ubatchSize: 2, parallel: 3, kvUnified: true, flashAttention: 'on', gpuMemoryUtilization: 0.5, maxModelLen: 4 });
+    // llama.cpp -c is the whole context: one pool shared by the slots (GPU Bench's --kv-unified), or split by them.
+    expect(fitParamsFrom({ contextSize: 32768, parallel: 4, extraArgs: ['--no-kv-unified'], env: {} })).toEqual({ contextSize: 8192, parallel: 4, kvUnified: false });
+    expect(fitParamsFrom({ parallel: 4, extraArgs: ['-no-kvu'], env: {} })).toEqual({ parallel: 4, kvUnified: false });
+    expect(fitParamsFrom({ contextSize: 32768, parallel: 1, extraArgs: ['--no-kv-unified'], env: {} })).toEqual({ contextSize: 32768, parallel: 1 });
+  });
+
+  it('several slots: the same KV cache whether the pool is shared or split (it was counted once per slot)', () => {
+    const shared = estimateFit({ facts: llama8b, fileBytes: 4920739232, gpu: GPU, engine: 'llamacpp-native', params: fitParamsFrom({ contextSize: 32768, parallel: 4, extraArgs: [], env: {} }) });
+    const split = estimateFit({ facts: llama8b, fileBytes: 4920739232, gpu: GPU, engine: 'llamacpp-native', params: fitParamsFrom({ contextSize: 32768, parallel: 4, extraArgs: ['--no-kv-unified'], env: {} }) });
+    const one = estimateFit({ facts: llama8b, fileBytes: 4920739232, gpu: GPU, engine: 'llamacpp-native', params: fitParamsFrom({ contextSize: 32768, extraArgs: [], env: {} }) });
+    expect(shared.kvMiB).toBe(one.kvMiB);
+    expect(split.kvMiB).toBe(one.kvMiB);
   });
 });
 

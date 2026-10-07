@@ -53,7 +53,8 @@ import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
 import { runSessions } from './steps/sessions';
 import { runSweep } from './sweep';
-import { BUDGETS, Tuner, type LabEngine, type TuneLab, type TunerInput } from './tuner';
+import { createTuner } from './tune-run';
+import { BUDGETS, type LabEngine, type TuneLab, type TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
@@ -775,7 +776,7 @@ export class BenchRunner {
   private async tune(s: RunState, setup: TunerInput): Promise<void> {
     const d = this.deps;
     s.tuneStart = d.clock.now();
-    const tuner = new Tuner(setup, {
+    const tuner = createTuner(setup, {
       lab: this.tuneLab(s),
       now: () => d.clock.now(),
       onUpdate: (tuning, current) => {
@@ -837,6 +838,10 @@ export class BenchRunner {
   private labEngine(s: RunState, inst: EngineInstance, plan: LaunchPlan, attempt: number, from: number): LabEngine {
     return {
       measure: (depth, outputTokens, reps, kind) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt }),
+      // "Più utenti": every user at once with the prompts of the whole context each one needs.
+      concurrency: (level, promptTokens, outputTokens, requestsPerWorker) =>
+        this.concurrencyLevel(s, inst, level, { promptTokens, outputTokens, requestsPerWorker, shape: { promptTokens, outputTokens, ...userContext(plan) } }),
+      sessions: async (step) => (await this.sessionsOn(s, inst, plan, step)).points,
       memory: () => this.launchMemory(s, from),
       // vLLM's KV pool does not depend on max-model-len: what it holds is the largest context. (llama.cpp just echoes -c.)
       capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : vllmKvCapacity(inst.logTail())?.tokens),
@@ -1106,9 +1111,10 @@ export class BenchRunner {
       ...(s.firstTokenMs !== undefined ? { firstTokenAfterLoadMs: s.firstTokenMs } : {}),
       latency,
       contextSweep: tuned?.combination.sweep ?? s.contextSweep,
-      sessions: s.sessions,
+      // A "Più utenti" tune run is described by its recommendation too: users 1 … N and the conversations.
+      sessions: tuned?.combination.sessions ?? s.sessions,
       ...(s.kvCapacity ? { kvCapacity: s.kvCapacity } : {}),
-      concurrency: s.concurrency,
+      concurrency: tuned?.combination.concurrency ?? s.concurrency,
       llamaBench: s.llamaBench,
       vram: {
         ...vr,
