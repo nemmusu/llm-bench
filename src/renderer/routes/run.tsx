@@ -113,7 +113,9 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const at = Math.max(0, phases.indexOf(current));
   const startedAt = ctx?.startedAt ?? (info ? Date.parse(info.startedAt) : undefined);
   const elapsedSec = startedAt === undefined ? 0 : Math.max(0, (now - startedAt) / 1000);
-  const left = remainingSeconds(elapsedSec, live.progress, ctx?.plan?.estimatedSeconds ?? info?.estimatedSeconds, live.remaining, now);
+  // A run that spills is far slower than its plan said: the time left comes from its own progress.
+  const planned = live.spill ? undefined : (ctx?.plan?.estimatedSeconds ?? info?.estimatedSeconds);
+  const left = remainingSeconds(elapsedSec, live.progress, planned, live.remaining, now);
   const detail = detailLine(live.phase, live.detail, scenario);
 
   const gpu = system.data?.gpus[0];

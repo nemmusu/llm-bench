@@ -145,8 +145,12 @@ describe('the live screen', () => {
     // The id the fake core gives every run it starts.
     const id = api.world.active!.runId;
     expect(screen.queryByRole('alert', { name: /RAM condivisa/ })).toBeNull();
+    // Until then the time left is the plan's.
+    expect(await screen.findByText(/Mancano circa 1 min 3\d s/)).toBeTruthy();
     act(() => api.emit({ type: 'run.spill', runId: id, spill: { by: ['shared-memory'], sharedPeakMiB: 4666, thresholdMiB: 1024 } }));
     const banner = screen.getByRole('alert', { name: 'Sta usando la RAM condivisa: i numeri saranno molto più bassi' });
+    // A spill makes the plan's time wrong: it is no longer quoted (the progress says it after a while).
+    expect(screen.queryByText(/Mancano circa 1 min/)).toBeNull();
     expect(banner.textContent).toContain('Windows ne ha messo 4,6 GB nella RAM del PC');
     await userEvent.click(within(banner).getByRole('button', { name: 'Annulla test' }));
     expect(await screen.findByRole('alertdialog', { name: 'Vuoi annullare il test?' })).toBeTruthy();
@@ -248,7 +252,8 @@ describe('before the start', () => {
     api.world.plan = (body) => planFor({ ...((body as StartRunRequest).profile === 'tune' ? { tuneSeconds: { fast: 2062, thorough: 5400 }, estimatedSeconds: 2062 } : {}) });
     renderApp('/', api);
     await userEvent.click(await screen.findByRole('radio', { name: /Trova le impostazioni migliori/ }));
-    expect(await screen.findByText('circa 34 min per questo modello')).toBeTruthy();
-    expect(screen.getByText('circa 1 h 30 min per questo modello')).toBeTruthy();
+    expect(await screen.findByText('~34 min')).toBeTruthy();
+    expect(screen.getByText('~1 h 30 min')).toBeTruthy();
+    expect(screen.getByText(/Durate stimate per questo modello su questa scheda./)).toBeTruthy();
   });
 });

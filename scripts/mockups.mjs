@@ -514,11 +514,20 @@ async function tuneScenes(browser, info, world, written) {
  */
 const SPILL_SHOT_PROFILE = { ...SPILL_PROFILE, loadMsCold: 2500, loadMsWarm: 1800, prefillTps: 3000, decodeTps: 53.7, tokensPerChunk: 1 };
 
-/** Picks the 27B model on the Benchmark page. */
-async function choose27b(page) {
+/**
+ * "Trova le impostazioni migliori" that runs out of time (TUNE_PROFILE's memory): generation at 40 tok/s,
+ * far below what the search expects for a file this small, so its own limit cuts it after the first
+ * screenings.
+ */
+const TUNE_PARTIAL_PROFILE = { ...TUNE_PROFILE, loadMsCold: 1800, loadMsWarm: 1500, prefillTps: 9000, decodeTps: 40, tokensPerChunk: 1 };
+
+const QWEN_27B = /^Qwen3[ -]27B/;
+
+/** Picks a library model on the Benchmark page. */
+async function chooseModel(page, name) {
   await page.getByRole('button', { name: /^Cambia modello:/ }).click();
   const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
-  await picker.getByRole('radio', { name: /^Qwen3[ -]27B/ }).click();
+  await picker.getByRole('radio', { name }).first().click();
   await picker.getByRole('button', { name: 'Conferma' }).click();
 }
 
@@ -532,12 +541,11 @@ async function idle(info) {
  * A run that spills, as a user meets it on this fake card: a clean Rapido of the 27B first (the usual
  * speed), then the whole 256K context in expert mode — the plan's warning with its fixes (33), started
  * anyway: the live screen's banner once generation collapses (31). Then "Trova le impostazioni migliori"
- * on the same model, cut by its own time limit: partly measured combinations (32). Light and dark.
+ * on Qwen3 8B, cut by its own time limit: partly measured combinations (32). Light and dark.
  */
 async function spillScenes(browser, info, world, written) {
   const want = (name) => !only || only.includes(name);
   if (!want('spill-live') && !want('benchmark-spill') && !want('tune-partial')) return;
-  writeFileSync(world.profileFile, JSON.stringify(SPILL_SHOT_PROFILE));
   const shotAll = async (n, name, route, wait, opts = {}) => {
     for (const theme of ['light', 'dark']) {
       for (const size of opts.sizes ?? TUNE_SIZES) {
@@ -564,26 +572,34 @@ async function spillScenes(browser, info, world, written) {
   };
   /** Expert mode, the 27B, the whole 256K context: the plan says it will not fit. */
   const wholeContext = async (page) => {
-    await choose27b(page);
+    await chooseModel(page, QWEN_27B);
     await page.getByLabel('Contesto (token)').fill('262144');
     await page.getByText('Il modello non entra tutto nella scheda video').first().waitFor({ timeout: 30000 });
     await page.getByText('Il modello non entra tutto nella scheda video').first().scrollIntoViewIfNeeded();
+  };
+  /** "Avvia benchmark", and the one-time llama.cpp install when it is the first run. */
+  const start = async (page) => {
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    const confirm = page.getByRole('button', { name: 'Scarica e avvia' });
+    if (await confirm.waitFor({ timeout: 3000 }).then(() => true, () => false)) await confirm.click();
+    await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+    return (await api(info, 'GET', '/api/runs/active')).active.runId;
   };
   try {
     await idle(info);
     await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
     const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce', locale: 'it-IT' });
     const page = await context.newPage();
-    // A clean Rapido: the usual speed of this model here.
-    await page.goto(`${info.url}#/`);
-    await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
-    await choose27b(page);
-    await page.getByRole('radio', { name: /Rapido/ }).click();
-    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
-    const confirm = page.getByRole('button', { name: 'Scarica e avvia' });
-    if (await confirm.waitFor({ timeout: 3000 }).then(() => true, () => false)) await confirm.click();
-    await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
-    while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+    if (want('spill-live') || want('benchmark-spill')) {
+      // A clean Rapido: the usual speed of this model here.
+      writeFileSync(world.profileFile, JSON.stringify(SPILL_SHOT_PROFILE));
+      await page.goto(`${info.url}#/`);
+      await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+      await chooseModel(page, QWEN_27B);
+      await page.getByRole('radio', { name: /Rapido/ }).click();
+      await start(page);
+      while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+    }
 
     if (want('benchmark-spill')) await shotAll(33, 'benchmark-spill', '/', 'Pronto a misurare', { expert: true, act: wholeContext, sizes: [{ w: 1440, h: 900, suffix: '' }] });
 
@@ -592,7 +608,7 @@ async function spillScenes(browser, info, world, written) {
       await putSettings(info, { theme: 'light', language: 'it', expertMode: true, onboardingDone: true });
       await page.goto(`${info.url}#/`);
       await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
-      await choose27b(page);
+      await chooseModel(page, QWEN_27B);
       await page.getByRole('radio', { name: /Personalizzato/ }).click();
       await page.getByLabel('Caricamenti a freddo').fill('0');
       await page.getByLabel('Caricamenti a caldo').fill('1');
@@ -601,24 +617,26 @@ async function spillScenes(browser, info, world, written) {
       await page.getByLabel('Ripetizioni', { exact: true }).fill('3');
       await page.getByLabel('Ripetizioni di riscaldamento').fill('0');
       await page.getByLabel('Contesto (token)').fill('262144');
-      await page.getByRole('button', { name: 'Avvia benchmark' }).click();
-      await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
-      const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+      const runId = await start(page);
       await page.getByText('Sta usando la RAM condivisa: i numeri saranno molto più bassi').waitFor({ timeout: 180000 });
       await shotAll(31, 'spill-live', `/run/${runId}`, 'Sta usando la RAM condivisa', { sizes: [{ w: 1440, h: 900, suffix: '' }, { w: 1024, h: 680, suffix: '-1024' }] });
       await idle(info);
     }
 
     if (want('tune-partial')) {
+      writeFileSync(world.profileFile, JSON.stringify(TUNE_PARTIAL_PROFILE));
       await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
       await page.goto(`${info.url}#/`);
       await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
-      await choose27b(page);
+      await chooseModel(page, /^Qwen3[ -]8B/);
       await chooseTune(page);
-      await page.getByRole('button', { name: 'Avvia benchmark' }).click();
-      await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
-      const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+      const runId = await start(page);
       while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(2000);
+      // What the search did, in one line (its time limit, what it measured).
+      const run = await api(info, 'GET', `/api/runs/${runId}`);
+      const t = run.tuning;
+      const combos = t?.combinations.map((c) => `${c.kvType}@${c.maxContext}:${c.sweep.map((p) => p.promptTokens).join('/')}${c.partial ? `(${c.partial})` : ''}`);
+      console.log(`tune-partial: ${run.status} stoppedBy=${t?.stoppedBy} estimate=${t?.estimateSeconds}s limit=${t?.limitSeconds}s attempts=${t?.attempts.length} combinations=${combos?.join(', ')}`);
       await shotAll(32, 'tune-partial', `/results/${runId}`, 'Mi sono fermato prima');
     }
     await context.close();

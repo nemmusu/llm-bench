@@ -62,7 +62,7 @@ export interface TuneOptionsProps {
 export function TuneOptions({ value, onChange, expert, previous, times, recheckTime, children }: TuneOptionsProps) {
   const f = useI18n();
   const { t } = f;
-  // "circa 20 min per questo modello": the search's own forecast, once the plan says.
+  // "~20 min": the search's own forecast for this model, once the plan says (and a line says so).
   const timeOf = (seconds: number | undefined, fallback: Parameters<typeof t>[0]) => (seconds === undefined ? t(fallback) : t('tune.options.modelTime', { time: roughDuration(seconds) }));
   const goal: TuneGoal = value.goal ?? 'single';
   const users = value.users ?? TUNE_MULTI_DEFAULTS.users;
@@ -150,7 +150,10 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
             { value: 'thorough', label: t('tune.options.thorough'), sublabel: timeOf(times?.thorough, 'tune.options.thoroughTime') },
           ]}
         />
-        <p className="text-xs text-fg-3">{budgetDesc}</p>
+        <p className="text-xs text-fg-3">
+          {budgetDesc}
+          {times && <> {t('tune.options.modelTimeHint')}</>}
+        </p>
       </div>
       {expert && budget !== 'recheck' && goal !== 'multi' && (
         <div className="flex items-start gap-2.5">

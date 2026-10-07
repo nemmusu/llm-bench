@@ -69,7 +69,7 @@ Se hai già fatto **Trova le impostazioni migliori** con quel modello su questa 
 
 ### Trova le impostazioni migliori
 
-Scegli la durata **Trova le impostazioni migliori** e poi *Veloce* o *Accurata*: accanto a ognuna GPU Bench ti dice quanto ci vorrà **per quel modello** (per esempio "circa 20 min per questo modello"). Un modello piccolo richiede pochi minuti; uno grande con un contesto di 256K anche più di mezz'ora, perché leggere prompt così lunghi richiede tempo anche a una scheda veloce. GPU Bench avvia il modello più volte e prova da solo:
+Scegli la durata **Trova le impostazioni migliori** e poi *Veloce* o *Accurata*: accanto a ognuna GPU Bench ti dice quanto ci vorrà **per quel modello su questa scheda** (per esempio "~20 min"). Un modello piccolo richiede pochi minuti; uno grande con un contesto di 256K anche più di mezz'ora, perché leggere prompt così lunghi richiede tempo anche a una scheda veloce. GPU Bench avvia il modello più volte e prova da solo:
 
 - la **cache KV** (la memoria che tiene il testo già letto): prima *f16*, poi *q8_0*, poi *q4_0*, che occupa circa un quarto e lascia spazio a molto più contesto. Con le cache ridotte attiva sempre la *flash attention* e usa lo stesso tipo per K e V;
 - il **contesto più grande** che entra tutto nella memoria video, per ogni tipo di cache;
