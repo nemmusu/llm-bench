@@ -119,7 +119,7 @@ export function llamaContext(c) {
     'llama_context: freq_base     = 500000.0',
     'llama_context:  CUDA_Host  output buffer size =     0.49 MiB',
     `llama_kv_cache:      CUDA0 KV buffer size = ${kv.toFixed(2)} MiB`,
-    `llama_kv_cache: size = ${kv.toFixed(2)} MiB (${c.ctx} cells,  32 layers,  ${c.np}/${c.np} seqs), K (f16):  ${(kv / 2).toFixed(2)} MiB, V (f16):  ${(kv / 2).toFixed(2)} MiB`,
+    `llama_kv_cache: size = ${kv.toFixed(2)} MiB (${c.ctx} cells,  32 layers,  ${c.np}/${c.np} seqs), K (${c.kvType ?? 'f16'}):  ${(kv / 2).toFixed(2)} MiB, V (${c.kvType ?? 'f16'}):  ${(kv / 2).toFixed(2)} MiB`,
     'llama_context:      CUDA0 compute buffer size =   296.00 MiB',
     'llama_context:  CUDA_Host compute buffer size =    16.01 MiB',
     'llama_context: graph nodes  = 1095',
@@ -274,6 +274,15 @@ export function vllmOom() {
   return [
     `ERROR ${ts()} [core.py:700] EngineCore failed to start.`,
     'torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB. GPU 0 has a total capacity of 31.84 GiB of which 1.10 GiB is free.',
+    'RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}',
+  ];
+}
+
+/** max-model-len longer than the KV cache holds (the real wording of vLLM's check). */
+export function vllmKvTooSmall(c) {
+  return [
+    `ERROR ${ts()} [core.py:700] EngineCore failed to start.`,
+    `ValueError: To serve at least one request with the models's max seq len (${c.ctx}), (2.50 GiB KV cache is needed, which is larger than the available KV cache memory (1.25 GiB). Based on the available memory, the estimated maximum model length is ${c.kvCapacity}. Try increasing \`gpu_memory_utilization\` or decreasing \`max_model_len\` when initializing the engine.`,
     'RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}',
   ];
 }

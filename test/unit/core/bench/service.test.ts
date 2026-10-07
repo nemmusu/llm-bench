@@ -61,6 +61,7 @@ describe('BenchService.start', () => {
       modelName: modelIdentity().displayName,
       engineLabel: 'llama.cpp b11438 (CUDA 13.4)',
       scenario: expect.objectContaining({ profile: 'standard' }),
+      points: [],
     });
     gate.resolve();
     await svc.whenIdle();
