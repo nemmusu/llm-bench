@@ -73,7 +73,8 @@ export function contextOf(launch: Pick<RunResult['launch'], 'params' | 'argv'>):
 export function summaryOf(run: RunResult, file: string): RunSummary {
   const m = run.metrics;
   // Runs without latency points (tune runs) are described by their context sweep: 1K for the headline, the deepest for reading.
-  const points = m.latency.length ? m.latency : m.contextSweep;
+  // Raw run JSON from before the context sweep has no such field (parsed runs always do).
+  const points = m.latency.length ? m.latency : (m.contextSweep ?? []);
   const head = headlinePoint(points);
   const largest = [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0];
   const t = run.tuning;
