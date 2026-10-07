@@ -282,7 +282,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
 
         {tune && <TuneLive tuning={live.tuning} current={live.tuneCurrent} engineKind={engineKind} />}
 
-        <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+        <div className="grid items-start gap-section xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
           <LivePoints points={live.points} current={live.current} scenario={scenario} tune={tune} />
           <LiveConfig launch={live.launch} engineKind={engineKind} />
         </div>

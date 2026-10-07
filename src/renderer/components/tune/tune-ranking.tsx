@@ -149,8 +149,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
                             </Badge>
                           )}
                         </span>
-                        {/* One line of actions: the column grows instead (the table scrolls on narrow windows). */}
-                        <span className="flex items-center gap-2 whitespace-nowrap [&>span]:flex-nowrap">
+                        {/* The two preset buttons stay together; "Misure" goes under them on narrow windows. */}
+                        <span className="flex flex-wrap items-center gap-2 [&>span]:flex-nowrap [&>span]:whitespace-nowrap">
                           <PresetActions run={run} combo={r.index} />
                           <Button
                             size="sm"
