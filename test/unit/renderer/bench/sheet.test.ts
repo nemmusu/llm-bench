@@ -118,7 +118,7 @@ describe('Scheda da condividere: content', () => {
     expect(r.sections[0]?.table?.rows).toEqual([['Indirizzo', 'http://gpu:8000/v1']]);
     expect(rows['Scheda video']).toBe('–');
     expect(rows['Motore']?.endsWith(' · vllm/vllm-openai:v0.12.0')).toBe(true);
-    expect(rows['Configurazione']).toBe('impostazioni predefinite');
+    expect(rows['Configurazione']).toBe('Contesto predefinito · cache KV auto');
     expect(r.meta[1]).toBe('–');
     expect(r.sentence).toContain(' su –:');
     const basic = structuredClone(seeded(IDS.full));

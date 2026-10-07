@@ -9,7 +9,7 @@ import type { RunResult } from '../../../contract/results';
 import { metricRows } from '../../components/bench/compare-rows';
 import { rowWords } from '../../components/bench/compare-words';
 import { engineLabelOf, headlinePoint, MIB_PER_GB, modelLabelOf, prefillStat, shortGpuName, slug } from '../../components/bench/format';
-import { launchSummaryParts } from '../../components/bench/summary';
+import { launchLabelOf } from '../../components/presets/config-label';
 import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsRows, sessionsSentences, sessionsTable, soloPoint } from '../../components/bench/sessions-view';
 import type { Formatters } from '../../i18n';
 import { reportToHtml } from './html';
@@ -196,7 +196,8 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
         [t('sheet.facts.engine'), engineLabelOf(run.engine) + (run.engine.image ? ` · ${run.engine.image}` : '')],
         [t('sheet.facts.gpu'), m.gpu],
         [t('sheet.facts.pc'), m.pc],
-        [t('sheet.facts.launch'), launchSummaryParts(run, f).slice(2).join(' · ') || t('sheet.facts.defaults')],
+        // The same words as the rest of the app (Risultati → Configurazioni, the result header).
+        [t('sheet.facts.launch'), launchLabelOf(run.launch.params, run.engine.kind, f, { blockCount: run.model.facts?.blockCount }).text],
       ],
     },
     after: [t('sheet.facts.commandIntro')],

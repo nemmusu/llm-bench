@@ -1518,7 +1518,6 @@ export const it = {
       gpu: 'Scheda video',
       pc: 'PC',
       launch: 'Configurazione',
-      defaults: 'impostazioni predefinite',
       commandIntro: 'Il comando esatto con cui è stato avviato (password e chiavi oscurate):',
     },
     cache: {

@@ -1517,7 +1517,6 @@ export const en: Messages = {
       gpu: 'Graphics card',
       pc: 'PC',
       launch: 'Configuration',
-      defaults: 'default settings',
       commandIntro: 'The exact command it was started with (passwords and keys masked):',
     },
     cache: {
