@@ -1,7 +1,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Download, FolderPlus, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-import { ModelCatalog } from '../components/library/catalog';
+import { ModelCatalog, type CatalogView } from '../components/library/catalog';
 import { type EngineFormat } from '../components/library/curated-list';
 import { ErrorCallout } from '../components/library/error-callout';
 import { LocalModels } from '../components/library/local-models';
@@ -29,6 +29,8 @@ export function ModelsPage() {
   const [format, setFormat] = useState<EngineFormat>('gguf');
   const tab: ModelsTab = search.tab ?? 'local';
   const setTab = (v: string) => void navigate({ to: '/models', search: v === 'download' ? { tab: 'download' } : {}, replace: true });
+  const view: CatalogView = search.view ?? 'hub';
+  const setView = (v: CatalogView) => void navigate({ to: '/models', search: { tab: 'download', ...(v === 'hub' ? {} : { view: v }) }, replace: true });
   const active = (jobs.data ?? []).filter(isDownloadActive).length;
 
   const addFolder = async () => {
@@ -73,10 +75,11 @@ export function ModelsPage() {
           <TabsTrigger value="download">{t('models.tabs.download')}</TabsTrigger>
         </TabsList>
         <TabsContent value="local">
-          <LocalModels onDownload={() => setTab('download')} />
+          {/* Nothing on the PC yet: the verified suggestions are the easy first pick. */}
+          <LocalModels onDownload={() => setView('curated')} />
         </TabsContent>
         <TabsContent value="download">
-          <ModelCatalog format={format} onFormatChange={setFormat} />
+          <ModelCatalog format={format} onFormatChange={setFormat} view={view} onViewChange={setView} />
         </TabsContent>
       </Tabs>
     </Page>

@@ -17,17 +17,20 @@ export interface FitBadgeProps {
   /** Extra line in the tooltip, e.g. "Estimate: 6.8 GB of 30.4 GB available". */
   detail?: string;
   size?: 'sm' | 'md';
+  /** One-word label for dense lists ("Entra", "Al limite"…); the tooltip keeps the full verdict. */
+  short?: boolean;
   className?: string;
 }
 
 /** "Does it fit in VRAM?" verdict: icon + words + color, with a plain explanation on hover. */
-export function FitBadge({ level, detail, size = 'md', className }: FitBadgeProps) {
+export function FitBadge({ level, detail, size = 'md', short, className }: FitBadgeProps) {
   const { t } = useI18n();
   const { tone, Icon } = looks[level];
   return (
     <Tooltip
       content={
         <span className="flex flex-col gap-1">
+          {short && <span className="font-medium">{t(`fit.${level}`)}</span>}
           <span>{t(`fit.hint.${level}`)}</span>
           {detail && <span className="text-fg-3">{detail}</span>}
         </span>
@@ -35,7 +38,7 @@ export function FitBadge({ level, detail, size = 'md', className }: FitBadgeProp
     >
       <Badge tone={tone} size={size} className={className} data-fit={level}>
         <Icon aria-hidden />
-        {t(`fit.${level}`)}
+        {short ? t(`fit.short.${level}`) : t(`fit.${level}`)}
       </Badge>
     </Tooltip>
   );

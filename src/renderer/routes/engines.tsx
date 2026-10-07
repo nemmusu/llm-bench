@@ -23,7 +23,7 @@ export function EnginesPage() {
     <Page title={t('engines.title')} subtitle={t('engines.subtitle')}>
       <div className="flex flex-col gap-section">
         <Card className="p-card">
-          <SystemCheckPanel onPickModel={() => void navigate({ to: '/models', search: { tab: 'download' } })} />
+          <SystemCheckPanel onPickModel={() => void navigate({ to: '/models', search: { tab: 'download', view: 'curated' } })} />
         </Card>
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <LlamaCard installBytes={llamaBytes} />

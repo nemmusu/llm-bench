@@ -30,7 +30,10 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: '/models',
     component: ModelsPage,
-    validateSearch: (s: Record<string, unknown>): { tab?: 'download' } => (s.tab === 'download' ? { tab: 'download' } : {}),
+    validateSearch: (s: Record<string, unknown>): { tab?: 'download'; view?: 'curated' | 'tried' } => ({
+      ...(s.tab === 'download' ? { tab: 'download' as const } : {}),
+      ...(s.view === 'curated' || s.view === 'tried' ? { view: s.view } : {}),
+    }),
   }),
   createRoute({ getParentRoute: () => rootRoute, path: '/models/hub/$owner/$name', component: ModelDetailPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/engines', component: EnginesPage }),

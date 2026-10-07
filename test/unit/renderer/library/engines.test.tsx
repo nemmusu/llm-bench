@@ -356,7 +356,8 @@ describe('system check actions', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
     await router.navigate({ to: '/engines' });
     await userEvent.click(await screen.findByRole('button', { name: 'Scegli un modello (Modelli)' }));
-    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download' }));
+    // A first model: the verified suggestions, not the whole of Hugging Face.
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download', view: 'curated' }));
     expect(b.openExternal).not.toHaveBeenCalled();
   });
 

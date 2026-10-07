@@ -41,6 +41,8 @@ export interface Formatters {
   t: (key: MessageKey, params?: Params) => string;
   number: (n: number, digits?: number) => string;
   integer: (n: number) => string;
+  /** Short counts like Hugging Face: "7,3K", "1,5 Mln" (en: "7.3K", "1.5M"). */
+  compact: (n: number) => string;
   percent: (ratio: number, digits?: number) => string;
   /** Bytes with binary units shown as GB/MB like Windows Explorer. */
   bytes: (n: number) => string;
@@ -57,6 +59,8 @@ export function createFormatters(lang: Lang): Formatters {
     new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
   const number = (n: number, digits = 1) => nf(digits).format(n);
   const integer = (n: number) => nf(0).format(Math.round(n));
+  const compactNf = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 });
+  const compact = (n: number) => compactNf.format(n);
   const bytes = (n: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     let v = n;
@@ -93,6 +97,7 @@ export function createFormatters(lang: Lang): Formatters {
     t: (key, params) => translate(lang, key, params),
     number,
     integer,
+    compact,
     percent: (r, d = 0) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: d }).format(r),
     bytes,
     duration,

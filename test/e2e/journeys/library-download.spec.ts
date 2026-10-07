@@ -22,29 +22,34 @@ test('search a model, open it, download the best version with pause and resume, 
     await skipWelcome(page);
     await openPage(page, 'Modelli');
     await page.getByRole('tab', { name: 'Scarica' }).click();
-    await expect(page.getByRole('heading', { name: 'Trova un modello da provare' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Consigliati per la tua GPU' })).toBeVisible();
-    await expect(page.getByText('Scelti per una scheda con 32 GB di memoria video.')).toBeVisible();
 
-    // The catalog shows models before anything is typed, each with its VRAM verdict.
-    await expect(page.getByRole('heading', { name: 'I più scaricati su Hugging Face' })).toBeVisible();
+    // Like huggingface.co/models: models before anything is typed (trending first), compact rows,
+    // each with its VRAM verdict; filters in the column on the left.
+    await expect(page.getByRole('heading', { name: 'Di tendenza su Hugging Face' })).toBeVisible();
     const results = page.getByRole('list', { name: 'Modelli trovati' });
-    const qwen = results.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Qwen3-0.6B-GGUF', exact: true }) });
-    await expect(qwen.getByText('Entra perfettamente')).toBeVisible({ timeout: 20_000 });
+    const qwen = results.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'ggml-org/Qwen3-0.6B-GGUF', exact: true }) });
+    await expect(qwen.getByText('Entra', { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(results.getByRole('listitem')).toHaveCount(4);
     await scan(page, 'models catalog');
     // One click on an author shows only their models; one more clears the filter.
-    await results.getByRole('button', { name: 'Altri modelli di unsloth' }).click();
+    const filters = page.getByRole('complementary', { name: 'Filtri' });
+    await filters.getByRole('radio', { name: 'unsloth' }).click();
     await expect(results.getByRole('listitem')).toHaveCount(1);
     await expect(page.getByText('1 modello', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Togli i filtri' }).click();
+    await filters.getByRole('button', { name: 'Togli i filtri' }).click();
     await expect(results.getByRole('listitem')).toHaveCount(4);
+    // The verified suggestions for this card are one click away.
+    await filters.getByRole('radio', { name: /^Consigliati/ }).click();
+    await expect(page.getByRole('heading', { name: 'Consigliati per la tua GPU' })).toBeVisible();
+    await expect(page.getByText('Scelti per una scheda con 32 GB di memoria video.')).toBeVisible();
+    await scan(page, 'recommended models');
+    await filters.getByRole('radio', { name: 'Tutti i modelli' }).click();
 
     await page.getByRole('searchbox', { name: 'Cerca un modello su Hugging Face' }).fill('qwen3-0.6b');
     await expect(page.getByRole('heading', { name: 'Risultati per «qwen3-0.6b»' })).toBeVisible({ timeout: 20_000 });
     await expect(results.getByRole('listitem')).toHaveCount(1);
     await scan(page, 'search results');
-    await results.getByRole('link', { name: 'Qwen3-0.6B-GGUF', exact: true }).click();
+    await results.getByRole('link', { name: 'ggml-org/Qwen3-0.6B-GGUF', exact: true }).click();
 
     // The model page: best quant preselected, a fit verdict per quant, the card rendered safely.
     await expect(h1(page, 'Qwen3-0.6B-GGUF')).toBeVisible();
