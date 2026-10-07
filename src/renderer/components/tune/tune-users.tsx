@@ -5,7 +5,7 @@
  */
 import { useMemo, type ReactNode } from 'react';
 import type { EngineKind } from '../../../contract/engines';
-import type { RunResult, Tuning } from '../../../contract/results';
+import type { ConcurrencyPoint, RunResult, Tuning } from '../../../contract/results';
 import { useI18n, type Formatters } from '../../i18n';
 import { soloDecode, usersSentence } from '../bench/concurrency-users';
 import { MIB_PER_GB } from '../bench/format';
@@ -50,7 +50,8 @@ export function usersSummary(tuning: Tuning, rows: readonly RankRow[], kind: Eng
     return parts.join(' ');
   }
   parts.push(f.t('tune.users.best', { users: top.users.level, ctx, settings: comboText(top.combo, kind, label) }));
-  parts.push(usersSentence(top.users, soloDecode(top.combo.concurrency ?? []), f));
+  // A row measured with every user busy has its levels.
+  parts.push(usersSentence(top.users, soloDecode(top.combo.concurrency as ConcurrencyPoint[]), f));
   return parts.join(' ');
 }
 
@@ -82,7 +83,6 @@ export function UsersOverview({ run, errorCard }: { run: TunedRun; errorCard?: R
           run={run}
           rows={rows}
           depths={[]}
-          onDepth={() => undefined}
           recommended={tuning.recommended}
           views={USERS_VIEWS}
           subtitle={t('tune.users.subtitle', { n, prompt: f.integer(multi.promptTokens) })}

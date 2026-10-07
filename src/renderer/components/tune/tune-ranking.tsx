@@ -48,7 +48,8 @@ export interface RankingProps {
   subtitle?: string;
   /** Accessible name of the table (default: the ranking at the compared depth). */
   caption?: string;
-  onDepth: (depth: number) => void;
+  /** A new compared depth (needed with more than one depth). */
+  onDepth?: (depth: number) => void;
   recommended: number | undefined;
   /** The metric columns, in order (default: the one-user context search). */
   views?: readonly ColumnView[];
@@ -148,7 +149,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
               size="sm"
               label={t('tune.ranking.compareAt')}
               value={String(depth)}
-              onValueChange={(v) => onDepth(Number(v))}
+              onValueChange={(v) => (onDepth as (depth: number) => void)(Number(v))}
               className="flex-wrap"
               options={depths.map((d) => ({ value: String(d), label: depthLabel(d, f) }))}
             />

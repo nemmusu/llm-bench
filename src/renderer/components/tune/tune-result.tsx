@@ -30,7 +30,7 @@ export interface TuneOverviewProps {
  */
 export function TuneOverview({ run, errorCard, onFullSearch }: TuneOverviewProps) {
   const extra = errorCard ? { errorCard } : {};
-  if (run.tuning.recheck) return <RecheckOverview run={run} {...extra} {...(onFullSearch ? { onFullSearch } : {})} />;
+  if (run.tuning.recheck) return <RecheckOverview run={run} {...extra} onFullSearch={onFullSearch} />;
   if (run.tuning.goal === 'multi') return <UsersOverview run={run} {...extra} />;
   return <ContextOverview run={run} {...extra} />;
 }

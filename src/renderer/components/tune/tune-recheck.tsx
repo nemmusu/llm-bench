@@ -96,7 +96,7 @@ export function recheckSentence(r: TuneRecheck, f: Pick<Formatters, 't' | 'dateT
   return f.t(RESULT_KEY[r.result], { current: buildLabel(r.currentBuild, f), previous: buildLabel(r.previousBuild, f), date: f.dateTime(r.previousCreatedAt) });
 }
 
-export function RecheckOverview({ run, errorCard, onFullSearch }: { run: RunResult & { tuning: Tuning }; errorCard?: ReactNode; onFullSearch?: () => void }) {
+export function RecheckOverview({ run, errorCard, onFullSearch }: { run: RunResult & { tuning: Tuning }; errorCard?: ReactNode; onFullSearch?: (() => void) | undefined }) {
   const f = useI18n();
   const { t } = f;
   const recheck = run.tuning.recheck as TuneRecheck;

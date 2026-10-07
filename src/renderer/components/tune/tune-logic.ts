@@ -225,8 +225,9 @@ export function rankUsers(tuning: Pick<Tuning, 'combinations' | 'multi' | 'recom
     if (users) full.push({ ...m, users, ...(sessions ? { sessions } : {}) });
     else rest.push(m);
   }
-  const rec = tuning.recommended;
-  full.sort((a, b) => (a.index === rec ? -1 : b.index === rec ? 1 : compareUsersRows(a, b)));
+  // The core's recommendation on top (it decided with the same rule), the others by the rule.
+  const top = full.filter((r) => r.index === tuning.recommended);
+  full.splice(0, full.length, ...top, ...full.filter((r) => r.index !== tuning.recommended).sort(compareUsersRows));
   return [
     ...full.map((r, k) => {
       const above = full[k - 1];
@@ -296,8 +297,9 @@ export function bestValues(rows: readonly RankRow[], columns: readonly MetricCol
   for (const c of columns) {
     if (!c.best) continue;
     const { stat, higher, floor } = c.best;
+    // Rows not measured where they are compared have no statistic.
     const values = rows.flatMap((r) => {
-      const s = reaches(r) ? stat(r) : undefined;
+      const s = stat(r);
       return s ? [{ index: r.index, s }] : [];
     });
     if (!values.length) continue;

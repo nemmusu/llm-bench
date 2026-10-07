@@ -3,6 +3,7 @@ import { ArrowLeft, Copy, GitCompareArrows } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { configParamsOf } from '../../contract/configs';
+import type { StartRunRequest } from '../../contract/api';
 import type { RunResult } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
 import { ExportMenu } from '../components/bench/export-menu';
@@ -95,25 +96,21 @@ function ResultView({ run }: { run: RunResult }) {
   const modelLabel = modelLabelOf(run.model);
   const engineLabel = engineLabelOf(run.engine);
 
-  const doRerun = (allowSharedGpu = false) => {
+  /** The run again, with `patch` on top of its request (when its model is still there). */
+  const startAgain = (patch: Partial<StartRunRequest>) => {
     if (!rerun) return;
     if (rerun.modelMissing) {
       toast.error(t('result.launch.modelMissing'));
       return;
     }
-    flow.start({ ...rerun.request, allowSharedGpu }, { needs: [], modelLabel, engineLabel });
+    flow.start({ ...rerun.request, ...patch }, { needs: [], modelLabel, engineLabel });
   };
+  const doRerun = (allowSharedGpu = false) => startAgain({ allowSharedGpu });
 
   /** After a "Ricontrollo rapido": the whole search again ("Veloce"), with the same question. */
   const fullSearch = () => {
-    if (!rerun) return;
-    if (rerun.modelMissing) {
-      toast.error(t('result.launch.modelMissing'));
-      return;
-    }
     const m = run.tuning?.multi;
-    const tune = { budget: 'fast' as const, fidelity: false, ...(m ? { goal: 'multi' as const, users: m.users, perUserContext: m.perUserContext } : {}) };
-    flow.start({ ...rerun.request, profile: 'tune', tune }, { needs: [], modelLabel, engineLabel });
+    startAgain({ profile: 'tune', tune: { budget: 'fast', fidelity: false, ...(m ? { goal: 'multi' as const, users: m.users, perUserContext: m.perUserContext } : {}) } });
   };
 
   const errorCard = run.error ? (
