@@ -166,7 +166,7 @@ describe('OpenAiClient (generic OpenAI)', () => {
     const c = new OpenAiClient('openai', server.url, deps());
     const events = await collect(c.generate({ promptText: 'p', outputTokens: 2, seed: 1 }));
     expect(events).toEqual([
-      { kind: 'chunk', t: expect.any(Number), textLen: 2 },
+      { kind: 'chunk', t: expect.any(Number), textLen: 2, text: 'hi' },
       { kind: 'chunk', t: expect.any(Number), textLen: 0 },
       { kind: 'done', t: expect.any(Number) },
     ]);
@@ -179,7 +179,7 @@ describe('OpenAiClient (generic OpenAI)', () => {
     const c = new OpenAiClient('openai', server.url, deps());
     const events = await collect(c.generate({ promptText: 'p', outputTokens: 1, seed: 1 }));
     expect(events).toEqual([
-      { kind: 'chunk', t: expect.any(Number), textLen: 1 },
+      { kind: 'chunk', t: expect.any(Number), textLen: 1, text: 'a' },
       { kind: 'done', t: expect.any(Number), usage: { completionTokens: 1 } },
     ]);
   });

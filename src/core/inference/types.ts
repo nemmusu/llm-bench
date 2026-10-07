@@ -25,6 +25,10 @@ export type StreamEvent =
       textLen: number;
       /** Exact tokens in this chunk when the engine says so (llama.cpp tokens[], vLLM continuous usage). */
       tokens?: number;
+      /** The token ids of this chunk (llama.cpp return_tokens), for the tuner's "fedeltà" comparison. */
+      ids?: number[];
+      /** The chunk's text, when it had some. */
+      text?: string;
     }
   | { kind: 'done'; t: number; usage?: Usage; timings?: EngineTimings; finishReason?: string };
 

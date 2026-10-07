@@ -1,10 +1,10 @@
 import type { EngineKind, LaunchParams } from '../../contract/engines';
 import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
+import { CONTEXT_MARGIN, sweepDepths } from './sweep';
 
+export { CONTEXT_MARGIN };
 export type BuiltinProfile = Exclude<Profile, 'custom'>;
 export const DEFAULT_SEED = 42;
-/** Tokens kept free in the context besides prompt + output (BOS, server-side extras). */
-export const CONTEXT_MARGIN = 16;
 
 const PROFILES: Record<BuiltinProfile, Step[]> = {
   // ~2 min: one warm load and a small latency sweep.
@@ -189,6 +189,19 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
       case 'sessions': {
         const fitted = fitSessions(step, limits, warnings);
         if (fitted) steps.push(fitted);
+        break;
+      }
+      case 'context-sweep': {
+        // The grid follows the context the engine is started with; without one there is nothing to fill.
+        if (ctx === undefined) {
+          warnings.push({ code: 'context_sweep_skipped', params: { reason: 'unknown_context' } });
+          break;
+        }
+        const all = step.depths.length ? step.depths : sweepDepths(ctx, step.outputTokens, { fractions: step.fractions });
+        const kept = all.filter((d) => fits(d, step.outputTokens, ctx));
+        for (const d of all) if (!kept.includes(d)) warnings.push({ code: 'prompt_too_long', params: { promptTokens: d, contextSize: ctx } });
+        if (kept.length) steps.push({ ...step, depths: kept });
+        else warnings.push({ code: 'context_sweep_skipped', params: { reason: 'context_too_small', contextSize: ctx } });
         break;
       }
     }

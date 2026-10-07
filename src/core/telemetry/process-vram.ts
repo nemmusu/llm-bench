@@ -2,7 +2,9 @@
  * Per-process VRAM: how much dedicated GPU memory each process holds.
  *
  *  - Windows (WDDM): nvidia-smi reports used_memory "[N/A]" per process, but Windows keeps per-process
- *    GPU counters (`\GPU Process Memory(pid_<PID>_luid_…_phys_0[#n])\Dedicated Usage`, bytes). typeperf
+ *    GPU counters (`\GPU Process Memory(pid_<PID>_luid_…_phys_0[#n])\Dedicated Usage`, bytes; and
+ *    `Shared Usage`: system RAM the GPU uses for the process — when a model does not fit, WDDM moves
+ *    part of it there instead of failing and everything gets ~10× slower). typeperf
  *    cannot follow a process we just spawned: it expands the pid wildcard once at start ("no valid
  *    counters" while the engine has not opened the GPU yet) and its CSV header is fixed, so instances
  *    created later are never reported. One long-running Windows PowerShell child therefore re-reads the
@@ -64,9 +66,10 @@ export interface GpuMemorySource {
 
 /**
  * The monitor script. Protocol, one line each: `N <pid> <name>` (process name, before the first
- * reading that lists the pid), `S <pid>=<bytes> …` (one reading: Dedicated Usage summed over every
- * instance of the pid: several LUIDs and duplicate "#n" instances exist per process), `E <message>`.
- * Only single quotes: the script travels as one -Command argument.
+ * reading that lists the pid), `S <pid>=<dedicated>/<shared> …` (one reading, bytes: Dedicated and
+ * Shared Usage summed over every instance of the pid — several LUIDs and duplicate "#n" instances
+ * exist per process; listed when it holds dedicated memory), `E <message>`. Only single quotes: the
+ * script travels as one -Command argument.
  */
 export function windowsMonitorScript(o: { intervalMs: number; parentPid: number }): string {
   return [
@@ -79,12 +82,13 @@ export function windowsMonitorScript(o: { intervalMs: number; parentPid: number 
     '$names = @{}',
     'while ($true) {',
     '  $sum = @{}',
-    "  try { $col = $cat.ReadCategory()['Dedicated Usage']; foreach ($k in $col.Keys) { if ($k -match '^pid_(\\d+)_') { $p = [int]$Matches[1]; $sum[$p] = [int64]$sum[$p] + [int64]$col[$k].RawValue } } } catch { $out.WriteLine('E ' + $_.Exception.Message) }",
+    '  $sh = @{}',
+    "  try { $data = $cat.ReadCategory(); $col = $data['Dedicated Usage']; foreach ($k in $col.Keys) { if ($k -match '^pid_(\\d+)_') { $p = [int]$Matches[1]; $sum[$p] = [int64]$sum[$p] + [int64]$col[$k].RawValue } }; $scol = $data['Shared Usage']; if ($scol) { foreach ($k in $scol.Keys) { if ($k -match '^pid_(\\d+)_') { $p = [int]$Matches[1]; $sh[$p] = [int64]$sh[$p] + [int64]$scol[$k].RawValue } } } } catch { $out.WriteLine('E ' + $_.Exception.Message) }",
     '  $new = @($sum.Keys | Where-Object { $sum[$_] -gt 0 -and -not $names.ContainsKey($_) })',
     "  if ($new.Count -gt 0) { $all = @{}; foreach ($q in [System.Diagnostics.Process]::GetProcesses()) { $all[$q.Id] = $q.ProcessName }; foreach ($p in $new) { $n = [string]$all[$p]; $names[$p] = $n; if ($n) { $out.WriteLine('N ' + $p + ' ' + $n) } } }",
     '  foreach ($p in @($names.Keys)) { if (-not $sum.ContainsKey($p) -or $sum[$p] -le 0) { $names.Remove($p) } }',
     "  $line = 'S'",
-    "  foreach ($p in $sum.Keys) { if ($sum[$p] -gt 0) { $line += ' ' + $p + '=' + $sum[$p] } }",
+    "  foreach ($p in $sum.Keys) { if ($sum[$p] -gt 0) { $line += ' ' + $p + '=' + $sum[$p] + '/' + [int64]$sh[$p] } }",
     '  $out.WriteLine($line); $out.Flush()',
     '  if ($parent.HasExited) { break }',
     `  Start-Sleep -Milliseconds ${Math.max(1, Math.round(o.intervalMs))}`,
@@ -105,7 +109,8 @@ export function windowsMonitorCommand(
 }
 
 export type MonitorLine =
-  | { kind: 'sample'; bytes: Map<number, number> }
+  /** Dedicated bytes per pid, and shared bytes per pid when the monitor reports them. */
+  | { kind: 'sample'; bytes: Map<number, number>; shared: Map<number, number> }
   | { kind: 'name'; pid: number; name: string }
   | { kind: 'error'; message: string };
 
@@ -114,13 +119,16 @@ export function parseMonitorLine(line: string): MonitorLine | undefined {
   const text = line.trim();
   if (text === 'S' || text.startsWith('S ')) {
     const bytes = new Map<number, number>();
+    const shared = new Map<number, number>();
     for (const part of text.slice(1).trim().split(/\s+/)) {
-      const m = /^(\d+)=(\d+)$/.exec(part);
+      // "pid=dedicated" (older monitors) or "pid=dedicated/shared".
+      const m = /^(\d+)=(\d+)(?:\/(\d+))?$/.exec(part);
       if (!m) continue;
       const pid = Number(m[1]);
       bytes.set(pid, (bytes.get(pid) ?? 0) + Number(m[2]));
+      if (m[3] !== undefined) shared.set(pid, (shared.get(pid) ?? 0) + Number(m[3]));
     }
-    return { kind: 'sample', bytes };
+    return { kind: 'sample', bytes, shared };
   }
   const n = /^N (\d+) (.+)$/.exec(text);
   if (n) return { kind: 'name', pid: Number(n[1]), name: (n[2] as string).trim() };
@@ -228,7 +236,7 @@ export class WindowsGpuMemory implements GpuMemorySource {
     for await (const line of child.lines) {
       const m = line.stream === 'stdout' ? parseMonitorLine(line.text) : undefined;
       if (m?.kind === 'name') this.names.set(m.pid, m.name);
-      else if (m?.kind === 'sample') this.onReading(child, line.t, m.bytes);
+      else if (m?.kind === 'sample') this.onReading(child, line.t, m.bytes, m.shared);
       else if (m?.kind === 'error') problem = m.message;
       else if (line.stream === 'stderr' && line.text.trim()) problem ??= line.text.trim();
     }
@@ -239,13 +247,14 @@ export class WindowsGpuMemory implements GpuMemorySource {
     this.wake();
   }
 
-  private onReading(child: ManagedProcess, t: number, bytes: ReadonlyMap<number, number>): void {
+  private onReading(child: ManagedProcess, t: number, bytes: ReadonlyMap<number, number>, shared: ReadonlyMap<number, number>): void {
     // Names of processes that are gone are dropped: a reused PID gets its new name.
     for (const pid of [...this.names.keys()]) if (!bytes.has(pid)) this.names.delete(pid);
     const procs: GpuProcessMemory[] = [];
     for (const [pid, b] of bytes) {
       const name = this.names.get(pid);
-      procs.push(name === undefined ? { pid, mib: b / MIB } : { pid, mib: b / MIB, name });
+      const sh = shared.get(pid);
+      procs.push({ pid, mib: b / MIB, ...(name !== undefined ? { name } : {}), ...(sh !== undefined ? { sharedMib: sh / MIB } : {}) });
     }
     this.childReadings++;
     this.failedAt = undefined;
@@ -420,6 +429,7 @@ export class ProcessVramRecorder implements ProcessVramSession {
   private readonly ticks: ProcessVramTick[] = [];
   private latest: number | undefined;
   private peak: number | undefined;
+  private sharedPeak: number | undefined;
   private family: { key: string; pids: number[] } | undefined;
   private expanding: Promise<void> | undefined;
   private stopping: Promise<ProcessVramTick[]> | undefined;
@@ -442,6 +452,10 @@ export class ProcessVramRecorder implements ProcessVramSession {
 
   peakMiB(): number | undefined {
     return this.peak === undefined ? undefined : Math.round(this.peak);
+  }
+
+  sharedPeakMiB(): number | undefined {
+    return this.sharedPeak === undefined ? undefined : Math.round(this.sharedPeak);
   }
 
   stop(): Promise<ProcessVramTick[]> {
@@ -468,15 +482,18 @@ export class ProcessVramRecorder implements ProcessVramSession {
     const engine = [...new Set([...roots, ...family])];
     const mine = new Set(engine);
     let engineMiB = 0;
+    let sharedMiB: number | undefined;
     let present = false;
     for (const p of procs) {
       if (!mine.has(p.pid)) continue;
       engineMiB += p.mib;
+      if (p.sharedMib !== undefined) sharedMiB = (sharedMiB ?? 0) + p.sharedMib;
       present = true;
     }
     this.latest = present ? engineMiB : undefined;
     if (present && engineMiB > 0) this.peak = Math.max(this.peak ?? 0, engineMiB);
-    this.ticks.push({ t, engine, engineMiB, procs: [...procs] });
+    if (sharedMiB !== undefined) this.sharedPeak = Math.max(this.sharedPeak ?? 0, sharedMiB);
+    this.ticks.push({ t, engine, engineMiB, ...(sharedMiB !== undefined ? { engineSharedMiB: sharedMiB } : {}), procs: [...procs] });
     if (this.ticks.length > (this.o.maxTicks ?? MAX_PROCESS_TICKS)) this.ticks.splice(1, 1);
     this.gotFirst();
     if (this.o.expand && roots.length > 0 && !this.expanding) this.refresh(this.o.expand, roots, key);
