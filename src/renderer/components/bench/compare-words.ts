@@ -62,11 +62,16 @@ const sweepAt = (run: RunResult): Map<number, LatencyPoint> => new Map(contextSw
 export function commonDepth(a: RunResult, b: RunResult): DepthSource | undefined {
   const sa = soloPoint(sessionsOf(a));
   const sb = soloPoint(sessionsOf(b));
-  const sessions = sa && sb && nominalDepth(sa.depth) === nominalDepth(sb.depth) ? { depth: nominalDepth(sa.depth), a: sa, b: sb } : undefined;
+  // The same depth: exactly, or the same grid depth (32 496 and 32 624 tokens are both "32K").
+  const same = (x: number, y: number) => (x === y ? x : nominalDepth(x) === nominalDepth(y) ? nominalDepth(x) : undefined);
+  const sd = sa && sb ? same(sa.depth, sb.depth) : undefined;
+  const sessions = sd !== undefined ? { depth: sd, a: sa as SessionsPoint, b: sb as SessionsPoint } : undefined;
   const wa = sweepAt(a);
   const wb = sweepAt(b);
   const shared = [...wa.keys()].filter((d) => wb.has(d)).sort((x, y) => y - x)[0];
-  const sweep = shared === undefined ? undefined : { depth: shared, a: wa.get(shared) as LatencyPoint, b: wb.get(shared) as LatencyPoint, sweep: true as const };
+  const pa = shared === undefined ? undefined : (wa.get(shared) as LatencyPoint);
+  const pb = shared === undefined ? undefined : (wb.get(shared) as LatencyPoint);
+  const sweep = pa && pb ? { depth: same(pa.promptTokens, pb.promptTokens) as number, a: pa, b: pb, sweep: true as const } : undefined;
   if (sessions && (!sweep || sessions.depth >= sweep.depth)) return sessions;
   return sweep;
 }

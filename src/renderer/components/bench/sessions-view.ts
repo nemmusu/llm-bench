@@ -70,7 +70,8 @@ export interface SessionsTable {
 export function sessionsTable(points: readonly SessionsPoint[], f: SessionsFormatters): SessionsTable {
   const { t, integer, number, percent, duration } = f;
   const rows = sessionsRows(points);
-  const depth = points[0]?.depth ?? 0;
+  // Called with at least one level; every level of a step has the same depth.
+  const depth = (points[0] as SessionsPoint).depth;
   const estimated = rows.some((r) => r.queueEstimated && r.queueMs !== undefined);
   const value: Record<SessionsColumn, (r: SessionsRow) => string | undefined> = {
     sessions: (r) => integer(r.sessions),

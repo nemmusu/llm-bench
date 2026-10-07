@@ -60,7 +60,6 @@ function scrub(report: Report): Report {
       ...(s.paragraphs ? { paragraphs: s.paragraphs.map(r) } : {}),
       ...(s.definitions ? { definitions: s.definitions.map((d) => ({ term: r(d.term), text: r(d.text) })) } : {}),
       ...(s.table ? { table: { ...s.table, head: s.table.head.map(r), rows: s.table.rows.map((row) => row.map(r)) } } : {}),
-      ...(s.callouts ? { callouts: s.callouts.map((c) => ({ title: r(c.title), body: r(c.body) })) } : {}),
       ...(s.code ? { code: { powershell: r(s.code.powershell), bash: r(s.code.bash) } } : {}),
     })),
     footer: r(report.footer),
@@ -110,7 +109,8 @@ function speedSections(run: RunResult, f: Formatters): ReportSection[] {
       const shares = reuse.map((r) => t(r.sessions === 1 ? 'sheet.cache.shareOne' : 'sheet.cache.share', { reuse: f.percent(r.reuse as number, 1), n: r.sessions })).join(', ');
       out.push({ title: t('sheet.sections.cache'), text: reuse.length ? t('sheet.cache.body', { shares, from, to }) : t('sheet.cache.unknown', { from, to }) });
     }
-    const queued = points.filter((p) => p.sessions > 1 && p.firstTurn.queueWaitMs.n > 0).sort((a, b) => a.sessions - b.sessions);
+    // Levels are stored in ascending order.
+    const queued = points.filter((p) => p.sessions > 1 && p.firstTurn.queueWaitMs.n > 0);
     if (queued.length) {
       const alone = soloPoint(points);
       const paragraphs = queued.map((p) => {
@@ -195,7 +195,7 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
         [t('sheet.facts.model'), [model, modelInWords(run, f)].filter(Boolean).join(' — ')],
         [t('sheet.facts.engine'), engineLabelOf(run.engine) + (run.engine.image ? ` · ${run.engine.image}` : '')],
         [t('sheet.facts.gpu'), m.gpu],
-        [t('sheet.facts.pc'), m.pc || '–'],
+        [t('sheet.facts.pc'), m.pc],
         [t('sheet.facts.launch'), launchSummaryParts(run, f).slice(2).join(' · ') || t('sheet.facts.defaults')],
         ...(ctx !== undefined ? [[t('sheet.facts.context'), t('sheet.facts.contextValue', { n: integer(ctx) })]] : []),
       ],
