@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { RunResult, Tuning } from '../../../contract/results';
+import { nominalDepth, type RunResult, type Tuning } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { MIB_PER_GB, prefillStat } from '../bench/format';
 import { useConfigLabel } from '../presets/config-label';
@@ -40,7 +40,7 @@ export function TuneOverview({ run, errorCard }: { run: TunedRun; errorCard?: Re
       {errorCard}
       <Card className="hero-wash p-7 compact:p-5">
         <p className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('tune.summary.title')}</p>
-        <p className="mt-2 text-xl leading-8 font-medium tracking-[-0.01em] text-balance text-fg">{sentences.length ? sentences.join(' ') : t('tune.summary.none')}</p>
+        <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">{sentences.length ? sentences.join(' ') : t('tune.summary.none')}</p>
         {tuning.stoppedBy && (
           <Callout className="mt-4" tone="info" title={t(`tune.stopped.${tuning.stoppedBy}`)}>
             {t('tune.stopped.body', { n: tuning.attempts.length })}
@@ -84,8 +84,8 @@ function RecommendedCard({ run, index, text }: { run: TunedRun; index: number; t
     { label: t('tune.rec.context'), value: depthLabel(combo.maxContext, f), help: t('tune.help.context') },
     ...(deep
       ? [
-          { label: t('tune.rec.decodeAt', { depth: depthLabel(deep.promptTokens, f) }), value: `${number(deep.decodeTps.median, 1)} tok/s` },
-          { label: t('tune.rec.prefillAt', { depth: depthLabel(deep.promptTokens, f) }), value: `${integer(prefillStat(deep).median)} tok/s` },
+          { label: t('tune.rec.decodeAt', { depth: depthLabel(nominalDepth(deep.promptTokens), f) }), value: `${number(deep.decodeTps.median, 1)} tok/s` },
+          { label: t('tune.rec.prefillAt', { depth: depthLabel(nominalDepth(deep.promptTokens), f) }), value: `${integer(prefillStat(deep).median)} tok/s` },
         ]
       : []),
     ...(combo.vramPeakMiB === undefined ? [] : [{ label: t('tune.rec.vram'), value: `${number(combo.vramPeakMiB / MIB_PER_GB, 1)} GB` }]),

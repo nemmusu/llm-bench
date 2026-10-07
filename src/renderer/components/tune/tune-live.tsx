@@ -122,7 +122,7 @@ function CapacityLive({ tuning, current }: { tuning: Tuning | undefined; current
   const { t } = f;
   const list = tuning?.capacity ?? [];
   return (
-    <Card className="flex flex-col overflow-hidden">
+    <Card className="flex flex-col self-start overflow-hidden">
       <div className="flex items-center gap-1.5 px-card pt-card pb-3">
         <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.capacity.liveTitle')}</h2>
         <HelpTip term={t('tune.help.kvTerm')}>{t('tune.help.kv')}</HelpTip>

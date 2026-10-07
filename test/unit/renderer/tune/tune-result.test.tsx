@@ -44,7 +44,7 @@ describe('tune result', () => {
   it('sums up from the numbers and recommends the fastest at the largest context', async () => {
     open();
     expect(await h1(/Qwen3 8B/)).toBeTruthy();
-    expect(screen.getByText(/Con cache q4_0 arrivi a 64K, il doppio di q8_0 \(32K\)\. Fino a 16K la più veloce è Cache KV f16 · flash attention \(78,0 tok\/s a 16K\)/)).toBeTruthy();
+    expect(screen.getByText(/Con cache q4_0 arrivi a 64K, il doppio di q8_0 \(32K\)\. Fino a 16K la più veloce è cache KV f16 \(78,0 tok\/s a 16K\)/)).toBeTruthy();
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('Cache KV q4_0 · flash attention · ub 2048 · b 4096')).toBeTruthy();
     expect(within(rec).getByText('64K')).toBeTruthy();
@@ -67,6 +67,7 @@ describe('tune result', () => {
       'Cache KV q8_0 · 8 livelli MoE sulla CPU · flash attention',
     ]);
     expect(within(rankRows()[2]!).getByText('Consigliata')).toBeTruthy();
+    expect(within(rankRows()[1]!).getByText('pari merito con la riga sopra')).toBeTruthy();
 
     await userEvent.click(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getByRole('radio', { name: '64K' }));
     expect(ranking().querySelector('caption')!.textContent).toBe('Classifica delle combinazioni a 64K');

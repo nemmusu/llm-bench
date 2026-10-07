@@ -56,13 +56,13 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
       <th
         scope="col"
         aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-        className={cn('h-10 border-b border-border px-3 text-xs font-medium whitespace-nowrap text-fg-3 first:pl-card', numeric ? 'text-right' : 'text-left')}
+        className={cn('h-10 border-b border-border px-3 align-bottom text-xs font-medium text-fg-3 first:pl-card', numeric ? 'text-right' : 'text-left')}
       >
         <button
           type="button"
           onClick={() => by(key)}
           title={active && sort.dir === 'desc' ? t('table.sortAscending') : t('table.sortDescending')}
-          className={cn('inline-flex items-center gap-1 rounded-xs hover:text-fg focus-ring', numeric && 'flex-row-reverse', active && 'text-fg')}
+          className={cn('inline-flex items-end gap-1 rounded-xs pb-2 hover:text-fg focus-ring', numeric && 'flex-row-reverse text-right', active && 'text-fg')}
         >
           {text}
           {active ? sort.dir === 'asc' ? <ArrowUp aria-hidden className="size-3.5" /> : <ArrowDown aria-hidden className="size-3.5" /> : <ChevronsUpDown aria-hidden className="size-3.5 opacity-50" />}
@@ -113,7 +113,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
           <thead>
             <tr>
               {head('rank', t('tune.columns.rank'), false)}
-              <th scope="col" className="h-10 border-b border-border px-3 text-left text-xs font-medium text-fg-3">
+              <th scope="col" className="h-10 border-b border-border px-3 pb-2 text-left align-bottom text-xs font-medium text-fg-3">
                 {t('tune.columns.settings')}
               </th>
               {head('maxContext', t('tune.columns.maxContext'))}
@@ -131,8 +131,15 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
               return (
                 <Fragment key={r.index}>
                   <tr className={cn('align-top', !reaches && 'text-fg-3')} aria-label={text}>
-                    <td className="border-b border-border px-3 py-3 pl-card font-semibold tabular-nums">{r.rank ?? '–'}</td>
-                    <th scope="row" className="min-w-72 border-b border-border px-3 py-3 text-left font-normal">
+                    <td className="border-b border-border px-3 py-3 pl-card font-semibold whitespace-nowrap tabular-nums">
+                      {r.tie && (
+                        <span className="mr-0.5 font-normal text-fg-3" title={t('tune.ranking.tieHint')}>
+                          ≈<span className="sr-only"> {t('tune.ranking.tie')}</span>
+                        </span>
+                      )}
+                      {r.rank ?? '–'}
+                    </td>
+                    <th scope="row" className="border-b border-border px-3 py-3 text-left font-normal">
                       <span className="flex flex-col gap-2">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className={cn('font-medium', reaches ? 'text-fg' : 'text-fg-2')}>{text}</span>
@@ -142,7 +149,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
                             </Badge>
                           )}
                         </span>
-                        <span className="flex flex-wrap items-center gap-2">
+                        {/* One line of actions: the column grows instead (the table scrolls on narrow windows). */}
+                        <span className="flex items-center gap-2 whitespace-nowrap [&>span]:flex-nowrap">
                           <PresetActions run={run} combo={r.index} />
                           <Button
                             size="sm"

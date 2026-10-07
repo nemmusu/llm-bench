@@ -268,7 +268,7 @@ async function tuneScenes(browser, info, world, written) {
         const file = path.join(outDir, `${n}-${name}-${theme}${size.suffix}.png`);
         await shoot(page, file);
         written.push(file);
-        if (!size.suffix) {
+        {
           const fullFile = file.replace(/\.png$/, '-full.png');
           await shoot(page, fullFile, { full: true });
           written.push(fullFile);

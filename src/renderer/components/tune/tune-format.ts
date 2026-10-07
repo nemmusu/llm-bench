@@ -3,7 +3,7 @@ import type { EngineKind, LaunchParams } from '../../../contract/engines';
 import type { TuneAttempt, TuneCombination, TuneKvType, Tuning } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { useConfigLabel } from '../presets/config-label';
-import { capacityLead, ratioOf, recommendedIndex, speedSegments } from './tune-logic';
+import { capacityLead, measuredCombinations, ratioOf, recommendedIndex, speedSegments } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 export type LabelFn = ReturnType<typeof useConfigLabel>;
@@ -80,11 +80,13 @@ export function capacitySentence(tuning: Pick<Tuning, 'capacity'>, f: F): string
 export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth'>, engineKind: EngineKind, label: LabelFn, f: F): string | undefined {
   const segments = speedSegments(tuning);
   if (!segments.length) return undefined;
+  const names = distinctNames(tuning, engineKind, label);
   const parts = segments.map((s, i) => {
     const params = {
       from: depthLabel(s.from, f),
       to: depthLabel(s.to, f),
-      settings: comboText(tuning.combinations[s.combination]!, engineKind, label),
+      // Winners are measured combinations: they all have a name.
+      settings: names.get(s.combination)!,
       tps: f.number(s.decodeTps, 1),
     };
     const single = s.from === s.to;
@@ -92,6 +94,30 @@ export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDe
     return f.t(single ? 'tune.summary.nextAt' : 'tune.summary.nextRange', params);
   });
   return `${parts.join('; ')}.`;
+}
+
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/**
+ * Short names that tell the measured combinations apart, for a sentence: their settings without the
+ * parts every one of them shares ("cache KV q8_0" rather than "Cache KV q8_0 · flash attention · ub 2048").
+ */
+export function distinctNames(tuning: Pick<Tuning, 'combinations'>, engineKind: EngineKind, label: LabelFn): Map<number, string> {
+  const parts = new Map(
+    measuredCombinations(tuning).map((i) => {
+      const c = tuning.combinations[i]!;
+      return [i, label(c.params, engineKind, { context: false, tags: c.tags }).parts.map(lowerFirst)] as const;
+    }),
+  );
+  const lists = [...parts.values()];
+  // Called with at least one measured combination (a sentence has a winner).
+  const shared = new Set(lists[0]!.filter((p) => lists.every((l) => l.includes(p))));
+  return new Map(
+    [...parts].map(([i, list]) => {
+      const own = list.filter((p) => !shared.has(p));
+      return [i, (own.length ? own : list).join(' · ')];
+    }),
+  );
 }
 
 /** Index of the recommended combination and its words, for the card. */

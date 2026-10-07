@@ -14,7 +14,7 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     // One more choice next to Rapido / Standard / Completo, said plainly.
     await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
     await expect(page.getByText(/Provo da solo le impostazioni/)).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Veloce ~5 min' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: /^Veloce/ })).toBeChecked();
     await scan(page, 'benchmark with the tune profile');
     await page.getByRole('button', { name: 'Avvia benchmark' }).click();
     await page.getByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' }).getByRole('button', { name: 'Scarica e avvia' }).click();

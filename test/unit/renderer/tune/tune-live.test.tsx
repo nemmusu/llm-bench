@@ -55,7 +55,7 @@ describe('Benchmark: "Trova le impostazioni migliori"', () => {
     await userEvent.click(screen.getByRole('radio', { name: /Trova le impostazioni migliori/ }));
     expect(screen.getByText(/Provo da solo le impostazioni/)).toBeTruthy();
     expect(screen.getByText('Le impostazioni che contano di più, poche prove.')).toBeTruthy();
-    await userEvent.click(screen.getByRole('radio', { name: 'Accurata ~20 min' }));
+    await userEvent.click(screen.getByRole('radio', { name: /^Accurata/ }));
     expect(screen.getByText('Più valori per ogni impostazione e più ripetizioni.')).toBeTruthy();
     await userEvent.click(screen.getByRole('switch', { name: 'Controllo di fedeltà' }));
     expect(screen.getByText(/È un’indicazione, non un test di qualità/)).toBeTruthy();

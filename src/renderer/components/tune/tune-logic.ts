@@ -68,6 +68,8 @@ export interface RankRow {
   point?: LatencyPoint;
   /** 1-based position among those reaching the depth. */
   rank?: number;
+  /** Its generation speed is within the noise of the row above: the order came from the tie-breaks. */
+  tie?: boolean;
 }
 
 /**
@@ -89,7 +91,13 @@ export function rankAt(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth'>, 
   const reach = (i: number) => reachOf(tuning.combinations[i]!);
   short.sort((a, b) => reach(b) - reach(a) || a - b);
   return [
-    ...reaching.map((c, k) => ({ index: c.index, combo: tuning.combinations[c.index]!, point: c.point, rank: k + 1 })),
+    ...reaching.map((c, k) => ({
+      index: c.index,
+      combo: tuning.combinations[c.index]!,
+      point: c.point,
+      rank: k + 1,
+      ...(k > 0 && sameWithinNoise(reaching[k - 1]!.point.decodeTps, c.point.decodeTps) ? { tie: true } : {}),
+    })),
     ...short.map((i) => ({ index: i, combo: tuning.combinations[i]! })),
   ];
 }

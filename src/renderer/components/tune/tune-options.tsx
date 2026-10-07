@@ -23,14 +23,13 @@ export function TuneOptions({ value, onChange, expert }: { value: TuneRequest; o
           <HelpTip term={t('tune.options.budget')}>{t('tune.options.budgetHelp')}</HelpTip>
         </span>
         <SegmentedControl<TuneBudget>
-          size="sm"
-          fullWidth
+          layout="list"
           label={t('tune.options.budget')}
           value={value.budget}
           onValueChange={(budget) => onChange({ ...value, budget })}
           options={[
-            { value: 'fast', label: t('tune.options.fast') },
-            { value: 'thorough', label: t('tune.options.thorough') },
+            { value: 'fast', label: t('tune.options.fast'), sublabel: t('tune.options.fastTime') },
+            { value: 'thorough', label: t('tune.options.thorough'), sublabel: t('tune.options.thoroughTime') },
           ]}
         />
         <p className="text-xs text-fg-3">{t(value.budget === 'fast' ? 'tune.options.fastDesc' : 'tune.options.thoroughDesc')}</p>

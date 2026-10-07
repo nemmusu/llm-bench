@@ -77,6 +77,8 @@ describe('ranking at a depth', () => {
     const at16 = rankAt(t, 16 * K);
     expect(at16.map((r) => r.index)).toEqual([0, 1, 2, 3, 4]);
     expect(at16.map((r) => r.rank)).toEqual([1, 2, 3, 4, 5]);
+    // 77 after 78 tok/s: within the noise, the order came from the tie-breaks.
+    expect(at16.map((r) => r.tie)).toEqual([undefined, true, undefined, undefined, undefined]);
     const at64 = rankAt(t, 64 * K);
     expect(at64.map((r) => r.index)).toEqual([2, 3, 4, 1, 0]);
     expect(at64[3]!.point).toBeUndefined();
@@ -171,17 +173,18 @@ describe('summary from the numbers', () => {
       { from: 64 * K, to: 64 * K, combination: 2, decodeTps: 60 },
     ]);
     expect(speedSentence(t, 'llamacpp-native', label, f)).toBe(
-      'Fino a 16K la più veloce è Cache KV f16 · flash attention (78,0 tok/s a 16K); a 32K Cache KV q8_0 · flash attention fa 72,0 tok/s; a 64K Cache KV q4_0 · flash attention · ub 2048 · b 4096 fa 60,0 tok/s.',
+      'Fino a 16K la più veloce è cache KV f16 (78,0 tok/s a 16K); a 32K cache KV q8_0 fa 72,0 tok/s; a 64K cache KV q4_0 · ub 2048 · b 4096 fa 60,0 tok/s.',
     );
     // Computed when the core sent no list; unknown combinations and missing points are skipped.
     expect(speedSegments({ ...t, fastestByDepth: [] }).map((s) => s.combination)).toEqual([0, 1, 2]);
     expect(speedSegments({ ...t, fastestByDepth: [{ depth: K, combination: 99 }, { depth: 64 * K, combination: 0 }] })).toEqual([]);
     expect(speedSentence({ combinations: [], fastestByDepth: [] }, 'llamacpp-native', label, f)).toBeUndefined();
     const two = { combinations: [t.combinations[2]!], fastestByDepth: [{ depth: 32 * K, combination: 0 }, { depth: 64 * K, combination: 0 }] };
-    expect(speedSentence(two, 'llamacpp-native', label, f)).toMatch(/^Fino a 64K la più veloce è .* \(60,0 tok\/s a 64K\)\.$/);
+    // One combination: nothing to tell apart, its whole settings.
+    expect(speedSentence(two, 'llamacpp-native', label, f)).toBe('Fino a 64K la più veloce è cache KV q4_0 · flash attention · ub 2048 · b 4096 (60,0 tok/s a 64K).');
     const single = { combinations: [t.combinations[0]!, t.combinations[1]!], fastestByDepth: [{ depth: K, combination: 1 }, { depth: 4 * K, combination: 0 }, { depth: 8 * K, combination: 0 }] };
     expect(speedSentence(single, 'llamacpp-native', label, f)).toBe(
-      'A 1K la più veloce è Cache KV q8_0 · flash attention (90,0 tok/s); da 4K a 8K Cache KV f16 · flash attention (84,0 tok/s a 8K).',
+      'A 1K la più veloce è cache KV q8_0 (90,0 tok/s); da 4K a 8K cache KV f16 (84,0 tok/s a 8K).',
     );
   });
 });
