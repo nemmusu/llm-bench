@@ -11,7 +11,9 @@ export type TuneCurrent = Omit<TuneAttempt, 'outcome'>;
 
 /** Points with the same key replace each other (the core re-sends the medians after every repetition). */
 export function pointKey(p: LivePoint): string {
-  return p.stepKind === 'concurrency' ? `concurrency:${p.point.level}` : `${p.stepKind}:${p.point.promptTokens}:${p.attempt ?? ''}`;
+  if (p.stepKind === 'concurrency') return `concurrency:${p.point.level}`;
+  if (p.stepKind === 'sessions') return `sessions:${p.point.sessions}`;
+  return `${p.stepKind}:${p.point.promptTokens}:${p.attempt ?? ''}`;
 }
 
 /** Adds or replaces a point, keeping the arrival order. */

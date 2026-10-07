@@ -101,6 +101,7 @@ describe('summaryOf', () => {
         load: { phases: [] },
         latency: [{ ...latencyPoint(128), decodeTps: stat(), ttftMs: stat(), prefillTps: stat() }],
         contextSweep: [],
+        sessions: [],
         concurrency: [],
         llamaBench: [],
         vram: { peakMiB: 3000 },

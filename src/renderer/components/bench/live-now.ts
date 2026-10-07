@@ -31,6 +31,11 @@ export function nowText(c: CurrentStep, f: F): string {
       parts.push(c.concurrency === undefined ? t('run.now.usersAny') : t('run.now.users', { n: c.concurrency }));
       if (c.promptTokens !== undefined) parts.push(t('run.now.usersPrompt', { tokens: integer(c.promptTokens) }));
       break;
+    case 'sessions':
+      parts.push(c.concurrency === undefined ? t('run.now.sessionsAny') : t('run.now.sessions', { n: c.concurrency }));
+      if (c.promptTokens !== undefined) parts.push(t('run.now.sessionsContext', { tokens: integer(c.promptTokens) }));
+      if (c.turn !== undefined) parts.push(t('run.now.turn', { n: c.turn, total: c.turns ?? c.turn }));
+      break;
     case 'llama-bench':
       parts.push(t('run.now.llamaBench'));
       break;

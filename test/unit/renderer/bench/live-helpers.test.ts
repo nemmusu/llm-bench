@@ -6,11 +6,26 @@ import { engineKindOfLabel, nowText } from '../../../../src/renderer/components/
 import { initialLive, liveReducer, mergePoint, pointKey, seedFromActive } from '../../../../src/renderer/components/bench/live-state';
 import { clock, engineName, finishedStages, shortDuration, stageProgressText, trackLoad } from '../../../../src/renderer/components/bench/load-progress';
 import { createFormatters } from '../../../../src/renderer/i18n';
-import { attempt, point, tuning, users } from '../tune/tune-fixtures';
+import { relevantPhases } from '../../../../src/renderer/components/bench/phases';
+import { attempt, point, stat, tuning, users } from '../tune/tune-fixtures';
 import { activeRun } from './world';
 
 const f = createFormatters('it');
 const RUN = 'r1';
+const SESSIONS: LivePoint = {
+  stepKind: 'sessions',
+  point: {
+    sessions: 2,
+    depth: 32768,
+    turns: 3,
+    outputTokens: 256,
+    followupTokens: 256,
+    firstTurn: { ttftMs: stat(4000), prefillTps: stat(8000), queueWaitMs: stat(100), decodeTps: stat(40) },
+    queueEstimated: true,
+    requests: 6,
+    errors: 0,
+  },
+};
 
 describe('what is measured now', () => {
   it('says the request in flight in words and numbers', () => {
@@ -23,6 +38,8 @@ describe('what is measured now', () => {
     expect(nowText({ kind: 'context-sweep' }, f)).toBe('Contesto riempito un po’ alla volta');
     expect(nowText({ kind: 'concurrency', concurrency: 8, promptTokens: 512 }, f)).toBe('8 utenti insieme · prompt di 512 token ciascuno');
     expect(nowText({ kind: 'concurrency' }, f)).toBe('Più utenti insieme');
+    expect(nowText({ kind: 'sessions', concurrency: 2, promptTokens: 32768, turn: 2, turns: 3 }, f)).toBe('2 conversazioni insieme · contesto di 32.768 token ciascuna · messaggio 2 di 3');
+    expect(nowText({ kind: 'sessions', turn: 1 }, f)).toBe('Conversazioni lunghe · messaggio 1 di 1');
     expect(nowText({ kind: 'load', label: 'cold', rep: 2, reps: 3 }, f)).toBe('Caricamento a freddo · ripetizione 2 di 3');
     expect(nowText({ kind: 'load', label: 'warm' }, f)).toBe('Caricamento a caldo');
     expect(nowText({ kind: 'load' }, f)).toBe('Caricamento del modello');
@@ -31,6 +48,7 @@ describe('what is measured now', () => {
     expect(nowText({ kind: 'tune-probe', promptTokens: 1024, outputTokens: 64 }, f)).toBe('Prova rapida · Prompt di 1024 token → 64 in uscita');
     expect(nowText({ kind: 'tune-screen' }, f)).toBe('Confronto con la migliore finora');
     expect(nowText({ kind: 'fidelity', promptTokens: 2048 }, f)).toBe('Confronto del testo generato · Prompt di 2048 token');
+    expect(relevantPhases({ profile: 'full', seed: 1, steps: [{ kind: 'sessions', depth: 0, levels: [1, 2], turns: 3, followupTokens: 256, outputTokens: 256 }] })).toEqual(['prepare', 'sessions', 'cleanup']);
     expect(engineKindOfLabel('vLLM v0.12.0')).toBe('vllm-docker');
     expect(engineKindOfLabel('llama.cpp b11438')).toBe('llamacpp-native');
   });
@@ -90,6 +108,7 @@ describe('live state', () => {
     expect(pointKey(lat(512))).toBe('latency:512:');
     expect(pointKey(lat(512, 3))).toBe('latency:512:3');
     expect(pointKey({ stepKind: 'concurrency', point: users(4) })).toBe('concurrency:4');
+    expect(pointKey(SESSIONS)).toBe('sessions:2');
     const first = mergePoint([], lat(512));
     const again = mergePoint(first, { stepKind: 'latency', point: point(512, 60, 900) });
     expect(again).toHaveLength(1);

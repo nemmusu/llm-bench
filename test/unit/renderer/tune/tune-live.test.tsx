@@ -6,7 +6,7 @@ import type { RunLaunch } from '../../../../src/contract/events';
 import type { Scenario } from '../../../../src/contract/results';
 import { renderApp } from '../helpers';
 import { activeRun, benchApi, planFor } from '../bench/world';
-import { attempt, params, point, tuning, users } from './tune-fixtures';
+import { attempt, params, point, stat, tuning, users } from './tune-fixtures';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -220,6 +220,17 @@ describe('live screen of any run', () => {
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'context-sweep', point: point(K, 180, 8800) } }));
     expect(screen.getByRole('table', { name: 'Contesto per gradi' }).textContent).toContain('2 di 2');
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'concurrency', concurrency: 2, promptTokens: 512 } }));
+    // "Conversazioni lunghe" have their own result view: not listed here.
+    act(() =>
+      api.emit({
+        type: 'run.point',
+        runId: RUN,
+        live: {
+          stepKind: 'sessions',
+          point: { sessions: 1, depth: 4096, turns: 2, outputTokens: 64, followupTokens: 64, firstTurn: { ttftMs: stat(1), prefillTps: stat(1), queueWaitMs: stat(0), decodeTps: stat(1) }, queueEstimated: false, requests: 2, errors: 0 },
+        },
+      }),
+    );
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'concurrency', point: users(1, { perRequestPrefillTpsP50: 2100 }) } }));
     const usersTable = screen.getByRole('table', { name: 'Più utenti insieme' });
     expect(within(usersTable).getAllByRole('row').map((r) => r.firstElementChild!.textContent)).toEqual(['Utenti', '1', '2', '3', '4']);

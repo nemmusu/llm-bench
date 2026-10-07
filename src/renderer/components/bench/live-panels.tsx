@@ -90,7 +90,7 @@ export interface LivePointsProps {
 export function LivePoints({ points, current, scenario, tune }: LivePointsProps) {
   const f = useI18n();
   const { t, number, integer } = f;
-  const latencyLike = points.filter((p): p is LatencyLive => p.stepKind !== 'concurrency');
+  const latencyLike = points.filter((p): p is LatencyLive => p.stepKind !== 'concurrency' && p.stepKind !== 'sessions');
   const lastAttempt = Math.max(-1, ...latencyLike.map((p) => p.attempt ?? -1));
   const mine = tune ? latencyLike.filter((p) => (p.attempt ?? -1) === lastAttempt) : latencyLike;
   const latency = mine.filter((p) => p.stepKind === 'latency').map((p) => p.point);

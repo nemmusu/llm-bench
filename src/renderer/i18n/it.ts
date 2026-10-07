@@ -198,6 +198,10 @@ export const it = {
       status: 'Riempio il contesto un po’ alla volta (1K, 4K, 8K… token) e misuro quanto rallenta man mano che si riempie.',
     },
     concurrency: { label: 'Più utenti', status: 'Simulo più persone che usano il modello nello stesso momento.' },
+    sessions: {
+      label: 'Conversazioni lunghe',
+      status: 'Simulo conversazioni lunghe: il primo messaggio legge tutto il contesto, i successivi riusano quanto il server ha già letto.',
+    },
     'llama-bench': { label: 'Test standard', status: 'Eseguo llama-bench, il test ufficiale di llama.cpp, per confrontarti con i numeri della community.' },
     'tune-capacity': {
       label: 'Contesto massimo',
@@ -857,6 +861,8 @@ export const it = {
       concurrencyUpTo: 'da 1 a {n} utenti insieme, uno in più alla volta, prompt da {prompt} token e {output} generati ciascuno',
       llamaBench: 'test standard llama-bench',
       contextSweep: 'velocità con il contesto sempre più pieno',
+      sessions: 'conversazioni lunghe da {depth} token: {levels} alla volta, {turns} messaggi ciascuna',
+      sessionsAuto: 'conversazioni lunghe con tutto il contesto disponibile: {levels} alla volta, {turns} messaggi ciascuna',
     },
     plan: {
       title: 'Anteprima',
@@ -1033,6 +1039,10 @@ export const it = {
       users: '{n} utenti insieme',
       usersAny: 'Più utenti insieme',
       usersPrompt: 'prompt di {tokens} token ciascuno',
+      sessions: '{n} conversazioni insieme',
+      sessionsAny: 'Conversazioni lunghe',
+      sessionsContext: 'contesto di {tokens} token ciascuna',
+      turn: 'messaggio {n} di {total}',
       llamaBench: 'Test standard llama-bench',
       'tune-probe': 'Prova rapida',
       'tune-screen': 'Confronto con la migliore finora',

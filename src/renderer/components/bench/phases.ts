@@ -34,6 +34,7 @@ export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {
         if (step.promptTokens.some((p) => p <= 1024)) has.add('decode');
       } else if (step.kind === 'concurrency') has.add('concurrency');
       else if (step.kind === 'context-sweep') has.add('context-sweep');
+      else if (step.kind === 'sessions') has.add('sessions');
       else has.add('llama-bench');
     }
   }
