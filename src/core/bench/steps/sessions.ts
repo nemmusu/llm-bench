@@ -188,7 +188,7 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
       // Text prompts (no tokenizer): the server's own count when it reports one.
       const promptTokens = 'ids' in prompt ? estimated : (done?.usage?.promptTokens ?? estimated);
       return { r: turnResult(turn, done, fromStream(events, { sentAt, promptTokens, expectedOutput: step.outputTokens })), events };
-    } catch (e) {
+    } catch {
       if (d.signal.aborted) throw cancelled();
       errors++;
       return undefined;
@@ -207,7 +207,7 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
       if (turn === step.turns) return;
       try {
         prompt = await nextPrompt(prompt, sent.events, step.followupTokens, d);
-      } catch (e) {
+      } catch {
         if (d.signal.aborted) throw cancelled();
         errors++;
         return;
