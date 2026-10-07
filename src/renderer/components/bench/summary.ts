@@ -73,7 +73,7 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: p.maxNumBatchedTokens }));
   if (p.parallel !== undefined && p.parallel > 1) parts.push(t('result.launch.parallel', { n: p.parallel }));
   if (p.kvLayout !== undefined) parts.push(t(p.kvLayout === 'unified' ? 'result.launch.kvShared' : 'result.launch.kvPerUser'));
-  if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: integer(p.cacheReuse) }));
+  if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: p.cacheReuse }));
   if (p.blockSize !== undefined) parts.push(t('result.launch.blockSize', { n: p.blockSize }));
   if (p.cudaGraphSizes?.length) parts.push(t('result.launch.cudaGraphs', { sizes: p.cudaGraphSizes.join('·') }));
   if (p.threads !== undefined) parts.push(t('result.launch.threads', { n: p.threads }));
