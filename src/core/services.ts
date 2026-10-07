@@ -7,6 +7,7 @@ import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
 import { createCacheRoutes } from './cache/routes';
+import { createConfigRoutes } from './configs/routes';
 import { createModelVolumeRoutes } from './docker/model-volume-routes';
 import { ModelVolumes, modelVolumeName } from './docker/model-volumes';
 import { createDockerRoutes } from './docker/routes';
@@ -39,6 +40,7 @@ import { createInferenceClient } from './inference/client';
 import { OwnershipRegistry } from './process/ownership';
 import { pickFreePort } from './process/ports';
 import type { RouteModule } from './server/app';
+import { ConfigsIndex } from './store/configs-index';
 import { RunsRepo } from './store/runs-repo';
 import { createServerRoutes } from './servers/routes';
 import { ServeService } from './servers/service';
@@ -488,6 +490,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
+    createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>
       createModelVolumeRoutes({
         volumes: s.modelVolumes,

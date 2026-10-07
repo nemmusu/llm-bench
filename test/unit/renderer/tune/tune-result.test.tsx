@@ -51,7 +51,8 @@ describe('tune result', () => {
     expect(within(rec).getByText('60,0 tok/s')).toBeTruthy();
     expect(within(rec).getByText('6400 tok/s')).toBeTruthy();
     expect(within(rec).getByText('29,8 GB')).toBeTruthy();
-    expect(within(rec).getByRole('button', { name: 'Usa questo preset' })).toBeTruthy();
+    // Its preset is in the page header (and on its row of the ranking).
+    expect(screen.getAllByRole('group', { name: /^Preset di Qwen3 8B/ }).length).toBeGreaterThan(1);
   });
 
   it('ranks by generation at the compared depth; any column sorts; shorter ones greyed at the bottom', async () => {
@@ -124,7 +125,7 @@ describe('tune result', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     await userEvent.click(within(rankRows()[2]!).getByRole('button', { name: 'Usa questo preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
-    expect(await screen.findByText('Preset copiato nel Benchmark')).toBeTruthy();
+    expect(await screen.findByText('Impostazioni copiate nel Benchmark')).toBeTruthy();
     expect(((await screen.findByLabelText('Contesto (token)')) as HTMLInputElement).value).toBe('65536');
     expect(api.settings.expertMode).toBe(true);
   });
@@ -244,11 +245,11 @@ describe('tune result', () => {
     expect(within(bare).queryByText(/Generazione a/)).toBeNull();
   });
 
-  it('presets need the model in the library and a managed engine', async () => {
+  it('without the model in the library every row offers to find it', async () => {
     const api = benchApi({ runs: [tunedRun()], local: [] });
     renderApp(`/results/${TUNE_ID}`, api);
     await h1(/Qwen3 8B/);
-    await waitFor(() => expect((screen.getAllByRole('button', { name: 'Usa questo preset' })[0] as HTMLButtonElement).disabled).toBe(false));
-    expect(screen.queryByRole('button', { name: 'Avvia il server così' })).toBeNull();
+    await waitFor(() => expect(within(rankRows()[0]!).getByRole('button', { name: 'Trova il modello' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Usa questo preset' })).toBeNull();
   });
 });

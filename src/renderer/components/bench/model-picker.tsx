@@ -35,7 +35,7 @@ function RowFit({ option, engine }: { option: ModelOption; engine: EngineKind })
     return (
       <Badge tone="accent" size="sm">
         <Sparkles aria-hidden />
-        {t('benchmark.pickModel.suggested')}
+        {option.preset ? t('presets.badge') : t('benchmark.pickModel.suggested')}
       </Badge>
     );
   }

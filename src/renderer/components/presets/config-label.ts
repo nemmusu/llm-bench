@@ -26,14 +26,18 @@ export interface ConfigLabelOptions {
   tags?: readonly ConfigTag[] | undefined;
   /** false = leave the context out (a table with its own Contesto column). */
   context?: boolean;
+  /** 'custom' = the KV cache only when it is not the engine's default (a table where every row says it). */
+  kv?: 'always' | 'custom';
+  /** false = keep the first word as it is (a table cell: "ub 256", not "Ub 256"). */
+  capitalize?: boolean;
 }
 
 const capitalize = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice(1);
 
 /** The label of normalized settings (what GET /api/configs returns). */
 export function configLabelOf(kind: EngineKind, p: ConfigParams, f: Pick<Formatters, 't' | 'integer' | 'percent'>, opts: ConfigLabelOptions = {}): ConfigLabel {
-  const parts = configParts(kind, p, f, { context: opts.context === false ? 'never' : 'always', kv: 'always', ...(opts.tags ? { tags: opts.tags } : {}) });
-  if (parts.length) parts[0] = capitalize(parts[0]!);
+  const parts = configParts(kind, p, f, { context: opts.context === false ? 'never' : 'always', kv: opts.kv ?? 'always', ...(opts.tags ? { tags: opts.tags } : {}) });
+  if (parts.length && opts.capitalize !== false) parts[0] = capitalize(parts[0]!);
   return { parts, text: parts.join(' · ') };
 }
 

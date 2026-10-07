@@ -7,7 +7,17 @@ import type { CuratedModel } from '../../../contract/views';
 
 export type ModelOption =
   | { key: string; source: 'local'; name: string; quant?: string; sizeBytes?: number; paramsB?: number; local: LocalModel }
-  | { key: string; source: 'curated'; name: string; quant: string; sizeBytes: number; paramsB: number; curated: CuratedModel };
+  | {
+      key: string;
+      source: 'curated';
+      name: string;
+      quant: string;
+      sizeBytes: number;
+      paramsB: number;
+      curated: CuratedModel;
+      /** Not a suggestion: the model of a preset ("Usa questo preset"), to download again. */
+      preset?: true;
+    };
 
 const LLAMA: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
 

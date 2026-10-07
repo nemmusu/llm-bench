@@ -3,7 +3,6 @@ import { nominalDepth, type RunResult, type Tuning } from '../../../contract/res
 import { useI18n } from '../../i18n';
 import { MIB_PER_GB, prefillStat } from '../bench/format';
 import { useConfigLabel } from '../presets/config-label';
-import { PresetActions } from '../presets/preset-actions';
 import { Badge } from '../ui/badge';
 import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
@@ -108,9 +107,7 @@ function RecommendedCard({ run, index, text }: { run: TunedRun; index: number; t
           </div>
         ))}
       </dl>
-      <div>
-        <PresetActions run={run} combo={index} />
-      </div>
+      {/* "Usa questo preset" for this combination is in the page header. */}
     </section>
   );
 }

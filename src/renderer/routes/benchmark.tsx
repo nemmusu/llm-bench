@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { Check, ChevronsUpDown, Download, HardDrive, Play, Server, Timer, TriangleAlert } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -15,11 +14,12 @@ import { BenchModelPicker } from '../components/bench/model-picker';
 import { initialModelKey, modelOptions, requestModel, savedModelId, type ModelOption } from '../components/bench/model-options';
 import { PlanCard } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
-import { takeDraft, type BenchDraft } from '../components/bench/run-context';
 import { ServersPanel } from '../components/bench/servers';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
+import { PresetBanner } from '../components/presets/preset-banner';
+import { usePresetDraft } from '../components/presets/use-preset-draft';
 import { DEFAULT_TUNE, TuneOptions, type TuneRequest } from '../components/tune/tune-options';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
@@ -143,7 +143,7 @@ function SelectedModel({
         {fitLevel && <FitBadge level={fitLevel} size="sm" />}
         {option.source === 'curated' && (
           <Badge tone="accent" size="sm">
-            {t('benchmark.pickModel.suggested')}
+            {option.preset ? t('presets.badge') : t('benchmark.pickModel.suggested')}
           </Badge>
         )}
         {best && <TriedBadge tps={best.decodeTps!} date={best.createdAt} size="sm" />}
@@ -157,9 +157,10 @@ function BenchmarkScreen() {
   const f = useI18n();
   const { t, bytes, integer, duration } = f;
   const { settings, update } = useSettings();
-  const qc = useQueryClient();
   const navigate = useNavigate();
-  const [draft] = useState<BenchDraft | undefined>(() => takeDraft(qc));
+  // "Usa questo preset" / "Usa queste impostazioni": the choices handed over, read once.
+  const preset = usePresetDraft();
+  const draft = preset.draft;
   const system = useBenchSystem();
   const engines = useBenchEngines();
   const local = useBenchLocalModels();
@@ -190,8 +191,12 @@ function BenchmarkScreen() {
   const custom = effProfile === 'custom';
   const status = statusOf(effEngine);
 
-  const options = useMemo(() => modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), [effEngine, local.data, curated.data]);
-  const modelKey = picked !== undefined && options.some((o) => o.key === picked) ? picked : initialModelKey(options, draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
+  const { withModel } = preset;
+  const options = useMemo(() => withModel(modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), effEngine), [withModel, effEngine, local.data, curated.data]);
+  const modelKey =
+    picked !== undefined && options.some((o) => o.key === picked)
+      ? picked
+      : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
 
   const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
@@ -313,6 +318,7 @@ function BenchmarkScreen() {
     <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="wide">
       <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-w-0 flex-col gap-section">
+          <PresetBanner preset={preset} />
           {/* Hero: the one obvious thing to do. */}
           <Card className="hero-wash relative overflow-hidden">
             <svg aria-hidden viewBox="0 0 200 200" className="pointer-events-none absolute -top-16 -right-10 size-80 opacity-[0.07] dark:opacity-[0.1]">

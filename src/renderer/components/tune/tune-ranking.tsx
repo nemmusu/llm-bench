@@ -149,9 +149,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended }: 
                             </Badge>
                           )}
                         </span>
-                        {/* The two preset buttons stay together; "Misure" goes under them on narrow windows. */}
-                        <span className="flex flex-wrap items-center gap-2 [&>span]:flex-nowrap [&>span]:whitespace-nowrap">
-                          <PresetActions run={run} combo={r.index} />
+                        <span className="flex flex-wrap items-start gap-2">
+                          <PresetActions run={run} combo={r.index} at={depth} layout="compact" />
                           <Button
                             size="sm"
                             variant="ghost"

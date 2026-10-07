@@ -50,7 +50,8 @@ describe('results list', () => {
     const gemma = screen.getByRole('link', { name: /Gemma 4 31B/ }).closest('tr')!;
     expect(within(gemma).getByText('8192')).toBeTruthy();
     expect(within(gemma).getByText('4 utenti')).toBeTruthy();
-    expect(within(gemma).getByText(/^[\d.]+ tok\/s in tutto$/)).toBeTruthy();
+    // What each user got, then everyone together.
+    expect(within(gemma).getByText(/^\d+ tok\/s ciascuno · [\d.]+ tok\/s in tutto$/)).toBeTruthy();
     expect(screen.getAllByText('Annullato').length).toBeGreaterThan(0);
     await userEvent.type(screen.getByRole('textbox', { name: 'Cerca' }), 'gemma');
     expect(screen.getByText('1 risultato')).toBeTruthy();

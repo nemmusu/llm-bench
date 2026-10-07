@@ -12,6 +12,7 @@
  */
 import { z } from 'zod';
 import { engineKindSchema, type EngineKind, type LaunchParams } from './engines';
+import { profileSchema } from './results';
 
 // ---- normalized launch settings ------------------------------------------------------------------
 
@@ -493,6 +494,8 @@ export const configSourceSchema = z.object({
   /** Index into the run's tuning.combinations. */
   combo: z.number().int().min(0).optional(),
   date: z.string(),
+  /** The test's profile ('tune' for a combination). */
+  profile: profileSchema,
   contextSize: z.number().int().optional(),
   vramPeakMiB: z.number().optional(),
   /** The source's own numbers at each depth it measured (provenance of a preset). */

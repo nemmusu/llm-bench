@@ -69,7 +69,7 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     // The winner, one click away: back on Benchmark with its settings filled in.
     await q4.getByRole('button', { name: 'Usa questo preset' }).click();
     await expect(h1(page, 'Benchmark')).toBeVisible();
-    await expect(page.getByText('Preset copiato nel Benchmark')).toBeVisible();
+    await expect(page.getByText('Impostazioni copiate nel Benchmark')).toBeVisible();
     await expect(page.getByLabel('Contesto (token)')).toHaveValue('40960');
     await expect(page.getByLabel('Micro-batch')).toHaveValue('2048');
     await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('q4_0');
