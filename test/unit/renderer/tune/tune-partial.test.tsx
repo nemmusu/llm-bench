@@ -49,7 +49,7 @@ function outOfTime(): Partial<Tuning> {
     attempts: [
       attempt('reference', 'f16', 4 * K, 'ok'),
       attempt('capacity', 'f16', 208 * K, 'ok', { combination: 0 }),
-      attempt('variant', 'q8_0', 256 * K, 'ok', { screen: 'kept', combination: 1, skipped: [{ depth: 262_000, predictedMs: 371_533 }] }),
+      attempt('variant', 'q8_0', 256 * K, 'ok', { screen: 'kept', combination: 1, skipped: [{ depth: 262_000, predictedMs: 371_533 }, { depth: 65_300, predictedMs: 98_000 }] }),
     ],
     fidelity: undefined,
   };
@@ -71,7 +71,7 @@ describe('a search that ran out of time', () => {
     // Why it stopped: how many launches in how much time, and the request left out.
     expect(screen.getByText('Mi sono fermato prima: tempo finito')).toBeTruthy();
     expect(screen.getByText(/Ho fatto 3 prove nel tempo previsto \(5 min 00 s\)/)).toBeTruthy();
-    expect(screen.getByText('Non misurato a 256K: sarebbe finito dopo il tempo previsto (circa 6 min 12 s).')).toBeTruthy();
+    expect(screen.getByText('Non misurato a 64K, 256K: sarebbe finito dopo il tempo previsto (circa 6 min).')).toBeTruthy();
     // The header: the recommended combination, never the run's own launch.
     const config = document.querySelector('header span.block') ?? document.querySelector('span.block.text-sm');
     expect(config?.textContent).toMatch(/q8_0/);

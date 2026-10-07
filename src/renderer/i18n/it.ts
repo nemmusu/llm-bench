@@ -900,7 +900,7 @@ export const it = {
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variabile',
-      tune: 'dipende dal modello',
+      tune: 'variabile',
     },
     profileDesc: {
       quick: 'Una misura veloce per farti un’idea: un caricamento e un testo di prova.',

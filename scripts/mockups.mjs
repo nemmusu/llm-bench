@@ -24,7 +24,7 @@ import { startFakeDockerApi } from '../test/fakes/fake-docker/api.mjs';
 import { startFakeGithub } from '../test/fakes/fake-github/server.mjs';
 import { demoRepos, startFakeHub } from '../test/fakes/fake-hub/hub.mjs';
 import { buildGguf, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
-import { TUNE_PROFILE } from '../test/fakes/fake-engine/profiles.mjs';
+import { SPILL_PROFILE, TUNE_PROFILE } from '../test/fakes/fake-engine/profiles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
@@ -38,6 +38,10 @@ const FAILED_ID = '01K6NA2S5D8F1G4H7J3K6L9ZXC';
 // Long conversations before and after a configuration change (written by fakeWorld from COMPARE_A).
 const TEAM_BEFORE = '01K6Z0PR1MA00000000000000A';
 const TEAM_NOW = '01K6Z1N0W0000000000000000B';
+// The seeded Rapido the spill runs are made from, and the two runs of the 0.3.0 report (spillRuns).
+const QUICK_ID = '01K6TX9Q2W5E8R1T4Y7U3I6OPA';
+const SPILL_CLEAN_ID = '01K6WB0C1EAN000000000000AA';
+const SPILL_ID = '01K6WC5P5Q00000000000000AB';
 
 const curated = JSON.parse(readFileSync(path.join(root, 'resources', 'curated-models.json'), 'utf8'));
 /** The curated reference model, served by the fake Hugging Face (not on the PC: it is previewed before its download). */
@@ -168,6 +172,8 @@ const SCREENS = [
   { n: 26, name: 'sheet-html', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', act: openSheetHtml, full: true },
   // The "Trova le impostazioni migliori" choice with its options (the run and the result: tuneScenes, 28 and 29).
   { n: 27, name: 'benchmark-tune', route: '/', wait: 'Pronto a misurare', act: chooseTune, small: true, full: true },
+  // A run that spilled into shared memory (the real numbers of the 0.3.0 report). Live: spillScenes, 31-33.
+  { n: 30, name: 'result-spill', route: `/results/${SPILL_ID}`, wait: 'Il modello non è entrato tutto nella memoria della scheda', small: true, full: true },
 ];
 
 /** Slow enough that the live screen is mid-run when it is photographed. */
@@ -253,6 +259,74 @@ function teamRuns(base) {
   return [before, now];
 }
 
+/**
+ * The 0.3.0 report on an RTX 5090 (a 27B Q4 of 17.6 GB), from the seeded Rapido of Mistral Small: a
+ * clean Rapido (53.7 tok/s), then the same with -c 262144 — it loaded, Windows put 4 666 MiB in shared
+ * memory and generation fell to 3.5 tok/s, with no error anywhere.
+ */
+function spillRuns(base, modelPath) {
+  const oldPath = base.model.path;
+  const oldFile = base.model.file;
+  const swap = (o) => JSON.parse(JSON.stringify(o), (_k, v) => (typeof v === 'string' ? v.replaceAll(oldPath, modelPath).replaceAll(oldFile, 'Qwen3-27B-Q4_K_M.gguf') : v));
+  const model = {
+    ...base.model,
+    displayName: 'Qwen3 27B',
+    file: 'Qwen3-27B-Q4_K_M.gguf',
+    files: ['Qwen3-27B-Q4_K_M.gguf'],
+    sizeBytes: 17_600_000_000,
+    weakKey: 'local/Qwen3-27B-Q4_K_M.gguf/Q4_K_M/17600000000',
+    path: modelPath,
+    facts: { ...base.model.facts, paramsB: 27, contextLength: 262_144, blockCount: 64 },
+  };
+  const point = (prefill, decode) => {
+    const ttft = prefill.map((p) => (512 / p) * 1000);
+    const itl = 1000 / decode[1];
+    return {
+      promptTokens: 512,
+      outputTokens: 128,
+      ttftMs: stat(ttft),
+      prefillTps: stat(prefill),
+      prefillTpsEngine: stat(prefill.map((p) => p * 1.01)),
+      decodeTps: stat(decode),
+      decodeTpsEngine: stat(decode.map((d) => d * 0.99)),
+      itlP50Ms: itl,
+      itlP95Ms: itl * 1.05,
+      itlPerChunk: false,
+      totalMs: stat(ttft.map((t, i) => t + (128 / decode[i]) * 1000)),
+    };
+  };
+  const memory = (peak) => base.telemetry.memUsedMiB.map((v) => Math.round(1638 + ((v - 3992) * (peak - 1638)) / 15700));
+  const clean = swap(base);
+  Object.assign(clean, { id: SPILL_CLEAN_ID, createdAt: '2026-10-05T09:10:00.000Z', finishedAt: '2026-10-05T09:11:48.000Z', model });
+  clean.metrics.load.warmMs = stat([6120]);
+  clean.metrics.latency = [point([1802, 1810, 1795], [53.7, 53.8, 53.6])];
+  clean.metrics.vram = { baselineMiB: 1638, peakMiB: 19_850, deltaMiB: 18_212, estimateMiB: 19_420, method: 'total-delta' };
+  clean.telemetry.memUsedMiB = memory(19_850);
+
+  const spilled = swap(base);
+  const ctx = (s) => s.replace(/-c 1024/g, '-c 262144');
+  Object.assign(spilled, { id: SPILL_ID, createdAt: '2026-10-05T09:16:00.000Z', finishedAt: '2026-10-05T09:19:32.000Z', model });
+  spilled.launch.argv = spilled.launch.argv.map((a, i, all) => (all[i - 1] === '-c' ? '262144' : a));
+  spilled.launch.display = { powershell: ctx(spilled.launch.display.powershell), bash: ctx(spilled.launch.display.bash) };
+  spilled.launch.params = { ...spilled.launch.params, contextSize: 262_144 };
+  spilled.metrics.load.warmMs = stat([11_480]);
+  spilled.metrics.latency = [point([548, 541, 556], [3.5, 3.4, 3.6])];
+  spilled.metrics.vram = { baselineMiB: 1638, peakMiB: 32_410, deltaMiB: 30_772, estimateMiB: 35_900, method: 'total-delta', sharedPeakMiB: 4666 };
+  spilled.metrics.spill = {
+    by: ['shared-memory', 'decode-collapse'],
+    sharedPeakMiB: 4666,
+    thresholdMiB: 1024,
+    decodeTps: 3.5,
+    normalDecodeTps: 53.7,
+    normalRunIds: [SPILL_CLEAN_ID],
+    fixes: { kvCacheType: 'q4_0', maxContext: 184_320 },
+  };
+  spilled.validity = ['shared_memory_spill'];
+  spilled.telemetry = { ...spilled.telemetry, t: spilled.telemetry.t.map((t) => t * 2), memUsedMiB: memory(32_410), marks: spilled.telemetry.marks.map((m) => ({ ...m, t: m.t * 2 })) };
+  spilled.logExcerpt = spilled.logExcerpt.replaceAll('n_ctx         = 8192', 'n_ctx         = 262144').replaceAll('n_ctx_slot = 8192', 'n_ctx_slot = 262144');
+  return [clean, spilled];
+}
+
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
 async function fakeWorld(dataDir) {
   const cli = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
@@ -280,6 +354,8 @@ async function fakeWorld(dataDir) {
   mkdirSync(models, { recursive: true });
   writeFileSync(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 8B', sizeLabel: '8B' }), totalSize: 96 * 1024 }));
   writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
+  // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
+  writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
   const results = path.join(dataDir, 'results');
   mkdirSync(results, { recursive: true });
   const seeds = path.join(root, 'test', 'fixtures', 'runs');
@@ -295,6 +371,8 @@ async function fakeWorld(dataDir) {
   for (const run of configRuns(full)) writeFileSync(path.join(results, `${run.id}.json`), JSON.stringify(run));
   const base = JSON.parse(readFileSync(path.join(results, readdirSync(results).find((f) => f.includes(COMPARE_A))), 'utf8'));
   for (const run of teamRuns(base)) writeFileSync(path.join(results, `${run.createdAt.slice(0, 10)}_08-00-00_${run.id}.json`), JSON.stringify(run, null, 2));
+  const quick = JSON.parse(readFileSync(path.join(results, readdirSync(results).find((f) => f.includes(QUICK_ID))), 'utf8'));
+  for (const run of spillRuns(quick, path.join(models, 'Qwen3-27B-Q4_K_M.gguf'))) writeFileSync(path.join(results, `${run.id}.json`), JSON.stringify(run, null, 2));
   writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
   const profileFile = path.join(dataDir, 'fake-engine-profile.json');
   writeFileSync(profileFile, JSON.stringify(LIVE_PROFILE));
@@ -429,6 +507,127 @@ async function tuneScenes(browser, info, world, written) {
   }
 }
 
+/**
+ * The RTX 5090 of the 0.3.0 report with a 27B model (fakeWorld's Qwen3-27B: 256 MiB of KV per 1K
+ * tokens): 53.7 tok/s on a short prompt; at -c 262144 it loads anyway, spills and generates at 0.065×
+ * (3.5 tok/s). Prompt reading and generation slow down with depth like the real card.
+ */
+const SPILL_SHOT_PROFILE = { ...SPILL_PROFILE, loadMsCold: 2500, loadMsWarm: 1800, prefillTps: 3000, decodeTps: 53.7, tokensPerChunk: 1 };
+
+/** Picks the 27B model on the Benchmark page. */
+async function choose27b(page) {
+  await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
+  await picker.getByRole('radio', { name: /^Qwen3[ -]27B/ }).click();
+  await picker.getByRole('button', { name: 'Conferma' }).click();
+}
+
+async function idle(info) {
+  const { active } = await api(info, 'GET', '/api/runs/active');
+  if (active) await api(info, 'POST', `/api/runs/${active.runId}/cancel`);
+  while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(500);
+}
+
+/**
+ * A run that spills, as a user meets it on this fake card: a clean Rapido of the 27B first (the usual
+ * speed), then the whole 256K context in expert mode — the plan's warning with its fixes (33), started
+ * anyway: the live screen's banner once generation collapses (31). Then "Trova le impostazioni migliori"
+ * on the same model, cut by its own time limit: partly measured combinations (32). Light and dark.
+ */
+async function spillScenes(browser, info, world, written) {
+  const want = (name) => !only || only.includes(name);
+  if (!want('spill-live') && !want('benchmark-spill') && !want('tune-partial')) return;
+  writeFileSync(world.profileFile, JSON.stringify(SPILL_SHOT_PROFILE));
+  const shotAll = async (n, name, route, wait, opts = {}) => {
+    for (const theme of ['light', 'dark']) {
+      for (const size of opts.sizes ?? TUNE_SIZES) {
+        await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: opts.expert ?? false, onboardingDone: true });
+        const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+        const page = await context.newPage();
+        await page.goto(`${info.url}#${route}`);
+        await page.getByText(wait).first().waitFor({ timeout: 120000 });
+        if (opts.act) await opts.act(page);
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForTimeout(1500);
+        await page.mouse.move(size.w - 4, size.h - 4);
+        const file = path.join(outDir, `${n}-${name}-${theme}${size.suffix}.png`);
+        await shoot(page, file);
+        written.push(file);
+        if (!size.suffix) {
+          const fullFile = file.replace(/\.png$/, '-full.png');
+          await shoot(page, fullFile, { full: true });
+          written.push(fullFile);
+        }
+        await context.close();
+      }
+    }
+  };
+  /** Expert mode, the 27B, the whole 256K context: the plan says it will not fit. */
+  const wholeContext = async (page) => {
+    await choose27b(page);
+    await page.getByLabel('Contesto (token)').fill('262144');
+    await page.getByText('Il modello non entra tutto nella scheda video').first().waitFor({ timeout: 30000 });
+    await page.getByText('Il modello non entra tutto nella scheda video').first().scrollIntoViewIfNeeded();
+  };
+  try {
+    await idle(info);
+    await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce', locale: 'it-IT' });
+    const page = await context.newPage();
+    // A clean Rapido: the usual speed of this model here.
+    await page.goto(`${info.url}#/`);
+    await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+    await choose27b(page);
+    await page.getByRole('radio', { name: /Rapido/ }).click();
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    const confirm = page.getByRole('button', { name: 'Scarica e avvia' });
+    if (await confirm.waitFor({ timeout: 3000 }).then(() => true, () => false)) await confirm.click();
+    await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+    while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+
+    if (want('benchmark-spill')) await shotAll(33, 'benchmark-spill', '/', 'Pronto a misurare', { expert: true, act: wholeContext, sizes: [{ w: 1440, h: 900, suffix: '' }] });
+
+    if (want('spill-live')) {
+      // The whole context, a short custom plan (the banner comes after its first measurement).
+      await putSettings(info, { theme: 'light', language: 'it', expertMode: true, onboardingDone: true });
+      await page.goto(`${info.url}#/`);
+      await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+      await choose27b(page);
+      await page.getByRole('radio', { name: /Personalizzato/ }).click();
+      await page.getByLabel('Caricamenti a freddo').fill('0');
+      await page.getByLabel('Caricamenti a caldo').fill('1');
+      await page.getByLabel('Lunghezze dei prompt').fill('512, 4096');
+      await page.getByLabel('Token generati').fill('32');
+      await page.getByLabel('Ripetizioni', { exact: true }).fill('3');
+      await page.getByLabel('Ripetizioni di riscaldamento').fill('0');
+      await page.getByLabel('Contesto (token)').fill('262144');
+      await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+      await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+      const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+      await page.getByText('Sta usando la RAM condivisa: i numeri saranno molto più bassi').waitFor({ timeout: 180000 });
+      await shotAll(31, 'spill-live', `/run/${runId}`, 'Sta usando la RAM condivisa', { sizes: [{ w: 1440, h: 900, suffix: '' }, { w: 1024, h: 680, suffix: '-1024' }] });
+      await idle(info);
+    }
+
+    if (want('tune-partial')) {
+      await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
+      await page.goto(`${info.url}#/`);
+      await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+      await choose27b(page);
+      await chooseTune(page);
+      await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+      await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+      const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+      while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(2000);
+      await shotAll(32, 'tune-partial', `/results/${runId}`, 'Mi sono fermato prima');
+    }
+    await context.close();
+  } finally {
+    await idle(info).catch(() => undefined);
+    writeFileSync(world.profileFile, JSON.stringify(LIVE_PROFILE));
+  }
+}
+
 async function shoot(page, file, { full } = {}) {
   if (full) {
     // The page scrolls inside <main>: grow the viewport to the content so one image shows it all.
@@ -503,6 +702,7 @@ async function main() {
       }
     }
     await tuneScenes(browser, info, world, written);
+    await spillScenes(browser, info, world, written);
   } finally {
     await browser.close();
     const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));

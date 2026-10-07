@@ -39,12 +39,22 @@ Nella pagina **Benchmark** scegli tre cose:
    - **Al limite**: chiudi gli altri programmi prima del test;
    - **Entra in parte**: funziona, ma più lentamente;
    - **Non entra**: troppo grande per la tua scheda.
-   Se un modello ha l'etichetta **Provato su questa GPU**, l'hai già misurato: vedi subito quanto andava.
-3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (5–20 minuti, vedi sotto).
+   Se un modello ha l'etichetta **Provato su questa GPU**, l'hai già misurato: vedi subito quanto andava. Se l'unico test fatto usava la RAM condivisa (vedi sotto) l'etichetta dice **Provato: usava la RAM condivisa**, senza numeri: quelli non erano i veri della scheda.
+3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (dipende dal modello: GPU Bench ti dice quanto prima di iniziare, vedi sotto).
 
 Premi **Avvia benchmark**. Se serve scaricare qualcosa, GPU Bench ti mostra cosa e quanto pesa e aspetta la tua conferma.
 
 Durante il test vedi in tempo reale le fasi, la velocità, la memoria video, la temperatura e i watt. Puoi annullare in qualsiasi momento.
+
+### Quando il modello non entra nella scheda (RAM condivisa)
+
+Su Windows, se il modello con il contesto scelto non entra tutto nella memoria video, il driver non dà errore: mette il resto nella **RAM condivisa** del PC e tutto diventa circa 10–15 volte più lento. I numeri di un test così non sono quelli veri della scheda.
+
+- **Prima di iniziare**, l'anteprima te lo dice ("Il modello non entra tutto nella scheda video") con quanto serve e quanto hai libero, e ti offre due correzioni con un clic: **Usa cache q4_0** (la memoria del testo occupa circa un quarto) e **Contesto massimo che entra**. Su Linux, invece, il motore si fermerebbe per memoria esaurita, e l'avviso lo dice.
+- **Durante il test**, appena GPU Bench se ne accorge (la RAM condivisa usata dal motore, oppure una generazione molto più lenta dei tuoi test precedenti con lo stesso modello) compare un avviso con **Annulla test**.
+- **Nel risultato**, l'avviso è in cima, con quanta RAM condivisa è stata usata e quanto era più lento del normale, e tre pulsanti: **Trova le impostazioni migliori**, **Riprova con cache q4_0** e **Riprova con meno contesto**. La memoria video mostra anche "+ … nella RAM condivisa" e la stabilità dice "Falsata dalla RAM condivisa".
+
+Questi test sono segnati **RAM condivisa** in Risultati, in Configurazioni e negli Ultimi risultati, e non contano per le stime: durata prevista, memoria, "Provato su questa GPU" e il server consigliato usano solo i test che entravano nella scheda.
 
 ### Usare il modello nei tuoi programmi
 
@@ -59,7 +69,7 @@ Se hai già fatto **Trova le impostazioni migliori** con quel modello su questa 
 
 ### Trova le impostazioni migliori
 
-Scegli la durata **Trova le impostazioni migliori** (*Veloce* circa 5 minuti, *Accurata* circa 20). GPU Bench avvia il modello più volte e prova da solo:
+Scegli la durata **Trova le impostazioni migliori** e poi *Veloce* o *Accurata*: accanto a ognuna GPU Bench ti dice quanto ci vorrà **per quel modello** (per esempio "circa 20 min per questo modello"). Un modello piccolo richiede pochi minuti; uno grande con un contesto di 256K anche più di mezz'ora, perché leggere prompt così lunghi richiede tempo anche a una scheda veloce. GPU Bench avvia il modello più volte e prova da solo:
 
 - la **cache KV** (la memoria che tiene il testo già letto): prima *f16*, poi *q8_0*, poi *q4_0*, che occupa circa un quarto e lascia spazio a molto più contesto. Con le cache ridotte attiva sempre la *flash attention* e usa lo stesso tipo per K e V;
 - il **contesto più grande** che entra tutto nella memoria video, per ogni tipo di cache;
@@ -67,7 +77,11 @@ Scegli la durata **Trova le impostazioni migliori** (*Veloce* circa 5 minuti, *A
 
 Poi misura ogni combinazione **riempiendo il contesto un po' alla volta** (1K, 4K, 8K, 16K… token) e ti mostra i numeri fianco a fianco: la più veloce a ogni lunghezza e quella consigliata, cioè la più veloce tra quelle che arrivano al contesto più grande. Ogni prova ha il suo comando esatto.
 
-Su Windows, quando un modello non entra nella memoria video, il driver non dà errore: sposta una parte nella RAM del PC e tutto diventa circa 10 volte più lento. GPU Bench se ne accorge (memoria condivisa usata dal motore, oppure velocità crollata rispetto alla prima prova) e conta quella configurazione come "non entra".
+Per il contesto più grande GPU Bench non misura tutto a ogni tentativo: avvia il modello, controlla la RAM condivisa e fa una prova breve (1K) da confrontare con la prima. Tra l'ultimo contesto che entra e il primo che non entra cerca a metà, finché resta poco spazio: nella tabella **Contesto massimo per tipo di cache** "Limite trovato" vuol dire che il contesto subito sopra non entrava, "Almeno …" che più in alto non ha provato (la stima lo escludeva, o il tempo era finito).
+
+Su Windows, quando un modello non entra nella memoria video, il driver non dà errore: sposta una parte nella RAM del PC e tutto diventa circa 10–15 volte più lento. GPU Bench se ne accorge (memoria condivisa usata dal motore, oppure velocità crollata rispetto alla prima prova) e conta quella configurazione come "non entra".
+
+La ricerca ha un **tempo massimo** (la sua stima, con un po' di margine). Prima di ogni richiesta GPU Bench controlla se finirebbe in tempo: se no, non la inizia (non interrompe mai una misura a metà) e lo scrive nel risultato. Se il tempo finisce prima di aver misurato tutto, il risultato tiene quello che ha misurato: le combinazioni **Misurata in parte (tempo finito)** sono confrontate con le stesse regole, una è comunque consigliata e **Usa questo preset** usa quella. Le richieste molto lunghe (oltre un minuto) vengono fatte una volta sola invece di ripeterle.
 
 Solo se il modello non entra nemmeno con 4K di contesto e cache *q4_0*, GPU Bench prova a tenere una parte del modello sulla CPU (*--n-cpu-moe* per i modelli MoE, meno *-ngl* per gli altri): funziona, ma è più lento, e lo trovi segnato così.
 

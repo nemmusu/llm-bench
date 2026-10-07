@@ -153,9 +153,9 @@ export interface BudgetRules {
 }
 
 export const BUDGETS: Record<TuneBudget, BudgetRules> = {
-  fast: { minMs: 3 * 60_000, maxLaunches: 24, screenReps: 2, longGrid: 4 },
-  thorough: { minMs: 8 * 60_000, maxLaunches: 60, screenReps: 3, longGrid: 2 },
-  recheck: { minMs: 2 * 60_000, maxLaunches: 4, screenReps: 2, longGrid: 2 },
+  fast: { minMs: 60_000, maxLaunches: 24, screenReps: 2, longGrid: 4 },
+  thorough: { minMs: 2 * 60_000, maxLaunches: 60, screenReps: 3, longGrid: 2 },
+  recheck: { minMs: 60_000, maxLaunches: 4, screenReps: 2, longGrid: 2 },
 };
 
 /** The time limit is the search's own estimate times this. */

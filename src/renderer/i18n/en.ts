@@ -899,7 +899,7 @@ export const en: Messages = {
       standard: '~6 min',
       full: '15–30 min',
       custom: 'variable',
-      tune: 'depends on the model',
+      tune: 'variable',
     },
     profileDesc: {
       quick: 'A fast measurement to get an idea: one load and one test text.',

@@ -13,7 +13,7 @@ import { Card } from '../ui/card';
 import { CodeBlock } from '../ui/code-block';
 import { HelpTip } from '../ui/help-tip';
 import { Tooltip } from '../ui/tooltip';
-import { depthLabel, discardReason, kvName, outcomeText, settingsText } from './tune-format';
+import { depthLabel, discardReason, kvName, outcomeText, roughDuration, settingsText } from './tune-format';
 import { discardedAttempts, lastPoint } from './tune-logic';
 
 /**
@@ -25,6 +25,7 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
   const { t, duration } = f;
   const why = tuning.stoppedBy as NonNullable<Tuning['stoppedBy']>;
   const skipped = tuning.attempts.flatMap((a) => a.skipped ?? []);
+  const depths = [...new Set(skipped.map((s) => nominalDepth(s.depth)))].sort((a, b) => a - b);
   const body =
     tuning.limitSeconds !== undefined
       ? t('tune.stopped.bodyLimit', { n: tuning.attempts.length, limit: duration(tuning.limitSeconds * 1000) })
@@ -35,8 +36,8 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
       {skipped.length > 0 && (
         <p className="mt-1">
           {t('tune.discarded.skipped', {
-            depths: [...new Set(skipped.map((s) => depthLabel(nominalDepth(s.depth), f)))].join(', '),
-            time: duration(Math.max(...skipped.map((s) => s.predictedMs))),
+            depths: depths.map((d) => depthLabel(d, f)).join(', '),
+            time: roughDuration(Math.max(...skipped.map((s) => s.predictedMs)) / 1000),
           })}
         </p>
       )}

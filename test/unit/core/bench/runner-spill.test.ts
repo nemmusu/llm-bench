@@ -11,7 +11,7 @@ import { launchParamsSchema } from '../../../../src/contract/engines';
 import type { Scenario } from '../../../../src/contract/results';
 import { BenchRunner, PHASE_HEARTBEAT_MS, type RunInput, type RunnerDeps } from '../../../../src/core/bench/runner';
 import { buildScenario } from '../../../../src/core/bench/scenarios';
-import type { TuneSpace, TunerInput } from '../../../../src/core/bench/tuner';
+import { BUDGETS, type TuneSpace, type TunerInput } from '../../../../src/core/bench/tuner';
 import { hardware } from '../store/fixtures';
 import { displayCommand, events, FakeAdapter, FakeTelemetry, memoryRuns, modelTarget, SMALL_CORPUS, World, type AdapterOptions, type TelemetryOptions } from './fakes';
 
@@ -152,7 +152,7 @@ describe('a tune run’s clock', () => {
   it('re-sends its progress and time left every few seconds during a long request', async () => {
     // A token every 1.5 s: a 64-token answer takes 96 s, the 32-token probe 48 s.
     const s = setup({ adapter: { client: { decodeMsPerToken: 1500 } } });
-    const result = await s.runner.run(tuneRun(), new AbortController().signal);
+    const result = await s.runner.run(tuneRun({ limitMs: 600_000 }), new AbortController().signal);
     const phases = s.ev.ofType('run.phase').filter((e) => e.remainingSeconds !== undefined);
     // Far more than the phase changes: the heartbeat, at most every PHASE_HEARTBEAT_MS.
     expect(phases.length).toBeGreaterThan(20);
@@ -163,12 +163,12 @@ describe('a tune run’s clock', () => {
   });
 
   it('a repetition that would end past the time limit is not made: the point keeps the one made', async () => {
-    // 30 s per start, a 64-token answer in 58 s (under a minute: two repetitions asked).
-    const s = setup({ adapter: { warmMs: 30_000, client: { decodeMsPerToken: 900 } } });
+    // 10 s per start, a 64-token answer in 29 s (under a minute: two repetitions asked).
+    const s = setup({ adapter: { warmMs: 10_000, client: { decodeMsPerToken: 450 } } });
     const result = await s.runner.run(tuneRun({ limitMs: 1 }), new AbortController().signal);
     const t = result.tuning!;
     expect(t.stoppedBy).toBe('budget');
-    expect(t.limitSeconds).toBe(180);
+    expect(t.limitSeconds).toBe(BUDGETS.fast.minMs / 1000);
     const screen = t.attempts.find((a) => a.stage === 'variant')!;
     expect(screen.points[1]).toMatchObject({ promptTokens: 1024, decodeTps: { n: 1 } });
     // The screening's 1K point was asked twice, made once; the deeper one not at all.

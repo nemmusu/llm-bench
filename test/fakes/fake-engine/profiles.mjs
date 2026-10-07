@@ -71,3 +71,33 @@ export const VLLM_TUNE_PROFILE = {
   vllmHelp: 'all',
   vllmMetrics: 'counters',
 };
+
+/**
+ * A Windows spill, as GPU Bench 0.3.0 met it on an RTX 5090 (a 27B Q4 model with -c 262144 -ngl all):
+ * no error, the model loads, part of it goes to shared system memory and generation collapses to
+ * 0.065× (3.5 against 53.7 tok/s; prompt reading 0.3×). Scaled to the spill test model of the E2E
+ * (64 layers × 8 KV heads × 256 × 2 bytes: 256 KiB of KV per token, the VRAM estimate's own figure), on
+ * a card with 31 000 MiB free:
+ *   - the default context (Rapido: 1K) fits; up to ~118K it fits (so "Riprova con meno contesto" does);
+ *   - 256K needs ~66 GB: it loads anyway and spills (spillMiB is "as much as Windows gives");
+ *   - prompt reading slows with depth like the real card (1 810 → 875 tok/s from 1K to 256K).
+ * Fast enough for an E2E: a Rapido that spills takes a few seconds.
+ */
+export const SPILL_PROFILE = {
+  loadMsCold: 500,
+  loadMsWarm: 400,
+  prefillTps: 60_000,
+  decodeTps: 1500,
+  tokensPerChunk: 4,
+  memory: { totalMiB: 31_000, weightsMiB: 300, kvMiBPer1k: 256, computeMiBPer512: 100, spillMiB: 1_000_000 },
+  speed: { depthSlowdown: 0.125, prefillDepthSlowdown: 0.134, spillFactor: 0.065 },
+};
+
+/**
+ * "Trova le impostazioni migliori" that runs out of time: TUNE_PROFILE's memory, but generation at
+ * 20 tok/s (a 128-token answer takes 6.4 s), 15× slower than the forecast expects for a file this small
+ * (300 tok/s). With a 16K test model the search's own limit (its forecast × 1.5, at least a minute: about
+ * 1 min 40 s) ends it during the first screenings: what was measured becomes combinations "misurate in
+ * parte" (the screening's 1K, 4K… points, not the whole sweep).
+ */
+export const TUNE_SLOW_PROFILE = { ...TUNE_PROFILE, decodeTps: 20, tokensPerChunk: 1 };
