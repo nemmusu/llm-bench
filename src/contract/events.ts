@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
-import { runSummarySchema, tuneAttemptSchema, tuningSchema } from './results';
+import { launchParamsSchema } from './engines';
+import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, tuneAttemptSchema, tuningSchema } from './results';
 
 /** Phases of a benchmark run, in order. Shown as the stepper on the live screen. */
 export const RUN_PHASES = [
@@ -24,6 +25,57 @@ export const RUN_PHASES = [
 ] as const;
 export const runPhaseSchema = z.enum(RUN_PHASES);
 export type RunPhase = z.infer<typeof runPhaseSchema>;
+
+/** The engine instance a run is using right now (every run; changes per load and per tune attempt). */
+export const runLaunchSchema = z.object({
+  /** Exact launch parameters of this instance (what the core filled in included). */
+  params: launchParamsSchema,
+  /** Tokens it takes at once: llama.cpp ctx-size, vLLM max-model-len; absent when unknown (external endpoint). */
+  contextSize: z.number().int().optional(),
+  /** Ready-to-paste command (secrets redacted). */
+  command: z.object({ argv: z.array(z.string()), powershell: z.string(), bash: z.string() }),
+  /** "llama.cpp b10997 (cuda-13.4)", as RunSummary.engineLabel. */
+  engineLabel: z.string(),
+});
+export type RunLaunch = z.infer<typeof runLaunchSchema>;
+
+/**
+ * What is being measured right now. 'first-token' = the 1-token probe right after the first load;
+ * 'tune-probe' / 'tune-screen' = the quick checks of a tune attempt (its full sweeps are 'context-sweep').
+ */
+export const CURRENT_STEP_KINDS = ['load', 'first-token', 'latency', 'context-sweep', 'concurrency', 'llama-bench', 'tune-probe', 'tune-screen', 'fidelity'] as const;
+export const currentStepSchema = z.object({
+  kind: z.enum(CURRENT_STEP_KINDS),
+  /** Prompt length of the request in flight (latency, sweeps: same as depth). */
+  promptTokens: z.number().int().optional(),
+  /** Context sweeps: how full the context is (tokens). */
+  depth: z.number().int().optional(),
+  outputTokens: z.number().int().optional(),
+  /** 1-based repetition and how many there are (warm-ups are counted separately). */
+  rep: z.number().int().optional(),
+  reps: z.number().int().optional(),
+  warmup: z.boolean().optional(),
+  /** Concurrent users of the level being measured. */
+  concurrency: z.number().int().optional(),
+  /** Loads: 'cold' / 'warm'; tune attempts: the stage. */
+  label: z.string().optional(),
+});
+export type CurrentStep = z.infer<typeof currentStepSchema>;
+
+/**
+ * A measurement so far, re-sent after every repetition with the medians up to then: the latest point
+ * with the same (stepKind, promptTokens / level, attempt) replaces the earlier one.
+ */
+export const livePointSchema = z.union([
+  z.object({
+    stepKind: z.enum(['latency', 'context-sweep', 'tune-probe', 'tune-screen']),
+    point: latencyPointSchema,
+    /** Tune runs: index of the attempt (RunResult.tuning.attempts) this point belongs to. */
+    attempt: z.number().int().min(0).optional(),
+  }),
+  z.object({ stepKind: z.literal('concurrency'), point: concurrencyPointSchema }),
+]);
+export type LivePoint = z.infer<typeof livePointSchema>;
 
 /** Server-sent events on GET /api/events. Each SSE `event:` name equals `type`. */
 export const serverEventSchema = z.discriminatedUnion('type', [
@@ -47,6 +99,12 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     tokens: z.number().optional(),
   }),
   z.object({ type: z.literal('run.log'), runId: z.string(), lines: z.array(z.string()) }),
+  /** An engine instance of the run became ready (every load of every run, every tune attempt). */
+  z.object({ type: z.literal('run.launch'), runId: z.string(), launch: runLaunchSchema }),
+  /** The request in flight changed (prompt length, repetition, users…). */
+  z.object({ type: z.literal('run.step'), runId: z.string(), current: currentStepSchema }),
+  /** A prompt length / depth / users level got a new measurement (medians so far). */
+  z.object({ type: z.literal('run.point'), runId: z.string(), live: livePointSchema }),
   /**
    * Profile "tune": the search so far after every change (an attempt started or ended, a combination
    * measured). `current` = the launch in progress (no outcome yet: shown as "in corso").

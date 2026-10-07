@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './engines';
-import { runPhaseSchema } from './events';
+import { currentStepSchema, livePointSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
 import { profileSchema, scenarioSchema, tuneBudgetSchema, tuneKvTypeSchema, tuningSchema } from './results';
@@ -140,6 +140,12 @@ export const activeRunSchema = z.object({
   scenario: scenarioSchema,
   /** Profile "tune": the search so far (attempts, combinations measured), for a reopened live screen. */
   tuning: tuningSchema.optional(),
+  /** The engine instance in use (last `run.launch`). */
+  launch: runLaunchSchema.optional(),
+  /** The request in flight (last `run.step`). */
+  current: currentStepSchema.optional(),
+  /** Every measurement so far (latest `run.point` per key), in arrival order. */
+  points: z.array(livePointSchema).default([]),
 });
 export type ActiveRun = z.infer<typeof activeRunSchema>;
 export const activeRunResponseSchema = z.object({ active: activeRunSchema.nullable() });

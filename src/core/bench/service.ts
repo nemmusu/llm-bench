@@ -368,6 +368,7 @@ export class BenchService {
         modelName: p.model.identity.displayName,
         engineLabel: engineLabelOf(p.launch.engine),
         scenario: p.scenario,
+        points: [],
       };
     } catch (e) {
       this.current = undefined;

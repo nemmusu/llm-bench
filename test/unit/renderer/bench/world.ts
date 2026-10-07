@@ -308,6 +308,7 @@ export function activeRun(runId: string, over: Partial<ActiveRun> = {}): ActiveR
     modelName: 'Qwen3 8B',
     engineLabel: 'llama.cpp b11438 (cuda-13.4)',
     scenario: planFor().scenario,
+    points: [],
     ...over,
   };
 }
