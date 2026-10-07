@@ -157,26 +157,67 @@ export function aggregateLatency(
   };
 }
 
+/** Total length (ms) of the union of the intervals: overlapping ones are counted once. */
+export function unionMs(windows: readonly Window[]): number {
+  const sorted = windows.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let end = -Infinity;
+  for (const [a, b] of sorted) {
+    if (b <= end) continue;
+    total += b - Math.max(a, end);
+    end = b;
+  }
+  return total;
+}
+
+/** What one user of a concurrency level asks for and how much context each one has. */
+export interface ConcurrencyShape {
+  promptTokens: number;
+  outputTokens: number;
+  /** Tokens one user can hold (llama.cpp ctx / slots, or the whole shared context). */
+  contextPerUser?: number;
+  /** The context is one pool shared by every user (unified KV cache, vLLM). */
+  contextShared?: boolean;
+}
+
 /**
- * Closed-loop concurrency level: `null` entries are failed requests. Aggregate throughput is
- * total generated tokens / makespan (first send → last completion).
+ * Closed-loop concurrency level: `null` entries are failed requests. Aggregate generation is total
+ * generated tokens / makespan (first send → last completion); aggregate prompt reading is total
+ * prompt tokens / the time at least one request was still reading (union of send → first token).
+ * Per user: the median and the slowest 5 % of the per-request rates.
  */
 export function aggregateConcurrency(
   level: number,
   perRequest: readonly (RequestMetrics | null)[],
   makespanMs: number,
+  shape?: ConcurrencyShape,
 ): ConcurrencyPoint {
   const ok = perRequest.filter((r): r is RequestMetrics => r !== null);
   const tokens = ok.reduce((s, r) => s + r.outputTokens, 0);
   const ttft = ok.map((r) => r.ttftMs);
+  const decode = defined(ok.map((r) => r.decodeTps));
+  const prefill = defined(ok.map((r) => r.prefillTpsEngine ?? r.prefillTpsClient));
+  const reading = unionMs(ok.map((r) => [r.sentAt, r.firstAt] as const));
+  const promptTotal = ok.reduce((s, r) => s + r.promptTokens, 0);
   return {
     level,
     requests: perRequest.length,
     aggregateTps: makespanMs > 0 ? (tokens / makespanMs) * 1000 : 0,
-    perRequestDecodeTpsP50: percentile(defined(ok.map((r) => r.decodeTps)), 50),
+    perRequestDecodeTpsP50: percentile(decode, 50),
     ttftP50Ms: percentile(ttft, 50),
     ttftP95Ms: percentile(ttft, 95),
     errors: perRequest.length - ok.length,
+    ...(shape
+      ? {
+          promptTokens: shape.promptTokens,
+          outputTokens: shape.outputTokens,
+          ...(shape.contextPerUser !== undefined ? { contextPerUser: shape.contextPerUser } : {}),
+          ...(shape.contextShared !== undefined ? { contextShared: shape.contextShared } : {}),
+        }
+      : {}),
+    ...(decode.length ? { perRequestDecodeTpsP5: percentile(decode, 5), perRequestDecodeTps: summarize(decode) } : {}),
+    ...(prefill.length ? { perRequestPrefillTpsP50: percentile(prefill, 50), perRequestPrefillTpsP5: percentile(prefill, 5) } : {}),
+    ...(reading > 0 ? { aggregatePrefillTps: (promptTotal / reading) * 1000 } : {}),
   };
 }
 

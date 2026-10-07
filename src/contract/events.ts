@@ -77,6 +77,56 @@ export const livePointSchema = z.union([
 ]);
 export type LivePoint = z.infer<typeof livePointSchema>;
 
+// ---- Engine start progress ("cosa sta facendo il motore mentre si carica") ----------------------
+
+/**
+ * What an engine is doing while it starts, read from its log (see core engines/shared/load-progress):
+ * - 'starting': launched, nothing recognised in the log yet (native engines);
+ * - 'container': Docker container starting, before the first engine line;
+ * - 'metadata': llama.cpp reading the GGUF header;
+ * - 'weights': loading the weights (vLLM checkpoint shards done/total; llama.cpp progress dots,
+ *   "offloaded N/M layers to GPU" as detail);
+ * - 'compile': vLLM torch.compile / Dynamo;
+ * - 'memory-profile': vLLM measuring the memory left for the KV cache;
+ * - 'kv-cache': allocating the KV cache (llama_context / llama_kv_cache, vLLM "GPU KV cache size");
+ * - 'cuda-graphs': vLLM capturing CUDA graphs (done/total);
+ * - 'warmup': llama.cpp "warming up the model", vLLM "init engine (profile, create kv cache, warmup model) took";
+ * - 'api-server': the HTTP server is starting;
+ * - 'ready': the engine answers.
+ */
+export const LOAD_STAGES = [
+  'starting',
+  'container',
+  'metadata',
+  'weights',
+  'compile',
+  'memory-profile',
+  'kv-cache',
+  'cuda-graphs',
+  'warmup',
+  'api-server',
+  'ready',
+] as const;
+export const loadStageSchema = z.enum(LOAD_STAGES);
+export type LoadStage = z.infer<typeof loadStageSchema>;
+
+/** The latest start progress of an engine (run.load, ActiveRun.loading, ServerInfo.loading). */
+export const loadProgressSchema = z.object({
+  stage: loadStageSchema,
+  /** 0..1 inside the stage, when the log says (vLLM shards and CUDA graphs, llama.cpp progress dots). */
+  fraction: z.number().min(0).max(1).optional(),
+  /** Units of the stage done and in total (shards, graphs, layers), when the log says. */
+  done: z.number().int().min(0).optional(),
+  total: z.number().int().min(0).optional(),
+  /** Short text from the log line, already trimmed (e.g. "offloaded 49/49 layers to GPU", "took 12.40 s"). */
+  detail: z.string().optional(),
+  /** ms since this engine instance was started. */
+  elapsedMs: z.number().min(0),
+  /** Usual start → ready time of this model with this engine on this PC (past runs), when known: "di solito ~45 s". */
+  expectedMs: z.number().min(0).optional(),
+});
+export type LoadProgress = z.infer<typeof loadProgressSchema>;
+
 /** Server-sent events on GET /api/events. Each SSE `event:` name equals `type`. */
 export const serverEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hello'), version: z.string() }),
@@ -110,6 +160,11 @@ export const serverEventSchema = z.discriminatedUnion('type', [
    * measured). `current` = the launch in progress (no outcome yet: shown as "in corso").
    */
   z.object({ type: z.literal('run.tune'), runId: z.string(), tuning: tuningSchema, current: tuneAttemptSchema.omit({ outcome: true }).optional() }),
+  /**
+   * An engine of the run is starting (every cold/warm load, step instance and tune attempt): what it
+   * is doing now, a few times per second at most. The last one of a start has stage 'ready'.
+   */
+  z.object({ type: z.literal('run.load'), runId: z.string(), ...loadProgressSchema.shape }),
   z.object({ type: z.literal('run.done'), runId: z.string(), summary: runSummarySchema }),
   z.object({ type: z.literal('run.error'), runId: z.string(), error: appErrorSchema }),
   z.object({ type: z.literal('telemetry'), samples: z.array(gpuSampleSchema) }),
