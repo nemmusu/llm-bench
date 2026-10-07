@@ -1039,6 +1039,8 @@ export const en: Messages = {
       usersAny: 'Several users at once',
       usersPrompt: '{tokens}-token prompt each',
       sessions: '{n} conversations at once',
+      sessionOne: '1 conversation',
+      userOne: '1 user alone',
       sessionsAny: 'Long conversations',
       sessionsContext: '{tokens}-token context each',
       turn: 'message {n} of {total}',
@@ -1079,6 +1081,7 @@ export const en: Messages = {
       loadRep: 'Load {n} of {total}',
       prompt: '{tokens}-token text',
       users: '{n} users at once',
+      depth: 'Context filled up to {tokens} tokens',
     },
   },
   result: {

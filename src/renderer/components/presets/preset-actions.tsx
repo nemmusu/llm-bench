@@ -28,7 +28,8 @@ export function PresetActions({ run, combo }: { run: RunResult; combo?: number }
   const system = useBenchSystem();
   const flow = useStartFlow();
   const rerun = local.data ? rerunOf(run, local.data, system.data?.paths.enginesDir) : undefined;
-  const params = (combo === undefined ? undefined : run.tuning?.combinations[combo]?.params) ?? run.launch.params;
+  // A combination of a tune run, or the run's own launch.
+  const params = combo === undefined ? run.launch.params : run.tuning!.combinations[combo]!.params;
   const canServe = rerun !== undefined && !rerun.modelMissing && run.engine.kind !== 'external';
 
   const use = () => {

@@ -178,7 +178,7 @@ describe('tune result', () => {
         { kvType: 'auto', predictedMax: 8 * K, inferred: false },
         { kvType: 'fp8', inferred: false, skipped: 'budget' },
       ],
-      fidelity: { referenceKv: 'f16', comparedKv: 'q8_0', promptTokens: 1024, tokens: 64, identical: 64 },
+      fidelity: { referenceKv: 'f16', comparedKv: 'q8_0', promptTokens: 1024, tokens: 64, identical: 50 },
     });
     const { unmount } = open(sparse);
     await h1(/Qwen3 8B/);
@@ -195,15 +195,22 @@ describe('tune result', () => {
     expect(capacity.textContent).toContain('Non provata: tempo finito.');
     expect(capacity.textContent).toContain('non ci sta');
     expect(capacity.textContent).toContain('automatica');
-    expect(screen.getByText(/tutti i 64 token generati sono identici/)).toBeTruthy();
+    // No first divergence reported: the one after the identical ones.
+    expect(screen.getByText(/i primi 50 token su 64 sono identici a quelli con f16; il primo diverso è il n\. 51/)).toBeTruthy();
     unmount();
 
-    const single = tunedRun({ combinations: [combo('f16', 2 * K, [point(K, 50, 900)])], recommended: 0, fastestByDepth: [], fidelity: undefined, stoppedBy: 'launches' });
+    const single = tunedRun({
+      combinations: [combo('f16', 2 * K, [point(K, 50, 900)])],
+      recommended: 0,
+      fastestByDepth: [],
+      fidelity: { referenceKv: 'f16', comparedKv: 'q4_0', promptTokens: 512, tokens: 32, identical: 32 },
+      stoppedBy: 'launches',
+    });
     const second = open(single);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Mi sono fermato prima: raggiunto il numero massimo di prove')).toBeTruthy();
     expect(screen.queryByRole('radiogroup', { name: 'Confronta a' })).toBeNull();
-    expect(screen.queryByText(/Fedeltà/)).toBeNull();
+    expect(screen.getByText(/tutti i 32 token generati sono identici/)).toBeTruthy();
     second.unmount();
 
     const empty = tunedRun({ combinations: [], recommended: undefined, fastestByDepth: [], capacity: [], attempts: [attempt('capacity', 'f16', 8 * K, 'oom')], fidelity: undefined });

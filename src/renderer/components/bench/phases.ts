@@ -1,6 +1,6 @@
 /** Phase logic of the live screen: which phases a run has, their state, plain-language details. */
 import { RUN_PHASES, type RunPhase } from '../../../contract/events';
-import type { Scenario } from '../../../contract/results';
+import type { Scenario, Step } from '../../../contract/results';
 import type { StepState } from '../ui/stepper';
 
 /** Steps done by the app before the run (inline install / download). */
@@ -10,35 +10,43 @@ export interface PreSteps {
 }
 
 /**
+ * The phases a step shows on the stepper. Every step kind has its own case and no default: a new
+ * kind does not compile until it is mapped here (it can never fall into another phase silently).
+ */
+export function phasesOfStep(step: Step): RunPhase[] {
+  switch (step.kind) {
+    case 'load':
+      return [step.cache === 'cold' ? 'cold-load' : 'warm-load'];
+    case 'latency':
+      // The core reports long prompts (> 1024 tokens) as "reading the prompt", short ones as generation.
+      return [...(step.promptTokens.some((p) => p > 1024) ? (['prefill'] as const) : []), ...(step.promptTokens.some((p) => p <= 1024) ? (['decode'] as const) : [])];
+    case 'context-sweep':
+      return ['context-sweep'];
+    case 'concurrency':
+      return ['concurrency'];
+    case 'sessions':
+      return ['sessions'];
+    case 'llama-bench':
+      return ['llama-bench'];
+  }
+}
+
+/** Every measuring phase of a non-tune run, for a screen reopened without its scenario. */
+const MEASURING: readonly RunPhase[] = ['cold-load', 'warm-load', 'prefill', 'decode', 'context-sweep', 'concurrency', 'sessions', 'llama-bench'];
+
+/**
  * The phases this run goes through, in order. Without a scenario (screen reopened while a run
  * was already going) every measuring phase is listed.
  */
 export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {}, opts: { fidelity?: boolean } = {}): RunPhase[] {
-  const has = new Set<RunPhase>(['prepare', 'cleanup']);
-  if (pre.install) has.add('install');
-  if (pre.download) has.add('download');
   // Install and download happen before the run itself: listed first, already done once it starts.
-  const pre_ = (['install', 'download'] as const).filter((p) => has.has(p));
+  const before = (['install', 'download'] as const).filter((p) => pre[p]);
   if (scenario?.profile === 'tune') {
     // "Trova le impostazioni migliori": largest context per cache, one setting at a time, then the sweeps.
-    return [...pre_, 'prepare', 'tune-capacity', 'tune-variants', 'context-sweep', ...(opts.fidelity ? (['fidelity'] as const) : []), 'cleanup'];
+    return [...before, 'prepare', 'tune-capacity', 'tune-variants', 'context-sweep', ...(opts.fidelity ? (['fidelity'] as const) : []), 'cleanup'];
   }
-  if (!scenario) {
-    for (const p of ['cold-load', 'warm-load', 'prefill', 'decode', 'context-sweep', 'concurrency', 'llama-bench'] as const) has.add(p);
-  } else {
-    for (const step of scenario.steps) {
-      if (step.kind === 'load') has.add(step.cache === 'cold' ? 'cold-load' : 'warm-load');
-      else if (step.kind === 'latency') {
-        // The core reports long prompts (> 1024 tokens) as "reading the prompt", short ones as generation.
-        if (step.promptTokens.some((p) => p > 1024)) has.add('prefill');
-        if (step.promptTokens.some((p) => p <= 1024)) has.add('decode');
-      } else if (step.kind === 'concurrency') has.add('concurrency');
-      else if (step.kind === 'context-sweep') has.add('context-sweep');
-      else if (step.kind === 'sessions') has.add('sessions');
-      else has.add('llama-bench');
-    }
-  }
-  return [...pre_, ...RUN_PHASES.filter((p) => has.has(p) && p !== 'install' && p !== 'download')];
+  const has = new Set<RunPhase>(['prepare', 'cleanup', ...(scenario ? scenario.steps.flatMap(phasesOfStep) : MEASURING)]);
+  return [...before, ...RUN_PHASES.filter((p) => has.has(p))];
 }
 
 /** llama-bench is reported as phase "decode" with detail "llama-bench". */
@@ -59,9 +67,10 @@ export function phaseStates(phases: readonly RunPhase[], current: RunPhase): Rec
 export type DetailLine =
   | { key: 'run.detail.loadRep'; params: { n: number; total: number } }
   | { key: 'run.detail.prompt'; params: { tokens: number } }
+  | { key: 'run.detail.depth'; params: { tokens: number } }
   | { key: 'run.detail.users'; params: { n: number } };
 
-/** "Caricamento 2 di 3", "Testo da 4.096 token", "4 utenti insieme" from the run.phase detail. */
+/** "Caricamento 2 di 3", "Testo da 4.096 token", "Contesto riempito fino a 32.768 token", "4 utenti insieme" from the run.phase detail. */
 export function detailLine(phase: RunPhase, detail: string | undefined, scenario: Scenario | undefined): DetailLine | undefined {
   const n = Number(detail);
   if (!detail || !Number.isFinite(n)) return undefined;
@@ -71,6 +80,7 @@ export function detailLine(phase: RunPhase, detail: string | undefined, scenario
     return { key: 'run.detail.loadRep', params: { n, total: step?.kind === 'load' ? step.reps : n } };
   }
   if (phase === 'prefill' || phase === 'decode') return { key: 'run.detail.prompt', params: { tokens: n } };
+  if (phase === 'context-sweep') return { key: 'run.detail.depth', params: { tokens: n } };
   if (phase === 'concurrency') return { key: 'run.detail.users', params: { n } };
   return undefined;
 }

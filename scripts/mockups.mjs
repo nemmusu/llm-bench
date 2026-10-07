@@ -11,7 +11,8 @@
 // realistic runs of test/fixtures/runs; the live screen shows a real (fake-engine) run started
 // through the API. Theme, language, onboarding and expert mode are set with PUT /api/settings
 // before each navigation: the same path the UI uses, no special dev hooks. Chromium runs with
-// reduced motion so charts render without animation and frames are stable.
+// reduced motion so charts render without animation and frames are stable. The "Trova le
+// impostazioni migliori" scenes (--only=tune-run,tune-result) run a real search on the fake engine.
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -23,6 +24,7 @@ import { startFakeDockerApi } from '../test/fakes/fake-docker/api.mjs';
 import { startFakeGithub } from '../test/fakes/fake-github/server.mjs';
 import { demoRepos, startFakeHub } from '../test/fakes/fake-hub/hub.mjs';
 import { buildGguf, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
+import { TUNE_PROFILE } from '../test/fakes/fake-engine/profiles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
@@ -65,6 +67,12 @@ async function openServeReady(page) {
   await openServeConfirm(page);
   await page.getByRole('button', { name: 'Avvia server' }).click();
   await page.getByRole('dialog', { name: 'Il server è pronto' }).getByText('Indirizzo compatibile OpenAI').waitFor({ timeout: 90000 });
+}
+
+/** Picks "Trova le impostazioni migliori" on the Benchmark page. */
+async function chooseTune(page) {
+  await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+  await page.getByText('Le impostazioni che contano di più, poche prove.').waitFor({ timeout: 10000 });
 }
 
 /** Stops every server a scene started (the next screens, the live run above all, need a free GPU). */
@@ -113,6 +121,22 @@ const SCREENS = [
   { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
   { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
   { n: 19, name: 'serve-ready', route: '/', wait: 'Pronto a misurare', act: openServeReady, after: stopServers },
+  // The "Trova le impostazioni migliori" choice with its options (the run and the result: tuneScenes).
+  { n: 22, name: 'benchmark-tune', route: '/', wait: 'Pronto a misurare', act: chooseTune, small: true, full: true },
+];
+
+/** Slow enough that the live screen is mid-run when it is photographed. */
+const LIVE_PROFILE = { loadMsCold: 2600, loadMsWarm: 900, prefillTps: 8900, decodeTps: 46, tokensPerChunk: 1 };
+/**
+ * "Trova le impostazioni migliori" (test/fakes/fake-engine/profiles.mjs): q4_0 holds the largest context,
+ * a larger micro-batch reads faster, f16 runs out of memory early. Loads slowed down so the live
+ * screen is photographed mid-search.
+ */
+const TUNE_SHOT_PROFILE = { ...TUNE_PROFILE, loadMsCold: 1800, loadMsWarm: 1500, decodeTps: 600 };
+/** Sizes of the tune scenes. */
+const TUNE_SIZES = [
+  { w: 1600, h: 1000, suffix: '' },
+  { w: 1024, h: 700, suffix: '-1024' },
 ];
 
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
@@ -150,6 +174,8 @@ async function fakeWorld(dataDir) {
     writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname()));
   }
   writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
+  const profileFile = path.join(dataDir, 'fake-engine-profile.json');
+  writeFileSync(profileFile, JSON.stringify(LIVE_PROFILE));
   const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
   writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
   const env = {
@@ -161,11 +187,11 @@ async function fakeWorld(dataDir) {
     GPUBENCH_NVIDIA_SMI: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-nvidia-smi', 'fake-nvidia-smi.mjs')]),
     FAKE_NVIDIA_SMI_STATE: smiState,
     GPUBENCH_LLAMA_LAUNCHER: JSON.stringify([process.execPath]),
-    // Slow enough that the live screen is mid-run when it is photographed.
-    FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsCold: 2600, loadMsWarm: 900, prefillTps: 8900, decodeTps: 46, tokensPerChunk: 1 }),
+    // A file the fake engine reads at every launch: the tune scenes switch it to the tuner's profile.
+    FAKE_ENGINE_PROFILE: profileFile,
     FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
   };
-  return { env, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
+  return { env, profileFile, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
 }
 
 function startCore(dataDir, extraEnv) {
@@ -216,6 +242,68 @@ async function openLiveRun(page, info) {
     const now = (await api(info, 'GET', '/api/runs/active')).active;
     if (!now || now.progress > 0.35) break;
     await sleep(500);
+  }
+}
+
+/**
+ * "Trova le impostazioni migliori": started like a user does (the profile, Avvia, the llama.cpp install
+ * on a first run), the live screen photographed mid-search, then the result. Light and dark, at
+ * 1600×1000 and 1024×700.
+ */
+async function tuneScenes(browser, info, world, written) {
+  const want = (name) => !only || only.includes(name);
+  if (!want('tune-run') && !want('tune-result')) return;
+  writeFileSync(world.profileFile, JSON.stringify(TUNE_SHOT_PROFILE));
+  const shots = async (n, name, route, wait) => {
+    for (const theme of ['light', 'dark']) {
+      for (const size of TUNE_SIZES) {
+        await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true });
+        const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+        const page = await context.newPage();
+        await page.goto(`${info.url}#${route}`);
+        await page.getByText(wait).first().waitFor({ timeout: 60000 });
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForTimeout(2500);
+        await page.mouse.move(size.w - 4, size.h - 4);
+        const file = path.join(outDir, `${n}-${name}-${theme}${size.suffix}.png`);
+        await shoot(page, file);
+        written.push(file);
+        if (!size.suffix) {
+          const fullFile = file.replace(/\.png$/, '-full.png');
+          await shoot(page, fullFile, { full: true });
+          written.push(fullFile);
+        }
+        await context.close();
+      }
+    }
+  };
+  try {
+    const { active } = await api(info, 'GET', '/api/runs/active');
+    if (active) await api(info, 'POST', `/api/runs/${active.runId}/cancel`);
+    while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(300);
+    await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce', locale: 'it-IT' });
+    const page = await context.newPage();
+    await page.goto(`${info.url}#/`);
+    await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+    await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    const confirm = page.getByRole('button', { name: 'Scarica e avvia' });
+    if (await confirm.waitFor({ timeout: 3000 }).then(() => true, () => false)) await confirm.click();
+    await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+    await context.close();
+    const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+    // Mid-search: a few launches done, some of them out of memory.
+    for (let i = 0; i < 600; i++) {
+      const now = (await api(info, 'GET', '/api/runs/active')).active;
+      if (!now || (now.tuning?.attempts.length ?? 0) >= 6) break;
+      await sleep(500);
+    }
+    if (want('tune-run')) await shots(20, 'tune-run', `/run/${runId}`, 'Prove fatte');
+    while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+    if (want('tune-result')) await shots(21, 'tune-result', `/results/${runId}`, 'Classifica delle combinazioni');
+  } finally {
+    writeFileSync(world.profileFile, JSON.stringify(LIVE_PROFILE));
   }
 }
 
@@ -291,6 +379,7 @@ async function main() {
         await context.close();
       }
     }
+    await tuneScenes(browser, info, world, written);
   } finally {
     await browser.close();
     const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));

@@ -1040,6 +1040,8 @@ export const it = {
       usersAny: 'Più utenti insieme',
       usersPrompt: 'prompt di {tokens} token ciascuno',
       sessions: '{n} conversazioni insieme',
+      sessionOne: '1 conversazione',
+      userOne: '1 utente da solo',
       sessionsAny: 'Conversazioni lunghe',
       sessionsContext: 'contesto di {tokens} token ciascuna',
       turn: 'messaggio {n} di {total}',
@@ -1079,6 +1081,7 @@ export const it = {
     detail: {
       loadRep: 'Caricamento {n} di {total}',
       prompt: 'Testo da {tokens} token',
+      depth: 'Contesto riempito fino a {tokens} token',
       users: '{n} utenti insieme',
     },
   },

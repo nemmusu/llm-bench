@@ -6,7 +6,9 @@ import { engineKindOfLabel, nowText } from '../../../../src/renderer/components/
 import { initialLive, liveReducer, mergePoint, pointKey, seedFromActive } from '../../../../src/renderer/components/bench/live-state';
 import { clock, engineName, finishedStages, shortDuration, stageProgressText, trackLoad } from '../../../../src/renderer/components/bench/load-progress';
 import { createFormatters } from '../../../../src/renderer/i18n';
-import { relevantPhases } from '../../../../src/renderer/components/bench/phases';
+import type { Step } from '../../../../src/contract/results';
+import { detailLine, phasesOfStep, relevantPhases } from '../../../../src/renderer/components/bench/phases';
+import { scenarioLines } from '../../../../src/renderer/components/bench/summary';
 import { attempt, point, stat, tuning, users } from '../tune/tune-fixtures';
 import { activeRun } from './world';
 
@@ -40,6 +42,8 @@ describe('what is measured now', () => {
     expect(nowText({ kind: 'concurrency' }, f)).toBe('Più utenti insieme');
     expect(nowText({ kind: 'sessions', concurrency: 2, promptTokens: 32768, turn: 2, turns: 3 }, f)).toBe('2 conversazioni insieme · contesto di 32.768 token ciascuna · messaggio 2 di 3');
     expect(nowText({ kind: 'sessions', turn: 1 }, f)).toBe('Conversazioni lunghe · messaggio 1 di 1');
+    expect(nowText({ kind: 'sessions', concurrency: 1 }, f)).toBe('1 conversazione');
+    expect(nowText({ kind: 'concurrency', concurrency: 1 }, f)).toBe('1 utente da solo');
     expect(nowText({ kind: 'load', label: 'cold', rep: 2, reps: 3 }, f)).toBe('Caricamento a freddo · ripetizione 2 di 3');
     expect(nowText({ kind: 'load', label: 'warm' }, f)).toBe('Caricamento a caldo');
     expect(nowText({ kind: 'load' }, f)).toBe('Caricamento del modello');
@@ -49,6 +53,47 @@ describe('what is measured now', () => {
     expect(nowText({ kind: 'tune-screen' }, f)).toBe('Confronto con la migliore finora');
     expect(nowText({ kind: 'fidelity', promptTokens: 2048 }, f)).toBe('Confronto del testo generato · Prompt di 2048 token');
     expect(relevantPhases({ profile: 'full', seed: 1, steps: [{ kind: 'sessions', depth: 0, levels: [1, 2], turns: 3, followupTokens: 256, outputTokens: 256 }] })).toEqual(['prepare', 'sessions', 'cleanup']);
+    // Every step kind has its own phase: none falls into llama-bench.
+    const steps: Step[] = [
+      { kind: 'load', cache: 'cold', reps: 1 },
+      { kind: 'load', cache: 'warm', reps: 2 },
+      { kind: 'latency', promptTokens: [512, 4096], outputTokens: 64, warmup: 0, reps: 1 },
+      { kind: 'context-sweep', depths: [], fractions: false, outputTokens: 64, reps: 1 },
+      { kind: 'concurrency', levels: [1, 2], promptTokens: 512, outputTokens: 64, requestsPerWorker: 1 },
+      { kind: 'sessions', depth: 4096, levels: [1], turns: 2, followupTokens: 64, outputTokens: 64 },
+      { kind: 'llama-bench', pp: 512, tg: 128, reps: 1 },
+    ];
+    expect(steps.map(phasesOfStep)).toEqual([['cold-load'], ['warm-load'], ['prefill', 'decode'], ['context-sweep'], ['concurrency'], ['sessions'], ['llama-bench']]);
+    expect(relevantPhases({ profile: 'full', seed: 1, steps }, { install: true })).toEqual([
+      'install',
+      'prepare',
+      'cold-load',
+      'warm-load',
+      'prefill',
+      'decode',
+      'context-sweep',
+      'concurrency',
+      'sessions',
+      'llama-bench',
+      'cleanup',
+    ]);
+    expect(detailLine('context-sweep', '32768', undefined)).toEqual({ key: 'run.detail.depth', params: { tokens: 32768 } });
+    expect(scenarioLines({ profile: 'full', seed: 1, steps }, f)).toEqual([
+      '1 caricamento a freddo',
+      '2 caricamenti a caldo',
+      expect.stringContaining('prompt da 512 e 4096 token'),
+      'velocità con il contesto sempre più pieno',
+      expect.stringContaining('utenti insieme'),
+      'conversazioni lunghe da 4096 token: 1 alla volta, 2 messaggi ciascuna',
+      'test standard llama-bench',
+    ]);
+    expect(scenarioLines({ profile: 'full', seed: 1, steps: [{ kind: 'load', cache: 'cold', reps: 3 }, { kind: 'load', cache: 'warm', reps: 1 }] }, f)).toEqual([
+      '3 caricamenti a freddo',
+      '1 caricamento a caldo',
+    ]);
+    expect(scenarioLines({ profile: 'full', seed: 1, steps: [{ kind: 'sessions', depth: 0, levels: [1, 2], turns: 3, followupTokens: 256, outputTokens: 256 }] }, f)).toEqual([
+      'conversazioni lunghe con tutto il contesto disponibile: 1 e 2 alla volta, 3 messaggi ciascuna',
+    ]);
     expect(engineKindOfLabel('vLLM v0.12.0')).toBe('vllm-docker');
     expect(engineKindOfLabel('llama.cpp b11438')).toBe('llamacpp-native');
   });
@@ -215,5 +260,6 @@ describe('what each user gets', () => {
     );
     expect(usersSentence(users(1), solo, f)).toBe('Con 1 utente scrive a 50,0 tok/s; il primo token arriva in 0,32 s (0,37 s nel caso peggiore). In tutto 50 tok/s.');
     expect(usersSentence(users(2), undefined, f)).toContain('Con 2 utenti ognuno scrive a 47,5 tok/s;');
+    expect(usersSentence(users(1, { perRequestPrefillTpsP50: 2400 }), solo, f)).toContain('Con 1 utente legge a 2400 tok/s e scrive a 50,0 tok/s;');
   });
 });

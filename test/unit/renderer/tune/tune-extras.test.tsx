@@ -122,13 +122,19 @@ describe('normal results with the new measurements', () => {
     for (const o of charts.options) exerciseFormatters(o);
     const conc = charts.options.find((o) => JSON.stringify(o).includes('Utente più lento')) as { series: { data: [number, number | null][] }[] };
     expect(conc.series[2]!.data.map((d) => d[1])).toEqual([49, null, 38]);
+    // Prompt reading speed against depth (the sweep's own toggle).
+    const sweepCard = screen.getByRole('heading', { name: 'Velocità al crescere del contesto' }).closest('div')!.parentElement!.parentElement!;
+    const before = charts.options.length;
+    await userEvent.click(within(sweepCard).getByRole('radio', { name: 'Lettura prompt' }));
+    await waitFor(() => expect(charts.options.length).toBeGreaterThan(before));
+    const prefill = charts.options.at(-1) as { series: { data: number[] }[] };
+    expect(prefill.series[0]!.data).toEqual([9000, 8400, 6000]);
+    expect(exerciseFormatters(prefill).join(' ')).toContain('12 tok/s');
     for (const b of screen.getAllByRole('button', { name: 'Mostra tabella' })) await userEvent.click(b);
     const sweep = screen.getByRole('table', { name: /Velocità al crescere del contesto/ });
     expect(within(sweep).getAllByRole('row')[3]!.textContent).toContain('32.624');
     const users4 = screen.getByRole('table', { name: /Più utenti insieme/ });
     expect(within(users4).getAllByRole('row').map((r) => r.firstElementChild!.textContent)).toEqual(['Utenti', '1', '2', '4']);
-    await userEvent.click(screen.getAllByRole('radio', { name: 'Lettura prompt' }).at(-1)!);
-    await waitFor(() => expect(exerciseFormatters(charts.options.at(-1)).join(' ')).toContain('tok/s'));
   });
 
   it('details: the sweep table and the per-user table with units', async () => {
