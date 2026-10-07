@@ -57,16 +57,21 @@ export function comparePoints(a: LatencyPoint, b: LatencyPoint): number {
   return 0;
 }
 
+/** Nominal depths both lists measured, deepest first. */
+function sharedDepths(a: readonly LatencyPoint[], b: readonly LatencyPoint[]): number[] {
+  const mine = new Set(a.map((p) => nominalDepth(p.promptTokens)));
+  return [...new Set(b.map((p) => nominalDepth(p.promptTokens)))].filter((d) => mine.has(d)).sort((x, y) => y - x);
+}
+
 /**
  * Coordinate descent: is the candidate's screening better than the current best's? Both were screened
- * at the same depths of the same context; the deepest points decide first (that is where the context
- * goal is, and prompt reading dominates there), then the shallower ones in turn; a full tie keeps the
- * current value.
+ * at the same context; compared depth by depth on the depths both measured (a screening cut by the time
+ * limit has fewer), the deepest first (that is where the context goal is, and prompt reading dominates
+ * there), then the shallower ones in turn; a full tie keeps the current value.
  */
 export function screenBetter(candidate: readonly LatencyPoint[], best: readonly LatencyPoint[]): boolean {
-  const n = Math.min(candidate.length, best.length);
-  for (let i = 1; i <= n; i++) {
-    const c = comparePoints(candidate[candidate.length - i] as LatencyPoint, best[best.length - i] as LatencyPoint);
+  for (const d of sharedDepths(candidate, best)) {
+    const c = comparePoints(pointAt(candidate, d) as LatencyPoint, pointAt(best, d) as LatencyPoint);
     if (c !== 0) return c > 0;
   }
   return false;
@@ -105,7 +110,8 @@ export function fastestByDepth(combos: readonly TuneCombination[]): { depth: num
 
 /**
  * The default configuration: among the fitting combinations that reach the largest context, the
- * fastest at its deepest measured point. Undefined when no combination was measured. `exclude`: a
+ * fastest at the deepest point they all measured (the same depth for complete sweeps; combinations
+ * "misurate in parte" may stop earlier). Undefined when no combination was measured. `exclude`: a
  * combination left out (the runner-up is the best of the others).
  */
 export function recommendedCombination(combos: readonly TuneCombination[], exclude?: number): number | undefined {
@@ -113,8 +119,10 @@ export function recommendedCombination(combos: readonly TuneCombination[], exclu
   if (ok.length === 0) return undefined;
   const largest = Math.max(...ok.map((i) => (combos[i] as TuneCombination).maxContext));
   const top = ok.filter((i) => (combos[i] as TuneCombination).maxContext === largest);
-  // Same context: their deepest points are the same nominal depth, unless a sweep was cut short.
-  const deepest = Math.min(...top.map((i) => nominalDepth((combos[i] as TuneCombination).sweep.at(-1)!.promptTokens)));
+  const sets = top.map((i) => new Set((combos[i] as TuneCombination).sweep.map((p) => nominalDepth(p.promptTokens))));
+  const deepest = Math.max(...[...(sets[0] as Set<number>)].filter((d) => sets.every((s) => s.has(d))));
+  // Nothing measured by all of them (one only has its 1K check, another a sweep that started deeper): the more precise cache, then the earlier one.
+  if (!Number.isFinite(deepest)) return [...top].sort((a, b) => kvPrecisionRank((combos[a] as TuneCombination).kvType) - kvPrecisionRank((combos[b] as TuneCombination).kvType) || a - b)[0];
   return bestAt(combos, top, deepest);
 }
 

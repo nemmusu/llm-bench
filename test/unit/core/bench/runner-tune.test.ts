@@ -82,15 +82,19 @@ describe('BenchRunner — tune runs', () => {
     const result = await s.runner.run(tuneInput({ fidelity: true }), new AbortController().signal);
     expect(result.status).toBe('completed');
     const t = result.tuning!;
+    // Capacity checks, then each type screened at its largest context; on these short contexts the
+    // screening measured the whole grid: it is the sweep, no other launch.
     expect(t.attempts.map((a) => `${a.stage} ${a.kvType}@${a.contextSize} ${a.outcome}`)).toEqual([
       'capacity f16@8192 oom',
       'capacity f16@4096 ok',
       'capacity q4_0@8192 ok',
-      'sweep q4_0@8192 ok',
-      'sweep f16@4096 ok',
+      'variant q4_0@8192 ok',
+      'variant f16@4096 ok',
       'fidelity f16@4096 ok',
       'fidelity q4_0@4096 ok',
     ]);
+    expect(t.estimateSeconds).toBeGreaterThan(0);
+    expect(t.limitSeconds).toBeGreaterThanOrEqual(t.estimateSeconds!);
     expect(t.attempts[0]!.error).toMatchObject({ code: 'ENGINE_OOM' });
     expect(t.attempts[1]!.vramPeakMiB).toBe(4000);
     expect(t.fidelity).toMatchObject({ referenceKv: 'f16', comparedKv: 'q4_0', tokens: 128, identical: 128 });
@@ -108,13 +112,15 @@ describe('BenchRunner — tune runs', () => {
     expect(s.ev.ofType('run.launch')).toHaveLength(6);
     expect(s.ev.ofType('run.launch')[0]!.launch).toMatchObject({ contextSize: 4096, params: { kvCacheType: 'f16' }, engineLabel: 'llama.cpp b11438 (CUDA 13.4)' });
     const points = s.ev.ofType('run.point').map((e) => e.live);
-    expect(new Set(points.map((p) => p.stepKind))).toEqual(new Set(['tune-probe', 'tune-screen', 'context-sweep']));
+    expect(new Set(points.map((p) => p.stepKind))).toEqual(new Set(['tune-probe', 'tune-screen']));
     expect(points.every((p) => 'attempt' in p && p.attempt !== undefined)).toBe(true);
-    expect(s.ev.ofType('run.step').map((e) => e.current.kind)).toEqual(expect.arrayContaining(['load', 'tune-probe', 'tune-screen', 'context-sweep', 'fidelity']));
+    expect(s.ev.ofType('run.step').map((e) => e.current.kind)).toEqual(expect.arrayContaining(['load', 'tune-probe', 'tune-screen', 'fidelity']));
     const phases = [...new Set(s.ev.ofType('run.phase').map((e) => e.phase))];
-    expect(phases).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'context-sweep', 'fidelity', 'cleanup']);
-    // Progress is the share of the time budget, never past 97 % before the cleanup.
-    expect(s.ev.ofType('run.phase').filter((e) => e.phase !== 'cleanup').every((e) => e.progress <= 0.97)).toBe(true);
+    expect(phases).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'fidelity', 'cleanup']);
+    // Progress follows the search's own forecast, never past 98 % before the cleanup, with the time left.
+    const searching = s.ev.ofType('run.phase').filter((e) => e.phase !== 'cleanup' && e.phase !== 'prepare');
+    expect(searching.every((e) => e.progress <= 0.98 && e.remainingSeconds !== undefined)).toBe(true);
+    expect(s.ev.ofType('run.phase').find((e) => e.phase === 'cleanup')!.remainingSeconds).toBeUndefined();
     expect(s.adapter.instances.every((i) => i.stopped)).toBe(true);
     // The first launch never started: its attempt has no log.
     expect(result.logExcerpt).toContain('=== tune 2 (capacity) ===');

@@ -40,12 +40,25 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
     expect(capacityOf(t)).toEqual({ f16: 16384, q8_0: 32768, q4_0: 40960 });
     expect(t.capacity.map((c) => c.predictedMax)).toEqual([40960, 40960, 40960]);
     const order = t.attempts.map(brief);
-    // f16: the top (40K) runs out of memory, then a binary search between 4K and 40K.
-    expect(order.slice(0, 4)).toEqual(['capacity f16@40960 on/512 oom', 'capacity f16@8192 on/512 ok', 'capacity f16@16384 on/512 ok', 'capacity f16@32768 on/512 oom']);
-    // q8_0 starts above f16's 16K (known to fit): the top first, then 32K (the largest if it loads: screened at once).
-    expect(order.slice(4, 6)).toEqual(['capacity q8_0@40960 on/512 oom', 'capacity q8_0@32768 on/512 ok']);
-    // Screened at 1K, the middle of the grid and the deepest prompt (after the probe).
-    expect(t.attempts[5]!.points.map((p) => p.promptTokens)).toEqual([256, 1024, 16384, 32624]);
+    // f16: the top (40K) runs out of memory, then a binary search between 4K and 40K, then 24K between 16K (loads) and 32K (does not).
+    expect(order.slice(0, 5)).toEqual([
+      'capacity f16@40960 on/512 oom',
+      'capacity f16@8192 on/512 ok',
+      'capacity f16@16384 on/512 ok',
+      'capacity f16@32768 on/512 oom',
+      'capacity f16@24576 on/512 oom',
+    ]);
+    // q8_0 starts above f16's 16K (known to fit): the top first, then 32K.
+    expect(order.slice(5, 8)).toEqual(['capacity q8_0@40960 on/512 oom', 'capacity q8_0@32768 on/512 ok', 'capacity q4_0@40960 on/512 ok']);
+    // A capacity launch is a quick check only: the 1K probe, never a deep prompt.
+    expect(t.attempts.filter((a) => a.stage === 'capacity').every((a) => a.points.every((p) => p.promptTokens === 1024 && p.outputTokens === 32))).toBe(true);
+    // The screening is its own launch: the probe, then 1K, the middle of the grid and the deepest prompt.
+    expect(t.attempts.find((a) => a.stage === 'variant' && a.kvType === 'q8_0')!.points.map((p) => p.promptTokens)).toEqual([1024, 1024, 16384, 32624]);
+    expect(t.capacity.map((c) => [c.kvType, c.bound, c.failedAt])).toEqual([
+      ['f16', 'found', 24576],
+      ['q8_0', 'found', 40960],
+      ['q4_0', 'model', undefined],
+    ]);
     expect(t.attempts.every((a) => a.kvType === 'f16' || a.params.flashAttention === 'on')).toBe(true);
     // The recommendation: q4_0 at the trained context with the faster ubatch.
     const rec = t.combinations[t.recommended!]!;
@@ -76,9 +89,9 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
     const roomy: FakeProfile = { ...TUNE_PROFILE, memory: { ...TUNE_PROFILE.memory!, totalMiB: 60_000 } };
     const { t } = await tune({}, new Lab({ profile: roomy }));
     expect(t.capacity).toEqual([
-      { kvType: 'f16', predictedMax: 40960, measuredMax: 40960, inferred: false },
-      { kvType: 'q8_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain' },
-      { kvType: 'q4_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain' },
+      { kvType: 'f16', predictedMax: 40960, measuredMax: 40960, inferred: false, bound: 'model' },
+      { kvType: 'q8_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain', bound: 'model' },
+      { kvType: 'q4_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain', bound: 'model' },
     ]);
     expect(t.attempts.filter((a) => a.stage === 'capacity').map(brief)).toEqual(['capacity f16@40960 on/512 ok']);
     // Still measured (the fastest number wins), f16 first.
@@ -144,11 +157,11 @@ describe('Tuner: spills (Windows)', () => {
     const lab = new Lab({ fail: (p) => (p.kvCacheType === 'f16' ? { code: 'ENGINE_OOM', message: 'oom' } : undefined) });
     const { t } = await tune({ spillPossible: true, predict: (p) => (p.kvCacheType === 'q8_0' ? { ...optimistic(), needMiB: 1e9 } : optimistic()) }, lab);
     expect(t.attempts.slice(0, 2).map(brief)).toEqual(['reference f16@4096 on/512 oom', 'reference q4_0@4096 on/512 ok']);
-    // The budget can end the reference phase.
-    const short = await tune({ spillPossible: true }, new Lab({ loadMs: BUDGETS.fast.ms }));
+    // The time limit can end the reference phase (the next start would end past it).
+    const short = await tune({ spillPossible: true, limitMs: BUDGETS.fast.minMs }, new Lab({ loadMs: BUDGETS.fast.minMs }));
     expect(short.t.attempts.map(brief)).toEqual(['reference f16@4096 on/512 ok']);
     expect(short.t.stoppedBy).toBe('budget');
-    const failedRef = await tune({ spillPossible: true }, new Lab({ loadMs: BUDGETS.fast.ms, fail: () => ({ code: 'ENGINE_OOM', message: 'oom' }) }));
+    const failedRef = await tune({ spillPossible: true, limitMs: BUDGETS.fast.minMs }, new Lab({ loadMs: BUDGETS.fast.minMs, fail: () => ({ code: 'ENGINE_OOM', message: 'oom' }) }));
     expect(failedRef.t.attempts.map(brief)).toEqual(['reference f16@4096 on/512 oom']);
   });
 
@@ -194,18 +207,27 @@ describe('Tuner: budget, errors and launch cap', () => {
     const r = await tiny.run();
     expect(r.stoppedBy).toBe('launches');
     expect(r.attempts).toHaveLength(2);
-    expect(r.capacity.map((c) => [c.skipped, c.measuredMax, c.inferred])).toEqual([
-      ['budget', 8192, false],
-      ['budget', 8192, true],
-      ['budget', 8192, true],
+    expect(r.capacity.map((c) => [c.skipped, c.measuredMax, c.inferred, c.bound])).toEqual([
+      ['budget', 8192, false, 'budget'],
+      ['budget', 8192, true, 'budget'],
+      ['budget', 8192, true, 'budget'],
     ]);
+    // What the 8K launch measured (its 1K check) is a combination "misurata in parte", and the recommendation.
+    expect(r.combinations.map((c) => [c.kvType, c.maxContext, c.partial, c.sweep.map((p) => p.promptTokens)])).toEqual([['f16', 8192, 'launches', [1024]]]);
+    expect(r.recommended).toBe(0);
+    expect(r.attempts[1]!.combination).toBe(0);
   });
 
-  it('runs out of time mid-descent: the best so far is kept', async () => {
+  it('runs out of time mid-descent: what each KV type measured at its largest context is kept, partly measured', async () => {
     const lab = new Lab({ loadMs: 30_000, requestMs: 4000 });
-    const { t } = await tune({}, lab);
+    const { t } = await tune({ limitMs: 300_000 }, lab);
     expect(t.stoppedBy).toBe('budget');
-    expect(lab.t).toBeGreaterThanOrEqual(BUDGETS.fast.ms);
+    expect(t.limitSeconds).toBe(300);
+    // Nothing started that would have ended past the limit and its grace.
+    expect(lab.t).toBeLessThanOrEqual(300_000 + 30_000);
+    expect(t.combinations.length).toBeGreaterThan(0);
+    expect(t.combinations.every((c) => c.partial === 'budget')).toBe(true);
+    expect(t.combinations[t.recommended!]!.maxContext).toBe(Math.max(...t.combinations.map((c) => c.maxContext)));
   });
 
   it('failures that would repeat on every launch end the run; others count as "does not load"', async () => {
@@ -248,9 +270,9 @@ describe('Tuner: last resorts and the fidelity check', () => {
     expect(t.attempts.filter((a) => a.stage === 'offload').map((a) => a.params.gpuLayers)).toEqual([4, 3, 2, 1, 0]);
     expect(t.combinations).toEqual([]);
     expect(t.recommended).toBeUndefined();
-    // Budget spent before any offload launch.
-    const lab = new Lab({ profile: never, loadMs: BUDGETS.fast.ms / 3 });
-    expect((await tune({ offload: { layers: 8, moe: true }, predict: undefined }, lab)).t.attempts.some((a) => a.stage === 'offload')).toBe(false);
+    // Time spent before any offload launch.
+    const lab = new Lab({ profile: never, loadMs: BUDGETS.fast.minMs / 2 });
+    expect((await tune({ offload: { layers: 8, moe: true }, predict: undefined, limitMs: BUDGETS.fast.minMs }, lab)).t.attempts.some((a) => a.stage === 'offload')).toBe(false);
     // MoE up to every layer.
     const moe = await tune({ offload: { layers: 2, moe: true }, predict: undefined }, new Lab({ profile: never }));
     expect(moe.t.attempts.filter((a) => a.stage === 'offload').map((a) => a.params.extraArgs)).toEqual([['--n-cpu-moe', '1'], ['--n-cpu-moe', '2']]);
@@ -356,8 +378,12 @@ describe('Tuner: combinations', () => {
     const decode = (p: LaunchParams, d: number) => (p.ubatchSize === 512 && d <= 1024 ? fast[p.kvCacheType as string] : undefined);
     const { t } = await tune({}, new Lab({ decode }));
     expect(t.attempts.filter((a) => a.stage === 'sweep')).toHaveLength(2);
-    expect(t.combinations.filter((c) => c.params.ubatchSize === 512).map((c) => c.kvType)).toEqual(['q8_0', 'q4_0']);
+    // Screened in the descent's order (q4_0 first: the largest context); q8_0's base is not faster than q4_0's at 1K.
+    expect(t.combinations.filter((c) => c.params.ubatchSize === 512).map((c) => c.kvType)).toEqual(['q4_0', 'f16']);
     expect(t.fastestByDepth[0]).toEqual({ depth: 1024, combination: 4 });
+    // Their sweeps reuse what their screening measured: the deepest prompt once per combination.
+    const sweeps = t.attempts.filter((a) => a.stage === 'sweep');
+    expect(sweeps.every((a) => a.points.every((p) => p.promptTokens !== 1024 || p.outputTokens === 32))).toBe(true);
   });
 
   it('a variant that runs out of memory at that context is dropped; vram unknown is left out', async () => {

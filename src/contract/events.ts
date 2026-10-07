@@ -3,7 +3,7 @@ import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
 import { launchParamsSchema } from './engines';
-import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, sessionsPointSchema, tuneAttemptSchema, tuningSchema } from './results';
+import { concurrencyPointSchema, latencyPointSchema, runSummarySchema, sessionsPointSchema, spillSchema, tuneAttemptSchema, tuningSchema } from './results';
 
 /** Phases of a benchmark run, in order. Shown as the stepper on the live screen. */
 export const RUN_PHASES = [
@@ -134,6 +134,10 @@ export const loadProgressSchema = z.object({
 });
 export type LoadProgress = z.infer<typeof loadProgressSchema>;
 
+/** What the live screen says about a spill while the run goes on (RunResult.metrics.spill has the final word). */
+export const liveSpillSchema = spillSchema.pick({ by: true, sharedPeakMiB: true, thresholdMiB: true, decodeTps: true, normalDecodeTps: true });
+export type LiveSpill = z.infer<typeof liveSpillSchema>;
+
 /** Server-sent events on GET /api/events. Each SSE `event:` name equals `type`. */
 export const serverEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hello'), version: z.string() }),
@@ -144,7 +148,17 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     /** 0..1 progress inside the whole run. */
     progress: z.number(),
     detail: z.string().optional(),
+    /**
+     * Seconds the core expects are left (profile "tune": recomputed with the speeds measured so far,
+     * re-sent every few seconds even during a long request). Absent = the renderer estimates it.
+     */
+    remainingSeconds: z.number().min(0).optional(),
   }),
+  /**
+   * The engine of a normal run spilled to shared system memory (Windows): sent once, as soon as it is
+   * seen (Shared Usage over the threshold, or generation collapsed on a short prompt).
+   */
+  z.object({ type: z.literal('run.spill'), runId: z.string(), spill: liveSpillSchema }),
   z.object({
     type: z.literal('run.live'),
     runId: z.string(),

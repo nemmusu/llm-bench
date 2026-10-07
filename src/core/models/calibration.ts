@@ -3,7 +3,8 @@
  *
  * Every saved run is a source of measurements (GPU, model, engine kind, KV type, context, ubatch,
  * slots, measured peak MiB): a normal run's engine peak (vram.processPeakMiB, else the total minus the
- * baseline), and every tune attempt that loaded (vramPeakMiB). For each one the estimator is run again
+ * baseline; never a run that spilled to shared memory: its peak is capped at the VRAM), and every
+ * tune attempt that loaded without spilling (vramPeakMiB). For each one the estimator is run again
  * with the same settings; the weights and the CUDA context are taken as they are and the rest — KV
  * cache + compute buffer, the part that depends on the settings — is fitted:
  *
@@ -16,7 +17,7 @@
  * context, so its peaks say nothing about the KV cache.
  */
 import type { EngineKind, LaunchParams } from '../../contract/engines';
-import type { RunResult } from '../../contract/results';
+import { spilledRun, type RunResult } from '../../contract/results';
 import type { HereIdentity, RunsRepo } from '../store/runs-repo';
 import { CUDA_CONTEXT_MIB, estimateFit, fitParamsFrom, type FitCalibration } from './fit';
 import type { ModelFactsEx } from './types';
@@ -74,7 +75,8 @@ export function samplesOf(run: RunResult): VramSample[] {
   }
   const v = run.metrics.vram;
   const peak = v.processPeakMiB ?? v.deltaMiB;
-  if (run.status === 'completed' && peak !== undefined && peak > 0) out.push({ ...common, params: run.launch.params, measuredMiB: peak });
+  // A run that spilled to shared memory did not fit: its dedicated peak is capped at the VRAM, not what it needed.
+  if (run.status === 'completed' && !spilledRun(run) && peak !== undefined && peak > 0) out.push({ ...common, params: run.launch.params, measuredMiB: peak });
   return out;
 }
 

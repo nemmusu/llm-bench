@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './engines';
-import { currentStepSchema, livePointSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
+import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
 import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuningSchema } from './results';
@@ -134,7 +134,18 @@ export const runPlanSchema = z.object({
    * A run cannot start until `needs` are done (POST /api/runs fails with ENGINE_NOT_INSTALLED / MODEL_NOT_FOUND).
    */
   pending: z.array(z.enum(['engine', 'model'])).optional(),
+  /**
+   * Expected duration. Profile "tune": the search's own estimate for this model on this PC (predicted
+   * largest contexts, expected prompt reading speed, launches); its time limit is this times a margin.
+   */
   estimatedSeconds: z.number(),
+  /** Profile "tune": the estimate of each budget for this model ("Veloce · circa 20 min per questo modello"). */
+  tuneSeconds: z.object({ fast: z.number().min(0), thorough: z.number().min(0) }).optional(),
+  /**
+   * VRAM verdict. When a llama.cpp launch with every layer on the GPU does not fit, `fit.fixes` says
+   * what would, and `warnings` say what will really happen: 'spill_risk' (Windows: the rest goes to
+   * shared system memory, ~10–15× slower) or 'oom_risk' (Linux: out of memory).
+   */
   fit: fitEstimateSchema.optional(),
   warnings: z.array(z.object({ code: z.string(), params: z.record(z.string(), z.unknown()).optional() })),
   /**
@@ -183,6 +194,10 @@ export const activeRunSchema = z.object({
   points: z.array(livePointSchema).default([]),
   /** The engine start in progress (last `run.load`); absent when no engine is starting. */
   loading: loadProgressSchema.optional(),
+  /** Seconds the core expects are left (last `run.phase` that said). */
+  remainingSeconds: z.number().min(0).optional(),
+  /** The engine spilled to shared system memory (last `run.spill`). */
+  spill: liveSpillSchema.optional(),
 });
 export type ActiveRun = z.infer<typeof activeRunSchema>;
 export const activeRunResponseSchema = z.object({ active: activeRunSchema.nullable() });

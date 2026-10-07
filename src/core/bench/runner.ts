@@ -1,8 +1,9 @@
 import path from 'node:path';
 import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
 import { AppError, isAppError, toAppErrorData, type AppErrorData } from '../../contract/errors';
-import type { CurrentStep, LivePoint, RunPhase, ServerEvent } from '../../contract/events';
+import type { CurrentStep, LivePoint, LiveSpill, RunPhase, ServerEvent } from '../../contract/events';
 import type { GpuSample, HardwareFingerprint } from '../../contract/hardware';
+import type { FitFixes } from '../../contract/models';
 import {
   METRICS_FORMULA_VERSION,
   RESULT_SCHEMA_VERSION,
@@ -17,6 +18,7 @@ import {
   type Scenario,
   type SessionsPoint,
   type SessionsStep,
+  type Spill,
   type Step,
   type Tuning,
 } from '../../contract/results';
@@ -52,9 +54,10 @@ import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from '.
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
 import { runSessions } from './steps/sessions';
+import { cpuOffloaded, spillOf, spillPossible, type NormalDecode } from './spill';
 import { runSweep } from './sweep';
 import { createTuner } from './tune-run';
-import { BUDGETS, type LabEngine, type TuneLab, type TunerInput } from './tuner';
+import type { LabEngine, Tuner, TuneLab, TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
@@ -130,6 +133,10 @@ export interface RunInput {
   tune?: TunerInput;
   /** Usual start → ready time of this model with this engine on this PC (past runs), for run.load. */
   expectedLoadMs?: { cold?: number; warm?: number };
+  /** Usual generation speed of this model and engine on this GPU (earlier runs that did not spill): a collapse below 0.4× is a spill. */
+  normalDecode?: NormalDecode;
+  /** What would fit, from the VRAM estimate made at the start (kept with a spill: "Riprova con…"). */
+  fitFixes?: FitFixes;
 }
 
 /** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
@@ -150,6 +157,8 @@ const LOG_DRAIN_MS = 1000;
 const VRAM_SETTLE_SLACK_MIB = 512;
 /** First-token probe: ~16 tokens of text. */
 const FIRST_TOKEN_PROMPT_CHARS = 64;
+/** A tune run re-sends its progress and time left at least this often (on the telemetry heartbeat). */
+export const PHASE_HEARTBEAT_MS = 5000;
 /** Engines in containers: an instance PID (if any) is a docker CLI helper, never the engine. */
 const CONTAINER_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker']);
 
@@ -229,8 +238,13 @@ interface RunState {
   /** Profile "tune": the search so far, and each attempt's launch record (by attempt index). */
   tuning?: Tuning;
   tuneRecords: Map<number, LaunchRecord>;
-  /** Monotonic ms when the search started (progress of a tune run is its share of the time budget). */
+  /** Monotonic ms when the search started, and the search itself (its forecast drives the progress). */
   tuneStart?: number;
+  tuner?: Tuner;
+  /** Monotonic ms of the last run.phase: a tune run re-sends its progress every few seconds. */
+  lastPhaseAt: number;
+  /** Normal runs: the spill shown on the live screen so far (run.spill). */
+  liveSpill?: LiveSpill;
 }
 
 function checkAbort(signal: AbortSignal): void {
@@ -397,6 +411,7 @@ export class BenchRunner {
       tokensApproximate: false,
       liveSamples: [],
       tuneRecords: new Map(),
+      lastPhaseAt: d.clock.now(),
     };
     let status: RunStatus = 'completed';
     let error: AppErrorData | undefined;
@@ -456,6 +471,9 @@ export class BenchRunner {
       s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => {
         s.liveSamples.push(...samples);
         d.publish({ type: 'telemetry', samples });
+        // Telemetry is the heartbeat: a spill shows as soon as the counters say, a long tune request keeps its time left current.
+        this.watchSpill(s);
+        if (s.tuner && d.clock.now() - s.lastPhaseAt >= PHASE_HEARTBEAT_MS) this.publishPhase(s);
       });
       // Started before the first load: its first reading is the reference for other processes' drift.
       s.procVram = d.telemetry.startProcessVram
@@ -621,7 +639,16 @@ export class BenchRunner {
   private async measurePoint(
     s: RunState,
     inst: EngineInstance,
-    o: { kind: 'latency' | 'context-sweep' | 'tune-probe' | 'tune-screen'; promptTokens: number; outputTokens: number; reps: number; warmup?: number; attempt?: number },
+    o: {
+      kind: 'latency' | 'context-sweep' | 'tune-probe' | 'tune-screen';
+      promptTokens: number;
+      outputTokens: number;
+      reps: number;
+      warmup?: number;
+      attempt?: number;
+      /** Asked before every repetition after the first: false = stop here (the point keeps the ones made). */
+      more?: () => boolean;
+    },
     onRequest?: () => void,
   ): Promise<LatencyPoint> {
     const shape = { promptTokens: o.promptTokens, outputTokens: o.outputTokens };
@@ -634,6 +661,7 @@ export class BenchRunner {
     }
     const results: RequestMetrics[] = [];
     for (let r = 0; r < o.reps; r++) {
+      if (r > 0 && o.more && !o.more()) break;
       this.step(s, { kind: o.kind, ...shape, ...depth, rep: r + 1, reps: o.reps });
       const m = await this.measure(s, inst, o.promptTokens, o.outputTokens, o.kind);
       this.record(s, m);
@@ -649,7 +677,10 @@ export class BenchRunner {
       this.point(s, { stepKind: o.kind, point: aggregateLatency(results, shape), ...(o.attempt !== undefined ? { attempt: o.attempt } : {}) });
       onRequest?.();
     }
-    return aggregateLatency(results, shape);
+    const point = aggregateLatency(results, shape);
+    // A short prompt that generates far slower than usual: the model spilled (shown at once).
+    if (o.kind === 'latency' || o.kind === 'context-sweep') this.watchSpill(s, point);
+    return point;
   }
 
   /** C closed-loop workers, each sending requestsPerWorker requests back to back. Failed requests count as errors. */
@@ -776,7 +807,7 @@ export class BenchRunner {
   private async tune(s: RunState, setup: TunerInput): Promise<void> {
     const d = this.deps;
     s.tuneStart = d.clock.now();
-    const tuner = createTuner(setup, {
+    const tuner = (s.tuner = createTuner(setup, {
       lab: this.tuneLab(s),
       now: () => d.clock.now(),
       onUpdate: (tuning, current) => {
@@ -785,7 +816,7 @@ export class BenchRunner {
         this.publishPhase(s);
       },
       onPhase: (phase) => this.setPhase(s, phase),
-    });
+    }));
     s.tuning = await tuner.run();
   }
 
@@ -837,7 +868,7 @@ export class BenchRunner {
 
   private labEngine(s: RunState, inst: EngineInstance, plan: LaunchPlan, attempt: number, from: number): LabEngine {
     return {
-      measure: (depth, outputTokens, reps, kind) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt }),
+      measure: (depth, outputTokens, reps, kind, more) => this.measurePoint(s, inst, { kind, promptTokens: depth, outputTokens, reps, attempt, ...(more ? { more } : {}) }),
       // "Più utenti": every user at once with the prompts of the whole context each one needs.
       concurrency: (level, promptTokens, outputTokens, requestsPerWorker) =>
         this.concurrencyLevel(s, inst, level, { promptTokens, outputTokens, requestsPerWorker, shape: { promptTokens, outputTokens, ...userContext(plan) } }),
@@ -1021,9 +1052,16 @@ export class BenchRunner {
     return 1 + loads + rest;
   }
 
+  /**
+   * 0..1. A tune run: elapsed / max(its estimate, elapsed + what its forecast says is left), so it
+   * keeps moving while a long request runs and never sits at the end while work remains.
+   */
   private progress(s: RunState): number {
-    // A tune run's length is its time budget.
-    if (s.tuneStart !== undefined) return Math.min(0.97, (this.deps.clock.now() - s.tuneStart) / BUDGETS[(s.input.tune as TunerInput).budget].ms);
+    if (s.tuner) {
+      const elapsed = this.deps.clock.now() - (s.tuneStart as number);
+      const f = s.tuner.forecast();
+      return Math.min(0.98, elapsed / Math.max(1, f.totalMs, elapsed + f.remainingMs));
+    }
     return Math.min(1, s.doneUnits / s.totalUnits);
   }
 
@@ -1040,13 +1078,51 @@ export class BenchRunner {
   }
 
   private publishPhase(s: RunState, detail?: string): void {
+    s.lastPhaseAt = this.deps.clock.now();
+    const cleanup = s.phase === 'cleanup';
+    // The search knows what is left (recomputed with the speeds it measured); other runs leave it to the renderer.
+    const remaining = s.tuner && !cleanup ? Math.round(s.tuner.forecast().remainingMs / 1000) : undefined;
     this.deps.publish({
       type: 'run.phase',
       runId: s.input.runId,
       phase: s.phase,
-      progress: s.phase === 'cleanup' ? Math.max(this.progress(s), 0.99) : this.progress(s),
+      progress: cleanup ? Math.max(this.progress(s), 0.99) : this.progress(s),
       ...(detail ? { detail } : {}),
+      ...(remaining !== undefined ? { remainingSeconds: remaining } : {}),
     });
+  }
+
+  // ---- spills (normal runs) ---------------------------------------------------------------
+
+  /**
+   * How a normal run spilled so far: Shared Usage of its engine over the threshold, or a collapse on a
+   * short prompt against the usual speed. Undefined for tune runs (the tuner discards what spills).
+   */
+  private spillNow(s: RunState, extra: readonly LatencyPoint[] = []): Spill | undefined {
+    const { input, plan } = s;
+    if (input.tune || !plan) return undefined;
+    const kind = input.engineConfig.kind;
+    return spillOf({
+      possible: kind !== 'external' && spillPossible(s.hardware?.os),
+      sharedPeakMiB: s.procVram?.sharedPeakMiB(),
+      context: contextOf(plan),
+      points: [...s.latency, ...s.contextSweep, ...extra],
+      normal: input.normalDecode,
+      allOnGpu: !cpuOffloaded(kind, plan, input.model.identity.facts?.blockCount),
+      fixes: input.fitFixes,
+    });
+  }
+
+  /** run.spill when a spill is first seen, and again when it is seen another way or the shared memory grew by 10 % or more. */
+  private watchSpill(s: RunState, point?: LatencyPoint): void {
+    const spill = this.spillNow(s, point ? [point] : []);
+    if (!spill) return;
+    const last = s.liveSpill;
+    const grew = (spill.sharedPeakMiB ?? 0) >= (last?.sharedPeakMiB ?? 0) * 1.1 + 64;
+    if (last && spill.by.length <= last.by.length && !grew) return;
+    const { fixes: _fixes, normalRunIds: _ids, ...live } = spill;
+    s.liveSpill = live;
+    this.deps.publish({ type: 'run.spill', runId: s.input.runId, spill: live });
   }
 
   // ---- errors -----------------------------------------------------------------------------
@@ -1099,6 +1175,9 @@ export class BenchRunner {
     if (drift !== undefined && drift >= VRAM_DRIFT_MIN_MIB) s.notes.push(`other GPU processes changed their VRAM by up to ${drift} MiB during the run`);
     // Tune runs are described by their recommended combination: its command, its context sweep.
     const tuned = recommendedOf(s.tuning, s.tuneRecords);
+    // The engine's shared GPU memory (Windows): a tune run's is its recommended launch's.
+    const sharedPeakMiB = s.tuning ? tuned?.attempt.sharedPeakMiB : s.procVram?.sharedPeakMiB();
+    const spill = this.spillNow(s);
 
     const metrics: Metrics = {
       formulaVersion: METRICS_FORMULA_VERSION,
@@ -1120,8 +1199,10 @@ export class BenchRunner {
         ...vr,
         ...(input.vramEstimateMiB !== undefined ? { estimateMiB: input.vramEstimateMiB } : {}),
         ...(processPeakMiB !== undefined ? { processPeakMiB } : {}),
+        ...(sharedPeakMiB !== undefined ? { sharedPeakMiB } : {}),
         ...(method ? { method } : {}),
       },
+      ...(spill ? { spill } : {}),
       energy: {
         ...(en.avgPowerW !== undefined ? { avgPowerW: en.avgPowerW } : {}),
         ...(en.maxPowerW !== undefined ? { maxPowerW: en.maxPowerW } : {}),
@@ -1157,6 +1238,7 @@ export class BenchRunner {
         vmBaselineMiB: s.otherUsers.reduce((n, u) => n + (u.kind === 'vm' ? (u.memMiB ?? 0) : 0), 0),
       }),
       slowSharedFilesystem: input.slowSharedFilesystem ?? false,
+      sharedMemorySpill: spill !== undefined,
     });
 
     const launch: LaunchRecord = {
@@ -1211,12 +1293,16 @@ export class BenchRunner {
 
 type Combination = Tuning['combinations'][number];
 
-/** The recommended combination of a tune run and the launch record of the attempt that measured it. */
-export function recommendedOf(tuning: Tuning | undefined, records: ReadonlyMap<number, LaunchRecord>): { combination: Combination; record: LaunchRecord } | undefined {
+/** The recommended combination of a tune run, the attempt that measured it and that attempt's launch record. */
+export function recommendedOf(
+  tuning: Tuning | undefined,
+  records: ReadonlyMap<number, LaunchRecord>,
+): { combination: Combination; attempt: Tuning['attempts'][number]; record: LaunchRecord } | undefined {
   const rec = tuning?.recommended;
   if (tuning === undefined || rec === undefined) return undefined;
-  const record = records.get(tuning.attempts.findIndex((a) => a.combination === rec));
-  return record ? { combination: tuning.combinations[rec] as Combination, record } : undefined;
+  const at = tuning.attempts.findIndex((a) => a.combination === rec);
+  const record = records.get(at);
+  return record ? { combination: tuning.combinations[rec] as Combination, attempt: tuning.attempts[at] as Tuning['attempts'][number], record } : undefined;
 }
 
 function baselineUtil(baseline: readonly GpuSample[]): { baselineUtilPct?: number } {

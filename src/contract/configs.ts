@@ -557,6 +557,8 @@ export const configSourceSchema = z.object({
   points: z.array(depthPointSchema.omit({ n: true })).default([]),
   /** Most users served at once (concurrency above 1): how many, each one's and the combined generation speed. */
   parallel: z.object({ users: z.number().int(), perUserTps: z.number().optional(), totalTps: z.number() }).optional(),
+  /** The test spilled to shared system memory (validity 'shared_memory_spill'): its numbers are not the card's. */
+  spill: z.boolean().optional(),
 });
 export type ConfigSource = z.infer<typeof configSourceSchema>;
 
@@ -585,6 +587,11 @@ export const configEntrySchema = z.object({
   /** Most users any source served at once, with the medians of the sources at that level. */
   parallel: z.object({ users: z.number().int(), perUserTps: z.number().optional(), totalTps: z.number() }).optional(),
   tags: z.array(z.enum(['cpu-offload', 'eager', 'draft'])).default([]),
+  /**
+   * Its tests spilled to shared system memory ("RAM condivisa"): tests that spilled never merge with
+   * the ones that did not, so the clean numbers of the same settings stay clean.
+   */
+  spill: z.boolean().optional(),
   /** Newest first. */
   sources: z.array(configSourceSchema),
   /** Date of the newest source. */

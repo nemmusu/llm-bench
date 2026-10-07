@@ -5,7 +5,7 @@ import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
-import type { Scenario, TuneBudget } from '../../contract/results';
+import { spilledRun, type Scenario, type TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { serverApiName } from '../engines/types';
@@ -24,8 +24,10 @@ import {
   type ScenarioWarning,
 } from './scenarios';
 import { loadScoreReference } from './score';
+import { cpuOffloaded, normalDecode, spillPossible, type NormalDecode } from './spill';
+import { tuneTime } from './tune-run';
 import { buildTuneSetup, latestTuneRun, recheckInputOf, recheckSource, tuneGoalOf, tunedServerParams, type TuneSetupDeps } from './tune-setup';
-import { BUDGETS } from './tuner';
+import { BUDGETS, type TunerInput } from './tuner';
 
 export interface BenchServiceDeps {
   clock: Clock;
@@ -82,9 +84,9 @@ interface Current {
   controller: AbortController;
   done: Promise<void>;
   /** What GET /api/runs/active shows besides phase and progress; set once the run is prepared. */
-  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress' | 'tuning' | 'launch' | 'current' | 'points' | 'loading'>;
-  /** Latest run.tune / run.launch / run.step, and every run.point (latest per key). */
-  live: Pick<ActiveRun, 'tuning' | 'launch' | 'current' | 'loading'> & { points: Map<string, LivePoint> };
+  info?: Omit<ActiveRun, 'runId' | 'phase' | 'progress' | 'tuning' | 'launch' | 'current' | 'points' | 'loading' | 'remainingSeconds' | 'spill'>;
+  /** Latest run.tune / run.launch / run.step / run.spill / time left, and every run.point (latest per key). */
+  live: Pick<ActiveRun, 'tuning' | 'launch' | 'current' | 'loading' | 'remainingSeconds' | 'spill'> & { points: Map<string, LivePoint> };
 }
 
 /** Which earlier run.point a new one replaces: same kind, same prompt length, users or conversations, same tune attempt. */
@@ -309,13 +311,13 @@ export class BenchService {
     return this.hereCache;
   }
 
-  /** Speeds from the latest completed run of this model on this PC, to estimate durations. */
+  /** Speeds from the latest completed run of this model on this PC that did not spill, to estimate durations. */
   private async expectations(model: ModelTarget): Promise<Partial<Expectations>> {
     try {
       const here = await this.here();
       const id = model.identity;
       const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).find(
-        (r) => r.status === 'completed' && r.hostId === here.hostId,
+        (r) => r.status === 'completed' && r.hostId === here.hostId && !spilledRun(r),
       );
       if (!past) return {};
       return {
@@ -331,14 +333,14 @@ export class BenchService {
 
   /**
    * Usual start → ready time of this model with this engine kind on this PC: the latest completed run
-   * that measured it ("di solito ci mette circa 45 s"). Never fails: unknown is simply absent.
+   * that measured it and did not spill ("di solito ci mette circa 45 s"). Never fails: unknown is simply absent.
    */
   async expectedLoad(model: ModelTarget, kind: EngineKind): Promise<{ expectedLoadMs?: { cold?: number; warm?: number } }> {
     try {
       const here = await this.here();
       const id = model.identity;
       const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).filter(
-        (r) => r.status === 'completed' && r.hostId === here.hostId && r.engineKind === kind,
+        (r) => r.status === 'completed' && r.hostId === here.hostId && r.engineKind === kind && !spilledRun(r),
       );
       const cold = past.find((r) => r.coldLoadMs !== undefined)?.coldLoadMs;
       const warm = past.find((r) => r.warmLoadMs !== undefined)?.warmLoadMs;
@@ -349,22 +351,51 @@ export class BenchService {
     }
   }
 
-  /** Expected seconds: a tune run lasts its time budget, other runs are estimated from their steps. */
-  private async duration(req: StartRunRequest, p: Prepared): Promise<number> {
-    if (p.scenario.profile === 'tune') return BUDGETS[req.tune?.budget ?? 'fast'].ms / 1000;
-    return estimateSeconds(p.scenario, await this.expectations(p.model));
+  /** What a normal run needs to tell a spill: the usual speed here, and what would fit (from the run's own fit estimate). */
+  private async spillInputs(p: Prepared, fit: FitEstimate | undefined): Promise<Pick<RunInput, 'normalDecode' | 'fitFixes'>> {
+    const normal = await this.normalDecode(p.model, p.engine.kind);
+    return { ...(normal ? { normalDecode: normal } : {}), ...(fit?.fixes ? { fitFixes: fit.fixes } : {}) };
+  }
+
+  /**
+   * The usual generation speed of this model and engine kind on this GPU (earlier runs that did not
+   * spill): a run generating far slower on a short prompt spilled. Never fails: unknown is absent.
+   */
+  private async normalDecode(model: ModelTarget, kind: EngineKind): Promise<NormalDecode | undefined> {
+    try {
+      const here = await this.here();
+      const id = model.identity;
+      return normalDecode(await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here), here, kind);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Expected seconds of a "Trova le impostazioni migliori" with this budget: the search's own forecast
+   * for this model here (predicted contexts, expected speeds, launches); the budget's shortest time
+   * limit when it cannot be prepared (nothing to re-check).
+   */
+  private async tuneDuration(req: StartRunRequest, p: Prepared, budget: TuneBudget): Promise<number> {
+    const input = await this.tuneSetup({ ...req, tune: { ...(req.tune ?? { fidelity: false }), budget } }, p, true).catch(() => undefined);
+    return input ? Math.round(tuneTime(input).estimateMs / 1000) : BUDGETS[budget].minMs / 1000;
   }
 
   /**
    * Preview for "Anteprima comando": exact command, downloads needed, duration, VRAM fit, warnings.
    * Works before the engine is installed or the model downloaded: the command then names where they
-   * will be (`pending`), and `needs` lists them with their sizes.
+   * will be (`pending`), and `needs` lists them with their sizes. A tune plan also says how long each
+   * budget would take for this model.
    */
   async plan(req: StartRunRequest): Promise<RunPlan> {
     const p = await this.prepare(req, true);
     const preview = await this.preview(req, p);
-    const previousTune = p.scenario.profile === 'tune' ? await this.previousTune(req, p) : undefined;
-    return { scenario: p.scenario, ...preview, estimatedSeconds: await this.duration(req, p), ...(previousTune ? { previousTune } : {}) };
+    if (p.scenario.profile !== 'tune') return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)) };
+    const previousTune = await this.previousTune(req, p);
+    const tuneSeconds = { fast: await this.tuneDuration(req, p, 'fast'), thorough: await this.tuneDuration(req, p, 'thorough') };
+    const budget = req.tune?.budget ?? 'fast';
+    const estimatedSeconds = budget === 'recheck' ? await this.tuneDuration(req, p, budget) : tuneSeconds[budget];
+    return { scenario: p.scenario, ...preview, estimatedSeconds, tuneSeconds, ...(previousTune ? { previousTune } : {}) };
   }
 
   /** The latest tune of this model here with the same question, and whether it ran with this build. */
@@ -400,6 +431,24 @@ export class BenchService {
     return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}) };
   }
 
+  /**
+   * What the VRAM verdict means for this launch. llama.cpp with every layer on the GPU (the default)
+   * that does not fit entirely is not a partial offload: under Windows (and WSL) the rest goes to shared
+   * system memory and everything is ~10–15× slower ('spill_risk'); elsewhere it runs out of memory
+   * ('oom_risk', or MODEL_TOO_LARGE when not even part of it fits). The settings that would fit come
+   * with it (fit.fixes). Fewer layers chosen on purpose: 'partial_offload'.
+   */
+  private async fitWarnings(p: Launched, fit: FitEstimate): Promise<ScenarioWarning[]> {
+    const kind = p.launch.kind;
+    const sizes = { needMiB: fit.needMiB, availableMiB: fit.availableMiB };
+    const llama = kind === 'llamacpp-native' || kind === 'llamacpp-docker';
+    if (fit.level !== 'partial' && fit.level !== 'no') return [];
+    const allOnGpu = llama && !cpuOffloaded(kind, p.launch, p.model.identity.facts?.blockCount);
+    if (allOnGpu && spillPossible((await this.deps.fingerprint().catch(() => undefined))?.os)) return [{ code: 'spill_risk', params: { ...sizes, ...fit.fixes } }];
+    if (fit.level === 'no') return [{ code: 'MODEL_TOO_LARGE', params: sizes }];
+    return [allOnGpu ? { code: 'oom_risk', params: { ...sizes, ...fit.fixes } } : { code: 'partial_offload', params: { maxGpuLayers: fit.maxGpuLayers } }];
+  }
+
   /** What runs and servers show before starting: redacted command, needs, fit and the warnings about this PC. */
   private async preview(req: StartServerRequest, p: Launched): Promise<Preview> {
     const shown = launchRecordOf(p.launch, this.deps.displayCommand, this.deps.redact);
@@ -416,8 +465,7 @@ export class BenchService {
         });
       }
     }
-    if (fit?.level === 'no') warnings.push({ code: 'MODEL_TOO_LARGE', params: { needMiB: fit.needMiB, availableMiB: fit.availableMiB } });
-    if (fit?.level === 'partial') warnings.push({ code: 'partial_offload', params: { maxGpuLayers: fit.maxGpuLayers } });
+    warnings.push(...(fit ? await this.fitWarnings(p, fit) : []));
     if (this.deps.slowSharedFilesystem?.(p.launch, p.model)) warnings.push({ code: 'slow_shared_filesystem' });
     return {
       command: { argv: shown.argv, ...shown.display },
@@ -428,8 +476,11 @@ export class BenchService {
     };
   }
 
-  /** What the tuner searches; "Ricontrollo rapido" needs an earlier tune of this model here (VALIDATION 'recheck_nothing'). */
-  private async tuneSetup(req: StartRunRequest, p: Prepared): Promise<RunInput['tune']> {
+  /**
+   * What the tuner searches; "Ricontrollo rapido" needs an earlier tune of this model here (VALIDATION
+   * 'recheck_nothing'). `forecast`: only for the plan's duration.
+   */
+  private async tuneSetup(req: StartRunRequest, p: Prepared, forecast = false): Promise<TunerInput> {
     const d = this.deps;
     let recheck: Parameters<typeof buildTuneSetup>[3];
     if (req.tune?.budget === 'recheck') {
@@ -449,6 +500,7 @@ export class BenchService {
       req,
       p,
       recheck,
+      { forecast },
     );
   }
 
@@ -492,7 +544,8 @@ export class BenchService {
       current.info = {
         startedAt,
         profile: p.scenario.profile,
-        estimatedSeconds: await this.duration(req, p),
+        // A tune run: the search's own forecast (the same the runner's progress follows).
+        estimatedSeconds: tune ? Math.round(tuneTime(tune).estimateMs / 1000) : estimateSeconds(p.scenario, await this.expectations(p.model)),
         modelName: p.model.identity.displayName,
         engineLabel: engineLabelOf(p.launch.engine),
         scenario: p.scenario,
@@ -510,7 +563,9 @@ export class BenchService {
         if (e.type === 'run.phase') {
           current.phase = e.phase;
           current.progress = e.progress;
-        } else if (e.type === 'run.tune') current.live.tuning = e.tuning;
+          if (e.remainingSeconds !== undefined) current.live.remainingSeconds = e.remainingSeconds;
+        } else if (e.type === 'run.spill') current.live.spill = e.spill;
+        else if (e.type === 'run.tune') current.live.tuning = e.tuning;
         else if (e.type === 'run.launch') current.live.launch = e.launch;
         else if (e.type === 'run.load') {
           // The engine is starting: shown until it answers (the last run.load of a start is 'ready').
@@ -555,6 +610,7 @@ export class BenchService {
       warnings: p.warnings,
       ...(tune ? { tune } : {}),
       ...(await this.expectedLoad(p.model, p.engine.kind)),
+      ...(tune ? {} : await this.spillInputs(p, fit)),
     };
     current.done = runner
       .run(input, controller.signal)

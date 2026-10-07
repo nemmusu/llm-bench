@@ -83,6 +83,19 @@ export const FIT_LEVELS = ['perfect', 'good', 'tight', 'partial', 'no'] as const
 export const fitLevelSchema = z.enum(FIT_LEVELS);
 export type FitLevel = z.infer<typeof fitLevelSchema>;
 
+/**
+ * llama.cpp settings that would make a launch that does not fit entirely in VRAM fit after all
+ * (the same estimate, the same free VRAM): what the "Usa cache q4_0" / "Contesto massimo che entra"
+ * buttons offer before a run, and "Riprova con…" after a run that spilled.
+ */
+export const fitFixesSchema = z.object({
+  /** A q4_0 KV cache (with flash attention) at the same context fits. */
+  kvCacheType: z.literal('q4_0').optional(),
+  /** The largest context (a multiple of 1024) that fits with the same settings; absent when not even 1024 does. */
+  maxContext: z.number().int().positive().optional(),
+});
+export type FitFixes = z.infer<typeof fitFixesSchema>;
+
 export const fitEstimateSchema = z.object({
   level: fitLevelSchema,
   /** Estimated VRAM needed by this engine/config, in MiB. */
@@ -116,6 +129,8 @@ export const fitEstimateSchema = z.object({
       rawNeedMiB: z.number(),
     })
     .optional(),
+  /** llama.cpp, when it does not fit entirely in VRAM: settings that would (absent when nothing simple does). */
+  fixes: fitFixesSchema.optional(),
 });
 export type FitEstimate = z.infer<typeof fitEstimateSchema>;
 

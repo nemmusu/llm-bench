@@ -125,11 +125,14 @@ export interface ValidityInput {
   /** isVramApproximate() of the run. */
   vramApproximate: boolean;
   slowSharedFilesystem: boolean;
+  /** The engine spilled to shared system memory (spill.ts: spillOf); absent = no. */
+  sharedMemorySpill?: boolean;
 }
 
 /** Flags that qualify a run's numbers, in the canonical VALIDITY_FLAGS order. */
 export function computeValidity(x: ValidityInput): ValidityFlag[] {
   const on = new Set<ValidityFlag>();
+  if (x.sharedMemorySpill) on.add('shared_memory_spill');
   // With per-process memory the users decide; the baseline total is the fallback when it is unknown.
   const memoryKnown = x.otherGpuUsers.some((u) => u.memMiB !== undefined);
   const shared =

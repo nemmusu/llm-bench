@@ -38,6 +38,13 @@ export interface LabOptions {
   laterTtft?: (p: LaunchParams) => number;
   /** The conversations step measures nothing (a context too small for them). */
   noSessions?: boolean;
+  /**
+   * Requests take the time their speeds say (prompt / prefill + answer / decode, per repetition, asking
+   * `more` before each one after the first) instead of `requestMs`; the point's n is the repetitions made.
+   */
+  timed?: boolean;
+  /** Every measure call: depth, repetitions asked and made. */
+  log?: { depth: number; reps: number; made: number; at: number }[];
 }
 
 const argOf = (p: LaunchParams, flag: string): string | undefined => {
@@ -115,13 +122,21 @@ export class Lab implements TuneLab {
           });
         let requests = 0;
         const engine: LabEngine = {
-          measure: async (depth) => {
+          measure: async (depth, out, reps, _kind, more) => {
             const err = o.throwOn?.(params, depth);
             if (err) throw err;
-            requests++;
-            this.t += o.requestMs ?? 500;
             const s = rates(depth, { spill: plan.outcome === 'spill' && (!o.deepSpillOnly || depth > 8192) });
-            return point(depth, o.decode?.(params, depth) ?? s.decode, { prefill: s.prefill });
+            const decode = o.decode?.(params, depth) ?? s.decode;
+            let made = 0;
+            for (let r = 0; r < (o.timed ? reps : 1); r++) {
+              if (r > 0 && more && !more()) break;
+              requests++;
+              made++;
+              this.t += o.timed ? Math.round((depth / s.prefill + out / decode) * 1000) : (o.requestMs ?? 500);
+            }
+            o.log?.push({ depth, reps, made, at: this.t });
+            const p = { ...point(depth, decode, { prefill: s.prefill }), outputTokens: out };
+            return o.timed ? { ...p, decodeTps: { ...p.decodeTps, n: made }, prefillTps: { ...p.prefillTps, n: made } } : p;
           },
           memory: () => {
             const shared = o.shared?.(params, requests);

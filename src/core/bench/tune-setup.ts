@@ -7,17 +7,19 @@
 import type { ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
 import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
 import type { HardwareFingerprint } from '../../contract/hardware';
-import { TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
+import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { estimateFit, fitParamsFrom, type FitCalibration } from '../models/fit';
 import { engineBuildOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
 import { isLlamaCpp } from './scenarios';
+import { spillPossible } from './spill';
+import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
 import { llamaSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
-import type { DimValue, RecheckInput, TunerInput } from './tuner';
+import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput } from './tuner';
 
 /** VRAM kept free when vLLM's memory share is fitted to the free VRAM, and the highest share used. */
 export const VLLM_TUNE_MARGIN_MIB = 768;
@@ -82,14 +84,15 @@ export async function learnedOrder(
 ): Promise<{ prefer: Record<string, DimValue[]>; learned: NonNullable<Tuning['learned']> } | undefined> {
   const keys = isLlamaCpp(kind) ? ['ub', 'b'] : ['bt'];
   const past = (await runs.list())
-    .filter((r) => r.profile === 'tune' && r.status === 'completed' && Number(r.tunedCombinations) > 0 && r.tuneBudget !== 'recheck' && r.engineKind === kind && sameGpu(r, here))
+    .filter((r) => r.profile === 'tune' && r.status === 'completed' && !spilledRun(r) && Number(r.tunedCombinations) > 0 && r.tuneBudget !== 'recheck' && r.engineKind === kind && sameGpu(r, here))
     .slice(0, LEARNED_RUNS);
   const counts = new Map<string, Map<DimValue, number>>(keys.map((k) => [k, new Map()]));
   let used = 0;
   for (const r of past) {
     const t = (await runs.get(r.id).catch(() => undefined))?.tuning;
     const combo = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
-    if (!combo) continue;
+    // A search cut short never compared its values: its recommendation did not win anything.
+    if (!combo || combo.partial) continue;
     used++;
     const v = variantOf(combo, kind);
     for (const k of keys) {
@@ -112,12 +115,54 @@ export async function learnedOrder(
   return { prefer, learned: { runs: used, first } };
 }
 
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+/**
+ * What a model of this size usually does, for a search with no earlier run of it here: prompt reading
+ * and generation inversely proportional to the file size (an RTX 5090 read ~2 000 tok/s and generated
+ * ~54 tok/s with a 17.6 GB Q4 model, loaded in ~10 s).
+ */
+export function expectFromSize(bytes: number | undefined): TuneExpect {
+  if (!bytes) return { anchors: [DEFAULT_SPEED], loadMs: DEFAULT_LOAD_MS };
+  const gb = bytes / 1024 ** 3;
+  return { anchors: [{ depth: 1024, prefillTps: Math.round(clamp(35_000 / gb, 300, 20_000)), decodeTps: Math.round(clamp(950 / gb, 5, 300)) }], loadMs: Math.round(2000 + 600 * gb) };
+}
+
+/**
+ * What this model did with this engine kind on this PC and card, from the newest completed run that
+ * did not spill and measured something: its points (speeds at known depths) and its load time.
+ */
+export async function expectFromRuns(runs: Pick<RunsRepo, 'list' | 'get'>, here: HereIdentity, kind: EngineKind, model: Pick<ModelTarget['identity'], 'sha256' | 'weakKey'>): Promise<TuneExpect | undefined> {
+  const past = (await runs.list()).filter(
+    (r) =>
+      r.status === 'completed' &&
+      !spilledRun(r) &&
+      r.engineKind === kind &&
+      r.hostId === here.hostId &&
+      sameGpu(r, here) &&
+      ((model.sha256 !== undefined && r.modelSha256 === model.sha256) || r.modelWeakKey === model.weakKey),
+  );
+  for (const r of past) {
+    const run = await runs.get(r.id).catch(() => undefined);
+    if (!run) continue;
+    const points = [...run.metrics.latency, ...run.metrics.contextSweep].filter((p) => p.decodeTps.n > 0);
+    if (!points.length) continue;
+    // A tune run has no load step: its launches say how long a start takes.
+    const loads = (run.tuning?.attempts ?? []).flatMap((a) => (a.outcome === 'ok' && a.loadMs !== undefined ? [a.loadMs] : [])).sort((a, b) => a - b);
+    const loadMs = r.warmLoadMs ?? r.coldLoadMs ?? loads[Math.floor(loads.length / 2)];
+    return { anchors: points.map(anchorOf), ...(loadMs !== undefined ? { loadMs } : {}) };
+  }
+  return undefined;
+}
+
 /** Everything the tuner needs for this request, measured now (free VRAM, platform, the build's flags, past runs). */
 export async function buildTuneSetup(
   deps: TuneSetupDeps,
   req: Pick<StartRunRequest, 'tune' | 'engine'>,
   p: TunePrepared,
   recheck?: RecheckInput,
+  /** `forecast`: only for the plan's duration (the values tried first are not looked up). */
+  opts: { forecast?: boolean } = {},
 ): Promise<TunerInput> {
   const kind = req.engine.kind;
   const budget = req.tune?.budget ?? 'fast';
@@ -131,7 +176,9 @@ export async function buildTuneSetup(
   const step = p.scenario.steps.find((s) => s.kind === 'context-sweep');
   const calibration = await deps.calibration?.(p.model, kind).catch(() => undefined);
   const here = await deps.here?.().catch(() => undefined);
-  const past = budget !== 'recheck' && deps.runs && here ? await learnedOrder(deps.runs, here, kind).catch(() => undefined) : undefined;
+  // Ordering only: a forecast (the plan's duration) does not need it.
+  const past = budget !== 'recheck' && !opts.forecast && deps.runs && here ? await learnedOrder(deps.runs, here, kind).catch(() => undefined) : undefined;
+  const seen = deps.runs && here ? await expectFromRuns(deps.runs, here, kind, p.model.identity).catch(() => undefined) : undefined;
   const common = {
     budget,
     sweep: step ? { outputTokens: step.outputTokens, reps: step.reps } : DEFAULT_SWEEP,
@@ -140,7 +187,9 @@ export async function buildTuneSetup(
       ? { predict: (params: LaunchParams) => estimateFit({ facts, ...(fileBytes ? { fileBytes } : {}), gpu, engine: kind, params: fitParamsFrom(params), ...(calibration ? { calibration } : {}) }) }
       : {}),
     // A model that does not fit spills to shared memory under WDDM (Windows, and WSL which uses it).
-    spillPossible: os !== undefined && (os.platform === 'win32' || os.isWsl),
+    spillPossible: spillPossible(os),
+    // How fast it reads and writes here (an earlier run of it), else what its size suggests: the forecast and the time limit.
+    expect: seen ?? expectFromSize(fileBytes),
     fidelity: req.tune?.fidelity ?? false,
     ...(users !== undefined ? { goal: 'multi' as const, multi: { users, perUserContext: goal.perUserContext as number, turns: MULTI_TURNS } } : {}),
     ...(past ? { learned: past.learned } : {}),
@@ -197,6 +246,7 @@ export function tuneRunsFor(runs: readonly RunSummary[], here: HereIdentity, kin
     (r) =>
       r.profile === 'tune' &&
       r.status === 'completed' &&
+      !spilledRun(r) &&
       (!measured || (r.tunedCombinations ?? 0) > 0) &&
       r.hostId === here.hostId &&
       (!here.gpuUuid || !r.gpuUuid || r.gpuUuid === here.gpuUuid) &&

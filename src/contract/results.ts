@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { appErrorSchema } from './errors';
 import { hardwareFingerprintSchema } from './hardware';
 import { engineKindSchema, launchParamsSchema } from './engines';
-import { modelIdentitySchema } from './models';
+import { fitFixesSchema, modelIdentitySchema } from './models';
 
 export const RESULT_SCHEMA_VERSION = 1;
 /** Bump when a metric definition changes; stored with each run so old runs stay comparable. */
@@ -190,7 +190,13 @@ export const scenarioSchema = z.object({
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 
+/**
+ * Flags that qualify a run's numbers, in the order the result page shows them. 'shared_memory_spill'
+ * comes first: the model did not fit in VRAM and Windows put part of it in shared system memory
+ * (RunResult.metrics.spill says how it was seen), so every number is far below the card's real one.
+ */
 export const VALIDITY_FLAGS = [
+  'shared_memory_spill',
   'gpu_shared',
   'throttling',
   'cold_not_guaranteed',
@@ -204,6 +210,15 @@ export const VALIDITY_FLAGS = [
 ] as const;
 export const validityFlagSchema = z.enum(VALIDITY_FLAGS);
 export type ValidityFlag = z.infer<typeof validityFlagSchema>;
+
+/**
+ * The run spilled into shared system memory: its numbers are not the card's. Such runs never feed
+ * what is expected of the model here (durations, load times, the VRAM calibration, "Provato su questa
+ * GPU", the speed a later spill is compared with).
+ */
+export function spilledRun(r: { validity: readonly ValidityFlag[] }): boolean {
+  return r.validity.includes('shared_memory_spill');
+}
 
 export const loadPhaseSchema = z.object({ name: z.string(), startMs: z.number(), endMs: z.number() });
 
@@ -258,6 +273,29 @@ export const concurrencyPointSchema = z.object({
 });
 export type ConcurrencyPoint = z.infer<typeof concurrencyPointSchema>;
 
+/**
+ * A spill seen in a run (Windows / WSL: a model that does not fit is not refused, part of it goes to
+ * shared system memory and everything gets ~10–15× slower):
+ *  - 'shared-memory': the engine's Shared Usage reached max(1024 MiB, reference + 768 MiB), the
+ *    reference being what a launch of that context uses without spilling (~1 MiB per 1K tokens);
+ *  - 'decode-collapse': generation on a short prompt below 0.4 × what this model and engine generated
+ *    on this GPU in earlier runs that did not spill (every layer on the GPU only).
+ */
+export const spillSchema = z.object({
+  by: z.array(z.enum(['shared-memory', 'decode-collapse'])).min(1),
+  /** Peak Shared Usage of the engine and the threshold it crossed, MiB. */
+  sharedPeakMiB: z.number().optional(),
+  thresholdMiB: z.number().optional(),
+  /** Generation speed on the shortest prompt of this run, and the usual one (median of earlier runs that did not spill). */
+  decodeTps: z.number().optional(),
+  normalDecodeTps: z.number().optional(),
+  /** The earlier runs the usual speed comes from, newest first. */
+  normalRunIds: z.array(z.string()).optional(),
+  /** What would fit, from the (calibrated) VRAM estimate made when the run started. */
+  fixes: fitFixesSchema.optional(),
+});
+export type Spill = z.infer<typeof spillSchema>;
+
 export const metricsSchema = z.object({
   formulaVersion: z.number().int(),
   load: z.object({
@@ -286,9 +324,16 @@ export const metricsSchema = z.object({
     estimateMiB: z.number().optional(),
     /** Peak dedicated VRAM of the engine process itself (Windows GPU counters / nvidia-smi per process). */
     processPeakMiB: z.number().optional(),
+    /**
+     * Peak shared GPU memory (system RAM the GPU uses for it) of the engine process: Windows "Shared
+     * Usage" counters only (tune runs: the recommended combination's launch). Absent elsewhere and on old runs.
+     */
+    sharedPeakMiB: z.number().optional(),
     /** How the headline VRAM figure was measured: per process (exact) or total-minus-baseline (approximate). */
     method: z.enum(['process', 'total-delta']).optional(),
   }),
+  /** The model did not fit in VRAM and spilled to shared system memory (validity 'shared_memory_spill'): how it was seen. */
+  spill: spillSchema.optional(),
   energy: z.object({
     avgPowerW: z.number().optional(),
     maxPowerW: z.number().optional(),
@@ -348,9 +393,11 @@ export type TelemetrySeries = z.infer<typeof telemetrySeriesSchema>;
 // ---- "Trova le impostazioni migliori" (profile 'tune') ------------------------------------------
 
 /**
- * "Veloce ~5 min" / "Accurata ~20 min": time budget and how many values each dimension tries.
- * 'recheck' = "Ricontrollo rapido" (~3 min): only the previous run's recommended combination and its
- * runner-up are loaded again (new engine build or image), see Tuning.recheck.
+ * "Veloce" / "Accurata": how many values each dimension tries (fewer or more combinations). The time
+ * limit of a search is its own estimate (Tuning.estimateSeconds: the predicted largest contexts, the
+ * expected prompt reading speed, the launches) times a margin. 'recheck' = "Ricontrollo rapido": only
+ * the previous run's recommended combination and its runner-up are loaded again (new engine build or
+ * image), see Tuning.recheck.
  */
 export const TUNE_BUDGETS = ['fast', 'thorough', 'recheck'] as const;
 export const tuneBudgetSchema = z.enum(TUNE_BUDGETS);
@@ -436,8 +483,13 @@ export const tuneAttemptSchema = z.object({
   vramPeakMiB: z.number().optional(),
   /** Peak shared GPU memory (system RAM) of the engine process, Windows only, MiB. */
   sharedPeakMiB: z.number().optional(),
-  /** Numbers measured on this launch: the quick probe, the screening depths or the full sweep. */
+  /** Numbers measured on this launch: the quick probe (1K), the screening depths or the full sweep. */
   points: z.array(latencyPointSchema).default([]),
+  /**
+   * Requests not made on this launch because they would have ended past the time limit (predicted
+   * from the prompt reading speed measured so far): a request that started is never cut.
+   */
+  skipped: z.array(z.object({ depth: z.number().int().positive(), predictedMs: z.number().min(0) })).optional(),
   command: tuneCommandSchema,
   /** Coordinate descent: this value was kept, or lost against the current best (stage 'variant'). */
   screen: z.enum(['kept', 'lost']).optional(),
@@ -488,6 +540,12 @@ export const tuneCombinationSchema = z.object({
   kvLayout: z.enum(['split', 'unified']).optional(),
   /** llama.cpp --cache-reuse (tokens): reuses cached chunks that are not a plain prefix. Absent = off. */
   cacheReuse: z.number().int().positive().optional(),
+  /**
+   * "Misurata in parte": the search stopped (time limit or launch cap) before this configuration got
+   * its own full sweep; `sweep` holds what one of its launches did measure (its quick check at the
+   * largest context, or its screening depths). Ranked by the same rules as the others.
+   */
+  partial: z.enum(['budget', 'launches']).optional(),
 });
 export type TuneCombination = z.infer<typeof tuneCombinationSchema>;
 
@@ -573,6 +631,9 @@ export const tuningSchema = z.object({
   recheck: tuneRecheckSchema.optional(),
   /** Hard cap on engine launches. */
   maxLaunches: z.number().int().positive(),
+  /** Expected length of the whole search when it started, and its time limit (the estimate times a margin), seconds. */
+  estimateSeconds: z.number().min(0).optional(),
+  limitSeconds: z.number().min(0).optional(),
   /** The search stopped before the end: time budget or launch cap spent. */
   stoppedBy: z.enum(['budget', 'launches']).optional(),
   /** Searched dimensions with the values tried, in search order (kv, fa, ubatch, batch, draft, batchTokens…). */
@@ -590,6 +651,15 @@ export const tuningSchema = z.object({
         inferred: z.boolean().default(false),
         /** Why it was not searched: pruned by the estimate, or it could not add context. */
         skipped: z.enum(['estimate', 'no-gain', 'budget']).optional(),
+        /**
+         * What is known above measuredMax: 'found' = a larger context was tried and ran out of memory
+         * or spilled (failedAt), so measuredMax is the limit; 'model' = it is the model's trained
+         * context; 'estimate' = nothing larger was tried, the VRAM estimate says it does not fit;
+         * 'budget' = larger contexts were left untried (time limit or launch cap). Absent on old runs.
+         */
+        bound: z.enum(['found', 'model', 'estimate', 'budget']).optional(),
+        /** The smallest context known not to fit (out of memory or spill), when one was tried (with 'budget': contexts in between were left untried). */
+        failedAt: z.number().int().optional(),
       }),
     )
     .default([]),

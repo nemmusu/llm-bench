@@ -101,7 +101,7 @@ describe('goal "Più utenti" through the API (fake llama-server, MULTI_PROFILE)'
     const [model] = await api<LocalModel[]>('GET', '/api/models/local');
     const request = { engine, model: { localId: model!.id }, profile: 'tune', tune: { budget: 'fast', goal: 'multi', users: 4, perUserContext: 8192 }, allowSharedGpu: true };
     const plan = await api<RunPlan>('POST', '/api/runs/plan', request);
-    expect(plan).toMatchObject({ estimatedSeconds: 300, scenario: { profile: 'tune' } });
+    expect(plan).toMatchObject({ estimatedSeconds: plan.tuneSeconds!.fast, scenario: { profile: 'tune' } });
     expect(plan.previousTune).toBeUndefined();
 
     const run = await runToEnd(request);
@@ -202,7 +202,10 @@ describe('"Ricontrollo rapido" through the API', () => {
     expect(plan.previousTune).toMatchObject({ runId: 'OLDTUNE1', build: 'b10000', currentBuild: 'b10997', sameBuild: false });
     const server = await api<ServerPlan>('POST', '/api/servers/plan', { engine, model: { localId: model!.id } });
     expect(server.tuned).toMatchObject({ runId: 'OLDTUNE1', contextSize: 40960, otherBuild: { build: 'b10000', current: 'b10997' } });
-    expect((await api<RunPlan>('POST', '/api/runs/plan', { ...single, tune: { budget: 'recheck' } })).estimatedSeconds).toBe(180);
+    // Two launches with a short sweep each: much shorter than a search.
+    const recheckPlan = await api<RunPlan>('POST', '/api/runs/plan', { ...single, tune: { budget: 'recheck' } });
+    expect(recheckPlan.estimatedSeconds).toBeGreaterThan(0);
+    expect(recheckPlan.estimatedSeconds).toBeLessThan(recheckPlan.tuneSeconds!.fast);
 
     const run = await runToEnd({ ...single, tune: { budget: 'recheck' } });
     expect(run.status).toBe('completed');

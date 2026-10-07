@@ -93,12 +93,17 @@ describe('recommended server context', () => {
     const none = withFit(() => 'partial');
     const plan = await none.svc.planServer(llama());
     expect(plan.contextSize).toBe(4096);
-    expect(plan.warnings).toContainEqual({ code: 'partial_offload', params: { maxGpuLayers: 20 } });
+    // Every layer on the GPU (Windows): the rest would go to shared system memory.
+    expect(plan.warnings.map((w) => w.code)).toEqual(['spill_risk']);
+    // Fewer layers chosen on purpose: a partial offload.
+    const offloaded = await none.svc.planServer(llama({ gpuLayers: 20 }));
+    expect(offloaded.warnings).toContainEqual({ code: 'partial_offload', params: { maxGpuLayers: 20 } });
 
     const tooBig = withFit(() => 'no');
     const big = await tooBig.svc.planServer(llama());
     expect(big.contextSize).toBe(4096);
-    expect(big.warnings.map((w) => w.code)).toContain('MODEL_TOO_LARGE');
+    // Windows still loads it, in shared system memory.
+    expect(big.warnings.map((w) => w.code)).toContain('spill_risk');
   });
 
   it('never more than the model was trained for', async () => {

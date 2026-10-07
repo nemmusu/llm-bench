@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { nominalDepth } from '../../../../src/contract/results';
-import { CONTEXT_MARGIN, depthGrid, expectedMs, maxDepth, prefillRate, runSweep, sweepDepths } from '../../../../src/core/bench/sweep';
+import {
+  anchorOf,
+  CONTEXT_MARGIN,
+  DECODE_HALF_DEPTH,
+  depthGrid,
+  expectedMs,
+  maxDepth,
+  PREFILL_HALF_DEPTH,
+  prefillRate,
+  rateAt,
+  requestMsAt,
+  runSweep,
+  sweepDepths,
+} from '../../../../src/core/bench/sweep';
 import { point } from './tune-helpers';
 
 describe('context sweep depths', () => {
@@ -65,7 +78,39 @@ describe('runSweep', () => {
   it('expected time grows with depth faster than linearly; the engine prefill rate wins', () => {
     const last = point(4096, 50, { prefill: 4096 });
     expect(expectedMs(4096, last, { outputTokens: 50, reps: 1 })).toBeCloseTo(2000, 6);
-    expect(expectedMs(16384, last, { outputTokens: 0, reps: 2 })).toBeCloseTo(2 * 4000 * 2, 6);
+    // 16K: four times the tokens, read a little slower (attention grows with the context).
+    const at16k = expectedMs(16384, last, { outputTokens: 0, reps: 2 });
+    expect(at16k).toBeGreaterThan(2 * 4 * 1000);
+    expect(at16k).toBeCloseTo(2 * (16384 / rateAt(4096, 4096, 16384, PREFILL_HALF_DEPTH)) * 1000, 6);
     expect(prefillRate(point(1, 1, { prefill: 777, engine: true }))).toBe(777);
+  });
+});
+
+describe('time of a request at another depth (an RTX 5090 with a 27B Q4 model: real numbers)', () => {
+  // Read 1 810 tok/s at 1K, 1 450 at 128K, 875 at 256K; generated 55.9, 40.2 and 27.9 tok/s.
+  const at1k = { depth: 1024, prefillTps: 1810, decodeTps: 55.9 };
+  const at128k = { depth: 131_072, prefillTps: 1450, decodeTps: 40.2 };
+
+  it('speeds move with the depth: about half at the half depths', () => {
+    expect(rateAt(1000, 0, PREFILL_HALF_DEPTH, PREFILL_HALF_DEPTH)).toBe(500);
+    expect(rateAt(55.9, 1024, 262_144, DECODE_HALF_DEPTH)).toBeCloseTo(28.06, 1);
+    expect(anchorOf(point(2048, 40, { prefill: 900 }))).toEqual({ depth: 2048, prefillTps: 900, decodeTps: 40 });
+  });
+
+  it('a 256K prompt takes minutes: from the 1K speeds 6 min (300 s measured), from the 128K ones 4.5 min', () => {
+    const fromShallow = requestMsAt(262_144, 128, at1k);
+    const fromDeep = requestMsAt(262_144, 128, at128k);
+    expect(fromShallow / 1000).toBeGreaterThan(300);
+    expect(fromShallow / 1000).toBeLessThan(450);
+    expect(fromDeep / 1000).toBeGreaterThan(250);
+    expect(fromDeep / 1000).toBeLessThan(300);
+    // A 128K prompt from the 1K speeds: ~2 min (90 s measured).
+    expect(requestMsAt(131_072, 128, at1k) / 1000).toBeGreaterThan(90);
+  });
+
+  it('the ×4 grid: 1K, 4K, 16K, 64K, 256K', () => {
+    expect(depthGrid(262_000, 4)).toEqual([1024, 4096, 16384, 65536]);
+    expect(depthGrid(262_144, 4)).toEqual([1024, 4096, 16384, 65536, 262_144]);
+    expect(sweepDepths(262_144, 128, { step: 4 })).toEqual([1024, 4096, 16384, 65536, 262_000]);
   });
 });

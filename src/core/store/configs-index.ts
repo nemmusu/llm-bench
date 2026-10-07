@@ -2,7 +2,8 @@
  * Configurations index (Risultati → Configurazioni): every completed run, grouped by configuration
  * (contract/configs.ts). A source is a normal run (its latency prompt lengths and its context sweep
  * are its depths) or one combination of a "Trova le impostazioni migliori" run that loaded and was
- * swept. Sources with the same key merge: median per depth, highest VRAM peak, every test listed.
+ * swept. Sources with the same key merge: median per depth, highest VRAM peak, every test listed. A
+ * run that spilled to shared system memory forms its own entry (marked), never merged with clean ones.
  */
 import {
   ALL_GPUS,
@@ -23,7 +24,7 @@ import {
   type DepthPoint,
 } from '../../contract/configs';
 import { ENGINE_KINDS, type EngineKind, type LaunchParams } from '../../contract/engines';
-import { nominalDepth, type LatencyPoint, type RunResult, type RunSummary, type TuneCombination } from '../../contract/results';
+import { nominalDepth, spilledRun, type LatencyPoint, type RunResult, type RunSummary, type TuneCombination } from '../../contract/results';
 import { engineLabelOf, type HereIdentity, type RunsRepo } from './runs-repo';
 
 /** One measured configuration of one run: the run itself, or one of its tune combinations. */
@@ -100,6 +101,7 @@ function runSource(run: RunResult): RunConfigSource[] {
     date: run.createdAt,
     profile: run.scenario.profile,
     points,
+    ...(spilledRun(run) ? { spill: true } : {}),
     ...(params.contextSize !== undefined ? { contextSize: params.contextSize } : {}),
     ...(vram !== undefined ? { vramPeakMiB: vram } : {}),
     ...(busiest
@@ -231,7 +233,9 @@ export function mergeSources(runs: readonly RunSources[]): ConfigEntry[] {
   for (const run of runs) {
     const modelKey = modelKeyOf({ ...run.model, sha256: run.model.sha256 ?? shaByWeak.get(run.model.weakKey) });
     for (const item of run.sources) {
-      const key = configKeyOf({ engineKind: run.engineKind, engineRelease: run.engineRelease, model: modelKey, gpu: run.gpu.key, params: item.params });
+      // A test that spilled is its own entry: its numbers never mix with the card's real ones.
+      const spill = item.source.spill === true;
+      const key = configKeyOf({ engineKind: run.engineKind, engineRelease: run.engineRelease, model: modelKey, gpu: run.gpu.key, params: item.params }) + (spill ? '|spill' : '');
       const g = groups.get(key) ?? { key, modelKey, params: item.params, items: [] };
       g.items.push({ item, run });
       groups.set(key, g);
@@ -267,6 +271,7 @@ export function mergeSources(runs: readonly RunSources[]): ConfigEntry[] {
       ...(vram.length ? { vramPeakMiB: Math.max(...vram) } : {}),
       ...(parallel ? { parallel } : {}),
       tags: union(...items.map((i) => i.tags)),
+      ...(sources[0]!.spill ? { spill: true } : {}),
       sources,
       latest: sources[0]!.date,
     };

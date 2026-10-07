@@ -23,7 +23,7 @@ import type { ConcurrencyPoint, SessionsPoint, SessionsStep, TuneCombination, Tu
 import { sessionExtras } from './scenarios';
 import { maxDepth } from './sweep';
 import { compareUsers, recommendedForUsers, usersWithoutErrors, type UsersMeasure } from './tune-rank';
-import { MIN_SWEEP_MS, Tuner, type Capacity, type DimValue, type Dimension, type LabEngine, type Live, type TunerDeps, type TunerInput, type Variant } from './tuner';
+import { MIN_SWEEP_MS, PROBE_DEPTH, PROBE_OUTPUT, Tuner, type Capacity, type DimValue, type Dimension, type LabEngine, type Live, type TunerDeps, type TunerInput, type Variant } from './tuner';
 
 /** Messages per conversation and new text of every later message, in the short conversations. */
 export const MULTI_TURNS = 3;
@@ -90,13 +90,20 @@ export class MultiTuner extends Tuner {
     return { ...super.base(kv), np: this.users };
   }
 
-  override async run(): Promise<Tuning> {
+  /** Each KV type holds the users or not: one candidate, the context of N users. */
+  protected override predict(): void {
     const { space } = this.input;
     const ctx = this.contextFor(this.users);
     for (const kv of space.kvLadder) {
       const fits = this.predictFits(space.params(this.base(kv), ctx));
       this.capacity.set(kv, { kv, ...(fits === true ? { predictedMax: ctx } : {}), candidates: fits === false ? [] : [ctx], status: new Map(), launched: new Set(), inferred: false });
     }
+  }
+
+  override async run(): Promise<Tuning> {
+    this.prepare();
+    const { space } = this.input;
+    const ctx = this.contextFor(this.users);
     this.deps.onPhase?.('tune-capacity');
     if (this.input.spillPossible) await this.reference(space.contextFor(this.users, Math.min(this.perUser, MULTI_REFERENCE_CONTEXT)));
     for (const kv of space.kvLadder) await this.holdsUsers(kv, ctx);
@@ -105,16 +112,58 @@ export class MultiTuner extends Tuner {
     for (const kv of fitting) {
       this.deps.onPhase?.('tune-variants');
       const best = await this.descendUsers(kv);
+      this.descended.add(kv);
+      this.descentLeft.delete(kv);
       if (best && !this.combined.has(this.key(best.variant, best.ctx))) {
         const live = await this.launch('sweep', best.variant, best.ctx, (e, l) => this.fullWork(e, l, best));
         if (live?.users) this.addCombination(live);
       }
+      this.swept.add(kv);
     }
     return this.snapshot();
   }
 
+  /** Expected ms of N users at once with `prompt` tokens each: prompts read one after the other, answers slowed 15 % per extra user. */
+  private levelMs(users: number): number {
+    const one = this.requestMs(this.prompt, this.out);
+    const read = one - this.requestMs(0, this.out);
+    return users * read + (one - read) * (1 + 0.15 * (users - 1));
+  }
+
+  /** Expected ms of the short conversations of N users (first messages read in full, later ones from the cache). */
+  private sessionsMs(users: number): number {
+    return this.levelMs(users) + (this.turns - 1) * this.requestMs(MULTI_FOLLOWUP, this.out) * users;
+  }
+
+  /**
+   * Expected ms of the work not started yet (goal 'multi'): per KV type that holds the users (or is
+   * expected to), its screenings with every user busy, then users 1 … N.
+   */
+  protected override plannedMs(): number {
+    const load = this.loadMs();
+    const screen = load + this.levelMs(this.users) + this.sessionsMs(this.users);
+    let ms = this.input.spillPossible && !this.refDone ? load + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) : 0;
+    let fitting = false;
+    for (const kv of this.input.space.kvLadder) {
+      const cap = this.capacity.get(kv) as Capacity;
+      // A less precise type than one that holds the users holds them too.
+      const holds = this.capacityDone.has(kv) ? cap.measuredMax !== undefined : fitting || cap.candidates.length > 0;
+      if (!holds) continue;
+      fitting = true;
+      // A capacity launch already screened the base settings.
+      const screens = this.descentLeft.get(kv) ?? this.screensOf(kv) - (cap.launched.size > 0 ? 1 : 0);
+      if (!this.descended.has(kv)) ms += screens * screen;
+      if (!this.swept.has(kv)) {
+        ms += load;
+        for (let n = 1; n <= this.users; n++) ms += this.levelMs(n);
+      }
+    }
+    return ms;
+  }
+
   /** Does this KV type hold every user's context? One launch, screened at once when it does. */
   private async holdsUsers(kv: TuneKvType, ctx: number): Promise<void> {
+    this.capacityDone.add(kv);
     const cap = this.capacity.get(kv) as Capacity;
     const ladder = this.input.space.kvLadder;
     if (this.bestPrecise(kv) !== undefined) {
@@ -176,8 +225,17 @@ export class MultiTuner extends Tuner {
       att.error = poolTooSmall(live.hint, need);
       return;
     }
+    const predicted = this.levelMs(level);
+    // Every user at once would end past the time limit: not started (the search stops).
+    if (!this.fitsInTime(predicted)) {
+      att.skipped = [{ depth: this.prompt, predictedMs: Math.round(predicted) }];
+      this.stoppedBy ??= 'budget';
+      return;
+    }
     const t0 = this.deps.now();
+    this.busy(predicted);
     const point = await engine.concurrency(level, this.prompt, this.out, 1);
+    this.settle();
     const levelMs = this.deps.now() - t0;
     att.concurrency = [...(att.concurrency ?? []), point];
     const step = this.sessionsStep(level);
@@ -194,7 +252,7 @@ export class MultiTuner extends Tuner {
   private async fullWork(engine: LabEngine, live: Live, screened: UsersScreen): Promise<void> {
     this.deps.onPhase?.('concurrency');
     const level = this.levelOf(live);
-    const deadline = this.started + Math.max(this.rules.ms, this.deps.now() - this.started + MIN_SWEEP_MS);
+    const deadline = this.started + Math.max(this.limitMs, this.deps.now() - this.started + MIN_SWEEP_MS);
     const levelMs = screened.levelMs;
     const points: ConcurrencyPoint[] = [];
     for (let n = 1; n <= level; n++) {
@@ -214,6 +272,7 @@ export class MultiTuner extends Tuner {
 
   /** The base settings of a fitting KV type screened with all users (launched if not yet). */
   private async baseUsers(kv: TuneKvType): Promise<UsersScreen | undefined> {
+    this.screened(kv);
     const cap = this.capacity.get(kv) as Capacity;
     const base = this.base(kv);
     const ctx = cap.measuredMax as number;
@@ -228,8 +287,14 @@ export class MultiTuner extends Tuner {
     return this.usersScreens.get(this.key(base, ctx));
   }
 
+  /** One screening of a KV type's descent is done (or skipped): the forecast counts one less. */
+  private screened(kv: TuneKvType): void {
+    this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) ?? this.screensOf(kv)) - 1));
+  }
+
   /** One dimension at a time with every user busy; returns the best screened settings. */
   private async descendUsers(kv: TuneKvType): Promise<UsersScreen | undefined> {
+    this.descentLeft.set(kv, this.screensOf(kv));
     let best = await this.baseUsers(kv);
     if (!best) return undefined;
     const dims = this.input.space.dimensions;
@@ -240,19 +305,22 @@ export class MultiTuner extends Tuner {
       for (let i = 0; i < values.length; i++) {
         const current: UsersScreen = best;
         const variant: Variant = { ...current.variant, [dim.key]: values[i] as DimValue };
+        this.screened(kv);
         if (dim.prune?.(values[i] as DimValue) && !this.estimateAllows(variant, current)) continue;
         const last = d === dims.length - 1 && i === values.length - 1;
         let won = false;
+        const key = this.key(variant, current.ctx);
         const live = await this.launch('variant', variant, current.ctx, async (engine, l) => {
           await this.usersWork(engine, l);
-          if (l.att.outcome !== 'ok') return;
-          const mine = this.usersScreens.get(this.key(variant, current.ctx)) as UsersScreen;
+          const mine = this.usersScreens.get(key);
+          // Out of memory, or not measured (the time limit): nothing to compare.
+          if (l.att.outcome !== 'ok' || !mine) return;
           won = compareUsers(mine.measure, current.measure) > 0;
           // The last value tried, and the winner: users 1 … N on this same launch.
           if (won && last) await this.fullWork(engine, l, mine);
         });
         if (!live) return best;
-        if (live.att.outcome !== 'ok') continue;
+        if (live.att.outcome !== 'ok' || !this.usersScreens.has(key)) continue;
         live.att.screen = won ? 'kept' : 'lost';
         if (!won) continue;
         this.attempts[current.attempt]!.screen = 'lost';
@@ -261,6 +329,11 @@ export class MultiTuner extends Tuner {
       }
     }
     return best;
+  }
+
+  /** The context is the request's (N users × their context): there is no largest context to bound. */
+  protected override boundOf(): Partial<Tuning['capacity'][number]> {
+    return {};
   }
 
   protected override forget(live: Live): void {

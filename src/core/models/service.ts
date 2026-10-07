@@ -1,14 +1,14 @@
 import { readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
-import type { EngineKind } from '../../contract/engines';
+import { launchParamsSchema, type EngineKind } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFit } from '../../contract/models';
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
-import { bestQuant, estimateFit, fitParamsFrom, quantChoices, type FitCalibration, type FitParams, type QuantChoice } from './fit';
+import { bestQuant, estimateFit, fitFixes, fitParamsFrom, quantChoices, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
@@ -240,11 +240,17 @@ export class ModelsService {
       const c = await this.opts.calibration?.({ ...model, ...(facts.architecture ? { architecture: facts.architecture } : {}) }, req.engine).catch(() => undefined);
       return c ? { calibration: c } : {};
     };
+    /** The estimate, plus (llama.cpp, when it does not fit entirely) the settings that would: same estimator, other params. */
+    const withFixes = (input: Omit<FitInput, 'params'>): FitEstimate => {
+      const est = estimateFit({ ...input, params });
+      const fixes = fitFixes(req.engine, req.params ?? launchParamsSchema.parse({}), est, (p) => estimateFit({ ...input, params: fitParamsFrom(p) }));
+      return fixes ? { ...est, fixes } : est;
+    };
     if (req.localId) {
       const m = await this.get(req.localId);
       const facts = m.identity.facts ?? {};
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
-      return estimateFit({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, params, ...(await calibrated(id, facts)) });
+      return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {
       const files = await this.hub.files(req.repo);
@@ -257,7 +263,7 @@ export class ModelsService {
       // The weak key a downloaded copy will have: its measurements count once it was benchmarked.
       const name = path.posix.basename(first.path);
       const key = weakKey({ repo: req.repo, file: name, quant: quantFromFilename(name), sizeBytes: fileBytes });
-      return estimateFit({ facts, fileBytes, gpu, engine: req.engine, params, ...(await calibrated({ weakKey: key }, facts)) });
+      return withFixes({ facts, fileBytes, gpu, engine: req.engine, ...(await calibrated({ weakKey: key }, facts)) });
     }
     if (req.repo) {
       const { facts, fileBytes } = await this.hub.configFacts(req.repo);

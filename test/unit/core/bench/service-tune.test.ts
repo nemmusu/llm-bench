@@ -5,7 +5,8 @@ import { launchParamsSchema } from '../../../../src/contract/engines';
 import type { LivePoint } from '../../../../src/contract/events';
 import type { RunResult, Tuning } from '../../../../src/contract/results';
 import { BenchService, livePointKey } from '../../../../src/core/bench/service';
-import { makeRun, modelIdentity } from '../store/fixtures';
+import { BUDGETS } from '../../../../src/core/bench/tuner';
+import { latencyPoint, makeRun, modelIdentity } from '../store/fixtures';
 import { modelTarget } from './fakes';
 import { request, serviceSetup, TempDirs } from './service-helpers';
 import { combo, point } from './tune-helpers';
@@ -17,13 +18,26 @@ afterEach(() => tmp.cleanup());
 const small = () => modelTarget({ identity: modelIdentity({ facts: { contextLength: 8192, blockCount: 4 } }) });
 
 describe('BenchService — tune runs', () => {
-  it('plans a tune run for its time budget, its sweep template untouched', async () => {
+  it('plans a tune run with its own forecast for this model, each budget’s too; its sweep template untouched', async () => {
     const s = serviceSetup(tmp, { deps: { resolveModel: async () => small() } });
     const svc = new BenchService(s.deps);
     const fast = await svc.plan(request({ profile: 'tune' }));
-    expect(fast.estimatedSeconds).toBe(300);
+    expect(fast.tuneSeconds!.fast).toBe(fast.estimatedSeconds);
+    expect(fast.tuneSeconds!.thorough).toBeGreaterThan(fast.tuneSeconds!.fast);
+    expect(fast.estimatedSeconds).toBeGreaterThan(30);
     expect(fast.scenario).toEqual({ profile: 'tune', seed: 42, steps: [{ kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2 }] });
-    expect((await svc.plan(request({ profile: 'tune', tune: { budget: 'thorough' } }))).estimatedSeconds).toBe(1200);
+    const thorough = await svc.plan(request({ profile: 'tune', tune: { budget: 'thorough' } }));
+    expect(thorough.estimatedSeconds).toBe(fast.tuneSeconds!.thorough);
+    // "Ricontrollo rapido" with nothing to re-check: the budget's shortest limit (the start refuses it).
+    expect((await svc.plan(request({ profile: 'tune', tune: { budget: 'recheck' } }))).estimatedSeconds).toBe(BUDGETS.recheck.minMs / 1000);
+    // Other profiles have no tune durations.
+    expect(await svc.plan(request())).not.toHaveProperty('tuneSeconds');
+    // A bigger model is slower (its file size says so when it never ran here).
+    const big = serviceSetup(tmp, { adapter: { modelBytes: 17.6e9 }, deps: { resolveModel: async () => small() } });
+    expect((await new BenchService(big.deps).plan(request({ profile: 'tune' }))).estimatedSeconds).toBeGreaterThan(fast.estimatedSeconds);
+    // What it really did here wins: a slow earlier run of this model makes the search longer.
+    await s.runs.save(makeRun({ id: 'slow', model: small().identity, metrics: { ...makeRun().metrics, latency: [latencyPoint(512, 5, 100)] } }));
+    expect((await svc.plan(request({ profile: 'tune' }))).estimatedSeconds).toBeGreaterThan(fast.estimatedSeconds);
   });
 
   it('an external endpoint cannot be tuned (nothing to relaunch)', async () => {
@@ -43,9 +57,11 @@ describe('BenchService — tune runs', () => {
       adapter: { client: { onRequest: (n) => (n === 6 ? (seen = holder.svc!.active()) : undefined) } },
     });
     const svc = (holder.svc = new BenchService(s.deps));
+    const planned = (await svc.plan(request({ profile: 'tune' }))).estimatedSeconds;
     const { runId } = await svc.start(request({ profile: 'tune' }));
     await svc.whenIdle();
-    expect(seen).toMatchObject({ runId, profile: 'tune', estimatedSeconds: 300 });
+    expect(seen).toMatchObject({ runId, profile: 'tune', estimatedSeconds: planned });
+    expect(seen!.remainingSeconds).toBeGreaterThan(0);
     expect(seen!.tuning!.attempts.length).toBeGreaterThan(0);
     expect(seen!.launch).toMatchObject({ engineLabel: 'llama.cpp b11438 (CUDA 13.4)' });
     expect(seen!.current).toMatchObject({ kind: expect.stringMatching(/^tune-|context-sweep/) });

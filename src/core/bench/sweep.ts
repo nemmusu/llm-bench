@@ -6,21 +6,24 @@ import type { LatencyPoint } from '../../contract/results';
 
 /** Tokens kept free in the context besides prompt + output (BOS, server-side extras). */
 export const CONTEXT_MARGIN = 16;
-/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K…). */
+/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K…), or ×4 (16K, 64K, 256K…) for long contexts. */
 export const FIRST_DEPTHS = [1024, 4096] as const;
 /** Share of the context used for the optional 25/50/75/100 % points. */
 export const DEPTH_FRACTIONS = [0.25, 0.5, 0.75, 1] as const;
+
+/** How the grid grows after 4K: doubling, or ×4 (fewer deep points: "Veloce" on long contexts). */
+export type GridStep = 2 | 4;
 
 /** Deepest prompt a context of `ctx` tokens can take with `outputTokens` to generate. */
 export function maxDepth(ctx: number, outputTokens: number): number {
   return ctx - outputTokens - CONTEXT_MARGIN;
 }
 
-/** 1K, 4K, 8K, 16K… up to `limit` (inclusive). */
-export function depthGrid(limit: number): number[] {
+/** 1K, 4K, then ×`step` (8K, 16K… or 16K, 64K…) up to `limit` (inclusive). */
+export function depthGrid(limit: number, step: GridStep = 2): number[] {
   const out: number[] = [];
   for (const d of FIRST_DEPTHS) if (d <= limit) out.push(d);
-  for (let d = 8192; d <= limit; d *= 2) out.push(d);
+  for (let d = 4096 * step; d <= limit; d *= step) out.push(d);
   return out;
 }
 
@@ -29,10 +32,10 @@ export function depthGrid(limit: number): number[] {
  * exact maximum, and optionally 25/50/75/100 % of the context (each clamped to the maximum).
  * Ascending, without duplicates; empty when not even one token of prompt fits.
  */
-export function sweepDepths(ctx: number, outputTokens: number, opts: { fractions?: boolean } = {}): number[] {
+export function sweepDepths(ctx: number, outputTokens: number, opts: { fractions?: boolean; step?: GridStep } = {}): number[] {
   const max = maxDepth(ctx, outputTokens);
   if (max < 1) return [];
-  const all = [...depthGrid(max), max];
+  const all = [...depthGrid(max, opts.step), max];
   if (opts.fractions) for (const f of DEPTH_FRACTIONS) all.push(Math.max(1, Math.min(max, Math.round(ctx * f))));
   return [...new Set(all)].sort((a, b) => a - b);
 }
@@ -62,14 +65,39 @@ export function prefillRate(p: LatencyPoint): number {
 }
 
 /**
- * Expected ms of one depth from the last point: prompt at the last reading speed (slowed in
- * proportion to the extra depth, attention grows with it) plus the answer at the last generation speed.
+ * Attention grows with the context: prompt reading is about half as fast at this depth as on a short
+ * prompt, generation at the second one (an RTX 5090 with a 27B model read 1 810 tok/s at 1K, 1 450 at
+ * 128K and 875 at 256K; generated 55.9, 40.2 and 27.9 tok/s).
  */
+export const PREFILL_HALF_DEPTH = 131_072;
+export const DECODE_HALF_DEPTH = 262_144;
+
+/** Speeds measured at one depth, from which the time of a request at another depth is predicted. */
+export interface SpeedAnchor {
+  depth: number;
+  prefillTps: number;
+  decodeTps: number;
+}
+
+export function anchorOf(p: LatencyPoint): SpeedAnchor {
+  return { depth: p.promptTokens, prefillTps: prefillRate(p), decodeTps: p.decodeTps.median };
+}
+
+/** A speed measured at `from` tokens, moved to `to` tokens: rate × (1 + from / half) / (1 + to / half). */
+export function rateAt(rate: number, from: number, to: number, half: number): number {
+  return (rate * (1 + from / half)) / (1 + to / half);
+}
+
+/** Expected ms of one request of `depth` prompt tokens and `outputTokens` answer tokens, from an anchor. */
+export function requestMsAt(depth: number, outputTokens: number, a: SpeedAnchor): number {
+  const read = Math.max(1, rateAt(a.prefillTps, a.depth, depth, PREFILL_HALF_DEPTH));
+  const write = Math.max(0.1, rateAt(a.decodeTps, a.depth, depth, DECODE_HALF_DEPTH));
+  return (depth / read) * 1000 + (outputTokens / write) * 1000;
+}
+
+/** Expected ms of one depth (all its repetitions) from the last point measured. */
 export function expectedMs(depth: number, last: LatencyPoint, o: Pick<SweepOptions, 'outputTokens' | 'reps'>): number {
-  const read = Math.max(1, prefillRate(last));
-  const write = Math.max(0.1, last.decodeTps.median);
-  const slowdown = Math.max(1, depth / Math.max(1, last.promptTokens));
-  return o.reps * ((depth / read) * 1000 * Math.sqrt(slowdown) + (o.outputTokens / write) * 1000);
+  return o.reps * requestMsAt(depth, o.outputTokens, anchorOf(last));
 }
 
 /** Measures `depths` in order (shallow first) with `measure`, within the optional time budget. */

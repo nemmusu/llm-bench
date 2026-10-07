@@ -271,7 +271,8 @@ describe('BenchService.plan', () => {
     expect(plan.fit?.level).toBe('no');
     expect(plan.scenario.steps.find((x) => x.kind === 'latency')).toBeUndefined();
     const codes = plan.warnings.map((w) => w.code);
-    expect(codes).toEqual(['prompt_too_long', 'prompt_too_long', 'prompt_too_long', 'VRAM_BUSY', 'MODEL_TOO_LARGE', 'slow_shared_filesystem']);
+    // Windows, every layer on the GPU: what does not fit goes to shared system memory.
+    expect(codes).toEqual(['prompt_too_long', 'prompt_too_long', 'prompt_too_long', 'VRAM_BUSY', 'spill_risk', 'slow_shared_filesystem']);
     expect(plan.warnings.find((w) => w.code === 'VRAM_BUSY')?.params).toEqual({ names: 'ollama', pids: '77' });
     expect(plan.estimatedSeconds).toBeGreaterThan(0);
   });
@@ -317,10 +318,32 @@ describe('BenchService.plan', () => {
     expect(plan).not.toHaveProperty('fit');
     expect(plan).not.toHaveProperty('pending');
     expect(plan.warnings).toEqual([]);
+    // Fewer layers on the GPU chosen on purpose: a partial offload.
     const t = serviceSetup(tmp, { telemetry: { available: 'throw', users: 'throw' }, deps: { fit: async () => fit({ level: 'partial', maxGpuLayers: 20 }) } });
-    expect((await new BenchService(t.deps).plan(request())).warnings).toEqual([{ code: 'partial_offload', params: { maxGpuLayers: 20 } }]);
+    expect((await new BenchService(t.deps).plan(request({ params: { gpuLayers: 20 } }))).warnings).toEqual([{ code: 'partial_offload', params: { maxGpuLayers: 20 } }]);
     const u = serviceSetup(tmp, { telemetry: { users: 'throw' } });
     expect((await new BenchService(u.deps).plan(request())).warnings).toEqual([]);
+  });
+
+  it('every layer on the GPU and not enough VRAM: Windows spills (the fixes come along), Linux runs out of memory', async () => {
+    const fixes = { kvCacheType: 'q4_0' as const, maxContext: 131_072 };
+    const partial = async () => fit({ level: 'partial', maxGpuLayers: 57, needMiB: 34_100, availableMiB: 31_000, fixes });
+    const win = serviceSetup(tmp, { deps: { fit: partial } });
+    expect((await new BenchService(win.deps).plan(request())).warnings).toEqual([{ code: 'spill_risk', params: { needMiB: 34_100, availableMiB: 31_000, ...fixes } }]);
+    const wsl = serviceSetup(tmp, { deps: { fit: partial, fingerprint: async () => hardware({ os: { platform: 'linux', release: '', arch: 'x64', name: 'Ubuntu', isWsl: true } }) } });
+    expect((await new BenchService(wsl.deps).plan(request())).warnings.map((w) => w.code)).toEqual(['spill_risk']);
+    const linux = { fingerprint: async () => hardware({ os: { platform: 'linux' as const, release: '', arch: 'x64', name: 'Ubuntu', isWsl: false } }) };
+    const lin = serviceSetup(tmp, { deps: { fit: partial, ...linux } });
+    expect((await new BenchService(lin.deps).plan(request())).warnings).toEqual([{ code: 'oom_risk', params: { needMiB: 34_100, availableMiB: 31_000, ...fixes } }]);
+    // Not even part of it: too large.
+    const no = serviceSetup(tmp, { deps: { fit: async () => fit({ level: 'no', needMiB: 90_000, availableMiB: 31_000 }), ...linux } });
+    expect((await new BenchService(no.deps).plan(request())).warnings.map((w) => w.code)).toEqual(['MODEL_TOO_LARGE']);
+    // No fingerprint: nothing says Windows.
+    const unknown = serviceSetup(tmp, { deps: { fit: partial, fingerprint: () => Promise.reject(new Error('no')) } });
+    expect((await new BenchService(unknown.deps).plan(request())).warnings.map((w) => w.code)).toEqual(['oom_risk']);
+    // vLLM never offloads: too large.
+    const vllm = serviceSetup(tmp, { adapter: { kind: 'vllm-docker' }, deps: { fit: async () => fit({ level: 'no', needMiB: 90_000, availableMiB: 31_000 }) } });
+    expect((await new BenchService(vllm.deps).plan(request({ engine: { kind: 'vllm-docker' } }))).warnings.map((w) => w.code)).toContain('MODEL_TOO_LARGE');
   });
 
   it('estimates use past results of the same model on this PC', async () => {

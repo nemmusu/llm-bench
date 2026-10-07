@@ -83,8 +83,10 @@ describe('tune run through the API (fake llama-server with a memory model)', () 
     const engine = { kind: 'llamacpp-native', executable: CLI };
     const request = { engine, model: { localId: model!.id }, profile: 'tune', tune: { budget: 'fast', fidelity: true }, allowSharedGpu: true };
 
-    const plan = await api<{ estimatedSeconds: number; scenario: { profile: string } }>('POST', '/api/runs/plan', request);
-    expect(plan).toMatchObject({ estimatedSeconds: 300, scenario: { profile: 'tune' } });
+    const plan = await api<{ estimatedSeconds: number; tuneSeconds: { fast: number; thorough: number }; scenario: { profile: string } }>('POST', '/api/runs/plan', request);
+    // The search's own forecast for this model, each budget's too.
+    expect(plan).toMatchObject({ estimatedSeconds: plan.tuneSeconds.fast, scenario: { profile: 'tune' } });
+    expect(plan.tuneSeconds.thorough).toBeGreaterThan(plan.tuneSeconds.fast);
 
     const { runId } = await api<{ runId: string }>('POST', '/api/runs', request);
     // The live screen sees the search while it runs.
@@ -108,7 +110,18 @@ describe('tune run through the API (fake llama-server with a memory model)', () 
     expect(max).toEqual({ f16: 16384, q8_0: 32768, q4_0: 40960 });
     const outcomes = new Set(t.attempts.map((a) => a.outcome));
     expect(outcomes).toEqual(new Set(['ok', 'oom', 'spill']));
-    expect(t.attempts.find((a) => a.outcome === 'spill')).toMatchObject({ kvType: 'q8_0', contextSize: 40960, spill: 'decode-collapse' });
+    // Seen at the 1K probe, against the reference's 1K probe: f16 at 24K (between 16K and 32K) and q8_0 at 40K.
+    expect(t.attempts.filter((a) => a.outcome === 'spill').map((a) => [a.kvType, a.contextSize, a.spill])).toEqual([
+      ['f16', 24576, 'decode-collapse'],
+      ['q8_0', 40960, 'decode-collapse'],
+    ]);
+    expect(t.capacity.map((c) => [c.kvType, c.bound, c.failedAt])).toEqual([
+      ['f16', 'found', 24576],
+      ['q8_0', 'found', 40960],
+      ['q4_0', 'model', undefined],
+    ]);
+    // A capacity launch never sends a deep prompt.
+    expect(t.attempts.filter((a) => a.stage === 'capacity').every((a) => a.points.every((p) => p.promptTokens === 1024))).toBe(true);
     // Quantized caches always ran with flash attention, K = V.
     for (const a of t.attempts.filter((x) => x.kvType !== 'f16')) {
       const argv = a.command.argv;

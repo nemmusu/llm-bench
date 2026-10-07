@@ -104,7 +104,7 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
   });
 
   it('a short budget: middle levels are skipped (users N always measured), and the search stops where it is', async () => {
-    const slow = await tune(multi(), machine({ requestMs: 15_000 }));
+    const slow = await tune({ ...multi(), limitMs: 5 * 60_000 }, machine({ requestMs: 15_000 }));
     const rec = slow.t.combinations[slow.t.recommended!]!;
     expect(rec.concurrency!.at(-1)!.level).toBe(4);
     expect(rec.concurrency!.length).toBeLessThan(4);

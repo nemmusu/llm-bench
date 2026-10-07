@@ -6,31 +6,43 @@
  * this machinery.)
  *
  *  1. Predict (no load): the VRAM estimate gives each KV type's largest context (+10 % slack, capped
- *     at the model's trained context). Candidates are powers of two from 4K up to it (plus the trained
- *     context itself); a type with none is skipped.
+ *     at the model's trained context). Candidates are powers of two from 4K up to it, the estimate
+ *     itself rounded down to 8K (e.g. 245 760) and the trained context when it fits; a type with none
+ *     is skipped.
  *  2. Reference (Windows only, where a model that does not fit spills to shared memory instead of
- *     failing): the smallest context with the most precise KV that loads; its speed is what a
- *     collapse is measured against.
+ *     failing): the smallest context with the most precise KV that loads; its 1K probe is what a
+ *     collapse is measured against, its shared memory what a spill is measured against.
  *  3. Capacity, per KV type in the user's order (f16 → q8_0 → q4_0; vLLM auto → fp8), with the
  *     cheapest-memory settings: the largest candidate that loads without "out of memory" and without
- *     spilling. The top candidate is tried first (the estimate is usually close), then a binary search.
- *     A less precise type that cannot add context (the previous one already reached the model's limit)
- *     is not searched: its capacity is known without a launch. vLLM's memory share starts at the
- *     highest that fits the free VRAM and steps down while vLLM refuses to start with it.
+ *     spilling. A capacity launch is only a check: load → shared memory → a 1K probe compared with the
+ *     reference's 1K probe (the same depth: slowing down on deep prompts is normal). No deep prompt is
+ *     sent while searching. The top candidate first (the estimate is usually close), then a binary
+ *     search between the largest that loaded and the smallest that did not, down to steps of 8K
+ *     (or 1/8 of the context). A less precise type that cannot add context is not searched.
+ *     vLLM's memory share starts at the highest that fits the free VRAM and steps down while vLLM
+ *     refuses to start with it.
  *  4. Coordinate descent at each type's largest context, one dimension at a time (flash attention →
  *     ubatch → batch → speculative decoding; vLLM: batched tokens, block size, fp8 format): each value
- *     is screened at three depths (1K, the middle of the grid and the deepest) and kept when it is
- *     faster (see tune-rank.ts); a value that runs out of memory or spills at that context is dropped —
+ *     is screened at three depths (1K, the middle of the grid and the deepest; "Veloce" on contexts
+ *     above 64K: 1K and the middle only, the deepest prompt taking minutes) and kept when it is faster
+ *     (see tune-rank.ts); a value that runs out of memory or spills at that context is dropped —
  *     context comes first. Values that won in earlier runs on this GPU are tried first.
- *  5. Full context sweep (same depth grid for everyone) of each type's best combination, and of any
- *     screened variant that was the fastest at one of its depths.
+ *  5. Full context sweep of each type's best combination (and of any screened variant that was the
+ *     fastest at one of its depths): what its screening measured is reused, so each deep prompt of a
+ *     combination is measured once. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the
+ *     exact maximum; "Accurata" doubles.
  *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
  *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
  *     the only way to a larger context.
  *  7. Optional "fedeltà": the same greedy generation with the most precise KV and the recommended one.
  *
- * Everything runs within a time budget and a cap on launches; the search stops early when either is
- * spent and reports what it measured. The engine work itself goes through TuneLab (the runner).
+ * Time: the search forecasts itself from the predicted contexts, the expected speeds (earlier runs of
+ * this model, else its size) and the launches; its time limit is that estimate × 1.5. Every request is
+ * predicted from the speeds measured so far: one longer than a minute is made once (n = 1), one that
+ * would end past the limit (plus a grace) is not started (recorded), a started one is never cut. When
+ * the limit or the launch cap stops the search, what was measured at each type's largest context
+ * becomes a combination "misurata in parte", ranked by the same rules. The engine work itself goes
+ * through TuneLab (the runner).
  */
 import type { LaunchParams } from '../../contract/engines';
 import { AppError, toAppErrorData, type AppErrorData, type ErrorCode } from '../../contract/errors';
@@ -52,15 +64,21 @@ import {
   type TuneTag,
   type Tuning,
 } from '../../contract/results';
-import { depthGrid, maxDepth, runSweep, sweepDepths } from './sweep';
+import { spillThresholdMiB, SPILL_RATIO } from './spill';
+import { anchorOf, depthGrid, maxDepth, requestMsAt, sweepDepths, type GridStep, type SpeedAnchor } from './sweep';
 import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt, recommendedCombination, screenBetter } from './tune-rank';
+
+export { SPILL_RATIO };
 
 // ---- engine access ------------------------------------------------------------------------------
 
 /** A loaded engine of one attempt. */
 export interface LabEngine {
-  /** `reps` requests of `depth` prompt tokens and `outputTokens` answer tokens, as one point. */
-  measure(depth: number, outputTokens: number, reps: number, kind: 'tune-probe' | 'tune-screen' | 'context-sweep'): Promise<LatencyPoint>;
+  /**
+   * `reps` requests of `depth` prompt tokens and `outputTokens` answer tokens, as one point. `more` is
+   * asked before every repetition after the first: false = stop there (the point keeps the ones made).
+   */
+  measure(depth: number, outputTokens: number, reps: number, kind: 'tune-probe' | 'tune-screen' | 'context-sweep', more?: () => boolean): Promise<LatencyPoint>;
   /** `level` users at once, each sending `requestsPerWorker` requests back to back (goal 'multi'). */
   concurrency(level: number, promptTokens: number, outputTokens: number, requestsPerWorker: number): Promise<ConcurrencyPoint>;
   /** "Conversazioni lunghe" on this engine (goal 'multi'): one point per level. */
@@ -125,41 +143,56 @@ export interface TuneSpace {
 }
 
 export interface BudgetRules {
-  ms: number;
+  /** The shortest time limit (a small model's estimate can be a minute or two). */
+  minMs: number;
   maxLaunches: number;
   /** Repetitions of each screening depth. */
   screenReps: number;
+  /** Grid of the sweeps (and of the screening's middle depth) on contexts above LONG_CONTEXT. */
+  longGrid: GridStep;
 }
 
 export const BUDGETS: Record<TuneBudget, BudgetRules> = {
-  fast: { ms: 5 * 60_000, maxLaunches: 24, screenReps: 2 },
-  thorough: { ms: 20 * 60_000, maxLaunches: 60, screenReps: 3 },
-  recheck: { ms: 3 * 60_000, maxLaunches: 4, screenReps: 2 },
+  fast: { minMs: 3 * 60_000, maxLaunches: 24, screenReps: 2, longGrid: 4 },
+  thorough: { minMs: 8 * 60_000, maxLaunches: 60, screenReps: 3, longGrid: 2 },
+  recheck: { minMs: 2 * 60_000, maxLaunches: 4, screenReps: 2, longGrid: 2 },
 };
 
+/** The time limit is the search's own estimate times this. */
+export const TIME_MARGIN = 1.5;
+/** A request is still started when it is predicted to end at most this long after the limit. */
+export const TIME_GRACE_MS = 30_000;
+/** A request predicted to take longer than this is made once (n = 1) instead of `reps` times. */
+export const SLOW_REQUEST_MS = 60_000;
+/** Above this context "Veloce" sweeps on the ×4 grid. */
+export const LONG_CONTEXT = 65_536;
 /** Smallest context searched (or the model's own, when smaller). */
 export const MIN_CONTEXT = 4096;
 /** Search limit when the model does not say how long its context is. */
 export const DEFAULT_CONTEXT_CAP = 131_072;
 /** The estimate is approximate: contexts needing up to 10 % more than the free VRAM are still tried. */
 export const PREDICT_SLACK = 1.1;
-/** Quick check after every load: a short prompt and a few tokens (also warms the engine up). */
-export const PROBE_DEPTH = 256;
+/** Capacity candidates and the refinement between "loads" and "does not" are multiples of this. */
+export const CAPACITY_STEP = 8192;
+/** The search between the largest context that loaded and the smallest that did not stops within this share. */
+export const CAPACITY_PRECISION = 1 / 8;
+/** Quick check after every load, at the same depth as the reference's: a 1K prompt and a few tokens (also warms the engine up). */
+export const PROBE_DEPTH = 1024;
 export const PROBE_OUTPUT = 32;
 /** Shallow screening depth. */
 export const SCREEN_SHALLOW = 1024;
-/** Spill: shared GPU memory of at least this much, and this much above the reference's. */
-export const SPILL_SHARED_MIN_MIB = 512;
-export const SPILL_SHARED_OVER_MIB = 256;
-/** Spill: generation below this share of the reference's at a shallow depth (Windows was seen at 65 → 4.5 tok/s). */
-export const SPILL_RATIO = 0.4;
 /** Screened variants that won at some depth and get a full sweep too (at most). */
 export const MAX_EXTRA_SWEEPS = 2;
-/** A started sweep gets what is left of the budget, never less than this. */
+/** A started users measurement (goal 'multi') gets what is left of the time, never less than this. */
 export const MIN_SWEEP_MS = 60_000;
 /** Fidelity check: prompt and greedy tokens compared. */
 export const FIDELITY_PROMPT = 1024;
 export const FIDELITY_TOKENS = 128;
+/** What a request, a load and the capacity search are expected to take before anything is measured here. */
+export const DEFAULT_SPEED: SpeedAnchor = { depth: 1024, prefillTps: 2000, decodeTps: 60 };
+export const DEFAULT_LOAD_MS = 10_000;
+/** Capacity launches per searched KV type in the forecast (the estimate is usually right first time). */
+export const CAPACITY_LAUNCHES = 1.5;
 
 /**
  * Generation slows down as the context fills, so a deep point is compared with the one before it with
@@ -180,14 +213,19 @@ export function collapsedAt(points: readonly LatencyPoint[]): number | undefined
   return undefined;
 }
 
+/** The sweep grid of a context: ×`longGrid` above LONG_CONTEXT, doubling below. */
+export function gridFor(ctx: number, longGrid: GridStep): GridStep {
+  return ctx > LONG_CONTEXT ? longGrid : 2;
+}
+
 /**
  * Screening depths of a context: 1K, the grid depth nearest to half the deepest prompt (prompt reading
  * dominates deep prompts, the middle shows where a setting starts to pay off) and the deepest prompt.
  */
-export function screenDepths(ctx: number, outputTokens: number): number[] {
+export function screenDepths(ctx: number, outputTokens: number, step: GridStep = 2): number[] {
   const deepest = maxDepth(ctx, outputTokens);
   const shallow = Math.min(SCREEN_SHALLOW, deepest);
-  const inner = depthGrid(deepest).filter((d) => d > shallow && d < deepest);
+  const inner = depthGrid(deepest, step).filter((d) => d > shallow && d < deepest);
   const middle = inner.reduce<number | undefined>((m, d) => (m === undefined || Math.abs(d - deepest / 2) < Math.abs(m - deepest / 2) ? d : m), undefined);
   return [...new Set([shallow, ...(middle !== undefined ? [middle] : []), deepest])];
 }
@@ -231,6 +269,12 @@ export function startupRefused(e: AppErrorData): boolean {
   return e.code === 'VRAM_BUSY' && e.params?.utilization !== undefined;
 }
 
+/** The anchor nearest to `depth` (on a log scale): the speeds measured closest to it predict it best. */
+export function nearestAnchor(anchors: readonly SpeedAnchor[], depth: number): SpeedAnchor | undefined {
+  const gap = (a: SpeedAnchor) => Math.abs(Math.log(Math.max(1, depth) / Math.max(1, a.depth)));
+  return anchors.reduce<SpeedAnchor | undefined>((best, a) => (best === undefined || gap(a) < gap(best) ? a : best), undefined);
+}
+
 // ---- tuner --------------------------------------------------------------------------------------
 
 /** "Ricontrollo rapido": the previous tune and the combinations to load again (see tune-recheck.ts). */
@@ -243,6 +287,13 @@ export interface RecheckInput {
   multi?: Tuning['multi'];
   /** The previous recommendation first, then its runner-up (if any). */
   checks: { role: 'recommended' | 'runner-up'; combination: TuneCombination }[];
+}
+
+/** What a search expects before it measures anything: speeds at known depths and the load time. */
+export interface TuneExpect {
+  /** Earlier runs of this model and engine on this GPU (their points), else one anchor from the model's size. */
+  anchors: SpeedAnchor[];
+  loadMs?: number;
 }
 
 export interface TunerInput {
@@ -267,6 +318,10 @@ export interface TunerInput {
   learned?: Tuning['learned'];
   /** Budget 'recheck'. */
   recheck?: RecheckInput;
+  /** Expected speeds and load time (absent = DEFAULT_SPEED and DEFAULT_LOAD_MS). */
+  expect?: TuneExpect;
+  /** The time limit, overriding estimate × TIME_MARGIN (never below the budget's minimum). */
+  limitMs?: number;
 }
 
 export interface TunerDeps {
@@ -289,6 +344,8 @@ export interface Capacity {
   measuredMax?: number;
   inferred: boolean;
   skipped?: 'estimate' | 'no-gain' | 'budget';
+  /** The engine reported how many tokens its KV cache holds (vLLM): the limit is known, nothing to refine. */
+  hinted?: boolean;
 }
 
 export interface Screen {
@@ -310,9 +367,17 @@ export interface Live {
   sweep?: LatencyPoint[];
   /** Goal 'multi': users 1..N and the conversations measured on this launch, as a combination. */
   users?: { concurrency: ConcurrencyPoint[]; sessions: SessionsPoint[] };
+  /** A request of this launch was not made (the time limit): its sweep is only part of one. */
+  cut?: boolean;
 }
 
 export type Work = (engine: LabEngine, live: Live) => Promise<void>;
+
+/** The search's own forecast: the whole search as expected when it started, and what is left now. */
+export interface TuneForecast {
+  totalMs: number;
+  remainingMs: number;
+}
 
 /** Identity of a variant at a context. */
 export function variantKey(v: Variant, ctx: number): string {
@@ -320,6 +385,24 @@ export function variantKey(v: Variant, ctx: number): string {
     .sort()
     .map((k) => `${k}=${String(v[k])}`);
   return `${ctx}|${parts.join(',')}`;
+}
+
+const median = (xs: readonly number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? (s[m] as number) : ((s[m - 1] as number) + (s[m] as number)) / 2;
+};
+
+/** One point per nominal depth: the one measured with the most tokens (repetitions × answer length). */
+export function pointsByDepth(points: readonly LatencyPoint[]): LatencyPoint[] {
+  const best = new Map<number, LatencyPoint>();
+  const weight = (p: LatencyPoint) => p.decodeTps.n * p.outputTokens;
+  for (const p of points) {
+    const d = nominalDepth(p.promptTokens);
+    const cur = best.get(d);
+    if (!cur || weight(p) > weight(cur)) best.set(d, p);
+  }
+  return [...best.values()].sort((a, b) => a.promptTokens - b.promptTokens);
 }
 
 export class Tuner {
@@ -336,10 +419,31 @@ export class Tuner {
   protected launches = 0;
   protected stoppedBy: Tuning['stoppedBy'];
   protected refDecode: number | undefined;
-  protected refShared: number | undefined;
+  /** The reference launch's shared memory and context (what a launch that does not spill uses). */
+  protected refShared: { sharedMiB?: number; context: number } | undefined;
   private fidelity: Tuning['fidelity'];
   /** Index of the start-up setting's value in use (space.startup). */
   private startupAt = 0;
+  // ---- time
+  private prepared = false;
+  private estimateMs = 0;
+  /** The time limit (ms from the start). */
+  protected limitMs = 0;
+  /** Speeds measured so far (latest per nominal depth), seeded with the expected ones. */
+  private readonly anchors = new Map<number, SpeedAnchor>();
+  private readonly loads: number[] = [];
+  /** The request or load in progress: when it started and how long it should take. */
+  private inflight: { from: number; ms: number } | undefined;
+  /** What is still planned on the launch in progress (ms each). */
+  protected queue: number[] = [];
+  // ---- what is done (the forecast counts the rest)
+  protected refDone = false;
+  protected readonly capacityDone = new Set<TuneKvType>();
+  /** Screens left of a KV type whose descent is under way; done types are in `descended`. */
+  protected readonly descentLeft = new Map<TuneKvType, number>();
+  protected readonly descended = new Set<TuneKvType>();
+  protected readonly swept = new Set<TuneKvType>();
+  private fidelityDone = false;
 
   constructor(
     protected readonly input: TunerInput,
@@ -349,11 +453,13 @@ export class Tuner {
     this.cap = input.modelContext ?? DEFAULT_CONTEXT_CAP;
     this.min = Math.min(MIN_CONTEXT, this.cap);
     this.started = deps.now();
+    const expected = input.expect?.anchors ?? [];
+    for (const a of expected.length ? expected : [DEFAULT_SPEED]) this.anchors.set(nominalDepth(a.depth), a);
   }
 
   async run(): Promise<Tuning> {
+    this.prepare();
     const { space } = this.input;
-    for (const kv of space.kvLadder) this.capacity.set(kv, this.predictCapacity(kv));
     this.deps.onPhase?.('tune-capacity');
     if (this.input.spillPossible) await this.reference(this.min);
     for (const kv of space.kvLadder) await this.searchCapacity(kv);
@@ -365,14 +471,19 @@ export class Tuner {
     for (const kv of order) {
       this.deps.onPhase?.('tune-variants');
       const best = await this.descend(kv);
+      this.descended.add(kv);
+      this.descentLeft.delete(kv);
       if (!best) continue;
       bests.set(kv, best.variant);
       await this.sweepCombination(best.variant, best.ctx);
+      this.swept.add(kv);
     }
     const left = fitting.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
     if (left.length > 0) await this.extend(left, bests);
     await this.extraSweeps();
     if (this.input.fidelity) await this.checkFidelity();
+    this.fidelityDone = true;
+    this.addPartials();
     return this.snapshot();
   }
 
@@ -396,6 +507,158 @@ export class Tuner {
     if (!s || !(s.key in v)) return variantKey(v, ctx);
     const { [s.key]: _startup, ...rest } = v;
     return variantKey(rest, ctx);
+  }
+
+  // ---- time: forecast, limit and requests --------------------------------------------------------
+
+  /** Predictions before the first launch (the capacity candidates) and the estimate they give: once. */
+  protected prepare(): void {
+    if (this.prepared) return;
+    this.prepared = true;
+    this.predict();
+    this.estimateMs = Math.round(this.plannedMs());
+    const own = Math.round(this.estimateMs * TIME_MARGIN);
+    this.limitMs = Math.max(this.rules.minMs, this.input.limitMs ?? own);
+  }
+
+  /** The capacity candidates of every KV type (goal 'multi': whether it holds the users). */
+  protected predict(): void {
+    for (const kv of this.input.space.kvLadder) this.capacity.set(kv, this.predictCapacity(kv));
+  }
+
+  /** The estimate of the whole search and its time limit, ms (before it runs: the plan's duration). */
+  time(): { estimateMs: number; limitMs: number } {
+    this.prepare();
+    return { estimateMs: this.estimateMs, limitMs: this.limitMs };
+  }
+
+  forecast(): TuneForecast {
+    this.prepare();
+    const now = this.deps.now();
+    const f = this.inflight;
+    // A request taking longer than predicted is expected to need a quarter of what it took so far.
+    const current = f ? Math.max(f.ms - (now - f.from), (now - f.from) / 4) : 0;
+    return { totalMs: this.estimateMs, remainingMs: Math.round(current + this.queue.reduce((a, b) => a + b, 0) + this.plannedMs()) };
+  }
+
+  /** Expected ms of an engine start (the loads measured here, else the expected one). */
+  protected loadMs(): number {
+    return this.loads.length ? median(this.loads) : (this.input.expect?.loadMs ?? DEFAULT_LOAD_MS);
+  }
+
+  /** Expected ms of one request, from the speeds measured nearest to that depth. */
+  protected requestMs(depth: number, outputTokens = this.input.sweep.outputTokens): number {
+    return requestMsAt(depth, outputTokens, nearestAnchor([...this.anchors.values()], depth) as SpeedAnchor);
+  }
+
+  /** Repetitions of a depth: 1 when one request is predicted to take longer than SLOW_REQUEST_MS. */
+  protected repsFor(depth: number, reps: number, outputTokens = this.input.sweep.outputTokens): number {
+    return this.requestMs(depth, outputTokens) > SLOW_REQUEST_MS ? 1 : reps;
+  }
+
+  /** A request of `ms` started now ends within the limit (plus the grace). */
+  protected fitsInTime(ms: number): boolean {
+    return this.deps.now() - this.started + ms <= this.limitMs + TIME_GRACE_MS;
+  }
+
+  /** Remembers what a launch or a request really took: the next predictions use it. */
+  protected learn(p: LatencyPoint): void {
+    if (p.decodeTps.n > 0) this.anchors.set(nominalDepth(p.promptTokens), anchorOf(p));
+  }
+
+  /** Marks the work in progress for the forecast (cleared by settle). */
+  protected busy(ms: number): void {
+    this.inflight = { from: this.deps.now(), ms };
+  }
+
+  protected settle(): void {
+    this.inflight = undefined;
+  }
+
+  /**
+   * One depth on a loaded engine, within the time limit: `reps` requests (one when a request is slow),
+   * none when even one would end past the limit (recorded on the attempt; the search then stops).
+   */
+  protected async measureAt(engine: LabEngine, live: Live, depth: number, reps: number, kind: 'tune-screen' | 'context-sweep'): Promise<LatencyPoint | undefined> {
+    const out = this.input.sweep.outputTokens;
+    const one = this.requestMs(depth, out);
+    this.queue.shift();
+    if (!this.fitsInTime(one)) {
+      live.att.skipped = [...(live.att.skipped ?? []), { depth, predictedMs: Math.round(one) }];
+      live.cut = true;
+      this.stoppedBy ??= 'budget';
+      this.queue = [];
+      return undefined;
+    }
+    const n = this.repsFor(depth, reps, out);
+    this.busy(one * n);
+    try {
+      const p = await engine.measure(depth, out, n, kind, () => this.fitsInTime(one));
+      this.learn(p);
+      live.att.points.push(p);
+      return p;
+    } finally {
+      this.settle();
+    }
+  }
+
+  /** Expected ms of a launch measuring `depths` with `reps` repetitions each (the probe included). */
+  protected launchMs(depths: readonly number[], reps: number): number {
+    return this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) + depths.reduce((a, d) => a + this.repsFor(d, reps) * this.requestMs(d), 0);
+  }
+
+  /** Sweep grid of a context for this budget. */
+  protected gridOf(ctx: number): GridStep {
+    return gridFor(ctx, this.rules.longGrid);
+  }
+
+  /**
+   * Screening depths of a context: 1K, the middle and the deepest prompt. "Veloce" on a long context
+   * (the ×4 grid) leaves the deepest prompt (minutes per request) to the sweep of the winner: it is
+   * measured once per combination.
+   */
+  protected screenAt(ctx: number): number[] {
+    const step = this.gridOf(ctx);
+    const all = screenDepths(ctx, this.input.sweep.outputTokens, step);
+    return step === 4 ? all.slice(0, -1) : all;
+  }
+
+  /** Screens of a KV type's descent: its base settings and every other value of every dimension. */
+  protected screensOf(kv: TuneKvType): number {
+    const base = this.base(kv);
+    return 1 + this.input.space.dimensions.reduce((n, d) => n + d.values(base).filter((v) => v !== base[d.key]).length, 0);
+  }
+
+  /** The largest context a KV type is expected to reach: measured, else predicted; undefined = none. */
+  private expectedMax(kv: TuneKvType, previous: number | undefined): number | undefined {
+    const cap = this.capacity.get(kv) as Capacity;
+    if (this.capacityDone.has(kv)) return cap.measuredMax;
+    const ladder = this.input.space.kvLadder;
+    if (cap.candidates.length === 0) return kv === ladder[ladder.length - 1] && previous === undefined ? this.min : previous;
+    return Math.max(cap.predictedMax ?? this.cap, previous ?? 0);
+  }
+
+  /** Expected ms of the work not started yet (goal 'single'). */
+  protected plannedMs(): number {
+    const out = this.input.sweep.outputTokens;
+    const probe = this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT);
+    let ms = this.input.spillPossible && !this.refDone ? probe : 0;
+    let previous: number | undefined;
+    for (const kv of this.input.space.kvLadder) {
+      const ctx = this.expectedMax(kv, previous);
+      const cap = this.capacity.get(kv) as Capacity;
+      if (!this.capacityDone.has(kv) && cap.candidates.some((c) => c > (previous ?? 0))) ms += CAPACITY_LAUNCHES * probe;
+      if (ctx === undefined) continue;
+      previous = ctx;
+      const step = this.gridOf(ctx);
+      const screen = this.screenAt(ctx);
+      if (!this.descended.has(kv)) ms += (this.descentLeft.get(kv) ?? this.screensOf(kv)) * this.launchMs(screen, this.rules.screenReps);
+      // The sweep reuses the screening: nothing else to measure on a short context.
+      const rest = sweepDepths(ctx, out, { step }).filter((d) => !screen.includes(d));
+      if (!this.swept.has(kv) && rest.length) ms += this.launchMs(rest, this.input.sweep.reps);
+    }
+    if (this.input.fidelity && !this.fidelityDone) ms += 2 * (this.loadMs() + this.requestMs(FIDELITY_PROMPT, FIDELITY_TOKENS));
+    return ms;
   }
 
   // ---- predictions and capacity -----------------------------------------------------------------
@@ -429,12 +692,17 @@ export class Tuner {
     const limit = predicted ?? this.cap;
     const candidates: number[] = [];
     for (let c = this.min; c <= limit; c *= 2) candidates.push(c);
+    // The estimate itself (rounded down to 8K) is usually the answer: not only powers of two.
+    const near = Math.floor(limit / CAPACITY_STEP) * CAPACITY_STEP;
+    if (predicted !== undefined && near > this.min && !candidates.includes(near)) candidates.push(near);
     if (this.cap <= limit && !candidates.includes(this.cap)) candidates.push(this.cap);
+    candidates.sort((a, b) => a - b);
     return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }
 
-  /** The most precise KV type's base settings at a small context: the speed a spill is compared with. */
+  /** The most precise KV type's base settings at a small context: the speed and the shared memory a spill is compared with. */
   protected async reference(ctx: number): Promise<void> {
+    this.refDone = true;
     for (const kv of this.input.space.kvLadder) {
       const cap = this.capacity.get(kv) as Capacity;
       if (cap.candidates.length === 0) continue;
@@ -444,7 +712,7 @@ export class Tuner {
       cap.launched.add(ctx);
       if (live.att.outcome === 'ok') {
         this.refDecode = (live.att.points[0] as LatencyPoint).decodeTps.median;
-        this.refShared = live.att.sharedPeakMiB;
+        this.refShared = { ...(live.att.sharedPeakMiB !== undefined ? { sharedMiB: live.att.sharedPeakMiB } : {}), context: ctx };
         return;
       }
     }
@@ -461,6 +729,7 @@ export class Tuner {
   }
 
   private async searchCapacity(kv: TuneKvType): Promise<void> {
+    this.capacityDone.add(kv);
     const cap = this.capacity.get(kv) as Capacity;
     const floor = this.bestPrecise(kv);
     const ladder = this.input.space.kvLadder;
@@ -483,36 +752,39 @@ export class Tuner {
       }
       cap.candidates.push(this.min);
     }
-    await this.search(cap, this.base(kv), (e, l) => this.screenWork(e, l));
+    await this.search(cap, this.base(kv));
   }
 
   /**
-   * Largest candidate that loads with `variant`: the top unknown one first (the estimate or the
-   * engine's own report is usually close), then a binary search. A launch that is the largest if it
-   * loads (the next candidate is known not to) also runs `provenWork`.
+   * Largest candidate that loads with `variant` (quick checks only): the top unknown one first (the
+   * estimate or the engine's own report is usually close), then a binary search; between the largest
+   * that loads and the smallest that does not, contexts in steps of 8K are added until the two are
+   * close (see refine). `work` runs on a launch that is the largest if it loads (vLLM's extensions:
+   * the combination is measured on that same launch).
    */
-  protected async search(cap: Capacity, variant: Variant, provenWork: Work): Promise<void> {
+  protected async search(cap: Capacity, variant: Variant, work?: Work): Promise<void> {
     let tried = false;
     for (;;) {
       const cands = cap.candidates;
       const okIdx = this.highestOk(cap);
       const failIdx = cands.findIndex((c, i) => i > okIdx && cap.status.get(c) === false);
       const hi = failIdx < 0 ? cands.length : failIdx;
-      if (hi - okIdx <= 1) break;
+      if (hi - okIdx <= 1) {
+        if (!this.refine(cap, okIdx, failIdx)) break;
+        continue;
+      }
       // The top candidate first (the estimate is usually close), then a binary search.
       const next = tried ? Math.floor((okIdx + hi) / 2) : hi - 1;
       tried = true;
       const ctx = cands[next] as number;
-      // If it loads it is the largest (the next candidate is known not to, or there is none): screen it now.
-      const provenMax = next === hi - 1;
-      const live = await this.launch('capacity', variant, ctx, provenMax ? provenWork : undefined);
+      const live = await this.launch('capacity', variant, ctx, work && next === hi - 1 ? work : undefined);
       if (!live) {
         cap.skipped = 'budget';
         break;
       }
       cap.status.set(ctx, live.att.outcome === 'ok');
       cap.launched.add(ctx);
-      if (live.sweep || live.users) this.addCombination(live);
+      if (live.sweep) this.addCombination(live);
       // The engine said how much fits: its exact capacity is the next candidate to try.
       if (this.applyHint(cap, live.hint)) tried = false;
     }
@@ -520,6 +792,22 @@ export class Tuner {
     if (okIdx < 0) return;
     cap.measuredMax = cap.candidates[okIdx] as number;
     cap.inferred = !cap.launched.has(cap.measuredMax);
+  }
+
+  /**
+   * The largest context that loads and the smallest that does not are far apart (more than 8K and
+   * more than 1/8 of the first): their middle, rounded down to 8K, becomes a candidate. False = done.
+   */
+  private refine(cap: Capacity, okIdx: number, failIdx: number): boolean {
+    if (okIdx < 0 || failIdx < 0 || cap.hinted) return false;
+    const lo = cap.candidates[okIdx] as number;
+    const hi = cap.candidates[failIdx] as number;
+    if (hi - lo <= Math.max(CAPACITY_STEP, lo * CAPACITY_PRECISION)) return false;
+    const mid = Math.floor((lo + hi) / 2 / CAPACITY_STEP) * CAPACITY_STEP;
+    if (mid <= lo) return false;
+    cap.candidates.push(mid);
+    cap.candidates.sort((a, b) => a - b);
+    return true;
   }
 
   private highestOk(cap: Capacity): number {
@@ -532,6 +820,7 @@ export class Tuner {
    */
   private applyHint(cap: Capacity, hint: number | undefined): boolean {
     if (hint === undefined) return false;
+    cap.hinted = true;
     for (const c of cap.candidates) if (c > hint) cap.status.set(c, false);
     const exact = Math.floor(hint / 1024) * 1024;
     if (exact < this.min || exact > this.cap || cap.candidates.includes(exact)) return false;
@@ -542,9 +831,10 @@ export class Tuner {
 
   // ---- launches -------------------------------------------------------------------------------
 
+  /** Another launch is allowed: under the cap, and its start and quick check end within the time limit. */
   private canLaunch(): boolean {
     if (this.launches >= this.rules.maxLaunches) this.stoppedBy ??= 'launches';
-    else if (this.deps.now() - this.started >= this.rules.ms) this.stoppedBy ??= 'budget';
+    else if (this.deps.now() - this.started + this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) > this.limitMs) this.stoppedBy ??= 'budget';
     return this.stoppedBy === undefined;
   }
 
@@ -555,6 +845,7 @@ export class Tuner {
    * the launch is made again. `params` overrides the variant's launch parameters.
    */
   protected async launch(stage: TuneStage, variant: Variant, ctx: number, work?: Work, params?: LaunchParams): Promise<Live | undefined> {
+    this.prepare();
     for (;;) {
       if (!this.canLaunch()) return undefined;
       this.launches++;
@@ -564,11 +855,14 @@ export class Tuner {
       const planned = await this.deps.lab.prepare(p, { stage, attempt: index });
       const pending = { stage, params: p, kvType: v.kv as TuneKvType, contextSize: ctx, points: [], command: planned.command, atMs: this.deps.now() - this.started, variant: { ...v } };
       this.update(pending);
+      this.busy(this.loadMs());
       const started = await planned.start();
+      this.settle();
       const live: Live = { att: { ...pending, outcome: 'ok', points: [] }, index, variant: v };
       let retry = false;
       if (started.ok) {
         live.att.loadMs = started.loadMs;
+        this.loads.push(started.loadMs);
         await this.drive(started.engine, live, work);
       } else {
         const e = started.error;
@@ -581,6 +875,7 @@ export class Tuner {
         if (hint !== undefined) live.hint = hint;
       }
       this.attempts.push(live.att);
+      this.queue = [];
       this.update();
       if (!retry) return live;
     }
@@ -598,23 +893,28 @@ export class Tuner {
   private async drive(engine: LabEngine, live: Live, work: Work | undefined): Promise<void> {
     const att = live.att;
     try {
+      // Never skipped: a second at most, and the spill checks need it.
+      this.busy(this.requestMs(PROBE_DEPTH, PROBE_OUTPUT));
       const probe = await engine.measure(PROBE_DEPTH, PROBE_OUTPUT, 1, 'tune-probe');
+      this.settle();
+      this.learn(probe);
       att.points.push(probe);
       const hint = engine.capacityHint();
       if (hint !== undefined) {
         live.hint = hint;
         att.kvTokens = hint;
       }
-      if (this.sharedSpill(engine)) {
+      if (this.sharedSpill(engine, att.contextSize)) {
         att.outcome = 'spill';
         att.spill = 'shared-memory';
       } else if (this.input.spillPossible && this.refDecode !== undefined && probe.decodeTps.median < SPILL_RATIO * this.refDecode) {
+        // The same 1K prompt as the reference's probe: a slower generation here is not the context filling up.
         att.outcome = 'spill';
         att.spill = 'decode-collapse';
       } else if (work) {
         await work(engine, live);
         // Memory taken while measuring (the KV cache filling up, compute buffers) can spill too.
-        if (att.outcome === 'ok' && this.sharedSpill(engine)) {
+        if (att.outcome === 'ok' && this.sharedSpill(engine, att.contextSize)) {
           att.outcome = 'spill';
           att.spill = 'shared-memory';
           this.forget(live);
@@ -627,6 +927,7 @@ export class Tuner {
       att.error = data;
       this.forget(live);
     } finally {
+      this.settle();
       const mem = engine.memory();
       if (mem.vramPeakMiB !== undefined) att.vramPeakMiB = mem.vramPeakMiB;
       if (mem.sharedPeakMiB !== undefined) att.sharedPeakMiB = mem.sharedPeakMiB;
@@ -641,10 +942,13 @@ export class Tuner {
     delete live.users;
   }
 
-  /** Windows: the engine uses shared GPU memory (system RAM) well beyond the reference launch's. */
-  private sharedSpill(engine: LabEngine): boolean {
+  /**
+   * Windows: the engine uses shared GPU memory (system RAM) beyond what a launch of this context uses
+   * without spilling: max(1024, the reference's + ~1 MiB per 1K tokens more + 768) MiB (spill.ts).
+   */
+  private sharedSpill(engine: LabEngine, ctx: number): boolean {
     const shared = engine.memory().sharedPeakMiB;
-    return this.input.spillPossible && shared !== undefined && shared >= Math.max(SPILL_SHARED_MIN_MIB, (this.refShared ?? 0) + SPILL_SHARED_OVER_MIB);
+    return this.input.spillPossible && shared !== undefined && shared >= spillThresholdMiB(this.refShared, ctx);
   }
 
   /** Marks the attempt as a spill when the generation speed collapsed between two of these points. */
@@ -655,15 +959,16 @@ export class Tuner {
     return true;
   }
 
-  /** Screening: 1K, the middle and the deepest prompt of this context, with the budget's repetitions. */
+  /** Screening (screenAt) with the budget's repetitions, within the time limit. */
   private async screenWork(engine: LabEngine, live: Live): Promise<void> {
-    const out = this.input.sweep.outputTokens;
     const ctx = live.att.contextSize;
+    const depths = this.screenAt(ctx);
+    this.queue = depths.map((d) => this.repsFor(d, this.rules.screenReps) * this.requestMs(d));
     const points: LatencyPoint[] = [];
-    for (const d of screenDepths(ctx, out)) {
-      const p = await engine.measure(d, out, this.rules.screenReps, 'tune-screen');
+    for (const d of depths) {
+      const p = await this.measureAt(engine, live, d, this.rules.screenReps, 'tune-screen');
+      if (!p) break;
       points.push(p);
-      live.att.points.push(p);
     }
     if (this.collapsed(live.att, points)) return;
     this.screens.set(this.key(live.variant, ctx), { variant: live.variant, ctx, attempt: live.index, points });
@@ -677,10 +982,9 @@ export class Tuner {
     const base = this.base(kv);
     for (;;) {
       const ctx = cap.measuredMax as number;
-      const known = this.screens.get(this.key(base, ctx));
-      if (known) return known;
       const live = await this.launch('variant', base, ctx, (e, l) => this.screenWork(e, l));
       if (!live) return undefined;
+      this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) as number) - 1));
       if (live.att.outcome === 'ok') {
         live.att.screen = 'kept';
         return this.screens.get(this.key(base, ctx));
@@ -712,6 +1016,7 @@ export class Tuner {
 
   /** One dimension at a time at the type's largest context; returns the best screened settings. */
   private async descend(kv: TuneKvType): Promise<Screen | undefined> {
+    this.descentLeft.set(kv, this.screensOf(kv));
     let best = await this.baseScreen(kv);
     if (!best) return undefined;
     const dims = this.input.space.dimensions;
@@ -722,6 +1027,7 @@ export class Tuner {
       for (let i = 0; i < values.length; i++) {
         const current: Screen = best;
         const variant: Variant = { ...current.variant, [dim.key]: values[i] as DimValue };
+        this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) as number) - 1));
         if (dim.prune?.(values[i] as DimValue) && !this.estimateAllows(variant, current)) continue;
         // The last value tried, and the winner: its full sweep runs on this same launch.
         const last = d === dims.length - 1 && i === values.length - 1;
@@ -747,21 +1053,24 @@ export class Tuner {
 
   // ---- sweeps and combinations ------------------------------------------------------------------
 
-  /** The full sweep on a loaded engine; depths already measured on this launch are reused. */
-  protected async sweepWork(engine: LabEngine, live: Live, reuse: readonly LatencyPoint[], depthsOf: (ctx: number, out: number) => number[] = sweepDepths): Promise<void> {
+  /**
+   * The full sweep on a loaded engine, within the time limit: depths `reuse` already has (the same
+   * configuration's screening, on this launch or another) are not measured again.
+   */
+  protected async sweepWork(engine: LabEngine, live: Live, reuse: readonly LatencyPoint[], depthsOf?: (ctx: number, out: number) => number[]): Promise<void> {
     this.deps.onPhase?.('context-sweep');
     const { outputTokens, reps } = this.input.sweep;
     const ctx = live.att.contextSize;
     const have = new Set(reuse.map((p) => p.promptTokens));
-    const depths = depthsOf(ctx, outputTokens).filter((d) => !have.has(d));
-    const result = await runSweep(depths, (d) => engine.measure(d, outputTokens, reps, 'context-sweep'), {
-      outputTokens,
-      reps,
-      now: this.deps.now,
-      maxMs: Math.max(MIN_SWEEP_MS, this.rules.ms - (this.deps.now() - this.started)),
-    });
-    live.att.points.push(...result.points);
-    const sweep = [...reuse, ...result.points].sort((a, b) => a.promptTokens - b.promptTokens);
+    const depths = (depthsOf ? depthsOf(ctx, outputTokens) : sweepDepths(ctx, outputTokens, { step: this.gridOf(ctx) })).filter((d) => !have.has(d));
+    this.queue = depths.map((d) => this.repsFor(d, reps) * this.requestMs(d));
+    const points: LatencyPoint[] = [];
+    for (const d of depths) {
+      const p = await this.measureAt(engine, live, d, reps, 'context-sweep');
+      if (!p) break;
+      points.push(p);
+    }
+    const sweep = [...reuse, ...points].sort((a, b) => a.promptTokens - b.promptTokens);
     if (this.collapsed(live.att, sweep)) {
       // It does not hold its deepest prompts after all: not a candidate any more.
       this.screens.delete(this.key(live.variant, ctx));
@@ -770,10 +1079,13 @@ export class Tuner {
     live.sweep = sweep;
   }
 
-  protected addCombination(live: Live): void {
+  protected addCombination(live: Live, why?: TuneCombination['partial']): void {
     const att = live.att;
+    // A sweep the time limit cut is only part of one.
+    const partial = why ?? (live.cut ? 'budget' : undefined);
     att.combination = this.combos.length;
     this.combined.add(this.key(live.variant, att.contextSize));
+    this.swept.add(att.kvType);
     this.combos.push({
       params: att.params,
       kvType: att.kvType,
@@ -785,6 +1097,7 @@ export class Tuner {
       tags: this.input.space.tags(live.variant),
       variant: { ...live.variant },
       ...this.combinationExtras(live),
+      ...(partial ? { partial } : {}),
     });
     this.update();
   }
@@ -794,10 +1107,23 @@ export class Tuner {
     return {};
   }
 
-  /** A dedicated launch for the full sweep of a combination (unless it was measured already). */
+  /**
+   * The full sweep of a combination (unless it was measured already): its screening is reused, and
+   * when the screening already measured every depth of the grid (a short context) it is the sweep,
+   * with no other launch.
+   */
   private async sweepCombination(variant: Variant, ctx: number): Promise<void> {
-    if (this.combined.has(this.key(variant, ctx))) return;
-    const live = await this.launch('sweep', variant, ctx, (e, l) => this.sweepWork(e, l, []));
+    const key = this.key(variant, ctx);
+    if (this.combined.has(key)) return;
+    const screen = this.screens.get(key);
+    const screened = screen?.points ?? [];
+    const have = new Set(screened.map((p) => p.promptTokens));
+    if (screen && sweepDepths(ctx, this.input.sweep.outputTokens, { step: this.gridOf(ctx) }).every((d) => have.has(d))) {
+      const att = this.attempts[screen.attempt] as TuneAttempt;
+      this.addCombination({ att, index: screen.attempt, variant, sweep: [...screened].sort((a, b) => a.promptTokens - b.promptTokens) });
+      return;
+    }
+    const live = await this.launch('sweep', variant, ctx, (e, l) => this.sweepWork(e, l, screened));
     if (live?.sweep) this.addCombination(live);
   }
 
@@ -814,6 +1140,27 @@ export class Tuner {
       if (!wins) continue;
       extra++;
       await this.sweepCombination(s.variant, s.ctx);
+    }
+  }
+
+  /**
+   * The search stopped early (time limit or launch cap): at each KV type's largest context that has no
+   * combination, what its launches measured there becomes one, "misurata in parte" — every screened
+   * variant still in the running, else the launch that found the context (its 1K check).
+   */
+  private addPartials(): void {
+    const why = this.stoppedBy;
+    if (!why) return;
+    for (const kv of this.input.space.kvLadder) {
+      const ctx = this.capacity.get(kv)?.measuredMax;
+      if (ctx === undefined || this.combos.some((c) => c.kvType === kv && c.maxContext === ctx)) continue;
+      const here = this.attempts
+        .map((att, index) => ({ att, index }))
+        .filter(({ att }) => att.kvType === kv && att.contextSize === ctx && att.outcome === 'ok' && att.combination === undefined && att.points.length > 0 && att.screen !== 'lost');
+      const screened = here.filter(({ att }) => att.screen === 'kept');
+      const picked = screened.length ? screened : here.slice(-1);
+      // Every attempt of this run records its variant.
+      for (const { att, index } of picked) this.addCombination({ att, index, variant: att.variant as Variant, sweep: pointsByDepth(att.points) }, why);
     }
   }
 
@@ -909,6 +1256,20 @@ export class Tuner {
     return {};
   }
 
+  /** What is known above a KV type's largest context (see Tuning.capacity.bound). */
+  protected boundOf(c: Capacity): Pick<Tuning['capacity'][number], 'bound' | 'failedAt'> {
+    if (c.measuredMax === undefined) return {};
+    // Candidates are kept sorted.
+    const above = c.candidates.filter((x) => x > (c.measuredMax as number));
+    const failed = above.find((x) => c.status.get(x) === false);
+    const known = failed !== undefined ? { failedAt: failed } : {};
+    // The very next context up did not fit: this is the limit.
+    if (failed !== undefined && failed === above[0]) return { bound: 'found', ...known };
+    if (c.measuredMax >= this.cap) return { bound: 'model' };
+    if (c.skipped === 'budget' || above.some((x) => !c.status.has(x))) return { bound: 'budget', ...known };
+    return { bound: 'estimate' };
+  }
+
   protected snapshot(): Tuning {
     const combos = this.combos.map((c) => ({ ...c }));
     const rec = this.recommend(combos);
@@ -916,6 +1277,8 @@ export class Tuner {
       budget: this.input.budget,
       ...(this.input.learned ? { learned: this.input.learned } : {}),
       maxLaunches: this.rules.maxLaunches,
+      estimateSeconds: Math.round(this.estimateMs / 1000),
+      limitSeconds: Math.round(this.limitMs / 1000),
       ...(this.stoppedBy ? { stoppedBy: this.stoppedBy } : {}),
       dimensions: this.dimensionsTried(),
       capacity: [...this.capacity.values()].map((c) => ({
@@ -924,6 +1287,7 @@ export class Tuner {
         ...(c.measuredMax !== undefined ? { measuredMax: c.measuredMax } : {}),
         inferred: c.inferred,
         ...(c.skipped ? { skipped: c.skipped } : {}),
+        ...this.boundOf(c),
       })),
       depths: measuredDepths(combos),
       attempts: this.attempts.map((a) => ({ ...a, points: [...a.points] })),

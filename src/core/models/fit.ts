@@ -17,7 +17,7 @@
  *    the KV cache + compute buffer part is scaled (and, for the very same model, offset) to match.
  */
 import type { LaunchParams, EngineKind } from '../../contract/engines';
-import type { FitEstimate, FitLevel, HubFile } from '../../contract/models';
+import type { FitEstimate, FitFixes, FitLevel, HubFile } from '../../contract/models';
 import { bytesPerParam } from './quant';
 import type { GpuMem, KvLayout, ModelFactsEx } from './types';
 
@@ -319,6 +319,39 @@ export function estimateFit(input: FitInput): FitEstimate {
     notes.push(FIT_NOTES.partialOffload);
   }
   return est;
+}
+
+/** Everything in VRAM: perfect, good or tight (not 'partial', not 'no'). */
+export function fitsFully(est: Pick<FitEstimate, 'level'>): boolean {
+  return levelRank(est.level) <= levelRank('tight');
+}
+
+/** Contexts of the "largest context that fits" search are multiples of this. */
+export const FIX_CONTEXT_STEP = 1024;
+
+/**
+ * llama.cpp settings that would make `params` fit entirely in VRAM (`estimate` = the same estimator
+ * with other launch params): a q4_0 KV cache with flash attention at the same context, and the
+ * largest context (multiple of 1024) with the same settings. Undefined when the launch already fits,
+ * for vLLM and external endpoints, and when neither change helps (the weights alone do not fit).
+ */
+export function fitFixes(engine: EngineKind, params: LaunchParams, current: Pick<FitEstimate, 'level' | 'contextSize'>, estimate: (p: LaunchParams) => Pick<FitEstimate, 'level'>): FitFixes | undefined {
+  if (engine === 'external' || family(engine) !== 'llamacpp' || fitsFully(current)) return undefined;
+  const out: FitFixes = {};
+  if (params.kvCacheType !== 'q4_0' && fitsFully(estimate({ ...params, kvCacheType: 'q4_0', flashAttention: 'on' }))) out.kvCacheType = 'q4_0';
+  // The launch's whole -c (several slots share it); without one, the context the estimate assumed.
+  const ctx = params.contextSize ?? current.contextSize;
+  const fits = (c: number) => fitsFully(estimate({ ...params, contextSize: c }));
+  let lo = 0;
+  let hi = Math.ceil(ctx / FIX_CONTEXT_STEP);
+  // Invariant: lo × step fits (or lo = 0), hi × step does not.
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fits(mid * FIX_CONTEXT_STEP)) lo = mid;
+    else hi = mid;
+  }
+  if (lo > 0) out.maxContext = lo * FIX_CONTEXT_STEP;
+  return out.kvCacheType !== undefined || out.maxContext !== undefined ? out : undefined;
 }
 
 export interface QuantChoice {

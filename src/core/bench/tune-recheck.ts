@@ -43,7 +43,27 @@ export class RecheckTuner extends Tuner {
     return this.input.recheck as NonNullable<TunerInput['recheck']>;
   }
 
+  /** Nothing is predicted: the previous combinations are loaded as they were. */
+  protected override predict(): void {}
+
+  /** Expected ms of the re-checks not made yet: a load and a short sweep (goal 'multi': users 1 … N) each. */
+  protected override plannedMs(): number {
+    const todo = this.recheck.checks.slice(this.checks.length + (this.previous ? 1 : 0));
+    return todo.reduce((ms, { combination: c }) => ms + this.checkMs(c), 0);
+  }
+
+  /** One re-check: its launch, then the short sweep, or users 1 … N with prompts of its context (prompts read one after the other). */
+  private checkMs(c: TuneCombination): number {
+    const out = this.input.sweep.outputTokens;
+    const users = usersMeasured(c);
+    if (!users) return this.launchMs(screenDepths(c.maxContext, out), this.rules.screenReps);
+    let ms = this.loadMs();
+    for (let n = 1; n <= users; n++) ms += n * this.requestMs(c.maxContext / users, out);
+    return ms;
+  }
+
   override async run(): Promise<Tuning> {
+    this.prepare();
     this.deps.onPhase?.('tune-capacity');
     for (const { role, combination: previous } of this.recheck.checks) {
       const users = usersMeasured(previous);
