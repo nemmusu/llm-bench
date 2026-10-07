@@ -3,7 +3,7 @@ import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './en
 import { currentStepSchema, livePointSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
-import { profileSchema, scenarioSchema, tuneBudgetSchema, tuneKvTypeSchema, tuningSchema } from './results';
+import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuningSchema } from './results';
 
 /**
  * HTTP API between renderer and core. All routes live under /api, need
@@ -99,7 +99,24 @@ export const startRunRequestSchema = z.object({
   allowSharedGpu: z.boolean().default(false),
   note: z.string().optional(),
   /** Profile "tune" ("Trova le impostazioni migliori"): time budget and the optional "fedeltà" check. */
-  tune: z.object({ budget: tuneBudgetSchema.default('fast'), fidelity: z.boolean().default(false) }).optional(),
+  tune: z
+    .object({
+      budget: tuneBudgetSchema.default('fast'),
+      fidelity: z.boolean().default(false),
+      /** Absent = 'single' ("Un utente, contesto massimo"). */
+      goal: tuneGoalSchema.optional(),
+      /** Goal 'multi': users at once (absent = TUNE_MULTI_DEFAULTS.users = 4). */
+      users: z.number().int().min(2).max(TUNE_MAX_USERS).optional(),
+      /** Goal 'multi': context each user needs, tokens (absent = TUNE_MULTI_DEFAULTS.perUserContext = 8192). */
+      perUserContext: z.number().int().min(1024).max(1_048_576).optional(),
+      /**
+       * Budget 'recheck': the tune run to re-check. Absent = the latest completed tune of this model on
+       * this GPU with this engine kind and the same goal (RunPlan.previousTune). None → VALIDATION
+       * (reason 'recheck_nothing').
+       */
+      recheckOf: z.string().optional(),
+    })
+    .optional(),
 });
 export type StartRunRequest = z.infer<typeof startRunRequestSchema>;
 
@@ -119,6 +136,23 @@ export const runPlanSchema = z.object({
   estimatedSeconds: z.number(),
   fit: fitEstimateSchema.optional(),
   warnings: z.array(z.object({ code: z.string(), params: z.record(z.string(), z.unknown()).optional() })),
+  /**
+   * Profile "tune": the latest completed tune of this model on this GPU with this engine kind and the
+   * same goal (users and context per user included for 'multi'). `sameBuild` false = it ran with
+   * another engine build or image: offer "Ricontrollo rapido" (tune.budget 'recheck').
+   */
+  previousTune: z
+    .object({
+      runId: z.string(),
+      createdAt: z.string(),
+      budget: tuneBudgetSchema,
+      /** Its engine build / image ("b10997"); absent when unknown. */
+      build: z.string().optional(),
+      /** The build / image this run would use; absent when unknown (not installed yet…). */
+      currentBuild: z.string().optional(),
+      sameBuild: z.boolean(),
+    })
+    .optional(),
 });
 export type RunPlan = z.infer<typeof runPlanSchema>;
 
@@ -217,7 +251,23 @@ export const serverPlanSchema = z.object({
    * The context and KV cache came from the latest completed "Trova le impostazioni migliori" run of
    * this model on this GPU (its recommended combination), instead of the VRAM estimate.
    */
-  tuned: z.object({ runId: z.string(), createdAt: z.string(), contextSize: z.number().int(), kvCacheType: tuneKvTypeSchema }).optional(),
+  tuned: z
+    .object({
+      runId: z.string(),
+      createdAt: z.string(),
+      contextSize: z.number().int(),
+      kvCacheType: tuneKvTypeSchema,
+      /** The tune's goal (absent = 'single') and, for 'multi', its users: "-np 4, 8K a testa". */
+      goal: tuneGoalSchema.optional(),
+      users: z.number().int().optional(),
+      /**
+       * The tune ran with another engine build / image than the one this server will use ("dal test fatto
+       * con b10997; ora usi b11438: fai un ricontrollo rapido"). A tune with the current build is always
+       * preferred; this is set only when none exists.
+       */
+      otherBuild: z.object({ build: z.string(), current: z.string().optional() }).optional(),
+    })
+    .optional(),
   fit: fitEstimateSchema.optional(),
   warnings: runPlanSchema.shape.warnings,
 });

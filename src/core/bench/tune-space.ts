@@ -37,8 +37,9 @@ export function keptParams(p: LaunchParams): LaunchParams {
   return out;
 }
 
-const UBATCH: Record<TuneBudget, number[]> = { fast: [512, 2048], thorough: [512, 256, 1024, 2048] };
-const BATCHED_TOKENS: Record<TuneBudget, number[]> = { fast: [2048, 8192], thorough: [2048, 8192, 16384] };
+// 'recheck' never searches: it loads earlier combinations as they were.
+const UBATCH: Record<TuneBudget, number[]> = { fast: [512, 2048], thorough: [512, 256, 1024, 2048], recheck: [] };
+const BATCHED_TOKENS: Record<TuneBudget, number[]> = { fast: [2048, 8192], thorough: [2048, 8192, 16384], recheck: [] };
 
 export interface LlamaSpaceOptions {
   budget: TuneBudget;

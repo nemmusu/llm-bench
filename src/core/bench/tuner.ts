@@ -111,6 +111,7 @@ export interface BudgetRules {
 export const BUDGETS: Record<TuneBudget, BudgetRules> = {
   fast: { ms: 5 * 60_000, maxLaunches: 24, screenReps: 2 },
   thorough: { ms: 20 * 60_000, maxLaunches: 60, screenReps: 3 },
+  recheck: { ms: 3 * 60_000, maxLaunches: 4, screenReps: 2 },
 };
 
 /** Smallest context searched (or the model's own, when smaller). */

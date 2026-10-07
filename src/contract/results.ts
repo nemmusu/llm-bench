@@ -126,6 +126,24 @@ export const sessionsPointSchema = z.object({
   /** Requests sent and failed at this level. */
   requests: z.number().int().min(0),
   errors: z.number().int().min(0),
+  /**
+   * The engine's prefix cache over this level, as the engine itself counts it: vLLM /metrics
+   * (`vllm:prefix_cache_queries` / `vllm:prefix_cache_hits` counters, read before and after the
+   * level: source 'metrics'; old versions only expose the `gpu_prefix_cache_hit_rate` gauge:
+   * 'metrics-gauge', no token counts), else the cached prompt tokens every response reported
+   * (llama.cpp timings.cache_n, vLLM usage cached_tokens: 'cached-tokens'). Absent = the engine did not say.
+   */
+  prefixCache: z
+    .object({
+      /** Prompt tokens looked up in the cache (counters) or sent (cached-tokens). */
+      queries: z.number().min(0).optional(),
+      /** Of those, tokens found in the cache. */
+      hits: z.number().min(0).optional(),
+      /** hits / queries, 0..1. */
+      hitRate: z.number().min(0).max(1),
+      source: z.enum(['metrics', 'metrics-gauge', 'cached-tokens']),
+    })
+    .optional(),
 });
 export type SessionsPoint = z.infer<typeof sessionsPointSchema>;
 
@@ -329,10 +347,42 @@ export type TelemetrySeries = z.infer<typeof telemetrySeriesSchema>;
 
 // ---- "Trova le impostazioni migliori" (profile 'tune') ------------------------------------------
 
-/** "Veloce ~5 min" / "Accurata ~20 min": time budget and how many values each dimension tries. */
-export const TUNE_BUDGETS = ['fast', 'thorough'] as const;
+/**
+ * "Veloce ~5 min" / "Accurata ~20 min": time budget and how many values each dimension tries.
+ * 'recheck' = "Ricontrollo rapido" (~3 min): only the previous run's recommended combination and its
+ * runner-up are loaded again (new engine build or image), see Tuning.recheck.
+ */
+export const TUNE_BUDGETS = ['fast', 'thorough', 'recheck'] as const;
 export const tuneBudgetSchema = z.enum(TUNE_BUDGETS);
 export type TuneBudget = z.infer<typeof tuneBudgetSchema>;
+
+/**
+ * What the search optimizes. 'single' = "Un utente, contesto massimo" (the largest context, then the
+ * fastest settings there); 'multi' = "Più utenti" (N users at once, each with its own context: the
+ * highest per-user generation speed with all N busy).
+ */
+export const TUNE_GOALS = ['single', 'multi'] as const;
+export const tuneGoalSchema = z.enum(TUNE_GOALS);
+export type TuneGoal = z.infer<typeof tuneGoalSchema>;
+
+/** "Più utenti": users at once and context per user when the request leaves them unset. */
+export const TUNE_MULTI_DEFAULTS = { users: 4, perUserContext: 8192 } as const;
+/** Context-per-user presets offered by the UI (any value from 1024 up is accepted). */
+export const TUNE_PER_USER_CONTEXTS = [4096, 8192, 16384, 32768] as const;
+/** Most users the "Più utenti" goal accepts. */
+export const TUNE_MAX_USERS = 32;
+
+/** One searched setting's value: kv, fa, ub, b (numbers), layout, reuse, gmu, bs, graphs, fp8… */
+export const tuneDimValueSchema = z.union([z.string(), z.number(), z.boolean()]);
+/**
+ * Every searched dimension of a launch, by key. llama.cpp: kv, fa, ub, b, draft, np (users),
+ * layout ('split' | 'unified'), reuse (--cache-reuse tokens, 0 = off), ncmoe / ngl (offload).
+ * vLLM: kv, bt (--max-num-batched-tokens), np (--max-num-seqs), gmu (--gpu-memory-utilization),
+ * bs (--block-size), graphs ('default' | 'small': CUDA graph capture sizes), fp8 ('fp8' |
+ * 'fp8_e4m3' | 'fp8_e5m2'), eager.
+ */
+export const tuneVariantSchema = z.record(z.string(), tuneDimValueSchema);
+export type TuneVariant = z.infer<typeof tuneVariantSchema>;
 
 /** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8. */
 export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8'] as const;
@@ -351,10 +401,12 @@ export type TuneOutcome = z.infer<typeof tuneOutcomeSchema>;
 /**
  * Why a launch was made: 'reference' (smallest context, the speed a spill is compared with),
  * 'capacity' (search of the largest context of a KV type), 'variant' (one dimension changed at that
- * context), 'sweep' (the full context sweep of a combination), 'offload' (last resort: part of the
- * model on the CPU), 'fidelity' (optional same-prompt comparison).
+ * context), 'sweep' (the full context sweep of a combination; goal 'multi': users 1..N and the
+ * conversations), 'offload' (last resort: part of the model on the CPU), 'fidelity' (optional
+ * same-prompt comparison), 'recheck' ("Ricontrollo rapido": a previous combination loaded again at its
+ * largest context with a short sweep).
  */
-export const TUNE_STAGES = ['reference', 'capacity', 'variant', 'sweep', 'offload', 'fidelity'] as const;
+export const TUNE_STAGES = ['reference', 'capacity', 'variant', 'sweep', 'offload', 'fidelity', 'recheck'] as const;
 export const tuneStageSchema = z.enum(TUNE_STAGES);
 export type TuneStage = z.infer<typeof tuneStageSchema>;
 
@@ -393,6 +445,14 @@ export const tuneAttemptSchema = z.object({
   combination: z.number().int().min(0).optional(),
   /** ms from the start of the run. */
   atMs: z.number().optional(),
+  /** Every searched dimension's value of this launch (see tuneVariantSchema); absent on runs before phase 3. */
+  variant: tuneVariantSchema.optional(),
+  /** Goal 'multi': users at once measured on this launch (screening: level N only; 'sweep': 1..N in order). */
+  concurrency: z.array(concurrencyPointSchema).optional(),
+  /** Goal 'multi': the short "Conversazioni lunghe" measured on this launch (N conversations at once). */
+  sessions: z.array(sessionsPointSchema).optional(),
+  /** vLLM: tokens its KV cache holds, as its log said ("GPU KV cache size"). */
+  kvTokens: z.number().int().positive().optional(),
 });
 export type TuneAttempt = z.infer<typeof tuneAttemptSchema>;
 
@@ -410,11 +470,107 @@ export const tuneCombinationSchema = z.object({
   /** 'ok' = measured; a failure here means the sweep launch itself failed (the attempts say why). */
   outcome: z.enum(['ok', 'oom', 'spill', 'error', 'skipped']),
   tags: z.array(tuneTagSchema).default([]),
+  /** Every searched dimension's value (see tuneVariantSchema); absent on runs before phase 3. */
+  variant: tuneVariantSchema.optional(),
+  /**
+   * Goal 'multi': users at once, levels 1..N in this order (promptTokens = perUserContext − output −
+   * margin, one request per user per level). `sweep` is empty for these combinations.
+   */
+  concurrency: z.array(concurrencyPointSchema).optional(),
+  /** Goal 'multi': N conversations at once, a few messages each (prefix-cache reuse, queue wait). */
+  sessions: z.array(sessionsPointSchema).optional(),
+  /** Goal 'multi': the most users (≤ N) whose level had no failed request. */
+  usersWithoutErrors: z.number().int().min(0).optional(),
+  /**
+   * Goal 'multi': llama.cpp 'split' = each user its own part of the context (-np N, ctx = N × context
+   * per user); 'unified' = one pool of the same total shared by everyone (--kv-unified). vLLM: always 'unified'.
+   */
+  kvLayout: z.enum(['split', 'unified']).optional(),
+  /** llama.cpp --cache-reuse (tokens): reuses cached chunks that are not a plain prefix. Absent = off. */
+  cacheReuse: z.number().int().positive().optional(),
 });
 export type TuneCombination = z.infer<typeof tuneCombinationSchema>;
 
+/**
+ * "Ricontrollo rapido" (budget 'recheck'): the previous tune of this model here, re-checked with the
+ * engine build / image in use now. The recommendation is never changed silently: `recommended` of
+ * the recheck run is the previous recommended combination (measured again) when it still fits, and
+ * `suggestFull` says when a full search should be run instead.
+ */
+export const tuneRecheckSchema = z.object({
+  previousRunId: z.string(),
+  previousCreatedAt: z.string(),
+  /** Engine build or image of the previous run ("b10997", "vllm/vllm-openai:v0.12.0@sha256:…"). */
+  previousBuild: z.string().optional(),
+  /** The one used now. */
+  currentBuild: z.string().optional(),
+  /** One per re-checked combination: the previous recommendation first, then the runner-up (if any). */
+  checks: z.array(
+    z.object({
+      role: z.enum(['recommended', 'runner-up']),
+      /** The combination as the previous run measured it. */
+      previous: tuneCombinationSchema,
+      /** Index into this run's combinations when it loaded and was measured again. */
+      combination: z.number().int().min(0).optional(),
+      /** It still loads fully on the GPU at its largest context (no out of memory, no spill). */
+      fits: z.boolean(),
+      /** How the re-check launch went (absent = not launched: budget spent or an earlier failure). */
+      outcome: tuneOutcomeSchema.optional(),
+      /**
+       * Numbers that moved beyond noise (max(2 %, 2 × CV), as the ranking): `at` = nominal depth
+       * (goal 'single') or users at once (goal 'multi'). Empty = everything within noise.
+       */
+      moved: z
+        .array(
+          z.object({
+            at: z.number().int().positive(),
+            metric: z.enum(['decode', 'prefill', 'ttft', 'perUserDecode', 'aggregate', 'ttftP95']),
+            before: z.number(),
+            after: z.number(),
+          }),
+        )
+        .default([]),
+    }),
+  ),
+  /**
+   * 'same' = it loads and every number is within noise; 'changed' = it loads, some number moved;
+   * 'no-longer-fits' = the recommended combination ran out of memory or spilled at its context;
+   * 'incomplete' = not measured (budget spent or the launch failed for another reason).
+   */
+  result: z.enum(['same', 'changed', 'no-longer-fits', 'incomplete']),
+  /** Run the full search ("Accurata" or "Veloce") now: true unless the result is 'same'. */
+  suggestFull: z.boolean(),
+});
+export type TuneRecheck = z.infer<typeof tuneRecheckSchema>;
+
 export const tuningSchema = z.object({
   budget: tuneBudgetSchema,
+  /** What was optimized; absent = 'single' (every run before phase 3). */
+  goal: tuneGoalSchema.optional(),
+  /** Goal 'multi': what was asked and the shape of the measurements. */
+  multi: z
+    .object({
+      users: z.number().int().min(2),
+      perUserContext: z.number().int().positive(),
+      /** Prompt of every concurrent request: perUserContext − outputTokens − margin. */
+      promptTokens: z.number().int().positive(),
+      outputTokens: z.number().int().positive(),
+      /** Messages per conversation of the sessions measurement. */
+      turns: z.number().int().positive(),
+      /**
+       * Nothing held N users at perUserContext, not even the most compact KV cache: the most users that
+       * did fit (each with the full perUserContext), measured instead of N. Absent = N fit.
+       */
+      fittingUsers: z.number().int().positive().optional(),
+    })
+    .optional(),
+  /**
+   * Values tried first because they won in earlier tune runs on this GPU with this engine kind
+   * (ordering only: nothing is skipped). `runs` = how many earlier runs said so.
+   */
+  learned: z.object({ runs: z.number().int().positive(), first: z.array(z.object({ key: z.string(), value: tuneDimValueSchema })) }).optional(),
+  /** Budget 'recheck': what was re-checked and how it went. */
+  recheck: tuneRecheckSchema.optional(),
   /** Hard cap on engine launches. */
   maxLaunches: z.number().int().positive(),
   /** The search stopped before the end: time budget or launch cap spent. */
@@ -441,9 +597,14 @@ export const tuningSchema = z.object({
   depths: z.array(z.number().int().positive()).default([]),
   attempts: z.array(tuneAttemptSchema).default([]),
   combinations: z.array(tuneCombinationSchema).default([]),
-  /** Index into combinations: among those reaching the largest context, the fastest at its deepest point. */
+  /**
+   * Index into combinations. Goal 'single': among those reaching the largest context, the fastest at
+   * its deepest point. Goal 'multi': the highest per-user generation speed (p50) with all N users busy;
+   * ties → higher total tok/s → lower TTFT p95 → later messages' TTFT → more precise KV (noise-aware).
+   * Budget 'recheck': the previous recommendation measured again, only when it still fits.
+   */
   recommended: z.number().int().min(0).optional(),
-  /** At each depth, the fastest combination (decode, then prefill, then TTFT, then the more precise KV; noise-aware). */
+  /** At each depth, the fastest combination (decode, then prefill, then TTFT, then the more precise KV; noise-aware). Empty for goal 'multi'. */
   fastestByDepth: z.array(z.object({ depth: z.number().int().positive(), combination: z.number().int().min(0) })).default([]),
   /** Optional "fedeltà" check: greedy tokens with the most precise KV that fits vs the recommended one. An indication, not a quality test. */
   fidelity: z
@@ -527,6 +688,15 @@ export const runSummarySchema = z.object({
   kvCacheType: z.string().optional(),
   /** Tune runs: how many combinations were measured. */
   tunedCombinations: z.number().int().optional(),
+  /** Tune runs: the goal (absent on runs before phase 3 = 'single'), users of goal 'multi', and the budget ('recheck' = "Ricontrollo rapido"). */
+  tuneGoal: tuneGoalSchema.optional(),
+  tuneUsers: z.number().int().optional(),
+  tuneBudget: tuneBudgetSchema.optional(),
+  /**
+   * The engine release the run used: llama.cpp build ("b10997"), else the Docker image digest
+   * ("sha256:…"), else the version. Tune results are remembered per (GPU, model, engine kind + this).
+   */
+  engineBuild: z.string().optional(),
   /** Most users served at once in the test (concurrency above 1) and their combined generation speed. */
   parallelUsers: z.number().int().optional(),
   parallelTps: z.number().optional(),

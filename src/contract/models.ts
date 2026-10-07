@@ -100,6 +100,22 @@ export const fitEstimateSchema = z.object({
   maxConcurrency: z.number().optional(),
   basis: z.enum(['file-size', 'params-heuristic']),
   notes: z.array(z.string()).default([]),
+  /**
+   * "Stima tarata su N misure": the KV cache + compute buffer part was corrected with VRAM peaks
+   * measured on this PC's GPU (normal runs and tune attempts). Absent = not enough measurements (< 2).
+   */
+  calibration: z
+    .object({
+      /** Measurements the correction comes from. */
+      samples: z.number().int().min(2),
+      /** Median error of the corrected estimate on those measurements, % of the measured peak. */
+      errorPct: z.number().min(0),
+      /** 'model' = measured with this very model; 'architecture' = other models of the same architecture. */
+      scope: z.enum(['model', 'architecture']),
+      /** needMiB before the correction. */
+      rawNeedMiB: z.number(),
+    })
+    .optional(),
 });
 export type FitEstimate = z.infer<typeof fitEstimateSchema>;
 
