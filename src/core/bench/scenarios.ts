@@ -205,7 +205,7 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
           warnings.push({ code: 'context_sweep_skipped', params: { reason: 'unknown_context' } });
           break;
         }
-        const all = step.depths.length ? step.depths : sweepDepths(ctx, step.outputTokens, { fractions: step.fractions });
+        const all = step.depths.length ? ascending(step.depths) : sweepDepths(ctx, step.outputTokens, { fractions: step.fractions });
         const kept = all.filter((d) => fits(d, step.outputTokens, ctx));
         for (const d of all) if (!kept.includes(d)) warnings.push({ code: 'prompt_too_long', params: { promptTokens: d, contextSize: ctx } });
         if (kept.length) steps.push({ ...step, depths: kept });

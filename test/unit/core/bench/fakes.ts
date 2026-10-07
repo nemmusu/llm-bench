@@ -338,6 +338,8 @@ export interface TelemetryOptions {
   utilPct?: number | null;
   /** Memory readings missing (N/A). */
   memNull?: boolean;
+  /** start() delivers a sample every interval of virtual time (like the real sampler), not only the first one. */
+  live?: boolean;
   /**
    * Per-process VRAM (like the Windows counters): every running instance holds world.modelMiB under its
    * PID, `others(t)` adds the other processes. Absent = the OS cannot attribute (startProcessVram → undefined).
@@ -440,6 +442,12 @@ export class FakeTelemetry implements TelemetrySampler {
     this.sessions++;
     const from = this.world.clock.now();
     onSamples?.([this.sample(from)]);
+    if (this.o.live && onSamples) {
+      let next = from + intervalMs;
+      this.world.clock.onMove.add((_a, to) => {
+        for (; next <= to; next += intervalMs) onSamples([this.sample(next)]);
+      });
+    }
     return {
       latest: () => [this.sample(this.world.clock.now())],
       stop: async () => {
