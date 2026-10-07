@@ -290,3 +290,13 @@ export function vllmKvTooSmall(c) {
 export function vllmPortInUse(c) {
   return [`OSError: [Errno 98] error while attempting to bind on address ('${c.host}', ${c.port}): address already in use`];
 }
+
+/** gpu-memory-utilization × total is more than the free VRAM (vLLM's start-up check). */
+export function vllmVramBusy(freeMiB, totalMiB, util) {
+  const gib = (m) => (m / 1024).toFixed(2);
+  return [
+    `ERROR ${ts()} [core.py:708] EngineCore failed to start.`,
+    `ValueError: Free memory on device (${gib(freeMiB)}/${gib(totalMiB)} GiB) on startup is less than desired GPU memory utilization (${util}, ${gib(util * totalMiB)} GiB). Decrease GPU memory utilization or reduce GPU memory used by other processes.`,
+    'RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}',
+  ];
+}

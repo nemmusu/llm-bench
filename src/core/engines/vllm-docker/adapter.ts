@@ -18,6 +18,7 @@ import {
 import { DockerEngineAdapter, type DockerEngineOptions, type DockerLaunchPlan } from '../shared/docker-engine';
 import { modelReadyProbe } from '../shared/probes';
 import { vllmModelSource, vllmServeArgs } from '../shared/vllm-args';
+import { probeVllmHelp, type VllmHelp } from '../shared/vllm-help';
 import { diagnoseVllm, vllmPhaseOf } from '../shared/vllm-logs';
 
 export const VLLM_CONTAINER_PORT = 8000;
@@ -60,6 +61,7 @@ const RELEASE_TAG = /^v\d+\.\d+\.\d+(?:\.\d+)?(?:-cu\d+)?$/;
 export class VllmDockerAdapter extends DockerEngineAdapter {
   readonly kind = 'vllm-docker' as const;
   protected readonly engineLabel = 'vLLM';
+  private readonly helps = new Map<string, Promise<VllmHelp>>();
 
   constructor(private readonly v: VllmDockerOptions) {
     super(v);
@@ -69,13 +71,29 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
     return `${compat.vllm.image}:${compat.vllm.recommendedTag}`;
   }
 
+  /**
+   * vLLM takes token-id prompts, honours min_tokens and reports usage (no llama.cpp timings). Its
+   * options come from the image's own `--help=all` (a short container, cached per image id); a
+   * missing image or a failed probe gives none (the tuner then skips its optional dimensions).
+   */
   async capabilities(cfg: EngineConfig): Promise<EngineCaps> {
     const image = await this.imageFor(cfg);
     const tag = vllmTagOf(image, await this.compat());
-    // vLLM takes token-id prompts, honours min_tokens and reports usage (no llama.cpp timings).
+    const info = await this.o.images.inspect(image).catch(() => undefined);
+    let help: VllmHelp = { flags: new Set(), choices: {} };
+    if (info) {
+      const key = info.id || image;
+      let p = this.helps.get(key);
+      if (!p) {
+        p = probeVllmHelp((args) => this.o.cli.exec(['run', '--rm', '--pull', 'never', image, ...args], { timeoutMs: 300_000 }));
+        this.helps.set(key, p);
+      }
+      help = await p;
+    }
     return {
       ...(tag !== undefined ? { version: tag } : {}),
-      flags: new Set(),
+      flags: help.flags,
+      choices: help.choices,
       tokenIdsInPrompt: true,
       timings: false,
       minTokens: true,

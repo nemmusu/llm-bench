@@ -29,8 +29,25 @@ export function llamaKvArgs(p: Pick<LaunchParams, 'kvCacheType'>): string[] {
   return kv === undefined ? [] : ['-ctk', kv, '-ctv', kv];
 }
 
-/** vLLM --kv-cache-dtype: fp8 for any 8/4-bit request (vLLM has no 4-bit KV), 'auto' when asked, else nothing. */
-export function vllmKvDtype(p: Pick<LaunchParams, 'kvCacheType'>): 'auto' | 'fp8' | undefined {
+/** Spellings of llama-server's KV layout switch (one pool for every slot, or one per slot). */
+const KV_LAYOUT_FLAGS = new Set(['--kv-unified', '-kvu', '--no-kv-unified', '-no-kvu']);
+
+/**
+ * `--kv-unified` when GPU Bench chooses the layout: more than one slot, a build that knows the flag, and
+ * extra arguments that do not choose it themselves (the tuner's "contesto diviso per utente" passes
+ * --no-kv-unified). One pool for every slot: a single long prompt can use the whole context.
+ */
+export function llamaKvLayoutArgs(p: Pick<LaunchParams, 'parallel' | 'extraArgs'>, flags: ReadonlySet<string>): string[] {
+  if (p.parallel === undefined || p.parallel <= 1 || !flags.has('--kv-unified')) return [];
+  return p.extraArgs.some((a) => KV_LAYOUT_FLAGS.has(a)) ? [] : ['--kv-unified'];
+}
+
+/**
+ * vLLM --kv-cache-dtype: fp8 for any 8/4-bit request (vLLM has no 4-bit KV), 'auto' when asked, else
+ * nothing. Extra arguments that set it themselves (the tuner's fp8_e4m3 / fp8_e5m2) win: nothing then.
+ */
+export function vllmKvDtype(p: Pick<LaunchParams, 'kvCacheType' | 'extraArgs'>): 'auto' | 'fp8' | undefined {
+  if (p.extraArgs.includes('--kv-cache-dtype')) return undefined;
   const kv = p.kvCacheType;
   if (kv === 'auto') return 'auto';
   return kv === 'fp8' || kv === 'q8_0' || kv === 'q4_0' ? 'fp8' : undefined;

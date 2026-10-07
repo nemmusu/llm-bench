@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { readProfile, startFakeEngine } from './server.mjs';
 
 const FIXTURES = new URL('../../fixtures/llamacpp/', import.meta.url);
+const VLLM_FIXTURES = new URL('../../fixtures/vllm/', import.meta.url);
 const argv = process.argv.slice(2);
 const env = process.env;
 
@@ -101,31 +102,65 @@ async function main() {
     if (ncmoe !== undefined) o.nCpuMoe = Number(ncmoe);
     const ngl = get('-ngl', '--gpu-layers', '--n-gpu-layers');
     if (ngl !== undefined && /^\d+$/.test(ngl)) o.gpuLayers = Number(ngl);
+    // The last spelling given wins, as in llama-server.
+    const layout = argv.filter((a) => ['--kv-unified', '-kvu', '--no-kv-unified', '-no-kvu'].includes(a)).pop();
+    if (layout !== undefined) o.kvUnified = layout === '--kv-unified' || layout === '-kvu';
+    const reuse = get('--cache-reuse');
+    if (reuse !== undefined) o.cacheReuse = Number(reuse);
     o.requireModelFile = env.FAKE_ENGINE_ALLOW_MISSING_MODEL !== '1';
   } else {
     const rest = argv[0] === 'serve' ? argv.slice(1) : argv;
+    const help = rest.find((a) => a === '--help' || a === '-h' || a.startsWith('--help='));
+    if (help !== undefined) {
+      // 'all': a v0.11-style grouped help (takes --help=all); 'old': an old api_server (argparse rejects --help=all).
+      const style = profile.vllmHelp ?? 'all';
+      if (style === 'none' || (style === 'old' && help !== '--help' && help !== '-h')) {
+        err([`api_server.py: error: argument -h/--help: ignored explicit argument '${help.slice('--help='.length)}'`]);
+        return 2;
+      }
+      process.stdout.write(readFileSync(new URL(style === 'old' ? 'help-old.stdout.txt' : 'help-all.stdout.txt', VLLM_FIXTURES), 'utf8'));
+      return 0;
+    }
     let model = rest[0] && !rest[0].startsWith('-') ? rest[0] : undefined;
     const val = {};
-    const names = [];
+    /** Every value of an option (nargs="+": --served-model-name, --cuda-graph-sizes). */
+    const all = {};
     for (let i = model ? 1 : 0; i < rest.length; i++) {
       const a = rest[i];
-      if (!a.startsWith('--')) continue;
-      const next = rest[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
-        val[a] = next;
-        i++;
-        // --served-model-name takes several names (nargs="+").
-        while (a === '--served-model-name' && rest[i + 1] !== undefined && !rest[i + 1].startsWith('--')) names.push(rest[++i]);
-        if (a === '--served-model-name') names.unshift(next);
-      } else val[a] = 'true';
+      if (!a.startsWith('-')) continue;
+      const values = [];
+      while (rest[i + 1] !== undefined && !rest[i + 1].startsWith('--') && !(rest[i + 1].startsWith('-') && Number.isNaN(Number(rest[i + 1])))) values.push(rest[++i]);
+      val[a] = values[0] ?? 'true';
+      all[a] = values;
     }
+    const names = all['--served-model-name'] ?? [];
+    const blockSize = val['--block-size'];
+    if (blockSize !== undefined) {
+      if (!['1', '8', '16', '32', '64', '128'].includes(blockSize)) {
+        err([`api_server.py: error: argument --block-size: invalid choice: '${blockSize}' (choose from 1, 8, 16, 32, 64, 128)`]);
+        return 2;
+      }
+      o.blockSize = Number(blockSize);
+    }
+    const graphs = all['--cuda-graph-sizes'] ?? (() => {
+      const config = val['--compilation-config'] ?? val['-O'];
+      try {
+        return JSON.parse(config ?? '').cudagraph_capture_sizes;
+      } catch {
+        return undefined;
+      }
+    })();
+    if (Array.isArray(graphs) && graphs.length) o.graphSizes = graphs.map(Number);
     model ??= val['--model'] ?? 'facebook/opt-125m';
     o.model = model;
     o.host = val['--host'] ?? '0.0.0.0';
     o.port = Number(val['--port'] ?? 8000);
     o.aliases = names.length > 0 ? names : [model];
     o.ctx = Number(val['--max-model-len'] ?? 4096);
-    o.kvType = val['--kv-cache-dtype'] === 'fp8' ? 'fp8' : 'auto';
+    const dtype = val['--kv-cache-dtype'];
+    o.kvType = dtype?.startsWith('fp8') ? 'fp8' : 'auto';
+    if (dtype === 'fp8_e4m3' || dtype === 'fp8_e5m2') o.kvFormat = dtype;
+    if (val['--max-num-seqs'] !== undefined) o.np = Number(val['--max-num-seqs']);
     o.kvTypeV = o.kvType;
     if (val['--max-num-batched-tokens'] !== undefined) o.ubatch = Number(val['--max-num-batched-tokens']);
     if (val['--gpu-memory-utilization'] !== undefined) o.gpuMemoryUtilization = Number(val['--gpu-memory-utilization']);

@@ -35,6 +35,8 @@ export interface EngineCaps {
   timings: boolean;
   minTokens: boolean;
   fitFlag: boolean;
+  /** Choices argparse lists for an option, by spelling (vLLM `--help`: "--kv-cache-dtype" → ["auto", "fp8", …]). */
+  choices?: Record<string, string[]>;
 }
 
 /** A hub GGUF that is not downloaded yet: what its download will create in the library. */

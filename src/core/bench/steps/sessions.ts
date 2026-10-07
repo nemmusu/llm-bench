@@ -14,6 +14,7 @@
 import type { CurrentStep } from '../../../contract/events';
 import { AppError } from '../../../contract/errors';
 import type { SessionsPoint, SessionsStep, Stat } from '../../../contract/results';
+import type { PrefixCacheReading } from '../../inference/prefix-metrics';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../../inference/types';
 import { fromStream, unionMs, type RequestMetrics } from '../metrics';
 import { buildPrompt, buildTextPrompt, CHARS_PER_TOKEN } from '../prompts';
@@ -46,6 +47,8 @@ export interface SessionsDeps {
   alive(): void;
   /** A level is done: progress. */
   levelDone?(sessions: number): void;
+  /** The engine's own prefix-cache counters (vLLM /metrics), read before and after every level. */
+  prefixCache?(): Promise<PrefixCacheReading | undefined>;
 }
 
 export interface SessionsRun {
@@ -80,6 +83,24 @@ export function turnResult(turn: number, done: Done | undefined, m: RequestMetri
 }
 
 const defined = (xs: readonly (number | undefined)[]): number[] => xs.filter((x): x is number => x !== undefined);
+const share = (hits: number, queries: number): number => Math.min(1, Math.max(0, hits / queries));
+
+/**
+ * The prefix cache over a level: the engine's counters (difference of the readings before and after),
+ * else its gauge (read after), else the cached tokens every response reported. undefined = nothing said.
+ */
+export function prefixCacheOf(results: readonly TurnResult[], before?: PrefixCacheReading, after?: PrefixCacheReading): SessionsPoint['prefixCache'] {
+  if (before?.queries !== undefined && before.hits !== undefined && after?.queries !== undefined && after.hits !== undefined) {
+    const queries = after.queries - before.queries;
+    const hits = after.hits - before.hits;
+    if (queries > 0) return { queries, hits, hitRate: share(hits, queries), source: 'metrics' };
+  }
+  if (after?.hitRate !== undefined) return { hitRate: share(after.hitRate, 1), source: 'metrics-gauge' };
+  if (results.length === 0 || results.some((r) => r.cached === undefined)) return undefined;
+  const queries = results.reduce((n, r) => n + r.m.promptTokens, 0);
+  const hits = results.reduce((n, r) => n + (r.cached as number), 0);
+  return queries > 0 ? { queries, hits, hitRate: share(hits, queries), source: 'cached-tokens' } : undefined;
+}
 const perSecond = (tokens: number, ms: number): number | undefined => (ms > 0 ? (tokens / ms) * 1000 : undefined);
 
 /** Reading speed seen by the client: tokens read / TTFT (the wait in the queue included). */
@@ -101,7 +122,7 @@ export function aggregateSessions(
   step: Pick<SessionsStep, 'depth' | 'turns' | 'outputTokens' | 'followupTokens'>,
   sessions: number,
   results: readonly TurnResult[],
-  o: { requests: number; errors: number; solo?: number },
+  o: { requests: number; errors: number; solo?: number; prefix?: { before?: PrefixCacheReading; after?: PrefixCacheReading } },
 ): SessionsPoint {
   const first = results.filter((r) => r.turn === 1);
   const later = results.filter((r) => r.turn > 1);
@@ -115,6 +136,7 @@ export function aggregateSessions(
   const reading = unionMs(first.map((r) => [r.m.sentAt, r.m.firstAt] as const));
   const readTotal = first.reduce((n, r) => n + r.uncached, 0);
   const decode = (xs: readonly TurnResult[]): Stat => summarize(defined(xs.map((r) => r.m.decodeTps)));
+  const prefixCache = prefixCacheOf(results, o.prefix?.before, o.prefix?.after);
   return {
     sessions,
     depth: step.depth,
@@ -134,6 +156,7 @@ export function aggregateSessions(
     queueEstimated: !engineQueue,
     requests: o.requests,
     errors: o.errors,
+    ...(prefixCache ? { prefixCache } : {}),
   };
 }
 
@@ -165,7 +188,10 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
   let requests = 0;
   let errors = 0;
   const pin = d.slots !== undefined && d.slots >= sessions;
-  const point = () => aggregateSessions(step, sessions, results, { requests, errors, ...(solo !== undefined ? { solo } : {}) });
+  const reading = async (): Promise<PrefixCacheReading | undefined> => (d.prefixCache ? d.prefixCache().catch(() => undefined) : undefined);
+  const before = await reading();
+  let prefix: { before?: PrefixCacheReading; after?: PrefixCacheReading } = before ? { before } : {};
+  const point = () => aggregateSessions(step, sessions, results, { requests, errors, ...(solo !== undefined ? { solo } : {}), prefix });
 
   /** One message; undefined = it failed (counted as an error, the conversation ends). */
   const send = async (i: number, turn: number, prompt: Prompt): Promise<{ r: TurnResult; events: StreamEvent[] } | undefined> => {
@@ -217,6 +243,8 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
 
   await Promise.all(Array.from({ length: sessions }, (_, i) => conversation(i)));
   d.alive();
+  const after = await reading();
+  if (after) prefix = { ...prefix, after };
   const p = point();
   d.point(p);
   return { point: p, results };

@@ -1,4 +1,5 @@
 import type { ApiFlavor } from '../../contract/engines';
+import type { PrefixCacheReading } from './prefix-metrics';
 
 /** Token counts and engine timings reported at the end of a streamed generation. */
 export interface Usage {
@@ -68,4 +69,6 @@ export interface InferenceClient {
   requestBody(req: GenerateRequest): Record<string, unknown>;
   /** Model ids served (OpenAI /v1/models). */
   models(signal?: AbortSignal): Promise<string[]>;
+  /** The engine's own prefix-cache counters (vLLM /metrics); absent or undefined = not available. */
+  prefixCache?(signal?: AbortSignal): Promise<PrefixCacheReading | undefined>;
 }

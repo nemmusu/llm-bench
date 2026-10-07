@@ -45,3 +45,4 @@ export function vllmNoKernelImage(): string[];
 export function vllmOom(): string[];
 export function vllmKvTooSmall(c: LlamaLogCtx): string[];
 export function vllmPortInUse(c: LlamaLogCtx): string[];
+export function vllmVramBusy(freeMiB: number, totalMiB: number, util: number): string[];

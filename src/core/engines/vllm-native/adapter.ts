@@ -13,6 +13,7 @@ import type { EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan
 import type { ModelClientFactory } from '../shared/client';
 import { modelReadyProbe } from '../shared/probes';
 import { vllmModelSource, vllmServeArgs } from '../shared/vllm-args';
+import { probeVllmHelp, type VllmHelp } from '../shared/vllm-help';
 import { diagnoseVllm, vllmPhaseOf } from '../shared/vllm-logs';
 import { installVllm, parseVllmVersion, venvPaths } from './install';
 
@@ -47,6 +48,7 @@ const installDataSchema = z.object({ spec: z.string() });
 export class VllmNativeAdapter implements EngineAdapter {
   readonly kind = 'vllm-native' as const;
   private readonly versions = new Map<string, Promise<{ ok: boolean; version?: string; output: string }>>();
+  private readonly helps = new Map<string, Promise<VllmHelp>>();
 
   constructor(private readonly o: VllmNativeOptions) {}
 
@@ -104,9 +106,31 @@ export class VllmNativeAdapter implements EngineAdapter {
     };
   }
 
+  /** `vllm serve --help=all` (slow: imports torch), cached per executable path + mtime. */
+  private help(exe: string, key: string): Promise<VllmHelp> {
+    let p = this.helps.get(key);
+    if (!p) {
+      const [cmd, ...pre] = this.argvFor(exe) as [string, ...string[]];
+      p = probeVllmHelp((args) => this.o.deps.proc.run(cmd, [...pre, 'serve', ...args], { timeoutMs: 300_000 }));
+      this.helps.set(key, p);
+    }
+    return p;
+  }
+
   async capabilities(cfg: EngineConfig): Promise<EngineCaps> {
-    const v = await this.version(await this.resolveExecutable(cfg));
-    return { ...(v.version !== undefined ? { version: v.version } : {}), flags: new Set(), tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false };
+    const exe = await this.resolveExecutable(cfg);
+    const v = await this.version(exe);
+    const st = await fs.stat(exe);
+    const help = await this.help(exe, `${exe}|${st.mtimeMs}|${st.size}`);
+    return {
+      ...(v.version !== undefined ? { version: v.version } : {}),
+      flags: help.flags,
+      choices: help.choices,
+      tokenIdsInPrompt: true,
+      timings: false,
+      minTokens: true,
+      fitFlag: false,
+    };
   }
 
   async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<VllmNativeLaunchPlan> {

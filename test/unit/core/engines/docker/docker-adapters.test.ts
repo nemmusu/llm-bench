@@ -299,8 +299,34 @@ describe('VllmDockerAdapter', () => {
     const h = make();
     const a = new VllmDockerAdapter({ ...h.common, hub });
     expect(await a.imageFor()).toBe('vllm/vllm-openai:v0.31.0');
-    expect(await a.capabilities({ kind: 'vllm-docker' })).toEqual({ version: 'v0.31.0', flags: new Set(), tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false });
+    // Image not pulled yet: no options known.
+    expect(await a.capabilities({ kind: 'vllm-docker' })).toEqual({ version: 'v0.31.0', flags: new Set(), choices: {}, tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false });
     expect(await a.capabilities({ kind: 'vllm-docker', image: 'ghcr.io/me/vllm:dev' })).not.toHaveProperty('version');
+  });
+
+  it('reads the image’s own options from --help=all (once per image id), --help on older images', async () => {
+    const VLLM = path.resolve(RESOURCES, '..', 'test', 'fixtures', 'vllm');
+    const all = readFileSync(path.join(VLLM, 'help-all.stdout.txt'), 'utf8');
+    const old = readFileSync(path.join(VLLM, 'help-old.stdout.txt'), 'utf8');
+    const image = (id: string): ImageInfo => ({ id, repoTags: [], repoDigests: [], size: 1 });
+    const h = make({
+      images: { 'vllm/vllm-openai:v0.31.0': image('sha256:new'), 'vllm/vllm-openai:v0.6.0': image('sha256:old') },
+      handler: (args) => {
+        const img = args[args.indexOf('never') + 1];
+        if (img === 'vllm/vllm-openai:v0.31.0') return ok(all);
+        return args.includes('--help=all') ? fail(2, "error: argument -h/--help: ignored explicit argument 'all'") : ok(old);
+      },
+    });
+    const a = new VllmDockerAdapter({ ...h.common, hub });
+    const caps = await a.capabilities({ kind: 'vllm-docker' });
+    expect([...caps.flags].filter((f) => ['--block-size', '--cuda-graph-sizes', '--compilation-config', '-O', '--no-enable-prefix-caching'].includes(f))).toHaveLength(5);
+    expect(caps.choices?.['--kv-cache-dtype']).toEqual(['auto', 'bfloat16', 'fp8', 'fp8_ds_mla', 'fp8_e4m3', 'fp8_e5m2', 'fp8_inc']);
+    await a.capabilities({ kind: 'vllm-docker' });
+    expect(h.proc.calls.filter((c) => c.args.includes('--help=all'))).toHaveLength(1);
+    expect(h.proc.calls[0]!.args).toEqual(['run', '--rm', '--pull', 'never', 'vllm/vllm-openai:v0.31.0', '--help=all']);
+    const older = await a.capabilities({ kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.6.0' });
+    expect(older.flags.has('--block-size')).toBe(false);
+    expect(older.choices?.['--kv-cache-dtype']).toEqual(['auto', 'fp8']);
   });
 
   it('uses --model for pre-v0.12 images, pins revisions, and keeps the token out when there is none', async () => {

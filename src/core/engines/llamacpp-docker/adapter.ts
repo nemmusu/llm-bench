@@ -8,7 +8,7 @@ import { diagnoseExit, llamaPhaseOf } from '../llamacpp-native/logs';
 import { weightFiles, type LaunchPlan, type ModelTarget, type PlanOptions } from '../types';
 import type { EngineCompat } from '../shared/compat';
 import { DockerEngineAdapter, type DockerEngineConfig, type DockerLaunchPlan } from '../shared/docker-engine';
-import { llamaFlashAttention, llamaKvArgs } from '../shared/kv-flags';
+import { llamaFlashAttention, llamaKvArgs, llamaKvLayoutArgs } from '../shared/kv-flags';
 import { modelReadyProbe } from '../shared/probes';
 
 export const LLAMA_CONTAINER_PORT = 8080;
@@ -45,7 +45,7 @@ export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { mode
   if (params.threads !== undefined) args.push('-t', String(params.threads));
   if (params.parallel !== undefined) args.push('-np', String(params.parallel));
   // One KV pool shared by the slots (as in the native adapter): long prompts get the whole context.
-  if (params.parallel !== undefined && params.parallel > 1 && caps.flags.has('--kv-unified')) args.push('--kv-unified');
+  args.push(...llamaKvLayoutArgs(params, caps.flags));
   // Auto-fit would silently change ctx/ngl: the measured configuration must be the requested one.
   if (caps.fitFlag) args.push('--fit', 'off');
   if (caps.flags.has('--no-webui')) args.push('--no-webui');

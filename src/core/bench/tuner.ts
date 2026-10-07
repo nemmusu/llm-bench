@@ -1,7 +1,9 @@
 /**
- * "Trova le impostazioni migliori": finds, by launching the engine several times, the largest context
- * each KV cache precision can hold fully on the GPU, then the fastest launch settings at that context,
- * and measures every surviving combination with the same context sweep.
+ * "Trova le impostazioni migliori", goal 'single' ("Un utente, contesto massimo"): finds, by launching
+ * the engine several times, the largest context each KV cache precision can hold fully on the GPU,
+ * then the fastest launch settings at that context, and measures every surviving combination with the
+ * same context sweep. (Goal 'multi' is tune-multi.ts, "Ricontrollo rapido" tune-recheck.ts: they share
+ * this machinery.)
  *
  *  1. Predict (no load): the VRAM estimate gives each KV type's largest context (+10 % slack, capped
  *     at the model's trained context). Candidates are powers of two from 4K up to it (plus the trained
@@ -13,16 +15,18 @@
  *     cheapest-memory settings: the largest candidate that loads without "out of memory" and without
  *     spilling. The top candidate is tried first (the estimate is usually close), then a binary search.
  *     A less precise type that cannot add context (the previous one already reached the model's limit)
- *     is not searched: its capacity is known without a launch.
+ *     is not searched: its capacity is known without a launch. vLLM's memory share starts at the
+ *     highest that fits the free VRAM and steps down while vLLM refuses to start with it.
  *  4. Coordinate descent at each type's largest context, one dimension at a time (flash attention →
- *     ubatch → batch → speculative decoding; vLLM: batched tokens): each value is screened at two depths
- *     (1K and the deepest) and kept when it is faster (see tune-rank.ts); a value that runs out of memory
- *     or spills at that context is dropped — context comes first.
+ *     ubatch → batch → speculative decoding; vLLM: batched tokens, block size, fp8 format): each value
+ *     is screened at three depths (1K, the middle of the grid and the deepest) and kept when it is
+ *     faster (see tune-rank.ts); a value that runs out of memory or spills at that context is dropped —
+ *     context comes first. Values that won in earlier runs on this GPU are tried first.
  *  5. Full context sweep (same depth grid for everyone) of each type's best combination, and of any
  *     screened variant that was the fastest at one of its depths.
- *  6. Last resort, only when nothing fits even at 4K with q4_0: part of the model on the CPU
- *     (--n-cpu-moe for MoE models, fewer -ngl otherwise). vLLM: --enforce-eager when it is the only way
- *     to a larger context.
+ *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
+ *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
+ *     the only way to a larger context.
  *  7. Optional "fedeltà": the same greedy generation with the most precise KV and the recommended one.
  *
  * Everything runs within a time budget and a cap on launches; the search stops early when either is
@@ -34,17 +38,21 @@ import type { RunPhase } from '../../contract/events';
 import type { FitEstimate } from '../../contract/models';
 import {
   nominalDepth,
+  type ConcurrencyPoint,
   type LatencyPoint,
+  type SessionsPoint,
+  type SessionsStep,
   type TuneAttempt,
   type TuneBudget,
   type TuneCombination,
   type TuneCommand,
+  type TuneGoal,
   type TuneKvType,
   type TuneStage,
   type TuneTag,
   type Tuning,
 } from '../../contract/results';
-import { maxDepth, runSweep, sweepDepths } from './sweep';
+import { depthGrid, maxDepth, runSweep, sweepDepths } from './sweep';
 import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt, recommendedCombination, screenBetter } from './tune-rank';
 
 // ---- engine access ------------------------------------------------------------------------------
@@ -53,6 +61,10 @@ import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt
 export interface LabEngine {
   /** `reps` requests of `depth` prompt tokens and `outputTokens` answer tokens, as one point. */
   measure(depth: number, outputTokens: number, reps: number, kind: 'tune-probe' | 'tune-screen' | 'context-sweep'): Promise<LatencyPoint>;
+  /** `level` users at once, each sending `requestsPerWorker` requests back to back (goal 'multi'). */
+  concurrency(level: number, promptTokens: number, outputTokens: number, requestsPerWorker: number): Promise<ConcurrencyPoint>;
+  /** "Conversazioni lunghe" on this engine (goal 'multi'): one point per level. */
+  sessions(step: SessionsStep): Promise<SessionsPoint[]>;
   /** Peaks of this launch so far: VRAM (process or total minus baseline) and shared GPU memory (Windows). */
   memory(): { vramPeakMiB?: number; sharedPeakMiB?: number };
   /** KV cache capacity the engine reported, in tokens (vLLM "GPU KV cache size"). */
@@ -81,13 +93,15 @@ export type DimValue = string | number | boolean;
 export type Variant = Readonly<Record<string, DimValue>>;
 
 /**
- * One searched launch setting. Adding a dimension (phase 3: more values, more settings) is one entry
- * here plus its mapping in TuneSpace.params: the search code does not change.
+ * One searched launch setting. Adding a dimension is one entry here plus its mapping in
+ * TuneSpace.params: the search code does not change.
  */
 export interface Dimension {
   key: string;
-  /** Values to try given the rest of the variant (e.g. flash attention off only with f16); the first is the default. */
+  /** Values to try given the rest of the variant (e.g. flash attention off only with f16), in the order to try them. */
   values: (v: Variant) => readonly DimValue[];
+  /** Values tried only where the VRAM estimate says they fit at that context (the biggest ubatch). */
+  prune?: (value: DimValue) => boolean;
 }
 
 export interface TuneSpace {
@@ -96,6 +110,15 @@ export interface TuneSpace {
   base: (kv: TuneKvType) => Variant;
   /** Coordinate-descent order. */
   dimensions: readonly Dimension[];
+  /**
+   * A start-up setting tried from its first value down, until the engine accepts it (vLLM's memory
+   * share: "less than desired GPU memory utilization"); then kept for every launch.
+   */
+  startup?: { key: string; values: readonly DimValue[] };
+  /** Ways beyond the largest context, tried in order with the most compact KV (vLLM: fewer CUDA graphs, eager). */
+  extensions?: readonly Variant[];
+  /** Goal 'multi': the context to launch for `users` users of `perUser` tokens each (llama.cpp: the sum; vLLM: one user's). */
+  contextFor: (users: number, perUser: number) => number;
   /** Exact launch parameters of a variant at a context. */
   params: (v: Variant, ctx: number) => LaunchParams;
   tags: (v: Variant) => TuneTag[];
@@ -157,6 +180,18 @@ export function collapsedAt(points: readonly LatencyPoint[]): number | undefined
   return undefined;
 }
 
+/**
+ * Screening depths of a context: 1K, the grid depth nearest to half the deepest prompt (prompt reading
+ * dominates deep prompts, the middle shows where a setting starts to pay off) and the deepest prompt.
+ */
+export function screenDepths(ctx: number, outputTokens: number): number[] {
+  const deepest = maxDepth(ctx, outputTokens);
+  const shallow = Math.min(SCREEN_SHALLOW, deepest);
+  const inner = depthGrid(deepest).filter((d) => d > shallow && d < deepest);
+  const middle = inner.reduce<number | undefined>((m, d) => (m === undefined || Math.abs(d - deepest / 2) < Math.abs(m - deepest / 2) ? d : m), undefined);
+  return [...new Set([shallow, ...(middle !== undefined ? [middle] : []), deepest])];
+}
+
 /** Errors that mean "this configuration does not fit", not "something is broken". */
 export function memoryError(e: AppErrorData): boolean {
   return e.code === 'ENGINE_OOM' || (e.code === 'MODEL_TOO_LARGE' && e.params?.reason === 'kv-cache');
@@ -191,12 +226,27 @@ export function failureHint(e: AppErrorData): number | undefined {
   return typeof v === 'number' && v > 0 ? v : undefined;
 }
 
+/** vLLM refused to start because its memory share is more than the free VRAM: a lower share may start. */
+export function startupRefused(e: AppErrorData): boolean {
+  return e.code === 'VRAM_BUSY' && e.params?.utilization !== undefined;
+}
+
 // ---- tuner --------------------------------------------------------------------------------------
+
+/** "Ricontrollo rapido": the previous tune and the combinations to load again (see tune-recheck.ts). */
+export interface RecheckInput {
+  previousRunId: string;
+  previousCreatedAt: string;
+  previousBuild?: string;
+  currentBuild?: string;
+  /** The previous recommendation first, then its runner-up (if any). */
+  checks: { role: 'recommended' | 'runner-up'; combination: TuneCombination }[];
+}
 
 export interface TunerInput {
   space: TuneSpace;
   budget: TuneBudget;
-  /** Sweep shape (from the profile's context-sweep step). */
+  /** Sweep shape (from the profile's context-sweep step): also the answer length of goal 'multi'. */
   sweep: { outputTokens: number; reps: number };
   /** Trained context of the model (the search never goes above it). */
   modelContext?: number;
@@ -206,9 +256,15 @@ export interface TunerInput {
   spillPossible: boolean;
   /** Last resort when nothing fits at the smallest context (llama.cpp only). */
   offload?: { layers: number; moe: boolean };
-  /** vLLM: try --enforce-eager when it is the only way to a larger context. */
-  eager?: boolean;
   fidelity: boolean;
+  /** Absent = 'single'. */
+  goal?: TuneGoal;
+  /** Goal 'multi': users at once, context per user, messages per conversation. */
+  multi?: { users: number; perUserContext: number; turns: number };
+  /** Values tried first because they won before on this GPU (reported as is). */
+  learned?: Tuning['learned'];
+  /** Budget 'recheck'. */
+  recheck?: RecheckInput;
 }
 
 export interface TunerDeps {
@@ -220,7 +276,7 @@ export interface TunerDeps {
   onPhase?: (phase: RunPhase) => void;
 }
 
-interface Capacity {
+export interface Capacity {
   kv: TuneKvType;
   predictedMax?: number;
   candidates: number[];
@@ -233,7 +289,7 @@ interface Capacity {
   skipped?: 'estimate' | 'no-gain' | 'budget';
 }
 
-interface Screen {
+export interface Screen {
   variant: Variant;
   ctx: number;
   /** Index of the attempt that measured it. */
@@ -242,7 +298,7 @@ interface Screen {
 }
 
 /** An attempt being made: the record plus what the search needs to know about it. */
-interface Live {
+export interface Live {
   att: TuneAttempt;
   index: number;
   variant: Variant;
@@ -250,9 +306,11 @@ interface Live {
   hint?: number;
   /** Full sweep measured on this launch. */
   sweep?: LatencyPoint[];
+  /** Goal 'multi': users 1..N and the conversations measured on this launch, as a combination. */
+  users?: { concurrency: ConcurrencyPoint[]; sessions: SessionsPoint[] };
 }
 
-type Work = (engine: LabEngine, live: Live) => Promise<void>;
+export type Work = (engine: LabEngine, live: Live) => Promise<void>;
 
 /** Identity of a variant at a context. */
 export function variantKey(v: Variant, ctx: number): string {
@@ -263,25 +321,27 @@ export function variantKey(v: Variant, ctx: number): string {
 }
 
 export class Tuner {
-  private readonly rules: BudgetRules;
-  private readonly cap: number;
-  private readonly min: number;
-  private readonly started: number;
-  private readonly attempts: TuneAttempt[] = [];
-  private readonly combos: TuneCombination[] = [];
-  private readonly capacity = new Map<TuneKvType, Capacity>();
-  private readonly screens = new Map<string, Screen>();
+  protected readonly rules: BudgetRules;
+  protected readonly cap: number;
+  protected readonly min: number;
+  protected readonly started: number;
+  protected readonly attempts: TuneAttempt[] = [];
+  protected readonly combos: TuneCombination[] = [];
+  protected readonly capacity = new Map<TuneKvType, Capacity>();
+  protected readonly screens = new Map<string, Screen>();
   /** Variants already measured as a combination. */
-  private readonly combined = new Set<string>();
-  private launches = 0;
-  private stoppedBy: Tuning['stoppedBy'];
-  private refDecode: number | undefined;
-  private refShared: number | undefined;
+  protected readonly combined = new Set<string>();
+  protected launches = 0;
+  protected stoppedBy: Tuning['stoppedBy'];
+  protected refDecode: number | undefined;
+  protected refShared: number | undefined;
   private fidelity: Tuning['fidelity'];
+  /** Index of the start-up setting's value in use (space.startup). */
+  private startupAt = 0;
 
   constructor(
-    private readonly input: TunerInput,
-    private readonly deps: TunerDeps,
+    protected readonly input: TunerInput,
+    protected readonly deps: TunerDeps,
   ) {
     this.rules = BUDGETS[input.budget];
     this.cap = input.modelContext ?? DEFAULT_CONTEXT_CAP;
@@ -293,11 +353,11 @@ export class Tuner {
     const { space } = this.input;
     for (const kv of space.kvLadder) this.capacity.set(kv, this.predictCapacity(kv));
     this.deps.onPhase?.('tune-capacity');
-    if (this.input.spillPossible) await this.reference();
+    if (this.input.spillPossible) await this.reference(this.min);
     for (const kv of space.kvLadder) await this.searchCapacity(kv);
     const fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
     if (fitting.length === 0 && this.input.offload) await this.offload(this.input.offload);
-    if (this.input.eager && fitting.length > 0) await this.eager(fitting);
+    if (fitting.length > 0) await this.extend(fitting);
     // Largest context first (the recommendation comes from there), then the more precise KV.
     const order = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
     for (const kv of order) {
@@ -310,20 +370,39 @@ export class Tuner {
     return this.snapshot();
   }
 
-  private maxOf(kv: TuneKvType): number {
+  protected maxOf(kv: TuneKvType): number {
     return (this.capacity.get(kv) as Capacity).measuredMax as number;
+  }
+
+  /** The base settings of a KV type, with the start-up setting in use. */
+  protected base(kv: TuneKvType): Variant {
+    return this.withStartup(this.input.space.base(kv));
+  }
+
+  private withStartup(v: Variant): Variant {
+    const s = this.input.space.startup;
+    return s ? { ...v, [s.key]: s.values[this.startupAt] as DimValue } : v;
+  }
+
+  /** Identity of a variant at a context; the start-up setting is the same for every launch that loads. */
+  protected key(v: Variant, ctx: number): string {
+    const s = this.input.space.startup;
+    if (!s || !(s.key in v)) return variantKey(v, ctx);
+    const { [s.key]: _startup, ...rest } = v;
+    return variantKey(rest, ctx);
   }
 
   // ---- predictions and capacity -----------------------------------------------------------------
 
+  /** True / false when the estimate says this launch fits (with slack) / does not; undefined = no estimate. */
+  protected predictFits(params: LaunchParams): boolean | undefined {
+    const est = this.input.predict?.(params);
+    return est === undefined ? undefined : est.needMiB <= est.availableMiB * PREDICT_SLACK;
+  }
+
   /** Largest context the estimate allows for this KV type (with slack): 0 = not even the smallest, undefined = no estimate. */
   private predictMax(kv: TuneKvType): number | undefined {
-    const predict = this.input.predict;
-    if (!predict) return undefined;
-    const fits = (ctx: number): boolean | undefined => {
-      const est = predict(this.input.space.params(this.input.space.base(kv), ctx));
-      return est === undefined ? undefined : est.needMiB <= est.availableMiB * PREDICT_SLACK;
-    };
+    const fits = (ctx: number) => this.predictFits(this.input.space.params(this.base(kv), ctx));
     const atMin = fits(this.min);
     if (atMin === undefined) return undefined;
     if (!atMin) return 0;
@@ -348,15 +427,15 @@ export class Tuner {
     return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }
 
-  /** The most precise KV type's base settings at the smallest context: the speed a spill is compared with. */
-  private async reference(): Promise<void> {
+  /** The most precise KV type's base settings at a small context: the speed a spill is compared with. */
+  protected async reference(ctx: number): Promise<void> {
     for (const kv of this.input.space.kvLadder) {
       const cap = this.capacity.get(kv) as Capacity;
       if (cap.candidates.length === 0) continue;
-      const live = await this.launch('reference', this.input.space.base(kv), this.min);
+      const live = await this.launch('reference', this.base(kv), ctx);
       if (!live) return;
-      cap.status.set(this.min, live.att.outcome === 'ok');
-      cap.launched.add(this.min);
+      cap.status.set(ctx, live.att.outcome === 'ok');
+      cap.launched.add(ctx);
       if (live.att.outcome === 'ok') {
         this.refDecode = (live.att.points[0] as LatencyPoint).decodeTps.median;
         this.refShared = live.att.sharedPeakMiB;
@@ -366,7 +445,7 @@ export class Tuner {
   }
 
   /** Largest context a more precise KV type held: a less precise one holds it too (it needs less memory). */
-  private bestPrecise(kv: TuneKvType): number | undefined {
+  protected bestPrecise(kv: TuneKvType): number | undefined {
     const ladder = this.input.space.kvLadder;
     const known = ladder
       .slice(0, ladder.indexOf(kv))
@@ -398,7 +477,7 @@ export class Tuner {
       }
       cap.candidates.push(this.min);
     }
-    await this.search(cap, this.input.space.base(kv), (e, l) => this.screenWork(e, l));
+    await this.search(cap, this.base(kv), (e, l) => this.screenWork(e, l));
   }
 
   /**
@@ -406,7 +485,7 @@ export class Tuner {
    * engine's own report is usually close), then a binary search. A launch that is the largest if it
    * loads (the next candidate is known not to) also runs `provenWork`.
    */
-  private async search(cap: Capacity, variant: Variant, provenWork: Work): Promise<void> {
+  protected async search(cap: Capacity, variant: Variant, provenWork: Work): Promise<void> {
     let tried = false;
     for (;;) {
       const cands = cap.candidates;
@@ -427,7 +506,7 @@ export class Tuner {
       }
       cap.status.set(ctx, live.att.outcome === 'ok');
       cap.launched.add(ctx);
-      if (live.sweep) this.addCombination(live);
+      if (live.sweep || live.users) this.addCombination(live);
       // The engine said how much fits: its exact capacity is the next candidate to try.
       if (this.applyHint(cap, live.hint)) tried = false;
     }
@@ -466,33 +545,47 @@ export class Tuner {
   /**
    * One launch: start, a quick probe, the spill checks, then `work` while it is still loaded.
    * Undefined when the budget does not allow another launch. Failures that would repeat on every
-   * launch are thrown (the run fails with them). `params` overrides the variant's launch parameters.
+   * launch are thrown (the run fails with them); a start-up setting the engine refuses steps down and
+   * the launch is made again. `params` overrides the variant's launch parameters.
    */
-  private async launch(stage: TuneStage, variant: Variant, ctx: number, work?: Work, params?: LaunchParams): Promise<Live | undefined> {
-    if (!this.canLaunch()) return undefined;
-    this.launches++;
-    const p = params ?? this.input.space.params(variant, ctx);
-    const index = this.attempts.length;
-    const planned = await this.deps.lab.prepare(p, { stage, attempt: index });
-    const pending = { stage, params: p, kvType: variant.kv as TuneKvType, contextSize: ctx, points: [], command: planned.command, atMs: this.deps.now() - this.started };
-    this.update(pending);
-    const started = await planned.start();
-    const live: Live = { att: { ...pending, outcome: 'ok', points: [] }, index, variant };
-    if (started.ok) {
-      live.att.loadMs = started.loadMs;
-      await this.drive(started.engine, live, work);
-    } else {
-      const e = started.error;
-      if (FATAL_CODES.has(e.code)) throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
-      live.att.outcome = memoryError(e) ? 'oom' : 'error';
-      live.att.error = e;
-      if (started.loadMs !== undefined) live.att.loadMs = started.loadMs;
-      const hint = failureHint(e);
-      if (hint !== undefined) live.hint = hint;
+  protected async launch(stage: TuneStage, variant: Variant, ctx: number, work?: Work, params?: LaunchParams): Promise<Live | undefined> {
+    for (;;) {
+      if (!this.canLaunch()) return undefined;
+      this.launches++;
+      const v = params ? variant : this.withStartup(variant);
+      const p = params ?? this.input.space.params(v, ctx);
+      const index = this.attempts.length;
+      const planned = await this.deps.lab.prepare(p, { stage, attempt: index });
+      const pending = { stage, params: p, kvType: v.kv as TuneKvType, contextSize: ctx, points: [], command: planned.command, atMs: this.deps.now() - this.started, variant: { ...v } };
+      this.update(pending);
+      const started = await planned.start();
+      const live: Live = { att: { ...pending, outcome: 'ok', points: [] }, index, variant: v };
+      let retry = false;
+      if (started.ok) {
+        live.att.loadMs = started.loadMs;
+        await this.drive(started.engine, live, work);
+      } else {
+        const e = started.error;
+        retry = !params && this.stepDown(e);
+        if (!retry && FATAL_CODES.has(e.code)) throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
+        live.att.outcome = memoryError(e) ? 'oom' : 'error';
+        live.att.error = e;
+        if (started.loadMs !== undefined) live.att.loadMs = started.loadMs;
+        const hint = failureHint(e);
+        if (hint !== undefined) live.hint = hint;
+      }
+      this.attempts.push(live.att);
+      this.update();
+      if (!retry) return live;
     }
-    this.attempts.push(live.att);
-    this.update();
-    return live;
+  }
+
+  /** The engine refused the start-up setting in use and a lower one is left: use it from now on. */
+  private stepDown(e: AppErrorData): boolean {
+    const s = this.input.space.startup;
+    if (!s || !startupRefused(e) || this.startupAt >= s.values.length - 1) return false;
+    this.startupAt++;
+    return true;
   }
 
   /** Probe, spill checks and the work of a loaded engine; always stops it. */
@@ -502,7 +595,10 @@ export class Tuner {
       const probe = await engine.measure(PROBE_DEPTH, PROBE_OUTPUT, 1, 'tune-probe');
       att.points.push(probe);
       const hint = engine.capacityHint();
-      if (hint !== undefined) live.hint = hint;
+      if (hint !== undefined) {
+        live.hint = hint;
+        att.kvTokens = hint;
+      }
       if (this.sharedSpill(engine)) {
         att.outcome = 'spill';
         att.spill = 'shared-memory';
@@ -515,8 +611,7 @@ export class Tuner {
         if (att.outcome === 'ok' && this.sharedSpill(engine)) {
           att.outcome = 'spill';
           att.spill = 'shared-memory';
-          this.screens.delete(variantKey(live.variant, att.contextSize));
-          delete live.sweep;
+          this.forget(live);
         }
       }
     } catch (e) {
@@ -524,12 +619,20 @@ export class Tuner {
       if (data.code === 'CANCELLED') throw e;
       att.outcome = memoryError(data) ? 'oom' : 'error';
       att.error = data;
+      this.forget(live);
     } finally {
       const mem = engine.memory();
       if (mem.vramPeakMiB !== undefined) att.vramPeakMiB = mem.vramPeakMiB;
       if (mem.sharedPeakMiB !== undefined) att.sharedPeakMiB = mem.sharedPeakMiB;
       await engine.stop();
     }
+  }
+
+  /** What a launch measured no longer counts (it spilled or failed after all). */
+  protected forget(live: Live): void {
+    this.screens.delete(this.key(live.variant, live.att.contextSize));
+    delete live.sweep;
+    delete live.users;
   }
 
   /** Windows: the engine uses shared GPU memory (system RAM) well beyond the reference launch's. */
@@ -539,26 +642,25 @@ export class Tuner {
   }
 
   /** Marks the attempt as a spill when the generation speed collapsed between two of these points. */
-  private collapsed(att: TuneAttempt, points: readonly LatencyPoint[]): boolean {
+  protected collapsed(att: TuneAttempt, points: readonly LatencyPoint[]): boolean {
     if (!this.input.spillPossible || collapsedAt(points) === undefined) return false;
     att.outcome = 'spill';
     att.spill = 'decode-collapse';
     return true;
   }
 
-  /** Screening: 1K and the deepest prompt of this context, with the budget's repetitions. */
+  /** Screening: 1K, the middle and the deepest prompt of this context, with the budget's repetitions. */
   private async screenWork(engine: LabEngine, live: Live): Promise<void> {
     const out = this.input.sweep.outputTokens;
     const ctx = live.att.contextSize;
-    const deepest = maxDepth(ctx, out);
     const points: LatencyPoint[] = [];
-    for (const d of [...new Set([Math.min(SCREEN_SHALLOW, deepest), deepest])]) {
+    for (const d of screenDepths(ctx, out)) {
       const p = await engine.measure(d, out, this.rules.screenReps, 'tune-screen');
       points.push(p);
       live.att.points.push(p);
     }
     if (this.collapsed(live.att, points)) return;
-    this.screens.set(variantKey(live.variant, ctx), { variant: live.variant, ctx, attempt: live.index, points });
+    this.screens.set(this.key(live.variant, ctx), { variant: live.variant, ctx, attempt: live.index, points });
   }
 
   // ---- coordinate descent -----------------------------------------------------------------------
@@ -566,16 +668,16 @@ export class Tuner {
   /** Screens the base settings at the type's largest context (one step down while its deepest prompt spills). */
   private async baseScreen(kv: TuneKvType): Promise<Screen | undefined> {
     const cap = this.capacity.get(kv) as Capacity;
-    const base = this.input.space.base(kv);
+    const base = this.base(kv);
     for (;;) {
       const ctx = cap.measuredMax as number;
-      const known = this.screens.get(variantKey(base, ctx));
+      const known = this.screens.get(this.key(base, ctx));
       if (known) return known;
       const live = await this.launch('variant', base, ctx, (e, l) => this.screenWork(e, l));
       if (!live) return undefined;
       if (live.att.outcome === 'ok') {
         live.att.screen = 'kept';
-        return this.screens.get(variantKey(base, ctx));
+        return this.screens.get(this.key(base, ctx));
       }
       // It loaded during the capacity search but does not hold its deepest prompt.
       cap.status.set(ctx, false);
@@ -586,6 +688,20 @@ export class Tuner {
       }
       cap.measuredMax = lower[lower.length - 1] as number;
     }
+  }
+
+  /**
+   * A value the estimate must allow (the biggest ubatch): what the screened settings measured at this
+   * context, plus what the estimate says the change adds, must fit the free VRAM (with slack).
+   */
+  protected estimateAllows(variant: Variant, from: { variant: Variant; ctx: number; attempt: number }): boolean {
+    const { space, predict } = this.input;
+    const est = predict?.(space.params(variant, from.ctx));
+    if (!est) return true;
+    const before = predict?.(space.params(from.variant, from.ctx));
+    const measured = (this.attempts[from.attempt] as TuneAttempt).vramPeakMiB;
+    const need = before && measured !== undefined ? measured + est.needMiB - before.needMiB : est.needMiB;
+    return need <= est.availableMiB * PREDICT_SLACK;
   }
 
   /** One dimension at a time at the type's largest context; returns the best screened settings. */
@@ -600,14 +716,15 @@ export class Tuner {
       for (let i = 0; i < values.length; i++) {
         const current: Screen = best;
         const variant: Variant = { ...current.variant, [dim.key]: values[i] as DimValue };
+        if (dim.prune?.(values[i] as DimValue) && !this.estimateAllows(variant, current)) continue;
+        // The last value tried, and the winner: its full sweep runs on this same launch.
         const last = d === dims.length - 1 && i === values.length - 1;
         let won = false;
         const live = await this.launch('variant', variant, current.ctx, async (engine, l) => {
           await this.screenWork(engine, l);
           if (l.att.outcome !== 'ok') return;
-          const mine = this.screens.get(variantKey(variant, current.ctx)) as Screen;
+          const mine = this.screens.get(this.key(variant, current.ctx)) as Screen;
           won = screenBetter(mine.points, current.points);
-          // The last value tried, and the winner: its full sweep runs on this same launch.
           if (won && last) await this.sweepWork(engine, l, mine.points);
         });
         if (!live) return best;
@@ -615,7 +732,7 @@ export class Tuner {
         live.att.screen = won ? 'kept' : 'lost';
         if (!won) continue;
         (this.attempts[current.attempt] as TuneAttempt).screen = 'lost';
-        best = this.screens.get(variantKey(variant, current.ctx)) as Screen;
+        best = this.screens.get(this.key(variant, current.ctx)) as Screen;
         if (live.sweep) this.addCombination(live);
       }
     }
@@ -625,12 +742,12 @@ export class Tuner {
   // ---- sweeps and combinations ------------------------------------------------------------------
 
   /** The full sweep on a loaded engine; depths already measured on this launch are reused. */
-  private async sweepWork(engine: LabEngine, live: Live, reuse: readonly LatencyPoint[]): Promise<void> {
+  protected async sweepWork(engine: LabEngine, live: Live, reuse: readonly LatencyPoint[], depthsOf: (ctx: number, out: number) => number[] = sweepDepths): Promise<void> {
     this.deps.onPhase?.('context-sweep');
     const { outputTokens, reps } = this.input.sweep;
     const ctx = live.att.contextSize;
     const have = new Set(reuse.map((p) => p.promptTokens));
-    const depths = sweepDepths(ctx, outputTokens).filter((d) => !have.has(d));
+    const depths = depthsOf(ctx, outputTokens).filter((d) => !have.has(d));
     const result = await runSweep(depths, (d) => engine.measure(d, outputTokens, reps, 'context-sweep'), {
       outputTokens,
       reps,
@@ -641,32 +758,39 @@ export class Tuner {
     const sweep = [...reuse, ...result.points].sort((a, b) => a.promptTokens - b.promptTokens);
     if (this.collapsed(live.att, sweep)) {
       // It does not hold its deepest prompts after all: not a candidate any more.
-      this.screens.delete(variantKey(live.variant, ctx));
+      this.screens.delete(this.key(live.variant, ctx));
       return;
     }
     live.sweep = sweep;
   }
 
-  private addCombination(live: Live): void {
+  protected addCombination(live: Live): void {
     const att = live.att;
     att.combination = this.combos.length;
-    this.combined.add(variantKey(live.variant, att.contextSize));
+    this.combined.add(this.key(live.variant, att.contextSize));
     this.combos.push({
       params: att.params,
       kvType: att.kvType,
       maxContext: att.contextSize,
       ...(att.vramPeakMiB !== undefined ? { vramPeakMiB: att.vramPeakMiB } : {}),
-      sweep: live.sweep as LatencyPoint[],
+      sweep: live.sweep ?? [],
       command: att.command,
       outcome: 'ok',
       tags: this.input.space.tags(live.variant),
+      variant: { ...live.variant },
+      ...this.combinationExtras(live),
     });
     this.update();
   }
 
+  /** Goal-specific fields of a new combination (goal 'multi': users and conversations). */
+  protected combinationExtras(_live: Live): Partial<TuneCombination> {
+    return {};
+  }
+
   /** A dedicated launch for the full sweep of a combination (unless it was measured already). */
   private async sweepCombination(variant: Variant, ctx: number): Promise<void> {
-    if (this.combined.has(variantKey(variant, ctx))) return;
+    if (this.combined.has(this.key(variant, ctx))) return;
     const live = await this.launch('sweep', variant, ctx, (e, l) => this.sweepWork(e, l, []));
     if (live?.sweep) this.addCombination(live);
   }
@@ -676,7 +800,7 @@ export class Tuner {
     let extra = 0;
     for (const s of [...this.screens.values()]) {
       if (extra >= MAX_EXTRA_SWEEPS) return;
-      if (this.combined.has(variantKey(s.variant, s.ctx))) continue;
+      if (this.combined.has(this.key(s.variant, s.ctx))) continue;
       const wins = s.points.some((p) => {
         const rivals = this.combos.map((c) => pointAt(c.sweep, nominalDepth(p.promptTokens))).filter((r): r is LatencyPoint => r !== undefined);
         return rivals.length > 0 && rivals.every((r) => comparePoints(p, r) > 0);
@@ -696,7 +820,7 @@ export class Tuner {
   private async offload(o: { layers: number; moe: boolean }): Promise<void> {
     const { space } = this.input;
     const kv = space.kvLadder[space.kvLadder.length - 1] as TuneKvType;
-    const base = space.base(kv);
+    const base = this.base(kv);
     const onGpu = this.input.predict?.(space.params(base, this.min))?.maxGpuLayers ?? Math.floor(o.layers / 2);
     const step = Math.max(1, Math.ceil(o.layers / 8));
     for (let k = 0; ; k++) {
@@ -713,17 +837,19 @@ export class Tuner {
   }
 
   /**
-   * vLLM: --enforce-eager frees the CUDA graph memory for the KV cache. Searched (one step up, then
-   * the capacity vLLM reports) with the most compact KV, only to go beyond the largest context; the
-   * combination found is measured on the same launch.
+   * vLLM: fewer CUDA graphs, then --enforce-eager, free graph memory for the KV cache. Each is searched
+   * (one step up, then the capacity vLLM reports) with the most compact KV, only to go beyond the
+   * largest context so far; the combination found is measured on the same launch.
    */
-  private async eager(fitting: readonly TuneKvType[]): Promise<void> {
-    const best = Math.max(...fitting.map((kv) => this.maxOf(kv)));
-    if (best >= this.cap) return;
+  private async extend(fitting: readonly TuneKvType[]): Promise<void> {
     const kv = fitting[fitting.length - 1] as TuneKvType;
-    const variant: Variant = { ...this.input.space.base(kv), eager: true };
-    const cap: Capacity = { kv, candidates: [best, Math.min(this.cap, best * 2)], status: new Map([[best, true]]), launched: new Set(), inferred: false };
-    await this.search(cap, variant, (e, l) => this.sweepWork(e, l, []));
+    for (const ext of this.input.space.extensions ?? []) {
+      const best = Math.max(...fitting.map((k) => this.maxOf(k)), ...this.combos.map((c) => c.maxContext));
+      if (best >= this.cap) return;
+      const variant: Variant = { ...this.base(kv), ...ext };
+      const cap: Capacity = { kv, candidates: [best, Math.min(this.cap, best * 2)], status: new Map([[best, true]]), launched: new Set(), inferred: false };
+      await this.search(cap, variant, (e, l) => this.sweepWork(e, l, []));
+    }
   }
 
   /** Same prompt, greedy: the most precise KV that fits vs the recommended one. An indication only. */
@@ -736,12 +862,12 @@ export class Tuner {
     if (kvPrecisionRank(chosen.kvType) <= kvPrecisionRank(refKv)) return;
     this.deps.onPhase?.('fidelity');
     const prompt = Math.min(FIDELITY_PROMPT, maxDepth(this.min, FIDELITY_TOKENS));
-    const generate = async (params: LaunchParams, kv: TuneKvType): Promise<(number | string)[] | undefined> => {
+    const generate = async (params: LaunchParams, variant: Variant): Promise<(number | string)[] | undefined> => {
       let out: (number | string)[] | undefined;
       const atMin: LaunchParams = params.maxModelLen !== undefined ? { ...params, maxModelLen: this.min } : { ...params, contextSize: this.min };
       await this.launch(
         'fidelity',
-        { kv },
+        variant,
         this.min,
         async (e) => {
           out = await e.generate(prompt, FIDELITY_TOKENS);
@@ -750,8 +876,8 @@ export class Tuner {
       );
       return out;
     };
-    const ref = await generate(space.params(space.base(refKv), this.min), refKv);
-    const cmp = ref ? await generate(chosen.params, chosen.kvType) : undefined;
+    const ref = await generate(space.params(this.base(refKv), this.min), this.base(refKv));
+    const cmp = ref ? await generate(chosen.params, chosen.variant ?? { kv: chosen.kvType }) : undefined;
     if (!ref || !cmp) return;
     const n = Math.min(ref.length, cmp.length);
     let identical = 0;
@@ -765,24 +891,33 @@ export class Tuner {
 
   // ---- result -----------------------------------------------------------------------------------
 
-  private snapshot(): Tuning {
+  /** Index of the recommended combination (goal 'single': the fastest at the largest context). */
+  protected recommend(combos: readonly TuneCombination[]): number | undefined {
+    return recommendedCombination(combos);
+  }
+
+  /** Goal-specific fields of the result (goal 'multi', "Ricontrollo rapido"). */
+  protected goalFields(): Partial<Tuning> {
+    return {};
+  }
+
+  protected snapshot(): Tuning {
     const combos = this.combos.map((c) => ({ ...c }));
-    const rec = recommendedCombination(combos);
+    const rec = this.recommend(combos);
     return {
       budget: this.input.budget,
+      ...this.goalFields(),
+      ...(this.input.learned ? { learned: this.input.learned } : {}),
       maxLaunches: this.rules.maxLaunches,
       ...(this.stoppedBy ? { stoppedBy: this.stoppedBy } : {}),
       dimensions: this.dimensionsTried(),
-      capacity: this.input.space.kvLadder.map((kv) => {
-        const c = this.capacity.get(kv) as Capacity;
-        return {
-          kvType: kv,
-          ...(c.predictedMax ? { predictedMax: c.predictedMax } : {}),
-          ...(c.measuredMax !== undefined ? { measuredMax: c.measuredMax } : {}),
-          inferred: c.inferred,
-          ...(c.skipped ? { skipped: c.skipped } : {}),
-        };
-      }),
+      capacity: [...this.capacity.values()].map((c) => ({
+        kvType: c.kv,
+        ...(c.predictedMax ? { predictedMax: c.predictedMax } : {}),
+        ...(c.measuredMax !== undefined ? { measuredMax: c.measuredMax } : {}),
+        inferred: c.inferred,
+        ...(c.skipped ? { skipped: c.skipped } : {}),
+      })),
       depths: measuredDepths(combos),
       attempts: this.attempts.map((a) => ({ ...a, points: [...a.points] })),
       combinations: combos,
@@ -792,13 +927,18 @@ export class Tuner {
     };
   }
 
+  /** Searched dimensions with the values each KV type would try (the start-up setting: the ones tried so far). */
   private dimensionsTried(): Tuning['dimensions'] {
     const { space } = this.input;
-    const base = space.base(space.kvLadder[0] as TuneKvType);
-    return [{ key: 'kv', values: [...space.kvLadder] }, ...space.dimensions.map((d) => ({ key: d.key, values: [...d.values(base)] }))];
+    const bases = space.kvLadder.map((kv) => this.base(kv));
+    const dims = space.dimensions
+      .map((d) => ({ key: d.key, values: [...new Set(bases.flatMap((b) => [...d.values(b)]))] }))
+      .filter((d) => d.values.length > 0);
+    const s = space.startup;
+    return [{ key: 'kv', values: [...space.kvLadder] }, ...(s ? [{ key: s.key, values: s.values.slice(0, this.startupAt + 1) }] : []), ...dims];
   }
 
-  private update(current?: Omit<TuneAttempt, 'outcome'>): void {
+  protected update(current?: Omit<TuneAttempt, 'outcome'>): void {
     this.deps.onUpdate?.(this.snapshot(), current);
   }
 }

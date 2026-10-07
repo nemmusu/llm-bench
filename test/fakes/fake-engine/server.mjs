@@ -27,6 +27,11 @@ import * as L from './logs.mjs';
  * @property {{ utilPct: number, powerW: number, tempC?: number }} [busy] Telemetry while computing.
  * @property {FakeMemory} [memory]        VRAM model: what fits, what spills, what runs out of memory.
  * @property {FakeSpeed} [speed]          How speed depends on depth, ubatch, KV type, spill and offload.
+ * @property {'all' | 'old' | 'none'} [vllmHelp] vLLM `serve --help`: 'all' (default) = a v0.11-style grouped help that
+ *   takes --help=all (block size, fp8_e4m3/e5m2, CUDA graph sizes); 'old' = an old api_server help (rejects --help=all,
+ *   none of those options); 'none' = the help fails.
+ * @property {'counters' | 'gauge' | 'none'} [vllmMetrics] vLLM /metrics: prefix-cache counters (default, V1), the old
+ *   gpu_prefix_cache_hit_rate gauge, or no /metrics at all (404).
  */
 
 /**
@@ -35,7 +40,10 @@ import * as L from './logs.mjs';
  * buffer (per 512 ubatch tokens). Above totalMiB the load fails with CUDA OOM, unless `spillMiB` > 0:
  * up to totalMiB + spillMiB it loads but spills (Windows), and generation collapses (FakeSpeed.spill).
  * vLLM: the KV pool is gpu-memory-utilization × totalMiB − weights − 1024 (− 512 more for CUDA graphs
- * unless --enforce-eager); it logs "GPU KV cache size: N tokens" and refuses a longer max-model-len.
+ * unless --enforce-eager; explicit capture sizes take 512 × count / 67, vLLM's default list having 67)
+ * rounded down to whole blocks (--block-size, default 16); it logs "GPU KV cache size: N tokens" and
+ * refuses a longer max-model-len. When gpu-memory-utilization × totalMiB is more than `freeMiB`, it
+ * refuses to start ("Free memory on device … is less than desired GPU memory utilization").
  * Offload (--n-cpu-moe N or -ngl < layers) moves N/layers of the weights to the CPU.
  * @typedef {object} FakeMemory
  * @property {number} totalMiB
@@ -44,6 +52,7 @@ import * as L from './logs.mjs';
  * @property {number} [computeMiBPer512] default 300
  * @property {number} [spillMiB]         default 0 (no spill: over the limit = OOM)
  * @property {number} [layers]           default 32 (offload granularity)
+ * @property {number} [freeMiB]          vLLM: free VRAM at start-up (default totalMiB)
  */
 
 /**
@@ -55,14 +64,20 @@ import * as L from './logs.mjs';
  * @property {Record<string, number>} [kvDecodeFactor] generation × factor per KV type (default 1)
  * @property {number} [spillFactor]        generation × factor while spilling; default 0.07
  * @property {number} [offloadPenalty]     generation × (1 − penalty × share on the CPU); default 0.7
+ * @property {number} [unifiedDecodeFactor] llama.cpp: generation × factor with one KV pool shared by several slots; default 1
+ * @property {number} [eagerDecodeFactor]  vLLM: generation × factor without a CUDA graph for the batch (--enforce-eager, or more
+ *   requests at once than the largest captured size); default 0.85
+ * @property {Record<string, number>} [blockSizeDecodeFactor] vLLM: generation × factor per --block-size (default 1)
  */
 
 const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5 };
+/** vLLM's default CUDA graph capture list (1, 2, 4, 8, 16 … 512) has this many sizes. */
+const VLLM_DEFAULT_GRAPHS = 67;
 
 /**
  * What a launch needs and gets under the memory model.
  * @param {FakeMemory} m
- * @param {{ flavor: string, ctx: number, kvType?: string, ubatch?: number, nCpuMoe?: number, gpuLayers?: number, gpuMemoryUtilization?: number, eager?: boolean }} o
+ * @param {{ flavor: string, ctx: number, kvType?: string, ubatch?: number, nCpuMoe?: number, gpuLayers?: number, gpuMemoryUtilization?: number, eager?: boolean, blockSize?: number, graphSizes?: number[] }} o
  */
 export function memoryPlan(m, o) {
   const layers = m.layers ?? 32;
@@ -71,8 +86,13 @@ export function memoryPlan(m, o) {
   const kvPerToken = (m.kvMiBPer1k * (KV_SHARE[o.kvType ?? 'f16'] ?? 1)) / 1024;
   const compute = (m.computeMiBPer512 ?? 300) * ((o.ubatch ?? 512) / 512);
   if (o.flavor === 'vllm') {
-    const pool = (o.gpuMemoryUtilization ?? 0.9) * m.totalMiB - weights - 1024 - (o.eager ? 0 : 512);
-    const capacity = Math.max(0, Math.floor(pool / kvPerToken));
+    const util = o.gpuMemoryUtilization ?? 0.9;
+    if (util * m.totalMiB > (m.freeMiB ?? m.totalMiB)) return { cpuShare: cpu, needMiB: util * m.totalMiB, vramMiB: 0, capacity: 0, outcome: 'busy' };
+    const graphs = o.eager ? 0 : 512 * Math.min(1, (o.graphSizes?.length ?? VLLM_DEFAULT_GRAPHS) / VLLM_DEFAULT_GRAPHS);
+    const pool = util * m.totalMiB - weights - 1024 - graphs;
+    // An explicit block size rounds the pool down to whole blocks.
+    const block = o.blockSize ?? 1;
+    const capacity = Math.max(0, Math.floor(pool / kvPerToken / block) * block);
     const need = weights + 1024 + Math.max(0, pool);
     return { cpuShare: cpu, needMiB: need, vramMiB: Math.min(need, m.totalMiB), capacity, outcome: o.ctx > capacity ? 'kv-too-small' : 'ok' };
   }
@@ -84,7 +104,7 @@ export function memoryPlan(m, o) {
 /**
  * Prompt reading and generation speeds (tokens/s) of a request at `depth` prompt tokens.
  * @param {FakeProfile} p
- * @param {{ depth: number, flashAttn?: string, kvType?: string, kvTypeV?: string, ubatch?: number, spill?: boolean, cpuShare?: number }} o
+ * @param {{ depth: number, flashAttn?: string, kvType?: string, kvTypeV?: string, kvFormat?: string, ubatch?: number, spill?: boolean, cpuShare?: number, unified?: boolean, eager?: boolean, blockSize?: number }} o
  */
 export function speeds(p, o) {
   const s = p.speed ?? {};
@@ -92,7 +112,10 @@ export function speeds(p, o) {
   const d = o.depth / 32768;
   let decode = (p.decodeTps ?? 120) / (1 + (s.depthSlowdown ?? 0) * fa * d);
   let prefill = ((p.prefillTps ?? 4000) * ((o.ubatch ?? 512) / 512) ** (s.ubatchExponent ?? 0)) / (1 + (s.prefillDepthSlowdown ?? 0) * fa * d);
-  decode *= s.kvDecodeFactor?.[o.kvType ?? 'f16'] ?? 1;
+  decode *= s.kvDecodeFactor?.[o.kvFormat ?? o.kvType ?? 'f16'] ?? s.kvDecodeFactor?.[o.kvType ?? 'f16'] ?? 1;
+  if (o.unified) decode *= s.unifiedDecodeFactor ?? 1;
+  if (o.eager) decode *= s.eagerDecodeFactor ?? 0.85;
+  if (o.blockSize !== undefined) decode *= s.blockSizeDecodeFactor?.[String(o.blockSize)] ?? 1;
   // Mixed K/V types run on slow generic kernels.
   if ((o.kvType ?? 'f16') !== (o.kvTypeV ?? o.kvType ?? 'f16')) decode *= 0.5;
   if (o.spill) {
@@ -197,6 +220,11 @@ function sendJson(res, status, body) {
  * @property {boolean} [prefixCaching] vLLM: reuse cached prompt prefixes (default true, like vLLM V1; --no-enable-prefix-caching).
  * @property {boolean} [promptTokensDetails] vLLM: report usage.prompt_tokens_details.cached_tokens (--enable-prompt-tokens-details).
  * @property {number} [kvTokens] GPU KV cache size in tokens reported by vLLM (default 164816).
+ * @property {boolean} [kvUnified] llama.cpp --kv-unified / --no-kv-unified (default: unified only with automatic slots).
+ * @property {number} [cacheReuse] llama.cpp --cache-reuse N (accepted; a plain prefix is reused anyway).
+ * @property {string} [kvFormat]   vLLM fp8_e4m3 / fp8_e5m2 (kvType is then 'fp8').
+ * @property {number} [blockSize]  vLLM --block-size.
+ * @property {number[]} [graphSizes] vLLM CUDA graph capture sizes.
  */
 
 /** vLLM caches whole blocks of this many tokens. */
@@ -228,14 +256,37 @@ export async function startFakeEngine(o = {}) {
   const alias = aliases[0];
   const ctx = o.ctx ?? 4096;
   const np = o.np && o.np > 0 ? o.np : 4;
+  // llama.cpp: one KV pool for every slot with --kv-unified, or by default when the slot count is automatic.
+  const unified = flavor === 'llamacpp' && (o.kvUnified ?? !(o.np && o.np > 0));
+  /** Tokens one request can hold: llama.cpp splits -c across the slots unless the pool is unified. */
+  const slotCtx = flavor === 'llamacpp' && !unified ? Math.floor(ctx / np) : ctx;
   const vramMiB = p.vramMiB ?? 4500;
   const busyLoad = p.busy ?? { utilPct: 97, powerW: 450, tempC: 68 };
   const gpu = new GpuState(o.stateFile, { watchdog: o.watchdog });
   const rand = mulberry32(p.seed ?? 1);
   // The memory model (when the profile has one) decides what loads, what spills and how much VRAM it holds.
-  const mem = p.memory ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager }) : undefined;
+  const mem = p.memory
+    ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
+    : undefined;
   const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816 };
-  const rates = (depth) => speeds(p, { depth, flashAttn: o.flashAttn, kvType: o.kvType, kvTypeV: o.kvTypeV, ubatch: o.ubatch, spill: mem?.outcome === 'spill', cpuShare: mem?.cpuShare });
+  /** vLLM without a CUDA graph for this many requests at once runs eagerly. */
+  const eagerAt = (busy) => flavor === 'vllm' && (o.eager === true || (o.graphSizes !== undefined && busy > Math.max(...o.graphSizes)));
+  const rates = (depth, busy = 1) =>
+    speeds(p, {
+      depth,
+      flashAttn: o.flashAttn,
+      kvType: o.kvType,
+      kvTypeV: o.kvTypeV,
+      kvFormat: o.kvFormat,
+      ubatch: o.ubatch,
+      spill: mem?.outcome === 'spill',
+      cpuShare: mem?.cpuShare,
+      unified: unified && np > 1,
+      eager: eagerAt(busy),
+      blockSize: o.blockSize,
+    });
+  /** vLLM /metrics: prompt tokens looked up in the prefix cache and found there. */
+  const prefixStats = { queries: 0, hits: 0 };
 
   let loaded = false;
   let closed = false;
@@ -330,7 +381,9 @@ export async function startFakeEngine(o = {}) {
     const release = await prefillTurn();
     const cached = cachedFor(ids, slot, usePromptCache);
     const t0 = performance.now();
-    const rate = rates(promptN);
+    const rate = rates(promptN, busySlots());
+    prefixStats.queries += promptN;
+    prefixStats.hits += cached;
     await sleep((((promptN - cached) / rate.prefill) * 1000) * scale);
     const tPrefill = performance.now();
     release();
@@ -425,12 +478,12 @@ export async function startFakeEngine(o = {}) {
       const prompt = body.prompt;
       const ids = Array.isArray(prompt) && prompt.every((x) => typeof x === 'number') ? prompt : tokenize(String(prompt ?? ''), true);
       const promptN = ids.length;
-      if (promptN > ctx) {
+      if (promptN > slotCtx) {
         return sendJson(res, 400, {
-          error: { code: 400, message: 'the request exceeds the available context size, try increasing it', type: 'exceed_context_size_error', n_prompt_tokens: promptN, n_ctx: ctx },
+          error: { code: 400, message: 'the request exceeds the available context size, try increasing it', type: 'exceed_context_size_error', n_prompt_tokens: promptN, n_ctx: slotCtx },
         });
       }
-      const room = ctx - promptN;
+      const room = slotCtx - promptN;
       const nPredict = typeof body.n_predict === 'number' && body.n_predict >= 0 ? body.n_predict : Infinity;
       const ignoreEos = body.ignore_eos === true;
       const n = Math.min(room, nPredict, ignoreEos ? Infinity : (p.eosAfter ?? 48));
@@ -500,6 +553,25 @@ export async function startFakeEngine(o = {}) {
       return res.end();
     }
     if (url.pathname === '/version') return sendJson(res, 200, { version: '0.12.0' });
+    if (url.pathname === '/metrics' && req.method === 'GET') {
+      const style = p.vllmMetrics ?? 'counters';
+      if (style === 'none') return sendJson(res, 404, { detail: 'Not Found' });
+      const labels = `{engine="0",model_name="${alias}"}`;
+      const lines =
+        style === 'gauge'
+          ? ['# HELP vllm:gpu_prefix_cache_hit_rate GPU prefix cache block hit rate.', '# TYPE vllm:gpu_prefix_cache_hit_rate gauge', `vllm:gpu_prefix_cache_hit_rate${labels} ${prefixStats.queries ? prefixStats.hits / prefixStats.queries : 0}`]
+          : [
+              '# HELP vllm:prefix_cache_queries_total Prefix cache queries, in terms of number of queried tokens.',
+              '# TYPE vllm:prefix_cache_queries_total counter',
+              `vllm:prefix_cache_queries_total${labels} ${prefixStats.queries.toFixed(1)}`,
+              '# HELP vllm:prefix_cache_hits_total Prefix cache hits, in terms of number of cached tokens.',
+              '# TYPE vllm:prefix_cache_hits_total counter',
+              `vllm:prefix_cache_hits_total${labels} ${prefixStats.hits.toFixed(1)}`,
+            ];
+      const text = `${['# HELP vllm:num_requests_running Number of requests in model execution batches.', '# TYPE vllm:num_requests_running gauge', `vllm:num_requests_running${labels} 0.0`, ...lines].join('\n')}\n`;
+      res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
+      return res.end(text);
+    }
     if (url.pathname === '/v1/models') {
       return sendJson(res, 200, {
         object: 'list',
@@ -645,6 +717,10 @@ export async function startFakeEngine(o = {}) {
     out(L.vllmBanner(c));
     await sleep(loadMs * 0.1);
     if (p.noKernelImage) throw Object.assign(new Error('nokernel'), { lines: L.vllmNoKernelImage() });
+    if (mem?.outcome === 'busy') {
+      const m = /** @type {FakeMemory} */ (p.memory);
+      throw Object.assign(new Error('busy'), { lines: L.vllmVramBusy(m.freeMiB ?? m.totalMiB, m.totalMiB, o.gpuMemoryUtilization ?? 0.9) });
+    }
     // Checkpoint shards one by one (a tqdm bar in the real log).
     for (let i = 0; i <= SHARDS; i++) {
       out([L.vllmShards(i, SHARDS)]);

@@ -34,7 +34,7 @@ import {
 } from './install';
 import { diagnoseExit, llamaPhaseOf } from './logs';
 import { LlamaReleasesClient, selectAssets, type AssetSelection } from './releases';
-import { llamaFlashAttention, llamaKvArgs } from '../shared/kv-flags';
+import { llamaFlashAttention, llamaKvArgs, llamaKvLayoutArgs } from '../shared/kv-flags';
 import { ignore, timeoutSignal } from '../util';
 
 export const DEFAULT_CONTEXT = 4096;
@@ -190,7 +190,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
     if (params.parallel !== undefined) args.push('-np', String(params.parallel));
     // One KV pool shared by all slots: a single long prompt can use the whole context, and the
     // behaviour no longer depends on the build's default.
-    if (params.parallel !== undefined && params.parallel > 1 && caps.flags.has('--kv-unified')) args.push('--kv-unified');
+    args.push(...llamaKvLayoutArgs(params, caps.flags));
     // Auto-fit would silently change ctx/ngl to fit memory: the measured config must be the requested one.
     if (caps.fitFlag) args.push('--fit', 'off');
     if (caps.flags.has('--no-webui')) args.push('--no-webui');

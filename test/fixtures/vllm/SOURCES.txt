@@ -22,3 +22,6 @@ repo-not-found.log    RepositoryNotFoundError (HF answers 401 + "Invalid usernam
 bad-flag.log          argparse "unrecognized arguments"
 invalid-choice.log    argparse "invalid choice"
 port-in-use.log       uvicorn "[Errno 98] … address already in use" (native)
+help-all.stdout.txt   `vllm serve --help=all` of a v0.11-style build (grouped argparse help, trimmed to the options GPU Bench
+                      reads: --block-size, --kv-cache-dtype with fp8_e4m3/fp8_e5m2, --cuda-graph-sizes, --compilation-config)
+help-old.stdout.txt   `--help` of an older api_server (no --block-size choices, no CUDA graph flags, fp8 only); it rejects --help=all

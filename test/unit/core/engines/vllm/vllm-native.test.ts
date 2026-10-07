@@ -66,7 +66,9 @@ describe('VllmNativeAdapter: detection', () => {
     expect(await a.detect()).toEqual({ kind: 'vllm-native', available: true, installed: true, location: exe, version: '0.31.0', problems: [], supported: true });
     await a.detect();
     expect(proc.calls).toHaveLength(1);
-    expect(await a.capabilities({ kind: 'vllm-native' })).toEqual({ version: '0.31.0', flags: new Set(), tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false });
+    // A help that lists nothing (--help=all, then --help): no options known.
+    expect(await a.capabilities({ kind: 'vllm-native' })).toEqual({ version: '0.31.0', flags: new Set(), choices: {}, tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false });
+    expect(proc.calls.slice(1).map((c) => c.args.at(-1))).toEqual(['--help=all', '--help']);
   });
 
   it('accepts a vllm file or a venv folder in cfg.vllmPath', async () => {
@@ -175,6 +177,17 @@ describe('VllmNativeAdapter: start (real processes, fake vLLM)', () => {
     expect(records[0]).toMatchObject({ exe: process.execPath, marker: 'gpubench-native-1', kind: 'process' });
     await inst.stop();
     expect(removed).toEqual([records[0]?.pid]);
+  });
+
+  it.skipIf(!have)('reads the options of the installed vLLM from `vllm serve --help=all` (cached)', async () => {
+    const root = tmp();
+    const proc = createProcessRunner({ clock: systemClock, platform: process.platform, baseEnv: process.env });
+    const a = new VllmNativeAdapter({ deps: { ...deps(root, proc), platform: 'linux' }, createClient: noClient, launcherPrefix: [process.execPath] });
+    const caps = await a.capabilities({ kind: 'vllm-native', vllmPath: FAKE_VLLM });
+    expect(caps.version).toBe('0.31.0');
+    expect(caps.flags.has('--cuda-graph-sizes')).toBe(true);
+    expect(caps.choices?.['--block-size']).toEqual(['1', '8', '16', '32', '64', '128']);
+    expect(await a.capabilities({ kind: 'vllm-native', vllmPath: FAKE_VLLM })).toEqual(caps);
   });
 
   it.skipIf(!have)('diagnoses a failed start from the vLLM log', async () => {

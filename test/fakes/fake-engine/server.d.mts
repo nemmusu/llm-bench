@@ -18,6 +18,8 @@ export interface FakeProfile {
   busy?: { utilPct: number; powerW: number; tempC?: number };
   memory?: FakeMemory;
   speed?: FakeSpeed;
+  vllmHelp?: 'all' | 'old' | 'none';
+  vllmMetrics?: 'counters' | 'gauge' | 'none';
 }
 
 export interface FakeMemory {
@@ -27,6 +29,7 @@ export interface FakeMemory {
   computeMiBPer512?: number;
   spillMiB?: number;
   layers?: number;
+  freeMiB?: number;
 }
 
 export interface FakeSpeed {
@@ -37,6 +40,9 @@ export interface FakeSpeed {
   kvDecodeFactor?: Record<string, number>;
   spillFactor?: number;
   offloadPenalty?: number;
+  unifiedDecodeFactor?: number;
+  eagerDecodeFactor?: number;
+  blockSizeDecodeFactor?: Record<string, number>;
 }
 
 export interface MemoryPlan {
@@ -44,16 +50,16 @@ export interface MemoryPlan {
   needMiB: number;
   vramMiB: number;
   capacity?: number;
-  outcome: 'ok' | 'spill' | 'oom' | 'kv-too-small';
+  outcome: 'ok' | 'spill' | 'oom' | 'kv-too-small' | 'busy';
 }
 
 export function memoryPlan(
   m: FakeMemory,
-  o: { flavor: string; ctx: number; kvType?: string; ubatch?: number; nCpuMoe?: number; gpuLayers?: number; gpuMemoryUtilization?: number; eager?: boolean },
+  o: { flavor: string; ctx: number; kvType?: string; ubatch?: number; nCpuMoe?: number; gpuLayers?: number; gpuMemoryUtilization?: number; eager?: boolean; blockSize?: number; graphSizes?: number[] },
 ): MemoryPlan;
 export function speeds(
   p: FakeProfile,
-  o: { depth: number; flashAttn?: string; kvType?: string; kvTypeV?: string; ubatch?: number; spill?: boolean; cpuShare?: number },
+  o: { depth: number; flashAttn?: string; kvType?: string; kvTypeV?: string; kvFormat?: string; ubatch?: number; spill?: boolean; cpuShare?: number; unified?: boolean; eager?: boolean; blockSize?: number },
 ): { decode: number; prefill: number };
 
 export interface FakeEngineOptions {
@@ -91,6 +97,16 @@ export interface FakeEngineOptions {
   promptTokensDetails?: boolean;
   /** GPU KV cache size in tokens reported by vLLM (default 164816). */
   kvTokens?: number;
+  /** llama.cpp --kv-unified (true) / --no-kv-unified (false); default: unified only with automatic slots. */
+  kvUnified?: boolean;
+  /** llama.cpp --cache-reuse N (accepted; a plain prefix is reused anyway). */
+  cacheReuse?: number;
+  /** vLLM --kv-cache-dtype fp8_e4m3 / fp8_e5m2 (kvType is then 'fp8'). */
+  kvFormat?: string;
+  /** vLLM --block-size. */
+  blockSize?: number;
+  /** vLLM CUDA graph capture sizes (--cuda-graph-sizes, cudagraph_capture_sizes of --compilation-config). */
+  graphSizes?: number[];
 }
 
 export interface FakeEngine {

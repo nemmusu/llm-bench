@@ -25,7 +25,7 @@ describe('KV cache and flash-attention flags', () => {
   });
 
   it('vLLM: fp8 for any 8/4-bit request, auto when asked, else nothing; batch = chunked-prefill size', () => {
-    expect(['fp8', 'q8_0', 'q4_0', 'auto', 'f16', undefined].map((k) => vllmKvDtype({ kvCacheType: k as 'fp8' }))).toEqual(['fp8', 'fp8', 'fp8', 'auto', undefined, undefined]);
+    expect(['fp8', 'q8_0', 'q4_0', 'auto', 'f16', undefined].map((k) => vllmKvDtype({ kvCacheType: k as 'fp8', extraArgs: [] }))).toEqual(['fp8', 'fp8', 'fp8', 'auto', undefined, undefined]);
     const args = vllmServeArgs(P({ kvCacheType: 'fp8', batchSize: 8192, parallel: 1, maxModelLen: 32768 }), { model: 'a/b', positional: true, host: 'h', port: 1, servedName: 's' });
     expect(args).toEqual(expect.arrayContaining(['--kv-cache-dtype', 'fp8', '--max-num-batched-tokens', '8192', '--max-num-seqs', '1', '--max-model-len', '32768']));
   });

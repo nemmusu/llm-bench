@@ -668,34 +668,47 @@ export class BenchRunner {
       }
       this.setPhase(s, 'concurrency', String(level));
       s.marks.push({ t: d.clock.now(), label: `concurrency ${level}` });
-      const results: (RequestMetrics | null)[] = [];
-      const start = d.clock.now();
-      const total = level * step.requestsPerWorker;
-      const progress = () =>
-        this.step(s, { kind: 'concurrency', concurrency: level, promptTokens: step.promptTokens, outputTokens: step.outputTokens, rep: results.length, reps: total });
-      progress();
-      const worker = async () => {
-        for (let k = 0; k < step.requestsPerWorker; k++) {
-          checkAbort(s.signal);
-          try {
-            const m = await this.measure(s, inst, step.promptTokens, step.outputTokens, 'concurrency');
-            if (!m.tokensExact) s.tokensApproximate = true;
-            results.push(m);
-          } catch (e) {
-            if (s.signal.aborted) throw e;
-            results.push(null);
-          }
-          progress();
-        }
-      };
-      await Promise.all(Array.from({ length: level }, worker));
-      if (s.instanceExit) throw this.engineExited(s.instanceExit);
-      const point = aggregateConcurrency(level, results, d.clock.now() - start, shape);
-      s.concurrency.push(point);
-      this.point(s, { stepKind: 'concurrency', point });
-      d.publish({ type: 'run.live', runId: s.input.runId, decodeTps: point.aggregateTps });
+      s.concurrency.push(await this.concurrencyLevel(s, inst, level, { ...step, shape }));
       this.advance(s, unit);
     }
+  }
+
+  /**
+   * One level of users at once: `level` closed-loop workers, each sending requestsPerWorker requests
+   * back to back. Failed requests count as errors; run.step / run.point / run.live as it goes.
+   */
+  private async concurrencyLevel(
+    s: RunState,
+    inst: EngineInstance,
+    level: number,
+    o: { promptTokens: number; outputTokens: number; requestsPerWorker: number; shape: Parameters<typeof aggregateConcurrency>[3] },
+  ): Promise<ConcurrencyPoint> {
+    const d = this.deps;
+    const results: (RequestMetrics | null)[] = [];
+    const start = d.clock.now();
+    const total = level * o.requestsPerWorker;
+    const progress = () => this.step(s, { kind: 'concurrency', concurrency: level, promptTokens: o.promptTokens, outputTokens: o.outputTokens, rep: results.length, reps: total });
+    progress();
+    const worker = async () => {
+      for (let k = 0; k < o.requestsPerWorker; k++) {
+        checkAbort(s.signal);
+        try {
+          const m = await this.measure(s, inst, o.promptTokens, o.outputTokens, 'concurrency');
+          if (!m.tokensExact) s.tokensApproximate = true;
+          results.push(m);
+        } catch (e) {
+          if (s.signal.aborted) throw e;
+          results.push(null);
+        }
+        progress();
+      }
+    };
+    await Promise.all(Array.from({ length: level }, worker));
+    if (s.instanceExit) throw this.engineExited(s.instanceExit);
+    const point = aggregateConcurrency(level, results, d.clock.now() - start, o.shape);
+    this.point(s, { stepKind: 'concurrency', point });
+    d.publish({ type: 'run.live', runId: s.input.runId, decodeTps: point.aggregateTps });
+    return point;
   }
 
   /** "Conversazioni lunghe" (steps/sessions.ts) on the running engine: one level after the other. */
@@ -704,7 +717,19 @@ export class BenchRunner {
     const d = this.deps;
     this.setPhase(s, 'sessions');
     s.marks.push({ t: d.clock.now(), label: 'sessions' });
-    const run = await runSessions(step, {
+    const run = await this.sessionsOn(s, inst, plan, step);
+    s.sessions = run.points;
+    if (run.skippedFrom !== undefined) {
+      s.notes.push(`long conversations stopped before ${run.skippedFrom} at once: the time budget (${step.maxSeconds} s) was spent`);
+      s.codes.push({ code: 'sessions_budget', params: { sessions: run.skippedFrom, seconds: step.maxSeconds } });
+    }
+  }
+
+  /** "Conversazioni lunghe" (steps/sessions.ts) on `inst`: one level after the other. */
+  private sessionsOn(s: RunState, inst: EngineInstance, plan: LaunchPlan, step: SessionsStep): ReturnType<typeof runSessions> {
+    const d = this.deps;
+    const client = inst.client;
+    return runSessions(step, {
       client: inst.client,
       now: () => d.clock.now(),
       signal: s.signal,
@@ -723,12 +748,9 @@ export class BenchRunner {
         if (s.instanceExit) throw this.engineExited(s.instanceExit);
       },
       levelDone: (n) => this.advance(s, stepSeconds({ ...step, levels: [n] }, DEFAULT_EXPECTATIONS)),
+      // vLLM counts its prefix-cache hits itself (/metrics).
+      ...(client.prefixCache ? { prefixCache: () => (client.prefixCache as NonNullable<typeof client.prefixCache>).call(client, s.signal) } : {}),
     });
-    s.sessions = run.points;
-    if (run.skippedFrom !== undefined) {
-      s.notes.push(`long conversations stopped before ${run.skippedFrom} at once: the time budget (${step.maxSeconds} s) was spent`);
-      s.codes.push({ code: 'sessions_budget', params: { sessions: run.skippedFrom, seconds: step.maxSeconds } });
-    }
   }
 
   private async llamaBenchStep(s: RunState, step: Extract<Step, { kind: 'llama-bench' }>, plan: LaunchPlan): Promise<void> {

@@ -1,0 +1,28 @@
+usage: api_server.py [-h] [--host HOST] [--port PORT] [--model MODEL]
+                     [--max-model-len MAX_MODEL_LEN]
+                     [--kv-cache-dtype {auto,fp8}]
+
+vLLM OpenAI-Compatible RESTful API server.
+
+options:
+  -h, --help            show this help message and exit
+  --host HOST           host name
+  --port PORT           port number
+  --model MODEL         Name or path of the huggingface model to use.
+  --served-model-name SERVED_MODEL_NAME [SERVED_MODEL_NAME ...]
+                        The model name(s) used in the API.
+  --max-model-len MAX_MODEL_LEN
+                        Model context length.
+  --kv-cache-dtype {auto,fp8}
+                        Data type for kv cache storage.
+  --gpu-memory-utilization GPU_MEMORY_UTILIZATION
+                        The fraction of GPU memory to be used for the model
+                        executor.
+  --max-num-seqs MAX_NUM_SEQS
+                        Maximum number of sequences per iteration.
+  --max-num-batched-tokens MAX_NUM_BATCHED_TOKENS
+                        Maximum number of batched tokens per iteration.
+  --enforce-eager       Always use eager-mode PyTorch.
+  --enable-prefix-caching
+                        Enables automatic prefix caching.
+  --seed SEED           Random seed for operations.

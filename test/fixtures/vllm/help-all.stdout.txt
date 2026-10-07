@@ -1,0 +1,84 @@
+usage: vllm serve [model_tag] [options]
+
+Launch a local OpenAI-compatible API server to serve LLM
+completions via HTTP. Defaults to Qwen/Qwen3-0.6B if no model is specified.
+
+Search by using: `--help=<ConfigGroup>` to explore options by section (e.g.,
+--help=ModelConfig, --help=Frontend)
+  Use `--help=all` to show all available flags at once.
+
+positional arguments:
+  model_tag             The model tag to serve (optional if specified in
+                        config) (default: None)
+
+options:
+  --allow-credentials   Allow credentials. (default: False)
+  --api-key API_KEY [API_KEY ...]
+                        If provided, the server will require one of these keys
+                        to be presented in the header. (default: None)
+  --enable-prompt-tokens-details, --no-enable-prompt-tokens-details
+                        If set to True, enable prompt_tokens_details in usage.
+                        (default: False)
+  --host HOST           Host name. (default: None)
+  --port PORT           Port number. (default: 8000)
+  -h, --help            show this help message and exit
+
+ModelConfig:
+  --model MODEL         Name or path of the Hugging Face model to use.
+                        (default: Qwen/Qwen3-0.6B)
+  --dtype {auto,bfloat16,float,float16,float32,half}
+                        Data type for model weights and activations.
+                        (default: auto)
+  --max-model-len MAX_MODEL_LEN
+                        Model context length (prompt and output). If
+                        unspecified, will be automatically derived from the
+                        model config. (default: None)
+  --quantization QUANTIZATION, -q QUANTIZATION
+                        Method used to quantize the weights. (default: None)
+  --enforce-eager, --no-enforce-eager
+                        Whether to always use eager-mode PyTorch. (default:
+                        False)
+  --served-model-name SERVED_MODEL_NAME [SERVED_MODEL_NAME ...]
+                        The model name(s) used in the API. (default: None)
+  --revision REVISION   The specific model version to use. (default: None)
+  --seed SEED           Random seed for reproducibility. (default: 0)
+
+CacheConfig:
+  --block-size {1,8,16,32,64,128}
+                        Size of a contiguous cache block in number of tokens.
+                        On CUDA devices, only block sizes up to 32 are
+                        supported. (default: None)
+  --gpu-memory-utilization GPU_MEMORY_UTILIZATION
+                        The fraction of GPU memory to be used for the model
+                        executor, which can range from 0 to 1. (default: 0.9)
+  --kv-cache-dtype {auto,bfloat16,fp8,fp8_ds_mla,fp8_e4m3,fp8_e5m2,fp8_inc}
+                        Data type for kv cache storage. If "auto", will use
+                        model data type. CUDA 11.8+ supports fp8 (=fp8_e4m3)
+                        and fp8_e5m2. (default: auto)
+  --enable-prefix-caching, --no-enable-prefix-caching
+                        Whether to enable prefix caching. (default: None)
+
+SchedulerConfig:
+  --max-num-batched-tokens MAX_NUM_BATCHED_TOKENS
+                        Maximum number of tokens to be processed in a single
+                        iteration. (default: None)
+  --max-num-seqs MAX_NUM_SEQS
+                        Maximum number of sequences to be processed in a
+                        single iteration. (default: None)
+  --cuda-graph-sizes CUDA_GRAPH_SIZES [CUDA_GRAPH_SIZES ...]
+                        Cuda graph capture sizes
+                        1. if none provided, then default set to
+                        [min(max_num_seqs * 2, 512)]
+                        2. if one value is provided, then the capture list
+                        would follow the pattern: [1, 2, 4] + [i for i in
+                        range(8, cuda_graph_sizes + 1, 8)]
+                        3. more than one value (e.g. 1 2 128) is provided,
+                        then the capture list will follow the provided list.
+                        (default: [])
+
+VllmConfig:
+  --compilation-config COMPILATION_CONFIG, -O COMPILATION_CONFIG
+                        `torch.compile` and cudagraph capture configuration
+                        for the model. As a shorthand, `-O<n>` can be used to
+                        directly specify the compilation level `n`: `-O3` is
+                        equivalent to `-O.level=3`. (default: {})

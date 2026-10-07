@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AppError, isAppError } from '../../contract/errors';
 import { discard, errorFromPayload, jsonHeaders, joinUrl, readJson, responseError, send, type HttpDeps } from './http';
 import { modelsSchema, type ClientOptions } from './llamacpp-client';
+import { parsePrefixCacheMetrics, type PrefixCacheReading } from './prefix-metrics';
 import { readSseJson } from './sse';
 import type { GenerateRequest, InferenceClient, StreamEvent, Usage } from './types';
 
@@ -85,6 +86,25 @@ export class OpenAiClient implements InferenceClient {
     const res = await send(this.deps, joinUrl(this.baseUrl, '/tokenize'), this.init('POST', body, opts.signal));
     if (!res.ok) throw await responseError(res, '/tokenize');
     return (await readJson(res, tokenizeSchema, '/tokenize')).tokens;
+  }
+
+  /**
+   * vLLM's prefix-cache counters from its Prometheus /metrics; undefined for other servers, when the
+   * endpoint is missing or says nothing about the prefix cache. Only cancellation throws.
+   */
+  async prefixCache(signal?: AbortSignal): Promise<PrefixCacheReading | undefined> {
+    if (this.flavor !== 'vllm') return undefined;
+    try {
+      const res = await send(this.deps, joinUrl(this.baseUrl, '/metrics'), this.init('GET', undefined, signal));
+      if (!res.ok) {
+        await discard(res);
+        return undefined;
+      }
+      return parsePrefixCacheMetrics(await res.text());
+    } catch (e) {
+      if (isAppError(e) && e.code === 'CANCELLED') throw e;
+      return undefined;
+    }
   }
 
   async models(signal?: AbortSignal): Promise<string[]> {
