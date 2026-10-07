@@ -224,8 +224,8 @@ interface RunState {
   llamaBench: LlamaBenchResult[];
   outputExact: boolean;
   tokensApproximate: boolean;
-  /** Total VRAM used at every telemetry sample (all GPUs), for per-launch peaks of the tuner. */
-  memTrace: { t: number; gpu: number; usedMiB: number }[];
+  /** Telemetry samples as they arrive (per-launch VRAM peaks of the tuner without per-process counters). */
+  liveSamples: GpuSample[];
   /** Profile "tune": the search so far, and each attempt's launch record (by attempt index). */
   tuning?: Tuning;
   tuneRecords: Map<number, LaunchRecord>;
@@ -395,7 +395,7 @@ export class BenchRunner {
       llamaBench: [],
       outputExact: true,
       tokensApproximate: false,
-      memTrace: [],
+      liveSamples: [],
       tuneRecords: new Map(),
     };
     let status: RunStatus = 'completed';
@@ -454,7 +454,7 @@ export class BenchRunner {
     s.corpus = await d.corpus();
     if (s.telemetryOn) {
       s.session = d.telemetry.start(d.telemetryIntervalMs ?? 250, (samples) => {
-        for (const x of samples) if (x.memUsedMiB !== null) s.memTrace.push({ t: x.t, gpu: x.gpu, usedMiB: x.memUsedMiB });
+        s.liveSamples.push(...samples);
         d.publish({ type: 'telemetry', samples });
       });
       // Started before the first load: its first reading is the reference for other processes' drift.
@@ -784,7 +784,7 @@ export class BenchRunner {
           start: async () => {
             await this.waitVramSettled(s);
             checkAbort(s.signal);
-            const label = `tune ${info.attempt + 1} (${info.stage}, ctx ${contextOf(plan) ?? '?'})`;
+            const label = `tune ${info.attempt + 1} (${info.stage})`;
             this.step(s, { kind: 'load', label: info.stage });
             let inst: EngineInstance;
             try {
@@ -845,13 +845,8 @@ export class BenchRunner {
         ...(shared.length ? { sharedPeakMiB: Math.round(Math.max(...shared)) } : {}),
       };
     }
-    const base = new Map(s.baseline.map((b) => [b.gpu, b.memUsedMiB ?? 0]));
-    const peak = new Map<number, number>();
-    for (const x of s.memTrace) if (x.t >= from) peak.set(x.gpu, Math.max(peak.get(x.gpu) ?? 0, x.usedMiB));
-    if (peak.size === 0) return {};
-    let delta = 0;
-    for (const [gpu, p] of peak) delta += Math.max(0, p - (base.get(gpu) ?? p));
-    return { vramPeakMiB: Math.round(delta) };
+    const delta = vram(s.baseline, s.liveSamples.filter((x) => x.t >= from)).deltaMiB;
+    return delta === undefined ? {} : { vramPeakMiB: Math.round(delta) };
   }
 
   // ---- requests ---------------------------------------------------------------------------

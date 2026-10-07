@@ -470,10 +470,13 @@ describe('Tuner: combinations', () => {
   });
 
   it('at most two extra sweeps of screened variants that win somewhere', async () => {
-    const decode = (p: LaunchParams, d: number) => (p.ubatchSize === 512 && d <= 1024 ? 99_999 : undefined);
+    // The base settings (ub 512) of every KV type are absurdly fast at 1K, each faster than the one before.
+    const fast = { q8_0: 100_000, q4_0: 200_000, f16: 300_000 } as Record<string, number>;
+    const decode = (p: LaunchParams, d: number) => (p.ubatchSize === 512 && d <= 1024 ? fast[p.kvCacheType as string] : undefined);
     const { t } = await tune({}, new Lab({ decode }));
-    expect(t.attempts.filter((a) => a.stage === 'sweep').length - 0).toBeGreaterThanOrEqual(2);
-    expect(t.combinations.filter((c) => c.params.ubatchSize === 512)).toHaveLength(2);
+    expect(t.attempts.filter((a) => a.stage === 'sweep')).toHaveLength(2);
+    expect(t.combinations.filter((c) => c.params.ubatchSize === 512).map((c) => c.kvType)).toEqual(['q8_0', 'q4_0']);
+    expect(t.fastestByDepth[0]).toEqual({ depth: 1024, combination: 4 });
   });
 
   it('a variant that runs out of memory at that context is dropped; vram unknown is left out', async () => {
