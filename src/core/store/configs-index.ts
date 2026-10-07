@@ -23,7 +23,7 @@ import {
   type DepthPoint,
 } from '../../contract/configs';
 import { ENGINE_KINDS, type EngineKind, type LaunchParams } from '../../contract/engines';
-import type { LatencyPoint, RunResult, RunSummary, TuneCombination } from '../../contract/results';
+import { nominalDepth, type LatencyPoint, type RunResult, type RunSummary, type TuneCombination } from '../../contract/results';
 import { engineLabelOf, type HereIdentity, type RunsRepo } from './runs-repo';
 
 /** One measured configuration of one run: the run itself, or one of its tune combinations. */
@@ -51,20 +51,22 @@ const median = (values: readonly number[]): number => {
 
 /**
  * Depth points of latency points: medians of decode, prefill (the engine's figure when it reports
- * one) and TTFT; the first point of a depth wins, points without any measurement are dropped.
+ * one) and TTFT, at the nominal depth (the deepest prompt of a 32K context is "32K", so sweeps of
+ * different contexts line up); the first point of a depth wins, points without any measurement are dropped.
  */
 export function depthPointsOf(points: readonly LatencyPoint[]): ConfigSource['points'] {
   const out = new Map<number, ConfigSource['points'][number]>();
   for (const p of points) {
-    if (out.has(p.promptTokens)) continue;
+    const depth = nominalDepth(p.promptTokens);
+    if (out.has(depth)) continue;
     const prefill = p.prefillTpsEngine ?? p.prefillTps;
     const point = {
-      depth: p.promptTokens,
+      depth,
       ...(p.decodeTps.n > 0 ? { decodeTps: p.decodeTps.median } : {}),
       ...(prefill.n > 0 ? { prefillTps: prefill.median } : {}),
       ...(p.ttftMs.n > 0 ? { ttftMs: p.ttftMs.median } : {}),
     };
-    if (Object.keys(point).length > 1) out.set(p.promptTokens, point);
+    if (Object.keys(point).length > 1) out.set(depth, point);
   }
   return [...out.values()].sort((a, b) => a.depth - b.depth);
 }

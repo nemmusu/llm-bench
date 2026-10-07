@@ -7,7 +7,7 @@ import type { StartRunRequest, StartServerRequest } from '../../../contract/api'
 import { configParamsOf } from '../../../contract/configs';
 import type { ApiFlavor, EngineConfig, LaunchParams } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
-import type { LatencyPoint, Profile, RunResult } from '../../../contract/results';
+import { nominalDepth, type LatencyPoint, type Profile, type RunResult } from '../../../contract/results';
 import { hasCustomParams } from './expert-form';
 import { headlinePoint, isManagedExecutable, modelLabelOf } from './format';
 import type { BenchDraft, DraftHubModel, PresetProvenance } from './run-context';
@@ -65,9 +65,10 @@ function provenanceOf(run: RunResult, params: LaunchParams, combo: number | unde
   const combination = combo === undefined ? undefined : run.tuning?.combinations[combo];
   // Runs saved before the context sweep existed have no such list.
   const points = measured(combination ? combination.sweep : [...run.metrics.latency, ...(run.metrics.contextSweep ?? [])]);
+  // Depths as the Configurazioni view names them (the deepest prompt of a 32K context is "32K").
   const point =
     at !== undefined
-      ? points.find((p) => p.promptTokens === at)
+      ? points.find((p) => nominalDepth(p.promptTokens) === at)
       : combination
         ? points.reduce<LatencyPoint | undefined>((deepest, p) => (!deepest || p.promptTokens > deepest.promptTokens ? p : deepest), undefined)
         : headlinePoint(measured(run.metrics.latency)) ?? points[0];
@@ -86,7 +87,7 @@ function provenanceOf(run: RunResult, params: LaunchParams, combo: number | unde
     ...(combination ? { combo } : {}),
     label: modelLabelOf(run.model),
     date: run.createdAt,
-    ...(point ? { decodeTps: point.decodeTps.median, depth: point.promptTokens } : {}),
+    ...(point ? { decodeTps: point.decodeTps.median, depth: nominalDepth(point.promptTokens) } : {}),
     ...(contextSize !== undefined ? { contextSize } : {}),
   };
 }

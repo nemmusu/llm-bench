@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { RunResult, RunSummary } from '../../../../src/contract/results';
-import { summaryOf } from '../../../../src/core/store/runs-repo';
+import { parseRun, summaryOf } from '../../../../src/core/store/runs-repo';
 
 const DIR = path.resolve(import.meta.dirname, '../../../fixtures/runs');
 
@@ -38,5 +38,6 @@ export function seeded(id: string): RunResult {
 }
 
 export function summaries(runs: RunResult[] = seededRuns()): RunSummary[] {
-  return runs.map((r) => summaryOf(r, `${r.id}.json`)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  // Parsed first, as the core reads a run file (schema defaults filled in).
+  return runs.map((r) => summaryOf(parseRun(r) ?? r, `${r.id}.json`)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
