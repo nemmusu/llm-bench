@@ -28,6 +28,8 @@ export function reportToMarkdown(report: Report, labels: { powershell: string; b
   for (const s of report.sections) {
     out.push(`## ${mdText(s.title)}`, '');
     if (s.text) out.push(mdText(s.text), '');
+    for (const para of s.paragraphs ?? []) out.push(mdText(para), '');
+    if (s.definitions) out.push(...s.definitions.map((d) => `- **${mdText(d.term)}**: ${mdText(d.text)}`), '');
     if (s.callouts) for (const c of s.callouts) out.push(`- **${mdText(c.title)}**: ${mdText(c.body)}`);
     if (s.callouts) out.push('');
     if (s.table) out.push(...table(s.table), '');

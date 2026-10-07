@@ -23,6 +23,8 @@ th,td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:left}th{
 .num{text-align:right}.callout{background:var(--warn);border:1px solid var(--warnb);border-radius:10px;padding:10px 14px;margin:8px 0}
 .callout b{display:block}pre{background:var(--code);border-radius:10px;padding:12px 14px;white-space:pre-wrap;word-break:break-all;font:12px/1.6 "JetBrains Mono",Consolas,monospace}
 .label{color:var(--fg3);font-size:12px;margin:12px 0 4px}footer{color:var(--fg3);font-size:12px;text-align:center}
+dl{margin:8px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 18px}dt{font-weight:600}dd{margin:0;color:var(--fg2)}p{margin:0 0 10px}
+@media (max-width:640px){dl{grid-template-columns:1fr}dd{margin-bottom:6px}main{padding:24px 16px 48px}table{display:block;overflow-x:auto}}
 @media print{body{background:#fff}section{break-inside:avoid}}
 `;
 
@@ -38,6 +40,8 @@ export function reportToHtml(report: Report, opts: { lang: string; labels: { pow
     .map((s) => {
       const parts = [`<h2>${escapeHtml(s.title)}</h2>`];
       if (s.text) parts.push(`<p>${escapeHtml(s.text)}</p>`);
+      for (const para of s.paragraphs ?? []) parts.push(`<p>${escapeHtml(para)}</p>`);
+      if (s.definitions) parts.push(`<dl>${s.definitions.map((d) => `<dt>${escapeHtml(d.term)}</dt><dd>${escapeHtml(d.text)}</dd>`).join('')}</dl>`);
       for (const c of s.callouts ?? []) parts.push(`<div class="callout"><b>${escapeHtml(c.title)}</b>${escapeHtml(c.body)}</div>`);
       if (s.table) parts.push(table(s.table));
       if (s.code) {

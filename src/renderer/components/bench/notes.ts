@@ -17,6 +17,9 @@ export const NOTE_CODES = [
   'gpu_memory_reduced',
   'VRAM_BUSY',
   'MODEL_TOO_LARGE',
+  'sessions_depth_reduced',
+  'sessions_depth_unknown',
+  'sessions_budget',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -32,6 +35,9 @@ const TONES: Record<NoteCode, NoteTone> = {
   gpu_memory_reduced: 'warning',
   VRAM_BUSY: 'warning',
   MODEL_TOO_LARGE: 'danger',
+  sessions_depth_reduced: 'info',
+  sessions_depth_unknown: 'info',
+  sessions_budget: 'info',
 };
 
 export interface NoteText {

@@ -270,6 +270,9 @@ export function ExpertPanel(p: ExpertPanelProps) {
               {sc('reps', t('benchmark.expert.repetitions'), '5')}
               {sc('concurrency', t('benchmark.expert.concurrency'), '4', t('benchmark.expert.usersHint'))}
               {sc('requestsPerWorker', t('benchmark.expert.requestsPerWorker'), '4')}
+              <div className="col-span-2">{sc('sessions', t('benchmark.expert.sessions'), '2', t('benchmark.expert.sessionsHint'))}</div>
+              {sc('sessionsDepth', t('benchmark.expert.sessionsDepth'), t('common.auto'), t('benchmark.expert.sessionsDepthHint'))}
+              {sc('sessionsTurns', t('benchmark.expert.sessionsTurns'), '4', t('benchmark.expert.sessionsTurnsHint'))}
               <label className="col-span-2 flex items-center gap-2.5 text-sm font-medium text-fg">
                 <Checkbox checked={p.scenario.llamaBench} onCheckedChange={(v) => p.onScenario({ llamaBench: v === true })} />
                 {t('benchmark.expert.llamaBench')}

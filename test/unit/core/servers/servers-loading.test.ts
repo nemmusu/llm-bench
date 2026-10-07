@@ -72,7 +72,7 @@ function setup(o: { startFails?: Error; logsFail?: boolean; expectedLoadMs?: num
   const deps: ServeServiceDeps = {
     clock: systemClock,
     prepare: async () => ({
-      model: { identity: { displayName: 'Qwen3 4B', format: 'safetensors', source: 'hf-cache', files: [], weakKey: 'k' } },
+      model: { identity: { displayName: 'Qwen3 4B', format: 'safetensors', source: 'hf', files: [], weakKey: 'k' } },
       adapter,
       launch: plan,
       ...(o.expectedLoadMs !== undefined ? { expectedLoadMs: o.expectedLoadMs } : {}),
