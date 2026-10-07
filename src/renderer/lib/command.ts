@@ -25,8 +25,12 @@ export function formatCommand(argv: readonly string[], shell: Shell, env: Record
   const envEntries = Object.entries(env);
   // PowerShell sets env vars as separate statements; bash prefixes them to the command.
   if (shell === 'powershell') for (const [k, v] of envEntries) lines.push(`$env:${k} = '${v.replaceAll("'", "''")}'`);
-  const [exe, ...rest] = argv as [string, ...string[]];
-  const exeQuoted = q(exe);
+  const [exe, ...args] = argv as [string, ...string[]];
+  // Subcommands stay with the program: "docker run", "vllm serve <model>".
+  const sub = args.findIndex((a) => a.startsWith('-'));
+  const words = sub === -1 ? args : args.slice(0, sub);
+  const rest = args.slice(words.length);
+  const exeQuoted = [q(exe), ...words.map(q)].join(' ');
   const head =
     shell === 'powershell'
       ? exeQuoted.startsWith("'")
