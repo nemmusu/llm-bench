@@ -61,15 +61,18 @@ export function Details({ run }: { run: RunResult }) {
   const { t, number, integer, percent, bytes, duration } = useI18n();
   const m = run.metrics;
   const dash = '–';
+  // Engine-side speeds only exist when the engine reports its own timings: no empty column otherwise.
+  const hasPrefillEngine = m.latency.some((p) => p.prefillTpsEngine);
+  const hasDecodeEngine = m.latency.some((p) => p.decodeTpsEngine);
   const columns = useMemo(
     () => [
-      latencyCol.accessor('promptTokens', { header: t('result.details.prompt'), cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
-      latencyCol.accessor('outputTokens', { header: t('result.details.output'), cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
+      latencyCol.accessor('promptTokens', { header: `${t('result.details.prompt')} (token)`, cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
+      latencyCol.accessor('outputTokens', { header: `${t('result.details.output')} (token)`, cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.ttftMs.median, { id: 'ttft', header: `${t('metrics.ttft.label')} (ms)`, cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.prefillTps.median, { id: 'prefill', header: `${t('metrics.prefill.label')} (tok/s)`, cell: (c) => integer(c.getValue()), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.prefillTpsEngine?.median, {
         id: 'prefillEngine',
-        header: t('result.details.prefillEngine'),
+        header: `${t('result.details.prefillEngine')} (tok/s)`,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
@@ -80,7 +83,7 @@ export function Details({ run }: { run: RunResult }) {
       latencyCol.accessor((p) => p.decodeTps.median, { id: 'decode', header: `${t('metrics.decode.label')} (tok/s)`, cell: (c) => number(c.getValue(), 1), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.decodeTpsEngine?.median, {
         id: 'decodeEngine',
-        header: t('result.details.decodeEngine'),
+        header: `${t('result.details.decodeEngine')} (tok/s)`,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
@@ -88,8 +91,8 @@ export function Details({ run }: { run: RunResult }) {
         },
         meta: { numeric: true },
       }),
-      latencyCol.accessor((p) => p.decodeTps.min, { id: 'min', header: t('result.details.min'), cell: (c) => number(c.getValue(), 1), meta: { numeric: true } }),
-      latencyCol.accessor((p) => p.decodeTps.max, { id: 'max', header: t('result.details.max'), cell: (c) => number(c.getValue(), 1), meta: { numeric: true } }),
+      latencyCol.accessor((p) => p.decodeTps.min, { id: 'min', header: `${t('result.details.decodeMin')} (tok/s)`, cell: (c) => number(c.getValue(), 1), meta: { numeric: true } }),
+      latencyCol.accessor((p) => p.decodeTps.max, { id: 'max', header: `${t('result.details.decodeMax')} (tok/s)`, cell: (c) => number(c.getValue(), 1), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.decodeTps.cv, { id: 'cv', header: t('result.details.cv'), cell: (c) => percent(c.getValue(), 1), meta: { numeric: true } }),
       latencyCol.accessor((p) => p.decodeTps.n, { id: 'n', header: t('result.details.n'), cell: (c) => c.getValue(), meta: { numeric: true } }),
       latencyCol.accessor('itlP50Ms', { header: `${t('result.details.itlP50')} (ms)`, cell: (c) => number(c.getValue(), 2), meta: { numeric: true } }),
@@ -98,8 +101,8 @@ export function Details({ run }: { run: RunResult }) {
         cell: (c) => `${number(c.getValue(), 2)}${c.row.original.itlPerChunk ? ' *' : ''}`,
         meta: { numeric: true },
       }),
-    ],
-    [t, number, integer, percent],
+    ].filter((c) => (c.id !== 'prefillEngine' || hasPrefillEngine) && (c.id !== 'decodeEngine' || hasDecodeEngine)),
+    [t, number, integer, percent, hasPrefillEngine, hasDecodeEngine],
   );
   const loadRow = (label: string, s: Stat | undefined) => [
     label,
@@ -129,7 +132,7 @@ export function Details({ run }: { run: RunResult }) {
         <Section title={t('result.details.load')}>
           <SimpleTable
             caption={t('result.details.load')}
-            head={[t('result.details.measure'), `${t('result.details.median')} (s)`, t('result.details.min'), t('result.details.max'), t('result.details.cv'), t('result.details.n')]}
+            head={[t('result.details.measure'), `${t('result.details.median')} (s)`, `${t('result.details.min')} (s)`, `${t('result.details.max')} (s)`, t('result.details.cv'), t('result.details.n')]}
             rows={[
               loadRow(t('result.details.cold'), m.load.coldMs),
               loadRow(t('result.details.warm'), m.load.warmMs),
@@ -184,7 +187,7 @@ export function Details({ run }: { run: RunResult }) {
           <Section title={t('result.details.llamaBench')}>
             <SimpleTable
               caption={t('result.details.llamaBench')}
-              head={[t('result.details.test'), 'tok/s', '±']}
+              head={[t('result.details.test'), `${t('result.details.speed')} (tok/s)`, '± (tok/s)']}
               rows={m.llamaBench.map((b) => [b.test, number(b.tps, 1), number(b.stddev, 1)])}
             />
           </Section>

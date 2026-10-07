@@ -19,6 +19,8 @@ import {
   parseEnv,
   parseInteger,
   parseList,
+  parseUsers,
+  showUsers,
   parseRatio,
   paramsFromForm,
   scenarioFromForm,
@@ -260,10 +262,14 @@ describe('summary', () => {
       '3 caricamenti a freddo',
       '3 caricamenti a caldo',
       'prompt da 128, 512, 1024, 2048, 4096 e 8192 token, 512 token generati, 10 ripetizioni',
-      '1, 2, 4, 8 e 16 utenti insieme',
+      '1, 2, 4, 8 e 16 utenti insieme, prompt da 512 token e 256 generati ciascuno',
       'test standard llama-bench',
     ]);
     expect(scenarioLines({ profile: 'custom', seed: 1, steps: [{ kind: 'load', cache: 'cold', reps: 1 }, { kind: 'load', cache: 'warm', reps: 1 }] }, en)).toEqual(['1 cold load', '1 warm load']);
+    // Every step up to the busiest reads as a range; two levels stay a list.
+    const users = (levels: number[]) => scenarioLines({ profile: 'custom', seed: 1, steps: [{ kind: 'concurrency', levels, promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 }] }, it_);
+    expect(users([1, 2, 3, 4])).toEqual(['da 1 a 4 utenti insieme, uno in più alla volta, prompt da 512 token e 128 generati ciascuno']);
+    expect(users([1, 2])).toEqual(['1 e 2 utenti insieme, prompt da 512 token e 128 generati ciascuno']);
   });
 });
 
@@ -411,7 +417,13 @@ describe('expert form', () => {
     expect(parseRatio('0.05')).toBeNull();
     expect(parseArgs('--a 1\n--b "x y"\n  --c \'q r\'')).toEqual(['--a', '1', '--b', 'x y', '--c', 'q r']);
     expect(parseEnv('A=1\n\n bad\nB_2 = x y')).toEqual({ env: { A: '1', B_2: 'x y' }, invalid: ['bad'] });
-    expect(parseList('512, 4096; 8')).toEqual([512, 4096, 8]);
+    expect(parseList('512, 4096; 8, 512')).toEqual([8, 512, 4096]);
+    expect(parseUsers('4')).toEqual([1, 2, 3, 4]);
+    expect(parseUsers('8, 1, 4')).toEqual([1, 4, 8]);
+    expect(parseUsers('x')).toBeNull();
+    expect(showUsers([1, 2, 3, 4])).toBe('4');
+    expect(showUsers([1])).toBe('1');
+    expect(showUsers([1, 4])).toBe('1, 4');
     expect(parseList('1, x')).toBeNull();
   });
 

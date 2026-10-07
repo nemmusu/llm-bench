@@ -28,9 +28,13 @@ describe.runIf(isWindows)('Windows GPU counters, real monitor', () => {
     const mem = new WindowsGpuMemory({ proc: tracking, clock: systemClock, env: process.env, intervalMs: 500 });
     const engine = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { windowsHide: true, stdio: 'ignore' });
     try {
-      // The first read of the counters can miss its window on a busy PC: a few tries, as the recorder retries too.
+      // The first reads of the counters can miss their window on a busy PC (several test runs at once):
+      // retry with a pause, as the recorder keeps retrying too.
       let all = await mem.read();
-      for (let i = 0; i < 3 && all === undefined; i++) all = await mem.read();
+      for (let i = 0; i < 10 && all === undefined; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        all = await mem.read();
+      }
       expect(all, 'the GPU Process Memory counters should be readable').toBeDefined();
       expect(all!.length).toBeGreaterThan(0);
       expect(all!.every((p) => Number.isInteger(p.pid) && p.mib > 0)).toBe(true);
@@ -54,5 +58,5 @@ describe.runIf(isWindows)('Windows GPU counters, real monitor', () => {
     // Our monitor child is gone (and only it was ever stopped).
     await new Promise((r) => setTimeout(r, 300));
     expect(() => process.kill(spawned[0]!, 0)).toThrow();
-  }, 30_000);
+  }, 60_000);
 });
