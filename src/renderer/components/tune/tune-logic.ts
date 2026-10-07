@@ -3,7 +3,7 @@
  * Good performance = the highest number measured among the launch combinations of this run: no
  * absolute thresholds. Differences within the measurement noise count as ties.
  */
-import { nominalDepth, type LatencyPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
+import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
 import { prefillStat } from '../bench/format';
 
 /** More precise KV cache first (ties go to the more precise one). */
@@ -13,12 +13,17 @@ export const KV_PRECISION: Record<TuneKvType, number> = { f16: 0, auto: 0, q8_0:
 export const TIE_MIN = 0.02;
 /** Differences below this many coefficients of variation are noise. */
 export const TIE_CV = 2;
+/** Tail numbers (p95 of a handful of requests) are noisier: never decided below this difference (the core's rule). */
+export const TIE_TAIL = 0.1;
 
-/** Equal within the noise, the same rule as the core: closer than max(2 %, 2 × the larger CV) of the larger median. */
-export function sameWithinNoise(a: Stat, b: Stat): boolean {
+/**
+ * Equal within the noise, the same rule as the core: closer than max(floor, 2 × the larger CV) of the
+ * larger median (floor 2 %, 10 % for tail numbers).
+ */
+export function sameWithinNoise(a: Stat, b: Stat, floor = TIE_MIN): boolean {
   const scale = Math.max(Math.abs(a.median), Math.abs(b.median));
   if (scale === 0) return true;
-  return Math.abs(a.median - b.median) / scale < Math.max(TIE_MIN, TIE_CV * Math.max(a.cv, b.cv));
+  return Math.abs(a.median - b.median) / scale < Math.max(floor, TIE_CV * Math.max(a.cv, b.cv));
 }
 
 /** The sweep point of a combination at this grid depth (a 32K context's deepest prompt counts as 32K). */
@@ -70,6 +75,15 @@ export interface RankRow {
   rank?: number;
   /** Its generation speed is within the noise of the row above: the order came from the tie-breaks. */
   tie?: boolean;
+  /** Goal "Più utenti": the level with every user busy (instead of a depth point). */
+  users?: ConcurrencyPoint;
+  /** Goal "Più utenti": the conversations measured with that many users. */
+  sessions?: SessionsPoint;
+}
+
+/** The row was measured where it is compared (at the depth, or with every user busy). */
+export function reaches(r: Pick<RankRow, 'point' | 'users'>): boolean {
+  return r.point !== undefined || r.users !== undefined;
 }
 
 /**
@@ -133,16 +147,123 @@ export interface MetricColumn {
   value: (row: RankRow) => number | undefined;
   /** Measured at the compared depth: blank for combinations that stop earlier. */
   atDepth: boolean;
-  /** Highlight the best value (ties within the noise included): which statistic, and which way is better. */
-  best?: { stat: (p: LatencyPoint) => Stat; higher: boolean };
+  /**
+   * Highlight the best value (ties within the noise included): the statistic of a row (undefined = the
+   * row has none), which way is better, and the smallest difference that is never noise (default 2 %).
+   */
+  best?: { stat: (row: RankRow) => Stat | undefined; higher: boolean; floor?: number };
 }
 
 /** "Trova le impostazioni migliori" for one user: context, generation, prompt reading, first token, memory. */
 export const CONTEXT_COLUMNS: readonly MetricColumn[] = [
   { key: 'maxContext', dir: 'desc', atDepth: false, value: (r) => r.combo.maxContext },
-  { key: 'decode', dir: 'desc', atDepth: true, value: (r) => r.point?.decodeTps.median, best: { stat: (p) => p.decodeTps, higher: true } },
-  { key: 'prefill', dir: 'desc', atDepth: true, value: (r) => (r.point ? prefillStat(r.point).median : undefined), best: { stat: prefillStat, higher: true } },
-  { key: 'ttft', dir: 'asc', atDepth: true, value: (r) => r.point?.ttftMs.median, best: { stat: (p) => p.ttftMs, higher: false } },
+  { key: 'decode', dir: 'desc', atDepth: true, value: (r) => r.point?.decodeTps.median, best: { stat: (r) => r.point?.decodeTps, higher: true } },
+  { key: 'prefill', dir: 'desc', atDepth: true, value: (r) => (r.point ? prefillStat(r.point).median : undefined), best: { stat: (r) => (r.point ? prefillStat(r.point) : undefined), higher: true } },
+  { key: 'ttft', dir: 'asc', atDepth: true, value: (r) => r.point?.ttftMs.median, best: { stat: (r) => r.point?.ttftMs, higher: false } },
+  { key: 'vram', dir: 'asc', atDepth: false, value: (r) => r.combo.vramPeakMiB },
+];
+
+// ---- "Più utenti" ---------------------------------------------------------------------------------
+
+/** Per-user generation speed of a level as a statistic (old points only had the p50). */
+export function perUserStat(p: ConcurrencyPoint): Stat {
+  if (p.perRequestDecodeTps && p.perRequestDecodeTps.n > 0) return p.perRequestDecodeTps;
+  const v = p.perRequestDecodeTpsP50;
+  return { n: 1, median: v, mean: v, min: v, max: v, stddev: 0, cv: 0, values: [v] };
+}
+
+/**
+ * The noise of numbers measured with every user busy (the core's rule): the spread between users
+ * over the square root of their number; totals and tails have no repetitions of their own.
+ */
+export function usersNoise(p: ConcurrencyPoint): number {
+  const s = perUserStat(p);
+  return s.n > 1 ? s.cv / Math.sqrt(s.n) : s.cv;
+}
+
+/** A plain number as a statistic with the given noise (for the noise-aware comparisons). */
+export function noisy(v: number, cv: number): Stat {
+  return { n: 1, median: v, mean: v, min: v, max: v, stddev: v * cv, cv, values: [v] };
+}
+
+/** The users level a "Più utenti" run measured (the most that fit, else the users asked). */
+export function usersLevel(tuning: Pick<Tuning, 'multi'>): number | undefined {
+  return tuning.multi ? (tuning.multi.fittingUsers ?? tuning.multi.users) : undefined;
+}
+
+/**
+ * Ranking order with every user busy (the core's rule): fewer failed requests, higher per-user
+ * generation, higher total, lower TTFT p95, lower wait of the later messages, the more precise cache,
+ * the earlier configuration. Negative = `a` ranks first.
+ */
+export function compareUsersRows(a: RankRow & { users: ConcurrencyPoint }, b: RankRow & { users: ConcurrencyPoint }): number {
+  const ua = a.users;
+  const ub = b.users;
+  if (ua.errors !== ub.errors) return ua.errors - ub.errors;
+  const cv = Math.max(usersNoise(ua), usersNoise(ub));
+  if (!sameWithinNoise(noisy(ua.perRequestDecodeTpsP50, cv), noisy(ub.perRequestDecodeTpsP50, cv))) return ub.perRequestDecodeTpsP50 - ua.perRequestDecodeTpsP50;
+  if (!sameWithinNoise(noisy(ua.aggregateTps, cv), noisy(ub.aggregateTps, cv))) return ub.aggregateTps - ua.aggregateTps;
+  if (!sameWithinNoise(noisy(ua.ttftP95Ms, cv), noisy(ub.ttftP95Ms, cv), TIE_TAIL)) return ua.ttftP95Ms - ub.ttftP95Ms;
+  const la = a.sessions?.laterTurns?.ttftMs;
+  const lb = b.sessions?.laterTurns?.ttftMs;
+  if (la && lb && la.n > 0 && lb.n > 0 && !sameWithinNoise(la, lb)) return la.median - lb.median;
+  return KV_PRECISION[a.combo.kvType] - KV_PRECISION[b.combo.kvType] || a.index - b.index;
+}
+
+/**
+ * The ranking of a "Più utenti" run: the combinations measured with every user busy (the core's
+ * recommendation on top, then by {@link compareUsersRows}), then those measured otherwise.
+ */
+export function rankUsers(tuning: Pick<Tuning, 'combinations' | 'multi' | 'recommended'>): RankRow[] {
+  const n = usersLevel(tuning);
+  const measured = tuning.combinations.flatMap((combo, index) => (combo.outcome === 'ok' && combo.concurrency?.length ? [{ index, combo }] : []));
+  const full: (RankRow & { users: ConcurrencyPoint })[] = [];
+  const rest: RankRow[] = [];
+  for (const m of measured) {
+    const users = m.combo.concurrency!.find((p) => p.level === n);
+    const sessions = m.combo.sessions?.find((s) => s.sessions === n) ?? m.combo.sessions?.[0];
+    if (users) full.push({ ...m, users, ...(sessions ? { sessions } : {}) });
+    else rest.push(m);
+  }
+  const rec = tuning.recommended;
+  full.sort((a, b) => (a.index === rec ? -1 : b.index === rec ? 1 : compareUsersRows(a, b)));
+  return [
+    ...full.map((r, k) => {
+      const above = full[k - 1];
+      const cv = above ? Math.max(usersNoise(above.users), usersNoise(r.users)) : 0;
+      const tie = above !== undefined && sameWithinNoise(noisy(above.users.perRequestDecodeTpsP50, cv), noisy(r.users.perRequestDecodeTpsP50, cv));
+      return { ...r, rank: k + 1, ...(tie ? { tie: true } : {}) };
+    }),
+    ...rest,
+  ];
+}
+
+/** Per-user context of a combination: what its users-at-once points say, else the launch context over the users. */
+export function perUserContextOf(r: Pick<RankRow, 'combo' | 'users'>): number | undefined {
+  return r.users?.contextPerUser;
+}
+
+/** "Più utenti": per-user generation, total, slowest first token, context per user, KV layout, cache reuse, memory. */
+export const USERS_COLUMNS: readonly MetricColumn[] = [
+  {
+    key: 'perUser',
+    dir: 'desc',
+    atDepth: false,
+    value: (r) => r.users?.perRequestDecodeTpsP50,
+    best: { stat: (r) => (r.users ? noisy(r.users.perRequestDecodeTpsP50, usersNoise(r.users)) : undefined), higher: true },
+  },
+  { key: 'total', dir: 'desc', atDepth: false, value: (r) => r.users?.aggregateTps, best: { stat: (r) => (r.users ? noisy(r.users.aggregateTps, usersNoise(r.users)) : undefined), higher: true } },
+  {
+    key: 'ttftP95',
+    dir: 'asc',
+    atDepth: false,
+    value: (r) => r.users?.ttftP95Ms,
+    best: { stat: (r) => (r.users ? noisy(r.users.ttftP95Ms, usersNoise(r.users)) : undefined), higher: false, floor: TIE_TAIL },
+  },
+  { key: 'perUserContext', dir: 'desc', atDepth: false, value: perUserContextOf },
+  // Split per user = 1, shared = 0: sorting groups them.
+  { key: 'layout', dir: 'desc', atDepth: false, value: (r) => (r.combo.kvLayout === undefined ? undefined : r.combo.kvLayout === 'split' ? 1 : 0) },
+  { key: 'reuse', dir: 'desc', atDepth: false, value: (r) => r.combo.cacheReuse ?? 0 },
   { key: 'vram', dir: 'asc', atDepth: false, value: (r) => r.combo.vramPeakMiB },
 ];
 
@@ -164,20 +285,24 @@ export function sortRows(rows: readonly RankRow[], column: MetricColumn | undefi
     }
     return sign * (order.get(a.index)! - order.get(b.index)!);
   };
-  const reaching = rows.filter((r) => r.point).sort(by);
-  const short = rows.filter((r) => !r.point).sort(by);
+  const reaching = rows.filter(reaches).sort(by);
+  const short = rows.filter((r) => !reaches(r)).sort(by);
   return [...reaching, ...short];
 }
 
 /** Per highlighted column (by key), the combinations whose value ties (within the noise) with the best one. */
 export function bestValues(rows: readonly RankRow[], columns: readonly MetricColumn[]): Map<string, ReadonlySet<number>> {
-  const reaching = rows.filter((r): r is RankRow & { point: LatencyPoint } => r.point !== undefined);
   const out = new Map<string, ReadonlySet<number>>();
   for (const c of columns) {
-    if (!c.best || !reaching.length) continue;
-    const { stat, higher } = c.best;
-    const top = reaching.reduce((b, r) => ((higher ? stat(r.point).median > stat(b.point).median : stat(r.point).median < stat(b.point).median) ? r : b));
-    out.set(c.key, new Set(reaching.filter((r) => sameWithinNoise(stat(r.point), stat(top.point))).map((r) => r.index)));
+    if (!c.best) continue;
+    const { stat, higher, floor } = c.best;
+    const values = rows.flatMap((r) => {
+      const s = reaches(r) ? stat(r) : undefined;
+      return s ? [{ index: r.index, s }] : [];
+    });
+    if (!values.length) continue;
+    const top = values.reduce((b, v) => ((higher ? v.s.median > b.s.median : v.s.median < b.s.median) ? v : b));
+    out.set(c.key, new Set(values.filter((v) => sameWithinNoise(v.s, top.s, floor)).map((v) => v.index)));
   }
   return out;
 }
