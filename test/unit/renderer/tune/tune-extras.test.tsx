@@ -172,6 +172,7 @@ describe('chart builders', () => {
   it('speed against depth: one line or many (dashed past the palette), the compared depth marked', () => {
     const one = depthLinesOption(tk, [K, 4 * K], [{ name: 'a', values: [1, 2] }], { format: (v) => `${v} t`, depthLabel: (d) => `${d / K}K`, xName: 'x' }) as Record<string, never>;
     expect(one.legend).toBeUndefined();
+    expect(exerciseFormatters(one)).toContain('3');
     const tip = (one as unknown as { tooltip: { valueFormatter: (v: unknown) => string } }).tooltip;
     expect(tip.valueFormatter(null)).toBe('–');
     expect(tip.valueFormatter(3)).toBe('3 t');

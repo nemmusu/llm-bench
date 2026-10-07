@@ -1400,7 +1400,6 @@ export const it = {
       metric: 'Misura del grafico',
       all: 'Mostra tutte ({n})',
       top: 'Solo le prime {n}',
-      waiting: 'Il grafico compare appena una combinazione è misurata.',
     },
     columns: {
       rank: '#',

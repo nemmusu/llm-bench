@@ -94,7 +94,8 @@ export function TuneChart({ tuning, engineKind, order, recommended, marker, titl
         rows: series.map((s) => [s.name, ...s.values.map((v) => (v === null ? '–' : fmt(v)))]),
       }}
     >
-      {depths.length ? <EChart build={build} height={300} label={title} /> : <p className="py-10 text-center text-sm text-fg-3">{t('tune.chart.waiting')}</p>}
+      {/* Only drawn once a combination was measured: there is always a depth. */}
+      <EChart build={build} height={300} label={title} />
     </ChartCard>
   );
 }

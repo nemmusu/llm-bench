@@ -237,10 +237,8 @@ export interface SpeedSegment {
 export function speedSegments(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth'>): SpeedSegment[] {
   const winners = tuning.fastestByDepth.length
     ? [...tuning.fastestByDepth].sort((a, b) => a.depth - b.depth)
-    : depthOptions(tuning).flatMap((depth) => {
-        const top = rankAt(tuning, depth)[0];
-        return top?.point ? [{ depth, combination: top.index }] : [];
-      });
+    : // Every option is a measured depth: the first of its ranking reaches it.
+      depthOptions(tuning).map((depth) => ({ depth, combination: rankAt(tuning, depth)[0]!.index }));
   const out: SpeedSegment[] = [];
   for (const w of winners) {
     const point = pointAt(tuning.combinations[w.combination] ?? { sweep: [] }, w.depth);

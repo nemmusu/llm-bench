@@ -98,7 +98,18 @@ describe('live screen of a tune run', () => {
     const t = tuning();
     const current = { ...attempt('capacity', 'q4_0', 48 * K, 'ok', { vramPeakMiB: 20000 }) } as Record<string, unknown>;
     delete current.outcome;
-    const partial = { ...t, attempts: t.attempts.slice(0, 6), combinations: t.combinations.slice(0, 2), capacity: [{ ...t.capacity[0]! }, { ...t.capacity[1]! }, { kvType: 'q4_0' as const, predictedMax: 72 * K, inferred: false }] };
+    const partial = {
+      ...t,
+      attempts: t.attempts.slice(0, 6),
+      combinations: t.combinations.slice(0, 2),
+      capacity: [
+        { ...t.capacity[0]! },
+        { ...t.capacity[1]! },
+        { kvType: 'q4_0' as const, predictedMax: 72 * K, inferred: false },
+        { kvType: 'fp8' as const, inferred: false, skipped: 'budget' as const },
+        { kvType: 'auto' as const, inferred: false },
+      ],
+    };
     act(() => api.emit({ type: 'run.tune', runId: RUN, tuning: partial, current: current as never }));
     expect(screen.getByText('Cerco il contesto massimo con cache q4_0: provo 48K…')).toBeTruthy();
     const attempts = screen.getByRole('table', { name: 'Prove fatte' });
@@ -114,6 +125,8 @@ describe('live screen of a tune run', () => {
     expect(within(capacity).getByText('provo 48K…')).toBeTruthy();
     expect(within(capacity).getByText('24K')).toBeTruthy();
     expect(within(capacity).getByText('stima 72K')).toBeTruthy();
+    expect(within(capacity).getByText('Non provata: tempo finito.')).toBeTruthy();
+    expect(within(capacity).getByText('in attesa')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Velocità al crescere del contesto (finora)' })).toBeTruthy();
 
     // The same launch's engine start, stage by stage.
@@ -151,6 +164,7 @@ describe('live screen of a tune run', () => {
     expect(screen.getByText('Prova rapida · Prompt di 4096 token → 64 in uscita · ripetizione 1 di 2')).toBeTruthy();
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-probe', point: point(4 * K, 61, 5000), attempt: 5 } }));
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-probe', point: point(4 * K, 70, 5000), attempt: 6 } }));
+    act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-screen', point: point(8 * K, 10, 500) } }));
     const probe = screen.getByRole('table', { name: 'Prova in corso' });
     expect(within(probe).getAllByRole('row')).toHaveLength(2);
     expect(probe.textContent).toContain('70,0');
@@ -211,6 +225,9 @@ describe('live screen of any run', () => {
     expect(within(usersTable).getAllByRole('row').map((r) => r.firstElementChild!.textContent)).toEqual(['Utenti', '1', '2', '3', '4']);
     expect(within(usersTable).getAllByRole('row')[2]!.getAttribute('aria-current')).toBe('step');
     expect(within(usersTable).getByText('Lettura per utente p50 (tok/s)')).toBeTruthy();
+    // On to the next step: the users table stays, nothing highlighted.
+    act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'llama-bench' } }));
+    expect(within(screen.getByRole('table', { name: 'Più utenti insieme' })).getAllByRole('row').filter((r) => r.getAttribute('aria-current'))).toHaveLength(0);
   });
 
   it('without a plan the tables list only what was measured', async () => {

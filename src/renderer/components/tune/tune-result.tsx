@@ -54,8 +54,9 @@ export function TuneOverview({ run, errorCard }: { run: TunedRun; errorCard?: Re
           tuning={tuning}
           engineKind={kind}
           order={order}
-          {...(rec ? { recommended: rec.index } : {})}
-          {...(depth === undefined ? {} : { marker: depth })}
+          // Something was measured: there is a recommendation and a compared depth.
+          recommended={rec!.index}
+          marker={depth}
           title={t('tune.chart.title')}
           help={t('tune.chart.help')}
         />

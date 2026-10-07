@@ -86,6 +86,8 @@ describe('tune result', () => {
     const vram = screen.getByRole('columnheader', { name: /VRAM picco \(GB\)/ });
     await userEvent.click(within(vram).getByRole('button'));
     expect(vram.getAttribute('aria-sort')).toBe('ascending');
+    await userEvent.click(within(vram).getByRole('button'));
+    expect(vram.getAttribute('aria-sort')).toBe('descending');
     expect(decode.getAttribute('aria-sort')).toBeNull();
     expect(rankRows()[2]!.textContent).toContain('–');
   });
@@ -107,6 +109,9 @@ describe('tune result', () => {
     expect(screen.getByRole('table', { name: /Misure di .*MoE sulla CPU/ }).textContent).toContain('18,4');
     await userEvent.click(toggle);
     expect(screen.queryByRole('table', { name: 'Misure di Cache KV q4_0 · flash attention · ub 2048 · b 4096' })).toBeNull();
+    // No VRAM figure for this one: the line says the rest.
+    await userEvent.click(within(rankRows()[3]!).getByRole('button', { name: 'Misure' }));
+    expect(screen.getByText(/^avviato con contesto 65.536 token · 2 ripetizioni per misura/)).toBeTruthy();
   });
 
   it('“Usa questo preset” fills the Benchmark with that combination; “Avvia il server così” previews it', async () => {
@@ -208,6 +213,27 @@ describe('tune result', () => {
     expect(screen.getByText('Nessuna combinazione è stata misurata fino in fondo.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Combinazione consigliata' })).toBeNull();
     expect(screen.getByRole('button', { name: /Prove scartate/ })).toBeTruthy();
+  });
+
+  it('the recommendation says only what was measured; many combinations fold to the top five', async () => {
+    const t = tuning();
+    const extra = [0, 1].map((i) => ({ ...t.combinations[2]!, params: { ...t.combinations[2]!.params, threads: 8 + i } }));
+    const { unmount } = open(tunedRun({ recommended: 3, combinations: [...t.combinations, ...extra] }));
+    await h1(/Qwen3 8B/);
+    const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
+    expect(within(rec).queryByText('VRAM picco')).toBeNull();
+    await waitFor(() => expect(charts.options.length).toBeGreaterThan(0));
+    expect((charts.options.at(-1) as { series: unknown[] }).series).toHaveLength(5);
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra tutte (7)' }));
+    await waitFor(() => expect((charts.options.at(-1) as { series: unknown[] }).series).toHaveLength(7));
+    await userEvent.click(screen.getByRole('button', { name: 'Solo le prime 5' }));
+    unmount();
+    // A recommendation without a sweep (older or partial data): just its context.
+    open(tunedRun({ recommended: 5 }));
+    await h1(/Qwen3 8B/);
+    const bare = screen.getByRole('region', { name: 'Combinazione consigliata' });
+    expect(within(bare).getByText('Contesto massimo')).toBeTruthy();
+    expect(within(bare).queryByText(/Generazione a/)).toBeNull();
   });
 
   it('presets need the model in the library and a managed engine', async () => {

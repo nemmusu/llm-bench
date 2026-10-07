@@ -64,6 +64,7 @@ describe('noise-aware comparison', () => {
     expect(pointAt(t.combinations[1]!, 32 * K)?.promptTokens).toBe(32 * K - 144);
     expect(pointAt(t.combinations[0]!, 32 * K)).toBeUndefined();
     expect(deepestPoint({ sweep: [] })).toBeUndefined();
+    expect(deepestPoint({ sweep: [point(8 * K, 1, 1), point(K, 1, 1)] })?.promptTokens).toBe(8 * K);
     expect(deepestPoint(t.combinations[2]!)?.promptTokens).toBe(64 * K - 144);
     expect(reachOf(t.combinations[0]!)).toBe(24 * K);
     expect(measuredCombinations(t)).toEqual([0, 1, 2, 3, 4]);

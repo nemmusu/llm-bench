@@ -1399,7 +1399,6 @@ export const en: Messages = {
       metric: 'Chart measure',
       all: 'Show all ({n})',
       top: 'Only the top {n}',
-      waiting: 'The chart shows up as soon as a combination is measured.',
     },
     columns: {
       rank: '#',
