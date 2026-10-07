@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from '../fixtures';
 import { answerSaveDialog, h1, launchSeeded, scan, skipWelcome, tempFile } from './bench-helpers';
 
@@ -74,7 +74,7 @@ test('history: filter, compare two runs, export the result and a selection, impo
       await answerSaveDialog(gb, file);
       await page.getByRole('button', { name: 'Esporta' }).click();
       await page.getByRole('menuitem', { name: label }).click();
-      await expect.poll(() => readFileSync(file, 'utf8').length).toBeGreaterThan(100);
+      await expect.poll(() => (existsSync(file) ? readFileSync(file, 'utf8').length : 0)).toBeGreaterThan(100);
       saved[ext] = readFileSync(file, 'utf8');
       expect(saved[ext]).toContain(check);
     }

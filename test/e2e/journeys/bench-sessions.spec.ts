@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { expect, test } from '../fixtures';
 import { launchApp } from '../fixtures';
 import { answerSaveDialog, h1, scan, skipWelcome, tempFile } from './bench-helpers';
@@ -85,7 +85,7 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await answerSaveDialog(gb, file);
     await dialog.getByRole('button', { name: 'Salva la scheda' }).click();
     await expect(page.getByText(/Scheda salvata: /)).toBeVisible();
-    await expect.poll(() => readFileSync(file, 'utf8').length).toBeGreaterThan(500);
+    await expect.poll(() => (existsSync(file) ? readFileSync(file, 'utf8').length : 0)).toBeGreaterThan(500);
     const sheet = readFileSync(file, 'utf8');
     expect(sheet).toContain('# Assistente E2E: ');
     for (const heading of ['Il servizio', 'Modello e configurazione', 'Velocità e tempi di attesa', 'Il contesto si legge una volta sola', 'Come funziona la coda', 'Contesto tenuto in memoria', 'Confronto con la configurazione precedente', 'Glossario']) {
