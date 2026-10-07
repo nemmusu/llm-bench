@@ -40,6 +40,8 @@ test('standard run: cold and warm loads, long prompts and several users; then ru
 
     await page.getByRole('tab', { name: 'Log' }).click();
     await expect(page.getByRole('region', { name: 'Log del server (estratto)' })).toContainText('slot');
+    // Requests never push the engine start out of the excerpt: the load lines stay.
+    await expect(page.getByRole('region', { name: 'Log del server (estratto)' })).toContainText('load_tensors: offloaded');
 
     // Run it again, same settings: no download this time, straight to the live screen.
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();

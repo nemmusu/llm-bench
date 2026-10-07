@@ -6,6 +6,7 @@ import { summarize } from '../../../../src/core/bench/stats';
 import { commonDepth, deltaWords, longConversationRows, rowWords, type WordsRow } from '../../../../src/renderer/components/bench/compare-words';
 import { formFromScenario, scenarioFromForm, DEFAULT_SCENARIO_FORM } from '../../../../src/renderer/components/bench/expert-form';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
+import { relevantPhases } from '../../../../src/renderer/components/bench/phases';
 import { LongConversations } from '../../../../src/renderer/components/bench/result-sessions';
 import { contextSweepOf, kvCapacityText, sessionsGlossary, sessionsOf, sessionsRows, sessionsSentences, sessionsTable } from '../../../../src/renderer/components/bench/sessions-view';
 import { createFormatters } from '../../../../src/renderer/i18n';
@@ -316,6 +317,21 @@ describe('expert form: long conversations', () => {
     expect(screen.getByText(/il primo messaggio legge tutto il contesto, i successivi riusano quanto già letto/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Contesto di ogni conversazione (token)' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Messaggi per conversazione' })).toBeTruthy();
+  });
+});
+
+describe('live screen phases', () => {
+  it('long conversations and the context sweep have their own phase', () => {
+    expect(
+      relevantPhases({
+        profile: 'custom',
+        seed: 1,
+        steps: [
+          { kind: 'context-sweep', depths: [1024], fractions: false, outputTokens: 8, reps: 1 },
+          { kind: 'sessions', depth: 0, levels: [1], turns: 2, followupTokens: 8, outputTokens: 8 },
+        ],
+      }),
+    ).toEqual(['prepare', 'context-sweep', 'sessions', 'cleanup']);
   });
 });
 
