@@ -3,6 +3,8 @@ import type { LatencyPoint, RunResult, Stat } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { columnHelper, DataTable } from '../ui/data-table';
+import { UsersTable } from './concurrency-users';
+import { SweepTable } from './context-sweep';
 import { MIB_PER_GB } from './format';
 
 export function SimpleTable({ caption, head, rows, numericFrom = 1 }: { caption: string; head: string[]; rows: ReactNode[][]; numericFrom?: number }) {
@@ -167,21 +169,14 @@ export function Details({ run }: { run: RunResult }) {
           />
         </Section>
       </div>
+      {m.contextSweep.length > 0 && (
+        <Section title={t('result.sweep.title')}>
+          <SweepTable caption={t('result.sweep.title')} points={m.contextSweep} />
+        </Section>
+      )}
       {m.concurrency.length > 0 && (
         <Section title={t('result.details.concurrency')}>
-          <SimpleTable
-            caption={t('result.details.concurrency')}
-            head={[
-              t('result.users'),
-              t('result.details.requests'),
-              `${t('result.aggregate')} (tok/s)`,
-              `${t('result.perUser')} (tok/s)`,
-              `${t('result.details.ttftP50')} (ms)`,
-              `${t('result.details.ttftP95')} (ms)`,
-              t('result.details.errors'),
-            ]}
-            rows={m.concurrency.map((c) => [c.level, c.requests, integer(c.aggregateTps), number(c.perRequestDecodeTpsP50, 1), integer(c.ttftP50Ms), integer(c.ttftP95Ms), c.errors])}
-          />
+          <UsersTable caption={t('result.details.concurrency')} points={[...m.concurrency].sort((a, b) => a.level - b.level)} />
         </Section>
       )}
       <div className="grid gap-section lg:grid-cols-2">

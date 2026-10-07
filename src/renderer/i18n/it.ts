@@ -430,6 +430,18 @@ export const it = {
       title: 'Il modello è troppo grande per questa scheda',
       body: 'Servono circa {need} di memoria video, ma ne sono disponibili {available}. Scegli una quantizzazione più leggera o un modello più piccolo.',
     },
+    context_sweep_budget: {
+      title: 'Contesto per gradi interrotto',
+      body: 'Il tempo previsto per questa misura ({seconds} s) è finito: le profondità da {depth} token in su non sono state misurate.',
+    },
+    context_sweep_skipped: {
+      title: 'Contesto per gradi saltato',
+      body: 'Non so quanto contesto regge il server (è già acceso fuori da GPU Bench): salto la misura del contesto per gradi.',
+    },
+    context_sweep_skipped_small: {
+      title: 'Contesto per gradi saltato',
+      body: 'Con un contesto di {contextSize} token non ci sono abbastanza profondità da misurare: salto questa misura.',
+    },
     unknown: {
       title: 'Nota sul test',
       body: 'Il motore ha segnalato: {code}.',
@@ -1110,6 +1122,7 @@ export const it = {
     chartConcurrencyHelp: 'La velocità totale e quella del singolo utente quando più persone usano il modello insieme.',
     aggregate: 'Totale',
     perUser: 'Per utente',
+    slowestUser: 'Utente più lento (p5)',
     users: 'Utenti',
     sweep: {
       title: 'Velocità al crescere del contesto',
@@ -1539,6 +1552,8 @@ export const it = {
     },
     sentence: {
       write: 'Con {n} utenti ognuno scrive a {write} tok/s',
+      writeOne: 'Con 1 utente scrive a {write} tok/s',
+      readWriteOne: 'Con 1 utente legge a {read} tok/s e scrive a {write} tok/s',
       readWrite: 'Con {n} utenti ognuno legge a {read} tok/s e scrive a {write} tok/s',
       vsSolo: '({pct}% di quando è da solo)',
       firstToken: 'il primo token arriva in {p50} s ({p95} s nel caso peggiore)',

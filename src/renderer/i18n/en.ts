@@ -429,6 +429,18 @@ export const en: Messages = {
       title: 'The model is too large for this card',
       body: 'It needs about {need} of graphics memory, but {available} are available. Choose a lighter quantization or a smaller model.',
     },
+    context_sweep_budget: {
+      title: 'Context step by step stopped early',
+      body: 'The time planned for this measurement ({seconds} s) ran out: depths from {depth} tokens up were not measured.',
+    },
+    context_sweep_skipped: {
+      title: 'Context step by step skipped',
+      body: 'I do not know how much context the server holds (it was started outside GPU Bench): I skip the context step by step.',
+    },
+    context_sweep_skipped_small: {
+      title: 'Context step by step skipped',
+      body: 'With a {contextSize}-token context there are not enough depths to measure: I skip this measurement.',
+    },
     unknown: {
       title: 'Note about the test',
       body: 'The engine reported: {code}.',
@@ -1109,6 +1121,7 @@ export const en: Messages = {
     chartConcurrencyHelp: 'Total speed and speed per user when several people use the model at the same time.',
     aggregate: 'Total',
     perUser: 'Per user',
+    slowestUser: 'Slowest user (p5)',
     users: 'Users',
     sweep: {
       title: 'Speed as the context fills up',
@@ -1538,6 +1551,8 @@ export const en: Messages = {
     },
     sentence: {
       write: 'With {n} users each one writes at {write} tok/s',
+      writeOne: 'With 1 user it writes at {write} tok/s',
+      readWriteOne: 'With 1 user it reads at {read} tok/s and writes at {write} tok/s',
       readWrite: 'With {n} users each one reads at {read} tok/s and writes at {write} tok/s',
       vsSolo: '({pct}% of when alone)',
       firstToken: 'the first token arrives in {p50} s ({p95} s in the worst case)',

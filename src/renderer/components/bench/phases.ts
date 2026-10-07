@@ -17,12 +17,14 @@ export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {
   const has = new Set<RunPhase>(['prepare', 'cleanup']);
   if (pre.install) has.add('install');
   if (pre.download) has.add('download');
+  // Install and download happen before the run itself: listed first, already done once it starts.
+  const pre_ = (['install', 'download'] as const).filter((p) => has.has(p));
+  if (scenario?.profile === 'tune') {
+    // "Trova le impostazioni migliori": largest context per cache, one setting at a time, then the sweeps.
+    return [...pre_, 'prepare', 'tune-capacity', 'tune-variants', 'context-sweep', ...(opts.fidelity ? (['fidelity'] as const) : []), 'cleanup'];
+  }
   if (!scenario) {
     for (const p of ['cold-load', 'warm-load', 'prefill', 'decode', 'context-sweep', 'concurrency', 'llama-bench'] as const) has.add(p);
-  } else if (scenario.profile === 'tune') {
-    // "Trova le impostazioni migliori": largest context per cache, one setting at a time, then the sweeps.
-    for (const p of ['tune-capacity', 'tune-variants', 'context-sweep'] as const) has.add(p);
-    if (opts.fidelity) has.add('fidelity');
   } else {
     for (const step of scenario.steps) {
       if (step.kind === 'load') has.add(step.cache === 'cold' ? 'cold-load' : 'warm-load');
@@ -35,8 +37,6 @@ export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {
       else has.add('llama-bench');
     }
   }
-  // Install and download happen before the run itself: listed first, already done once it starts.
-  const pre_ = (['install', 'download'] as const).filter((p) => has.has(p));
   return [...pre_, ...RUN_PHASES.filter((p) => has.has(p) && p !== 'install' && p !== 'download')];
 }
 

@@ -17,6 +17,8 @@ export const NOTE_CODES = [
   'gpu_memory_reduced',
   'VRAM_BUSY',
   'MODEL_TOO_LARGE',
+  'context_sweep_budget',
+  'context_sweep_skipped',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -32,6 +34,8 @@ const TONES: Record<NoteCode, NoteTone> = {
   gpu_memory_reduced: 'warning',
   VRAM_BUSY: 'warning',
   MODEL_TOO_LARGE: 'danger',
+  context_sweep_budget: 'info',
+  context_sweep_skipped: 'info',
 };
 
 export interface NoteText {
@@ -69,7 +73,13 @@ export function noteText(note: NoteLike, f: Pick<Formatters, 't' | 'integer' | '
     return { code: note.code, tone: 'info', title: f.t('notes.unknown.title'), body: f.t('notes.unknown.body', { code: note.code }) };
   }
   // VRAM_BUSY has two flavours: known LLM servers, or anything holding the memory this model needs.
-  const variant = note.code === 'VRAM_BUSY' && params.need !== undefined ? 'VRAM_BUSY_MEMORY' : note.code;
+  // The context sweep is skipped when the context is unknown (external server) or too small for several depths.
+  const variant =
+    note.code === 'VRAM_BUSY' && params.need !== undefined
+      ? 'VRAM_BUSY_MEMORY'
+      : note.code === 'context_sweep_skipped' && params.reason === 'context_too_small'
+        ? 'context_sweep_skipped_small'
+        : note.code;
   return {
     code: note.code,
     tone: TONES[note.code],

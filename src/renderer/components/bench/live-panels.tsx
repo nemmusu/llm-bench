@@ -103,8 +103,11 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
   const prompts = latencyStep?.kind === 'latency' ? latencyStep.promptTokens : [];
   const levels = usersStep?.kind === 'concurrency' ? usersStep.levels : [];
   const now = current?.kind;
-  const showLatency = latency.length > 0 || (now === 'latency' && prompts.length > 0);
-  const showDepths = depths.length > 0 || now === 'context-sweep';
+  // The row in progress is listed before its first measurement.
+  const currentPrompt = now === 'latency' ? current!.promptTokens : undefined;
+  const currentDepth = now === 'context-sweep' ? (current!.depth ?? current!.promptTokens) : undefined;
+  const showLatency = latency.length > 0 || currentPrompt !== undefined;
+  const showDepths = depths.length > 0 || currentDepth !== undefined;
   const showUsers = users.length > 0 || now === 'concurrency';
   const title = t('run.points.title');
 
@@ -146,7 +149,7 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
           <MeasureTable
             caption={t('run.points.byPrompt')}
             columns={head(t('run.points.prompt'))}
-            rows={rowsOf(latency, prompts, (n) => now === 'latency' && current!.promptTokens === n, latencyStep?.kind === 'latency' ? latencyStep.reps : undefined)}
+            rows={rowsOf(latency, [...prompts, ...(currentPrompt === undefined ? [] : [currentPrompt])], (n) => n === currentPrompt, latencyStep?.kind === 'latency' ? latencyStep.reps : undefined)}
           />
         </Section>
       )}
@@ -155,7 +158,7 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
           <MeasureTable
             caption={t(tune ? 'run.points.byAttempt' : 'run.points.byDepth')}
             columns={head(t('run.points.depth'))}
-            rows={rowsOf(depths, [], (n) => now === 'context-sweep' && (current!.depth ?? current!.promptTokens) === n, sweepStep?.kind === 'context-sweep' && !tune ? sweepStep.reps : undefined)}
+            rows={rowsOf(depths, currentDepth === undefined ? [] : [currentDepth], (n) => n === currentDepth, sweepStep?.kind === 'context-sweep' && !tune ? sweepStep.reps : undefined)}
           />
         </Section>
       )}

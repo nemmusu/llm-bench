@@ -166,16 +166,24 @@ export function concurrencyOption(
   levels: readonly number[],
   aggregate: readonly number[],
   perUser: readonly number[],
-  opts: { aggregateName: string; perUserName: string; format: (v: number) => string; xName: string; axis?: (v: number) => string },
+  opts: {
+    aggregateName: string;
+    perUserName: string;
+    format: (v: number) => string;
+    xName: string;
+    axis?: (v: number) => string;
+    /** The slowest users (p5 of the per-request rates), dashed under the per-user line; null where unknown. */
+    slowest?: { name: string; values: readonly (number | null)[] };
+  },
 ): ChartOption {
   const ax = axisStyle(tk);
-  const line = (name: string, data: readonly number[], color: string, endLabel: boolean) => ({
+  const line = (name: string, data: readonly (number | null)[], color: string, endLabel: boolean, dashed = false) => ({
     type: 'line' as const,
     name,
     data: levels.map((l, i) => [l, data[i]!]),
     symbol: 'circle',
-    symbolSize: 8,
-    lineStyle: { width: 2, color },
+    symbolSize: dashed ? 6 : 8,
+    lineStyle: { width: dashed ? 1.5 : 2, color, type: dashed ? ('dashed' as const) : ('solid' as const) },
     itemStyle: { color, borderColor: tk.surface, borderWidth: 2 },
     endLabel: { show: endLabel, color: tk.fg2, fontSize: 11, formatter: (p: { value: unknown }) => opts.format((p.value as [number, number])[1]) },
   });
@@ -188,9 +196,9 @@ export function concurrencyOption(
       itemWidth: 14,
       itemHeight: 3,
       textStyle: { color: tk.fg2, fontSize: 12 },
-      data: [opts.aggregateName, opts.perUserName],
+      data: [opts.aggregateName, opts.perUserName, ...(opts.slowest ? [opts.slowest.name] : [])],
     },
-    tooltip: { trigger: 'axis', valueFormatter: (v) => opts.format(Number(v)) },
+    tooltip: { trigger: 'axis', valueFormatter: (v) => (v === null || v === undefined ? '–' : opts.format(Number(v))) },
     xAxis: {
       type: 'log',
       logBase: 2,
@@ -204,7 +212,11 @@ export function concurrencyOption(
       nameGap: 26,
     },
     yAxis: { type: 'value', min: 0, ...ax, axisLine: { show: false }, splitNumber: 4, axisLabel: { ...ax.axisLabel, formatter: (v: number) => (opts.axis ?? String)(v) } },
-    series: [line(opts.aggregateName, aggregate, tk.series[0]!, true), line(opts.perUserName, perUser, tk.series[1]!, true)],
+    series: [
+      line(opts.aggregateName, aggregate, tk.series[0]!, true),
+      line(opts.perUserName, perUser, tk.series[1]!, true),
+      ...(opts.slowest ? [line(opts.slowest.name, opts.slowest.values, tk.series[1]!, false, true)] : []),
+    ],
   };
 }
 

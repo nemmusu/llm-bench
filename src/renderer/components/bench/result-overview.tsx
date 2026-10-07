@@ -6,6 +6,7 @@ import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { StatTile } from '../ui/stat-tile';
+import { ContextSweepChart } from './context-sweep';
 import { MIB_PER_GB } from './format';
 import { kpisOf, READING_WORDS_PER_SEC, sentenceKey, type Kpis } from './kpis';
 import { noteText } from './notes';
@@ -236,6 +237,7 @@ export function Overview({ run, onRerun, errorCard }: OverviewProps) {
           {run.metrics.concurrency.length > 0 && <ConcurrencyChart run={run} />}
         </div>
       )}
+      {run.metrics.contextSweep.length > 0 && <ContextSweepChart points={run.metrics.contextSweep} />}
       {run.telemetry && run.telemetry.t.length > 0 && <TimelineChart telemetry={run.telemetry} totalMiB={gpu?.memoryTotalMiB} powerLimitW={gpu?.powerLimitW} />}
     </div>
   );

@@ -83,10 +83,11 @@ export function UsersTable({ caption, points, levels, current, framed }: { capti
 export function usersSentence(p: ConcurrencyPoint, solo: number | undefined, f: F): string {
   const { t, number, integer } = f;
   const write = number(p.perRequestDecodeTpsP50, 1);
+  const one = p.level === 1;
   const parts = [
     p.perRequestPrefillTpsP50 === undefined
-      ? t('users.sentence.write', { n: p.level, write })
-      : t('users.sentence.readWrite', { n: p.level, read: integer(p.perRequestPrefillTpsP50), write }),
+      ? t(one ? 'users.sentence.writeOne' : 'users.sentence.write', { n: p.level, write })
+      : t(one ? 'users.sentence.readWriteOne' : 'users.sentence.readWrite', { n: p.level, read: integer(p.perRequestPrefillTpsP50), write }),
   ];
   if (solo && p.level > 1) parts.push(t('users.sentence.vsSolo', { pct: integer((100 * p.perRequestDecodeTpsP50) / solo) }));
   const first = t('users.sentence.firstToken', { p50: number(p.ttftP50Ms / 1000, 2), p95: number(p.ttftP95Ms / 1000, 2) });
