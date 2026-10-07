@@ -7,6 +7,8 @@ export interface LlamaLogCtx {
   nLayers: number;
   vramMiB: number;
   flashAttn: string;
+  kvType?: string;
+  kvCapacity?: number;
 }
 export interface TaskTimings {
   promptN: number;
@@ -36,4 +38,5 @@ export function vllmModelLoaded(c: LlamaLogCtx, seconds: number): string[];
 export function vllmReady(c: LlamaLogCtx, seconds: number): string[];
 export function vllmNoKernelImage(): string[];
 export function vllmOom(): string[];
+export function vllmKvTooSmall(c: LlamaLogCtx): string[];
 export function vllmPortInUse(c: LlamaLogCtx): string[];

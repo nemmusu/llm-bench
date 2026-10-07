@@ -25,7 +25,83 @@ import * as L from './logs.mjs';
  * @property {number} [nLayers]         Layers reported in the log (default 33).
  * @property {number} [seed]            PRNG seed (default 1).
  * @property {{ utilPct: number, powerW: number, tempC?: number }} [busy] Telemetry while computing.
+ * @property {FakeMemory} [memory]        VRAM model: what fits, what spills, what runs out of memory.
+ * @property {FakeSpeed} [speed]          How speed depends on depth, ubatch, KV type, spill and offload.
  */
+
+/**
+ * VRAM model (MiB) for "Trova le impostazioni migliori" tests: need = weights on the GPU + KV cache
+ * (per 1024 tokens of context, f16; q8_0 = 34/64 and q4_0 = 18/64 of it; vLLM fp8 = 1/2) + compute
+ * buffer (per 512 ubatch tokens). Above totalMiB the load fails with CUDA OOM, unless `spillMiB` > 0:
+ * up to totalMiB + spillMiB it loads but spills (Windows), and generation collapses (FakeSpeed.spill).
+ * vLLM: the KV pool is gpu-memory-utilization × totalMiB − weights − 1024 (− 512 more for CUDA graphs
+ * unless --enforce-eager); it logs "GPU KV cache size: N tokens" and refuses a longer max-model-len.
+ * Offload (--n-cpu-moe N or -ngl < layers) moves N/layers of the weights to the CPU.
+ * @typedef {object} FakeMemory
+ * @property {number} totalMiB
+ * @property {number} weightsMiB
+ * @property {number} kvMiBPer1k
+ * @property {number} [computeMiBPer512] default 300
+ * @property {number} [spillMiB]         default 0 (no spill: over the limit = OOM)
+ * @property {number} [layers]           default 32 (offload granularity)
+ */
+
+/**
+ * @typedef {object} FakeSpeed
+ * @property {number} [depthSlowdown]      generation divided by (1 + k × depth / 32768); default 0
+ * @property {number} [prefillDepthSlowdown] prompt reading divided by (1 + k × depth / 32768); default 0
+ * @property {number} [faOffDepthFactor]   flash attention off multiplies the depth slowdowns; default 2
+ * @property {number} [ubatchExponent]     prompt reading × (ubatch / 512)^e (diminishing returns); default 0
+ * @property {Record<string, number>} [kvDecodeFactor] generation × factor per KV type (default 1)
+ * @property {number} [spillFactor]        generation × factor while spilling; default 0.07
+ * @property {number} [offloadPenalty]     generation × (1 − penalty × share on the CPU); default 0.7
+ */
+
+const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5 };
+
+/**
+ * What a launch needs and gets under the memory model.
+ * @param {FakeMemory} m
+ * @param {{ flavor: string, ctx: number, kvType?: string, ubatch?: number, nCpuMoe?: number, gpuLayers?: number, gpuMemoryUtilization?: number, eager?: boolean }} o
+ */
+export function memoryPlan(m, o) {
+  const layers = m.layers ?? 32;
+  const cpu = o.nCpuMoe !== undefined ? Math.min(1, o.nCpuMoe / layers) : o.gpuLayers !== undefined && o.gpuLayers < layers ? 1 - o.gpuLayers / layers : 0;
+  const weights = m.weightsMiB * (1 - cpu);
+  const kvPerToken = (m.kvMiBPer1k * (KV_SHARE[o.kvType ?? 'f16'] ?? 1)) / 1024;
+  const compute = (m.computeMiBPer512 ?? 300) * ((o.ubatch ?? 512) / 512);
+  if (o.flavor === 'vllm') {
+    const pool = (o.gpuMemoryUtilization ?? 0.9) * m.totalMiB - weights - 1024 - (o.eager ? 0 : 512);
+    const capacity = Math.max(0, Math.floor(pool / kvPerToken));
+    const need = weights + 1024 + Math.max(0, pool);
+    return { cpuShare: cpu, needMiB: need, vramMiB: Math.min(need, m.totalMiB), capacity, outcome: o.ctx > capacity ? 'kv-too-small' : 'ok' };
+  }
+  const need = weights + kvPerToken * o.ctx + compute;
+  const outcome = need <= m.totalMiB ? 'ok' : need <= m.totalMiB + (m.spillMiB ?? 0) ? 'spill' : 'oom';
+  return { cpuShare: cpu, needMiB: need, vramMiB: Math.round(Math.min(need, m.totalMiB)), outcome };
+}
+
+/**
+ * Prompt reading and generation speeds (tokens/s) of a request at `depth` prompt tokens.
+ * @param {FakeProfile} p
+ * @param {{ depth: number, flashAttn?: string, kvType?: string, kvTypeV?: string, ubatch?: number, spill?: boolean, cpuShare?: number }} o
+ */
+export function speeds(p, o) {
+  const s = p.speed ?? {};
+  const fa = o.flashAttn === 'off' ? (s.faOffDepthFactor ?? 2) : 1;
+  const d = o.depth / 32768;
+  let decode = (p.decodeTps ?? 120) / (1 + (s.depthSlowdown ?? 0) * fa * d);
+  let prefill = ((p.prefillTps ?? 4000) * ((o.ubatch ?? 512) / 512) ** (s.ubatchExponent ?? 0)) / (1 + (s.prefillDepthSlowdown ?? 0) * fa * d);
+  decode *= s.kvDecodeFactor?.[o.kvType ?? 'f16'] ?? 1;
+  // Mixed K/V types run on slow generic kernels.
+  if ((o.kvType ?? 'f16') !== (o.kvTypeV ?? o.kvType ?? 'f16')) decode *= 0.5;
+  if (o.spill) {
+    decode *= s.spillFactor ?? 0.07;
+    prefill *= 0.3;
+  }
+  decode *= 1 - (s.offloadPenalty ?? 0.7) * (o.cpuShare ?? 0);
+  return { decode, prefill };
+}
 
 /** @returns {FakeProfile} */
 export function readProfile(env = process.env) {
@@ -138,7 +214,10 @@ export async function startFakeEngine(o = {}) {
   const busyLoad = p.busy ?? { utilPct: 97, powerW: 450, tempC: 68 };
   const gpu = new GpuState(o.stateFile, { watchdog: o.watchdog });
   const rand = mulberry32(p.seed ?? 1);
-  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB, flashAttn: o.flashAttn ?? 'auto' };
+  // The memory model (when the profile has one) decides what loads, what spills and how much VRAM it holds.
+  const mem = p.memory ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager }) : undefined;
+  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity };
+  const rates = (depth) => speeds(p, { depth, flashAttn: o.flashAttn, kvType: o.kvType, kvTypeV: o.kvTypeV, ubatch: o.ubatch, spill: mem?.outcome === 'spill', cpuShare: mem?.cpuShare });
 
   let loaded = false;
   let closed = false;
@@ -181,7 +260,8 @@ export async function startFakeEngine(o = {}) {
     if (flavor === 'llamacpp') out(L.llamaTaskStart(slot, task, promptN, ctx));
     gpu.setLoad(busyLoad);
     const t0 = performance.now();
-    await sleep(((promptN / (p.prefillTps ?? 4000)) * 1000) * scale);
+    const rate = rates(promptN);
+    await sleep(((promptN / rate.prefill) * 1000) * scale);
     const tPrefill = performance.now();
     const seed = (p.seed ?? 1) + task;
     let k = 0;
@@ -192,7 +272,7 @@ export async function startFakeEngine(o = {}) {
     try {
       while (k < n && !aborted && !closed) {
         const m = Math.min(perChunk, n - k);
-        const perToken = (1000 / (p.decodeTps ?? 120)) * scale * (1 + 0.15 * Math.max(0, Math.min(active, np) - 1));
+        const perToken = (1000 / rate.decode) * scale * (1 + 0.15 * Math.max(0, Math.min(active, np) - 1));
         const target = due + m * perToken;
         const now = performance.now();
         if (target > now) await sleep(target - now);
@@ -463,11 +543,11 @@ export async function startFakeEngine(o = {}) {
     out(L.llamaLoadTensorsStart(c));
     for (let i = 1; i <= 5; i++) {
       await sleep((loadMs * 0.6) / 5);
-      if (p.oomAtLoad && i === 3) throw Object.assign(new Error('oom'), { lines: L.llamaOom(c) });
-      gpu.setMem(Math.round(vramMiB * 0.85 * (i / 5)));
+      if ((p.oomAtLoad || mem?.outcome === 'oom') && i === 3) throw Object.assign(new Error('oom'), { lines: L.llamaOom(c) });
+      gpu.setMem(Math.round(c.vramMiB * 0.85 * (i / 5)));
     }
     out(L.llamaContext(c));
-    gpu.setMem(vramMiB);
+    gpu.setMem(c.vramMiB);
     await sleep(loadMs * 0.15);
     out(L.llamaWarmup());
     gpu.setLoad(busyLoad);
@@ -480,12 +560,13 @@ export async function startFakeEngine(o = {}) {
     await sleep(loadMs * 0.1);
     if (p.noKernelImage) throw Object.assign(new Error('nokernel'), { lines: L.vllmNoKernelImage() });
     await sleep(loadMs * 0.4);
-    gpu.setMem(Math.round(vramMiB * 0.6));
+    gpu.setMem(Math.round(c.vramMiB * 0.6));
     out(L.vllmWeights((loadMs * 0.4) / 1000));
     if (p.oomAtLoad) throw Object.assign(new Error('oom'), { lines: L.vllmOom() });
     out(L.vllmModelLoaded(c, (loadMs * 0.5) / 1000));
+    if (mem?.outcome === 'kv-too-small') throw Object.assign(new Error('kv'), { lines: L.vllmKvTooSmall(c) });
     await sleep(loadMs * 0.4);
-    gpu.setMem(vramMiB);
+    gpu.setMem(c.vramMiB);
     gpu.setLoad(busyLoad);
     await sleep(loadMs * 0.1);
     gpu.setLoad(null);
