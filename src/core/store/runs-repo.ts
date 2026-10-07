@@ -259,9 +259,14 @@ export class RunsRepo {
     return spills;
   }
 
+  /** A run file as it is saved: undefined when gone or unreadable. */
+  private async raw(file: string): Promise<RunResult | undefined> {
+    return parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+  }
+
   /** A run file as it is shown and counted: a spill of an older run found by the last list() is added. */
   private async load(file: string): Promise<RunResult | undefined> {
-    const run = parseRun(await readJsonFile(file).catch(() => null)) ?? undefined;
+    const run = await this.raw(file);
     const spill = this.inference?.spills.get(file);
     return run && spill ? withInferredSpill(run, spill) : run;
   }
@@ -319,7 +324,7 @@ export class RunsRepo {
     const runs: RunResult[] = [];
     for (const id of ids) {
       const file = await this.fileOf(id);
-      const run = file ? parseRun(await readJsonFile(file).catch(() => null)) : null;
+      const run = file ? await this.raw(file) : undefined;
       if (run) runs.push(run);
     }
     return { format: EXPORT_FORMAT, version: EXPORT_VERSION, runs };

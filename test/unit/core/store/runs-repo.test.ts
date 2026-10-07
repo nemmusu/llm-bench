@@ -189,8 +189,11 @@ describe('RunsRepo', () => {
     // Dangling link (a junction needs no privileges on Windows): listed by readdir, stat fails.
     symlinkSync(path.join(dir, 'gone'), path.join(dir, 'dangling.json'), 'junction');
     writeFileSync(path.join(dir, 'UPPER.JSON'), JSON.stringify(makeRun({ id: 'U', createdAt: '2026-09-01T00:00:00.000Z' })));
+    // Same date: by id, whatever the names of the files.
+    writeFileSync(path.join(dir, 'a-file.json'), JSON.stringify(makeRun({ id: 'Y', createdAt: '2026-10-02T00:00:00.000Z' })));
+    writeFileSync(path.join(dir, 'b-file.json'), JSON.stringify(makeRun({ id: 'X', createdAt: '2026-10-02T00:00:00.000Z' })));
     const list = await repo.list();
-    expect(list.map((s) => s.id)).toEqual(['C', 'B', 'A', 'U', 'E', 'D']);
+    expect(list.map((s) => s.id)).toEqual(['C', 'B', 'Y', 'X', 'A', 'U', 'E', 'D']);
     expect(list.find((s) => s.id === 'U')?.file).toBe('UPPER.JSON');
   });
 
