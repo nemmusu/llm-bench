@@ -33,6 +33,12 @@ function speculativeName(p: ConfigParams): string | undefined {
   }
 }
 
+/** vLLM's fp8 formats read "fp8 (e5m2)"; every other cache type as written. */
+function kvName(type: string): string {
+  const fp8 = /^fp8_(e4m3|e5m2)$/.exec(type);
+  return fp8 ? `fp8 (${fp8[1] as string})` : type;
+}
+
 /**
  * Normalized settings (contract/configs.ts) as parts: context, KV cache, GPU layers and CPU offload,
  * flash attention, ub, b, slots, then the rest. Engine defaults are left out unless asked for.
@@ -49,8 +55,8 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   const defaultCache = family === 'vllm' ? CONFIG_DEFAULTS.vllm.cacheType : CONFIG_DEFAULTS.llamacpp.cacheType;
   const k = p.cacheTypeK ?? defaultCache;
   const v = p.cacheTypeV ?? defaultCache;
-  if (k !== v) parts.push(t('result.launch.kvCacheSplit', { k, v }));
-  else if ((opts.kv === 'always' && known) || k !== defaultCache) parts.push(t('result.launch.kvCache', { type: k }));
+  if (k !== v) parts.push(t('result.launch.kvCacheSplit', { k: kvName(k), v: kvName(v) }));
+  else if ((opts.kv === 'always' && known) || k !== defaultCache) parts.push(t('result.launch.kvCache', { type: kvName(k) }));
   if (family === 'llamacpp') {
     // llama.cpp convention: no value, "all" or a count ≥ the model's layers puts everything on the GPU.
     if (p.gpuLayers === 0) parts.push(t('result.launch.cpuOnly'));
@@ -65,6 +71,10 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   if (p.batchSize !== undefined) parts.push(t('result.launch.batch', { n: integer(p.batchSize) }));
   if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: integer(p.maxNumBatchedTokens) }));
   if (p.parallel !== undefined && p.parallel > 1) parts.push(t('result.launch.parallel', { n: p.parallel }));
+  if (p.kvLayout !== undefined) parts.push(t(p.kvLayout === 'unified' ? 'result.launch.kvShared' : 'result.launch.kvPerUser'));
+  if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: integer(p.cacheReuse) }));
+  if (p.blockSize !== undefined) parts.push(t('result.launch.blockSize', { n: p.blockSize }));
+  if (p.cudaGraphSizes?.length) parts.push(t('result.launch.cudaGraphs', { sizes: p.cudaGraphSizes.join('·') }));
   if (p.threads !== undefined) parts.push(t('result.launch.threads', { n: p.threads }));
   if (p.gpuMemoryUtilization !== undefined) parts.push(t('result.launch.gpuMemory', { pct: f.percent(p.gpuMemoryUtilization, 0) }));
   if (p.enforceEager) parts.push(t('result.launch.eager'));
@@ -90,7 +100,10 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
  */
 export function paramParts(kind: EngineKind, p: LaunchParams, blockCount: number | undefined, f: Pick<Formatters, 't' | 'integer' | 'percent'>): string[] {
   const { t } = f;
-  const parts = configParts(kind, configParamsOf({ engineKind: kind, params: { ...p, extraArgs: [] }, blockCount }), f, { allGpu: true });
+  // The extra arguments are shown as typed below; only the KV layout depends on them (GPU Bench adds --kv-unified unless they say otherwise).
+  const layout = configParamsOf({ engineKind: kind, params: p, blockCount }).kvLayout;
+  const settings = { ...configParamsOf({ engineKind: kind, params: { ...p, extraArgs: [] }, blockCount }), ...(layout ? { kvLayout: layout } : {}) };
+  const parts = configParts(kind, settings, f, { allGpu: true });
   if (p.extraArgs.length) parts.push(t('result.launch.extraArgs', { args: p.extraArgs.join(' ') }));
   const envCount = Object.keys(p.env).length;
   if (envCount) parts.push(t('result.launch.envCount', { n: envCount }));

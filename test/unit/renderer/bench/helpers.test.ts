@@ -243,10 +243,13 @@ describe('summary', () => {
       'no flash attention',
       'ub 256',
       '4 parallel slots',
+      'context shared by the users',
       '8 threads',
       'extra arguments: --metrics',
       '1 environment variables',
     ]);
+    // The layout follows the extra arguments too (GPU Bench adds --kv-unified unless they say otherwise).
+    expect(paramParts('llamacpp-native', { extraArgs: ['--no-kv-unified'], env: {}, parallel: 4 }, 36, it_)).toContain('contesto diviso per utente');
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 20 }, 36, it_)).toEqual(['20 livelli in GPU']);
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 99 }, 36, it_)).toEqual(['tutto in GPU']);
     expect(paramParts('vllm-native', { extraArgs: [], env: {}, maxModelLen: 4096, gpuMemoryUtilization: 0.8, dtype: 'bfloat16', quantization: 'fp8', kvCacheType: 'auto' }, undefined, it_)).toEqual([

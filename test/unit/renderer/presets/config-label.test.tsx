@@ -73,4 +73,21 @@ describe('configParts', () => {
       'decodifica speculativa (eagle)',
     ]);
   });
+
+  it('words the users’ KV layout, cache reuse, vLLM block size, CUDA graphs and fp8 formats', () => {
+    const multi = { contextSize: 32768, parallel: 4, kvLayout: 'unified' as const, cacheReuse: 256, other: [] };
+    expect(configParts('llamacpp-native', multi, it_)).toEqual(['contesto 32.768', '4 slot paralleli', 'contesto condiviso fra gli utenti', 'riuso cache 256']);
+    expect(configParts('llamacpp-native', { ...multi, kvLayout: 'split', cacheReuse: 2048 }, en)).toEqual(['context 32,768', '4 parallel slots', 'context split per user', 'cache reuse 2,048']);
+    expect(configParts('llamacpp-native', { parallel: 4, kvLayout: 'split', other: [] }, it_)).toEqual(['4 slot paralleli', 'contesto diviso per utente']);
+    const vllm = { cacheTypeK: 'fp8_e5m2', cacheTypeV: 'fp8_e5m2', blockSize: 32, cudaGraphSizes: [1, 2, 4], other: [] };
+    expect(configParts('vllm-docker', vllm, it_)).toEqual(['cache KV fp8 (e5m2)', 'block size 32', 'CUDA graph 1·2·4']);
+    expect(configParts('vllm-docker', { ...vllm, cacheTypeV: 'fp8_e4m3' }, en)).toEqual(['KV cache fp8 (e5m2) (K) / fp8 (e4m3) (V)', 'block size 32', 'CUDA graphs 1·2·4']);
+    expect(configParts('vllm-docker', { cudaGraphSizes: [], other: [] }, it_)).toEqual([]);
+    // From launch params: the fp8 format passed as an extra argument wins over kvCacheType.
+    expect(launchLabelOf(P({ maxModelLen: 8192, kvCacheType: 'fp8', extraArgs: ['--kv-cache-dtype', 'fp8_e4m3', '--block-size', '32'] }), 'vllm-native', it_).parts).toEqual([
+      'Contesto 8192',
+      'cache KV fp8 (e4m3)',
+      'block size 32',
+    ]);
+  });
 });
