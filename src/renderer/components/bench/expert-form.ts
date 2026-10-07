@@ -179,16 +179,28 @@ export const DEFAULT_SCENARIO_FORM: ScenarioForm = {
   outputTokens: '256',
   warmup: '1',
   reps: '5',
-  concurrency: '1, 4',
+  concurrency: '4',
   requestsPerWorker: '4',
   llamaBench: false,
 };
 
-/** "512, 4096" → [512, 4096]; null when any item is not a positive integer. */
+/** "4096, 512" → [512, 4096]: smallest first, each once; null when any item is not a positive integer. */
 export function parseList(text: string): number[] | null {
   const items = text.split(/[,;\s]+/).filter(Boolean);
   const nums = items.map((i) => parseInteger(i));
-  return nums.some((n) => n === null) ? null : (nums as number[]);
+  return nums.some((n) => n === null) ? null : [...new Set(nums as number[])].sort((a, b) => a - b);
+}
+
+/** "4" → 1, 2, 3, 4 (every step up to that many users); a list is taken as written. */
+export function parseUsers(text: string): number[] | null {
+  const l = parseList(text);
+  return l?.length === 1 ? Array.from({ length: l[0]! }, (_, i) => i + 1) : l;
+}
+
+/** 1, 2, 3, 4 shows back as "4"; any other set of levels as a list. */
+export function showUsers(levels: readonly number[]): string {
+  const upTo = levels.length > 1 && levels.every((l, i) => l === i + 1);
+  return upTo ? String(levels.length) : levels.join(', ');
 }
 
 export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Scenario; invalid: ScenarioField[] } {
@@ -203,7 +215,7 @@ export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Sce
   const list = (field: 'promptTokens' | 'concurrency'): number[] => {
     const text = form[field].trim();
     if (!text) return [];
-    const l = parseList(text);
+    const l = field === 'concurrency' ? parseUsers(text) : parseList(text);
     if (!l) invalid.push(field);
     return l ?? [];
   };
@@ -235,7 +247,7 @@ export function formFromScenario(s: Scenario | undefined): ScenarioForm {
       form.warmup = String(step.warmup);
       form.reps = String(step.reps);
     } else if (step.kind === 'concurrency') {
-      form.concurrency = step.levels.join(', ');
+      form.concurrency = showUsers(step.levels);
       form.requestsPerWorker = String(step.requestsPerWorker);
     } else form.llamaBench = true;
   }

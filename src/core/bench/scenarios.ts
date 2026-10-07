@@ -6,6 +6,9 @@ export const DEFAULT_SEED = 42;
 /** Tokens kept free in the context besides prompt + output (BOS, server-side extras). */
 export const CONTEXT_MARGIN = 16;
 
+/** 1, 2, 3 … n: every step up to the busiest, so the table shows how each extra user changes things. */
+export const usersUpTo = (n: number): number[] => Array.from({ length: n }, (_, i) => i + 1);
+
 const PROFILES: Record<BuiltinProfile, Step[]> = {
   // ~2 min: one warm load and a small latency sweep.
   quick: [
@@ -17,13 +20,13 @@ const PROFILES: Record<BuiltinProfile, Step[]> = {
     { kind: 'load', cache: 'cold', reps: 1 },
     { kind: 'load', cache: 'warm', reps: 3 },
     { kind: 'latency', promptTokens: [512, 4096], outputTokens: 256, warmup: 1, reps: 5 },
-    { kind: 'concurrency', levels: [1, 4], promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
+    { kind: 'concurrency', levels: usersUpTo(4), promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
   ],
   full: [
     { kind: 'load', cache: 'cold', reps: 3 },
     { kind: 'load', cache: 'warm', reps: 3 },
     { kind: 'latency', promptTokens: [128, 512, 2048, 8192, 32768], outputTokens: 512, warmup: 2, reps: 10 },
-    { kind: 'concurrency', levels: [1, 2, 4, 8, 16], promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
+    { kind: 'concurrency', levels: usersUpTo(16), promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 },
     { kind: 'llama-bench', pp: 512, tg: 128, reps: 5 },
   ],
 };
@@ -118,6 +121,9 @@ export interface ScenarioWarning {
 const fits = (prompt: number, output: number, ctx: number | undefined): boolean =>
   ctx === undefined || prompt + output + CONTEXT_MARGIN <= ctx;
 
+/** Smallest first, each value once: tables and charts then read in order (1, 2, 3, 4 users). */
+const ascending = (values: readonly number[]): number[] => [...new Set(values)].sort((a, b) => a - b);
+
 /**
  * Removes what the engine configuration cannot run: prompt lengths that do not fit the context,
  * concurrency levels above the server's slots, llama-bench outside llama.cpp native, and load
@@ -134,8 +140,9 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
         else steps.push(step);
         break;
       case 'latency': {
-        const kept = step.promptTokens.filter((p) => fits(p, step.outputTokens, ctx));
-        for (const p of step.promptTokens) {
+        const prompts = ascending(step.promptTokens);
+        const kept = prompts.filter((p) => fits(p, step.outputTokens, ctx));
+        for (const p of prompts) {
           if (!kept.includes(p)) warnings.push({ code: 'prompt_too_long', params: { promptTokens: p, contextSize: ctx } });
         }
         if (kept.length) steps.push({ ...step, promptTokens: kept });
@@ -147,8 +154,9 @@ export function fitScenario(scenario: Scenario, limits: ScenarioLimits): { scena
           break;
         }
         const max = limits.maxConcurrency;
-        const levels = step.levels.filter((l) => max === undefined || l <= max);
-        for (const l of step.levels) {
+        const all = ascending(step.levels);
+        const levels = all.filter((l) => max === undefined || l <= max);
+        for (const l of all) {
           if (!levels.includes(l)) warnings.push({ code: 'concurrency_level_skipped', params: { level: l, parallel: max } });
         }
         if (levels.length) steps.push({ ...step, levels });
