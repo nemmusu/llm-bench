@@ -58,6 +58,10 @@ export function scenarioLines(scenario: Scenario, f: Pick<Formatters, 't' | 'int
         return t('benchmark.scenario.llamaBench');
       case 'context-sweep':
         return t('benchmark.scenario.contextSweep');
+      case 'sessions':
+        return s.depth > 0
+          ? t('benchmark.scenario.sessions', { depth: integer(s.depth), levels: list(s.levels), turns: s.turns })
+          : t('benchmark.scenario.sessionsAuto', { levels: list(s.levels), turns: s.turns });
     }
   });
 }

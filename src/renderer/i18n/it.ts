@@ -842,6 +842,8 @@ export const it = {
       concurrency: '{levels} utenti insieme',
       llamaBench: 'test standard llama-bench',
       contextSweep: 'velocità con il contesto sempre più pieno',
+      sessions: 'conversazioni lunghe da {depth} token: {levels} alla volta, {turns} messaggi ciascuna',
+      sessionsAuto: 'conversazioni lunghe con tutto il contesto disponibile: {levels} alla volta, {turns} messaggi ciascuna',
     },
     plan: {
       title: 'Anteprima',

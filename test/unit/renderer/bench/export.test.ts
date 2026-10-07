@@ -70,6 +70,7 @@ describe('CSV', () => {
         load: { phases: [] },
         latency: [{ ...seeded(IDS.quick).metrics.latency[0]!, prefillTpsEngine: undefined, decodeTpsEngine: undefined }],
         contextSweep: [],
+        sessions: [],
         concurrency: [],
         llamaBench: [],
         vram: {},

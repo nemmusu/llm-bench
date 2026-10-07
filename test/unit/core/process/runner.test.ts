@@ -41,6 +41,14 @@ describe('LineSplitter', () => {
     expect(s.flush()).toEqual(['tail']);
     expect(s.flush()).toEqual([]);
   });
+
+  it('ends a line at a lone CR (progress bar redraws), but waits when CR closes a chunk', () => {
+    const s = new LineSplitter();
+    expect(s.push('shards: 0% | 0/2\rshards: 50% | 1/2\r')).toEqual(['shards: 0% | 0/2']);
+    expect(s.push('shards: 100% | 2/2\n')).toEqual(['shards: 50% | 1/2', 'shards: 100% | 2/2']);
+    expect(s.push('last\r')).toEqual([]);
+    expect(s.flush()).toEqual(['last']);
+  });
 });
 
 describe('AsyncQueue', () => {

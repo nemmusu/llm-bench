@@ -841,6 +841,8 @@ export const en: Messages = {
       concurrency: '{levels} users at once',
       llamaBench: 'llama-bench standard test',
       contextSweep: 'speed as the context fills up',
+      sessions: 'long conversations of {depth} tokens: {levels} at a time, {turns} messages each',
+      sessionsAuto: 'long conversations using the whole context available: {levels} at a time, {turns} messages each',
     },
     plan: {
       title: 'Preview',

@@ -16,6 +16,7 @@ import {
   type Step,
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
+import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
@@ -236,16 +237,64 @@ export function exampleBody(body: Record<string, unknown>): Record<string, unkno
   return body;
 }
 
-/** Last LOG_EXCERPT_LINES lines / LOG_EXCERPT_BYTES of every instance's log, with section headers. */
+/** A block's log split where the engine's own buffer (or LOG_HEAD_LINES) puts the end of its start. */
+function splitBlock(lines: readonly string[]): { head: string[]; rest: string[]; omitted: number } {
+  const at = lines.findIndex((l) => omittedCount(l) !== undefined);
+  if (at < 0) return { head: lines.slice(0, LOG_HEAD_LINES), rest: lines.slice(LOG_HEAD_LINES), omitted: 0 };
+  return { head: lines.slice(0, at), rest: lines.slice(at + 1), omitted: omittedCount(lines[at] as string) as number };
+}
+
+/**
+ * Every block within `budget` lines: its header, its head (the engine start), "… N righe omesse …"
+ * and the last lines. Heads share at most three quarters of the room (evenly, short heads leave
+ * theirs to the others); tails fill the rest, the latest block first.
+ */
+function excerptLines(blocks: readonly { label: string; lines: readonly string[] }[], notes: readonly string[], budget: number): string[] {
+  const parts = blocks.map((b) => ({ label: b.label, ...splitBlock(b.lines) }));
+  const tailNotes = notes.length ? ['=== gpu-bench ===', ...notes] : [];
+  const all = (keep: (p: (typeof parts)[number], i: number) => { head: number; rest: number }) => {
+    const out: string[] = [];
+    parts.forEach((p, i) => {
+      const k = keep(p, i);
+      const omitted = p.head.length - k.head + p.omitted + p.rest.length - k.rest;
+      out.push(`=== ${p.label} ===`, ...p.head.slice(0, k.head), ...(omitted > 0 ? [omittedLine(omitted)] : []), ...p.rest.slice(p.rest.length - k.rest));
+    });
+    return [...out, ...tailNotes];
+  };
+  const full = all((p) => ({ head: p.head.length, rest: p.rest.length }));
+  // Header + marker per block, the notes, and at least one line per block.
+  const fixed = parts.length * 2 + tailNotes.length;
+  if (full.length <= budget || budget < fixed + parts.length) return full.slice(-budget);
+  const room = budget - fixed;
+  const restTotal = parts.reduce((n, p) => n + p.rest.length, 0);
+  let headRoom = Math.min(room - Math.min(restTotal, Math.floor(room / 4)), Math.floor((room * 3) / 4));
+  const heads = new Map<number, number>();
+  const byLength = parts.map((p, i) => ({ i, n: p.head.length })).sort((x, y) => x.n - y.n);
+  byLength.forEach((h, k) => {
+    const share = Math.min(h.n, Math.floor(headRoom / (byLength.length - k)));
+    heads.set(h.i, share);
+    headRoom -= share;
+  });
+  let tailRoom = room - [...heads.values()].reduce((n, x) => n + x, 0);
+  const rests = new Map<number, number>();
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const take = Math.min((parts[i] as (typeof parts)[number]).rest.length, tailRoom);
+    rests.set(i, take);
+    tailRoom -= take;
+  }
+  return all((_, i) => ({ head: heads.get(i) as number, rest: rests.get(i) as number }));
+}
+
+/**
+ * Every instance's log within LOG_EXCERPT_LINES lines and LOG_EXCERPT_BYTES: per block its start
+ * (what was loaded, up to ready), "… N righe omesse …" and its last lines; then the run's notes.
+ */
 export function buildLogExcerpt(blocks: readonly { label: string; lines: readonly string[] }[], notes: readonly string[]): string {
-  const lines: string[] = [];
-  for (const b of blocks) lines.push(`=== ${b.label} ===`, ...b.lines);
-  if (notes.length) lines.push('=== gpu-bench ===', ...notes);
-  let kept = lines.slice(-LOG_EXCERPT_LINES);
-  let text = kept.join('\n');
-  while (Buffer.byteLength(text, 'utf8') > LOG_EXCERPT_BYTES && kept.length > 1) {
-    kept = kept.slice(Math.ceil(kept.length / 10));
-    text = kept.join('\n');
+  let budget = LOG_EXCERPT_LINES;
+  let text = excerptLines(blocks, notes, budget).join('\n');
+  while (Buffer.byteLength(text, 'utf8') > LOG_EXCERPT_BYTES && budget > 1) {
+    budget = Math.max(1, Math.floor(budget * 0.9));
+    text = excerptLines(blocks, notes, budget).join('\n');
   }
   return Buffer.byteLength(text, 'utf8') > LOG_EXCERPT_BYTES ? text.slice(-LOG_EXCERPT_BYTES / 4) : text;
 }
@@ -748,6 +797,7 @@ export class BenchRunner {
       ...(s.firstTokenMs !== undefined ? { firstTokenAfterLoadMs: s.firstTokenMs } : {}),
       latency,
       contextSweep: [],
+      sessions: [],
       concurrency: s.concurrency,
       llamaBench: s.llamaBench,
       vram: {

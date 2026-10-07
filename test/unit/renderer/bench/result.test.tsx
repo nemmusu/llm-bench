@@ -128,7 +128,7 @@ describe('result overview', () => {
       scenario: { profile: 'custom', seed: 1, steps: [] },
       engine: { kind: 'llamacpp-native', name: 'llama.cpp' },
       launch: { ...base.launch, cwd: undefined, requestExample: undefined, env: { CUDA_VISIBLE_DEVICES: '0' } },
-      metrics: { formulaVersion: 1, load: { phases: [] }, latency: [], contextSweep: [], concurrency: [], llamaBench: [], vram: {}, energy: {}, thermals: { throttleReasons: [] } },
+      metrics: { formulaVersion: 1, load: { phases: [] }, latency: [], contextSweep: [], sessions: [], concurrency: [], llamaBench: [], vram: {}, energy: {}, thermals: { throttleReasons: [] } },
       validity: [],
       notes: [{ code: 'MODEL_TOO_LARGE', params: { needMiB: 40000, availableMiB: 30000 } }],
       telemetry: undefined,
