@@ -101,6 +101,9 @@ describe('values that won before on this GPU', () => {
     const vNoBatch = tuneRun({ id: 'W', engine: { kind: 'vllm-docker', name: 'vLLM' }, tuning: { combinations: [combo('fp8', 8192, [point(1024, 1)])] } });
     expect((await learnedOrder(repo([v, vNoBatch]), here, 'vllm-docker'))?.prefer).toEqual({ bt: [8192] });
     expect(await learnedOrder(repo([vNoBatch]), here, 'vllm-docker')).toEqual({ prefer: {}, learned: { runs: 1, first: [] } });
+    // Saved before phase 3 with a batch only.
+    const batchOnly = tuneRun({ id: 'D', tuning: { combinations: [combo('q8_0', 32768, [point(1024, 1)], { params: P({ batchSize: 8192 }) })] } });
+    expect((await learnedOrder(repo([batchOnly]), here, 'llamacpp-native'))?.prefer).toEqual({ b: [8192] });
     // Nothing usable: none.
     expect(await learnedOrder(repo([tuneRun({ id: 'N', recommended: undefined })]), here, 'llamacpp-native')).toBeUndefined();
     const broken = { ...repo([a]), get: () => Promise.reject(new Error('x')) };
@@ -153,6 +156,17 @@ describe('buildTuneSetup, phase 3', () => {
     const failing = await buildTuneSetup({ ...deps(), runs: repo([]), here: () => Promise.reject(new Error('x')), calibration: () => Promise.reject(new Error('y')) }, { engine: { kind: 'llamacpp-native' } }, prepared('llamacpp-native', llamaCaps));
     expect(failing).not.toHaveProperty('learned');
     expect(failing.predict!(P({ contextSize: 4096 }))).not.toHaveProperty('calibration');
+  });
+
+  it('vLLM: the batched tokens that won here come first; the help unreadable: the defaults; past runs unreadable: no order', async () => {
+    const v = tuneRun({ id: 'V', engine: { kind: 'vllm-docker', name: 'vLLM' }, tuning: { combinations: [combo('fp8', 8192, [point(1024, 1)], { params: P({ batchSize: 8192 }) })] } });
+    const broken = { ...prepared('vllm-docker', undefined), adapter: { capabilities: () => Promise.reject(new Error('no docker')) } as unknown as EngineAdapter };
+    const s = await buildTuneSetup(deps({ runs: [v] }), { engine: { kind: 'vllm-docker' }, tune: { budget: 'fast', fidelity: false } }, broken);
+    expect(s.learned).toEqual({ runs: 1, first: [{ key: 'bt', value: 8192 }] });
+    expect(s.space.dimensions.find((d) => d.key === 'bt')!.values(s.space.base('auto'))[0]).toBe(8192);
+    expect(s.space.dimensions.map((d) => d.key)).toEqual(['bt']);
+    const unreadable = { ...deps(), runs: { list: () => Promise.reject(new Error('disk')), get: async () => undefined }, here: async () => here };
+    expect(await buildTuneSetup(unreadable, { engine: { kind: 'llamacpp-native' } }, prepared('llamacpp-native', llamaCaps))).not.toHaveProperty('learned');
   });
 });
 

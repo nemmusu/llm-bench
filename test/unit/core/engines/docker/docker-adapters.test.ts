@@ -329,6 +329,18 @@ describe('VllmDockerAdapter', () => {
     expect(older.choices?.['--kv-cache-dtype']).toEqual(['auto', 'fp8']);
   });
 
+  it('options: an image without an id is cached by its name; Docker down: none', async () => {
+    const VLLM = path.resolve(RESOURCES, '..', 'test', 'fixtures', 'vllm');
+    const all = readFileSync(path.join(VLLM, 'help-all.stdout.txt'), 'utf8');
+    const h = make({ images: { 'vllm/vllm-openai:v0.31.0': { id: '', repoTags: [], repoDigests: [], size: 1 } }, handler: () => ok(all) });
+    const a = new VllmDockerAdapter({ ...h.common, hub });
+    expect((await a.capabilities({ kind: 'vllm-docker' })).flags.has('--block-size')).toBe(true);
+    await a.capabilities({ kind: 'vllm-docker' });
+    expect(h.proc.calls.filter((c) => c.args.includes('--help=all'))).toHaveLength(1);
+    const down = new VllmDockerAdapter({ ...make({ inspectError: new AppError('DOCKER_NOT_RUNNING', 'down') }).common, hub });
+    expect(await down.capabilities({ kind: 'vllm-docker' })).toMatchObject({ flags: new Set(), choices: {} });
+  });
+
   it('uses --model for pre-v0.12 images, pins revisions, and keeps the token out when there is none', async () => {
     const h = make();
     const a = new VllmDockerAdapter({ ...h.common, hub, hfToken: () => undefined });

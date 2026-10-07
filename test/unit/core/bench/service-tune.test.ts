@@ -97,6 +97,44 @@ describe('BenchService — "Avvia solo il server" after a tune run', () => {
     expect(own).not.toHaveProperty('tuned');
   });
 
+  it('prefers the tune made with the build in use; only an older build: marked; the build check never fails the plan', async () => {
+    let adjusts = 0;
+    // The first look at the engine (the build check) fails; the command itself is planned as usual.
+    const s = serviceSetup(tmp, { deps: { adjustEngine: async () => (++adjusts === 1 ? Promise.reject(new Error('docker down')) : undefined) } });
+    const old = tuneRun();
+    await s.runs.save({ ...old, engine: { ...old.engine, build: 'b10000' } });
+    const svc = new BenchService(s.deps);
+    const req = { engine: { kind: 'llamacpp-native' as const }, model: { localId: 'm1' } };
+    expect((await svc.planServer(req)).tuned).toMatchObject({ runId: 'TUNE-1', otherBuild: { build: 'b10000', current: 'b11438' } });
+    // The build in use cannot be known: the latest tune, unmarked.
+    const blind = Object.create(s.adapter) as typeof s.adapter;
+    blind.plan = (cfg, model, params, opts) => (opts.marker === 'gpubench-build' ? Promise.reject(new Error('no exe')) : s.adapter.plan(cfg, model, params, opts));
+    const plan = await new BenchService({ ...s.deps, getAdapter: () => blind }).planServer(req);
+    expect(plan.tuned).toMatchObject({ runId: 'TUNE-1' });
+    expect(plan.tuned?.otherBuild).toBeUndefined();
+    // The same build: preferred over a newer tune with another one.
+    await s.runs.save({ ...tuneRun(), id: 'TUNE-2', createdAt: '2026-10-06T11:00:00.000Z', engine: { ...old.engine, build: 'b11438' } });
+    expect((await svc.planServer(req)).tuned).toMatchObject({ runId: 'TUNE-2' });
+  });
+
+  it('the plan of a tune says the previous tune of the same question and whether its build is the one in use', async () => {
+    const s = serviceSetup(tmp, { deps: { resolveModel: async () => modelTarget({ identity: modelIdentity({ facts: { contextLength: 8192, blockCount: 4 } }) }) } });
+    const old = tuneRun();
+    await s.runs.save({ ...old, model: modelIdentity({ facts: { contextLength: 8192, blockCount: 4 } }), engine: { kind: 'llamacpp-native', name: 'llama.cpp' } });
+    const svc = new BenchService(s.deps);
+    const plan = await svc.plan(request({ profile: 'tune' }));
+    expect(plan.previousTune).toEqual({ runId: 'TUNE-1', createdAt: old.createdAt, budget: 'fast', currentBuild: 'b11438', sameBuild: false });
+    expect((await svc.plan(request({ profile: 'tune', tune: { budget: 'fast', goal: 'multi' } }))).previousTune).toBeUndefined();
+    // The build in use unknown; where it runs unknown: no previous tune said.
+    const unknown = Object.create(s.adapter) as typeof s.adapter;
+    unknown.plan = async (cfg, model, params, opts) => {
+      const p = await s.adapter.plan(cfg, model, params, opts);
+      return { ...p, engine: { kind: p.engine.kind, name: p.engine.name } };
+    };
+    expect((await new BenchService({ ...s.deps, getAdapter: () => unknown }).plan(request({ profile: 'tune' }))).previousTune).toEqual({ runId: 'TUNE-1', createdAt: old.createdAt, budget: 'fast', sameBuild: true });
+    expect((await new BenchService({ ...s.deps, fingerprint: () => Promise.reject(new Error('x')) }).plan(request({ profile: 'tune' }))).previousTune).toBeUndefined();
+  });
+
   it('without knowing where it runs (no fingerprint) there is no recommendation', async () => {
     const s = serviceSetup(tmp, { deps: { fingerprint: () => Promise.reject(new Error('no fingerprint')) } });
     await s.runs.save(tuneRun());

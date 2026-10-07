@@ -94,6 +94,26 @@ describe('BenchRunner: long conversations', () => {
     expect(result.metrics.kvCapacity).toBeUndefined();
   });
 
+  it('vLLM: the prefix cache as the engine counts it, read before and after every level', async () => {
+    const readings = [
+      { queries: 100, hits: 10 },
+      { queries: 1100, hits: 610 },
+      { queries: 1100, hits: 610 },
+      { queries: 3100, hits: 1810 },
+    ];
+    const { adapter, runner } = setup({ kind: 'vllm-docker', client: { flavor: 'vllm', prefixCache: (n) => readings[n - 1] } });
+    const result = await runner.run(
+      input({ engineConfig: { kind: 'vllm-docker' }, params: launchParamsSchema.parse({}), scenario: scenario({ kind: 'load', cache: 'warm', reps: 1 }, sessions({ levels: [1, 2] })) }),
+      new AbortController().signal,
+    );
+    expect(result.status).toBe('completed');
+    expect(adapter.client.prefixCacheReads).toBe(4);
+    expect(result.metrics.sessions.map((p) => p.prefixCache)).toEqual([
+      { queries: 1000, hits: 600, hitRate: 0.6, source: 'metrics' },
+      { queries: 2000, hits: 1200, hitRate: 0.6, source: 'metrics' },
+    ]);
+  });
+
   it('time budget spent: the remaining levels are skipped and the result says so', async () => {
     const { runner } = setup({ parallel: 4 });
     const result = await runner.run(input({ params: launchParamsSchema.parse({ parallel: 4 }), scenario: scenario(sessions({ depth: 5000, levels: [1, 2, 4], maxSeconds: 1 })) }), new AbortController().signal);

@@ -5,6 +5,7 @@ import type { GpuSample } from '../../../../src/contract/hardware';
 import { runResultSchema, type RunResult } from '../../../../src/contract/results';
 import type { Clock, ExitInfo, LogLine } from '../../../../src/core/deps';
 import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PhaseMark, PlanOptions } from '../../../../src/core/engines/types';
+import type { PrefixCacheReading } from '../../../../src/core/inference/prefix-metrics';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../../../../src/core/inference/types';
 import { ProcessVramRecorder, type GpuMemoryListener, type GpuMemorySource } from '../../../../src/core/telemetry/process-vram';
 import type { GpuProcessMemory, GpuUser, PidSource, ProcessVramSession, TelemetrySampler, TelemetrySession } from '../../../../src/core/telemetry/types';
@@ -111,6 +112,8 @@ export interface ClientOptions {
   onRequest?: (n: number) => void;
   /** Chunks carry their token ids (llama.cpp return_tokens) or only their text pieces. */
   pieces?: 'ids' | 'text';
+  /** vLLM /metrics: the prefix-cache counters at the n-th reading (1-based); absent = no counters. */
+  prefixCache?: (n: number) => PrefixCacheReading | undefined;
 }
 
 export class FakeClient implements InferenceClient {
@@ -126,6 +129,11 @@ export class FakeClient implements InferenceClient {
   }
   async ready(): Promise<boolean> {
     return true;
+  }
+  prefixCacheReads = 0;
+  async prefixCache(): Promise<PrefixCacheReading | undefined> {
+    this.prefixCacheReads++;
+    return this.o.prefixCache?.(this.prefixCacheReads);
   }
   async models(): Promise<string[]> {
     return ['m'];
