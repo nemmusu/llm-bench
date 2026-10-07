@@ -1326,7 +1326,7 @@ export const it = {
     banner: {
       label: 'Preset',
       title: 'Preset da «{label}» del {date}',
-      speed: '{tps} tok/s a {depth}',
+      speed: '{tps} tok/s a {depth} token',
       context: '{ctx} di contesto',
       hint: 'Motore, modello e impostazioni sono già qui sotto: avvia il test o solo il server.',
       source: 'Apri il test',

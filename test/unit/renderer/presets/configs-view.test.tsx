@@ -153,7 +153,7 @@ describe('Risultati → Configurazioni', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     const banner = await screen.findByRole('region', { name: 'Preset' });
     // The newest test of the configuration that measured 512 tokens, quoted with its own numbers.
-    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M» del 07/10: 186 tok/s a 512, 8K di contesto')).toBeTruthy();
+    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M» del 07/10: 186 tok/s a 512 token, 8K di contesto')).toBeTruthy();
     expect(api.settings.expertMode).toBe(true);
     expect(((await screen.findByLabelText('Contesto (token)')) as HTMLInputElement).value).toBe('8192');
     await waitFor(() => expect(posted(api, '/api/runs/plan').at(-1)?.body).toMatchObject({ model: { localId: 'qwen3-8b' }, params: { contextSize: 8192, flashAttention: 'on' } }));

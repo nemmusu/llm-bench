@@ -73,7 +73,7 @@ test('two settings of one model, compared by configuration; a preset back to the
     await expect(h1(page, 'Benchmark')).toBeVisible();
     const banner = page.getByRole('region', { name: 'Preset' });
     await expect(banner).toContainText('Preset da «Qwen3-0.6B-Q4_K_M»');
-    await expect(banner).toContainText('tok/s a 1K');
+    await expect(banner).toContainText('tok/s a 1K token');
     await expect(page.getByLabel('Micro-batch')).toHaveValue('1024');
     await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('-ub 1024');
     await scan(page, 'benchmark with a preset');

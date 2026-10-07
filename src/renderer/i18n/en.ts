@@ -1325,7 +1325,7 @@ export const en: Messages = {
     banner: {
       label: 'Preset',
       title: 'Preset from “{label}” of {date}',
-      speed: '{tps} tok/s at {depth}',
+      speed: '{tps} tok/s at {depth} tokens',
       context: '{ctx} of context',
       hint: 'Engine, model and settings are already below: start the test, or just the server.',
       source: 'Open the test',
