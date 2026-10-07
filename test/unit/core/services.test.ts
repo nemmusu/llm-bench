@@ -149,6 +149,8 @@ describe('createServices', () => {
       expect(res.status).toBe(200);
       const runs = await app.request('/api/runs', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(await runs.json()).toEqual([]);
+      const configs = await app.request('/api/configs', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+      expect(await configs.json()).toMatchObject({ configs: [], gpus: [], gpu: null });
       const sys = await app.request('/api/system', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(sys.status).toBe(200);
     }

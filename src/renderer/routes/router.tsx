@@ -23,7 +23,13 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: BenchmarkPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/welcome', component: WelcomePage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/run/$runId', component: RunPage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/results', component: ResultsPage }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/results',
+    component: ResultsPage,
+    // "Test" (default) or "Configurazioni".
+    validateSearch: (s: Record<string, unknown>): { view?: 'configs' } => (s.view === 'configs' ? { view: 'configs' as const } : {}),
+  }),
   createRoute({ getParentRoute: () => rootRoute, path: '/results/$runId', component: ResultPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/compare', component: ComparePage, validateSearch: validateCompareSearch }),
   createRoute({
