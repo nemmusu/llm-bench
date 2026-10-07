@@ -51,7 +51,7 @@ describe('Scheda da condividere: content', () => {
     expect(speed?.paragraphs?.[0]).toBe('Con 1 sessione il primo messaggio aspetta 1 min 53 s per leggere 200.000 token; dal secondo il server riusa il 99,7% del contesto e l’attesa scende a 1,00 s.');
     expect(speed?.table?.head[2]).toBe('Attesa prima risposta a 200.000 token');
     expect(cache?.text).toBe('Dal secondo messaggio in poi il server riusa quello che ha già letto (99,7% con 1 sessione, 97,5% con 2 sessioni) e legge solo il testo nuovo: con 1 sessione l’attesa passa da 1 min 53 s a 1,00 s.');
-    expect(queue?.paragraphs).toEqual(['Con 2 sessioni insieme ogni messaggio viene letto a 1783 token/s (con una sessione sola: 1763 token/s); quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.']);
+    expect(queue?.paragraphs).toEqual(['Con 2 sessioni insieme ogni messaggio viene letto a 1.783 token/s (con una sessione sola: 1.763 token/s); quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.']);
     expect(memory?.text).toBe('La memoria del motore (KV cache) tiene 889.820 token (bastano per 4 conversazioni da 200.000).');
     expect(compare?.text).toMatch(/^Stesso modello, stesso PC\. Prima: vLLM .*\. Ora: vLLM /);
     expect(compare?.table?.head).toEqual(['Misura', 'Prima', 'Ora', 'Differenza']);
@@ -64,7 +64,7 @@ describe('Scheda da condividere: content', () => {
     expect(glossary?.definitions?.map((d) => d.term)).toEqual(['Lettura del contesto', 'Attesa prima risposta', 'Attesa in coda', 'Contesto riusato', 'Velocità di scrittura']);
     expect(glossary?.after?.[0]).toMatch(/È un’approssimazione\.$/);
     expect(row(/^Contesto riusato/)?.slice(1)).toEqual(['0%', '99,7%', 'prima 0%, ora 99,7%']);
-    expect(r.sentence).toBe('Qwen3-8B-FP8 con vLLM v0.12.0 (CUDA) su RTX 5090: legge il contesto a 1763 token/s e scrive a 31,7 token/s per conversazione (prova con 200.000 token).');
+    expect(r.sentence).toBe('Qwen3-8B-FP8 con vLLM v0.12.0 (CUDA) su RTX 5090: legge il contesto a 1.763 token/s e scrive a 31,7 token/s per conversazione (prova con 200.000 token).');
     expect(r.footer).toMatch(/^Scheda creata il .* con GPU Bench 0\.3\.0\./);
     expect(r.meta.at(-1)).toMatch(/^misurato il /);
   });
@@ -94,7 +94,7 @@ describe('Scheda da condividere: content', () => {
     const two = withSessions(seeded(IDS.vllm), 'y', [NOW_POINTS[1]!], undefined, '2026-10-07T08:00:00.000Z');
     const q = sheetOf(input({ run: two }), it_);
     expect(q.sections.find((s) => s.title === 'Come funziona la coda')?.paragraphs?.[0]).toBe(
-      'Con 2 sessioni insieme ogni messaggio viene letto a 1783 token/s; quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.',
+      'Con 2 sessioni insieme ogni messaggio viene letto a 1.783 token/s; quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.',
     );
     expect(titles(q)).not.toContain('Il contesto si legge una volta sola');
     const engine = withSessions(seeded(IDS.vllm), 'z', NOW_POINTS.map((p) => ({ ...p, queueEstimated: false })), undefined, '2026-10-07T08:00:00.000Z');

@@ -30,7 +30,7 @@ describe('model page', () => {
     );
     renderLib(PAGE, api);
     expect(await h1('Model-GGUF')).toBeTruthy();
-    expect(await screen.findByText('1200 download')).toBeTruthy();
+    expect(await screen.findByText('1.200 download')).toBeTruthy();
     expect(screen.getByText('30 mi piace')).toBeTruthy();
     expect(screen.getByText('apache-2.0')).toBeTruthy();
     const choices = await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare' });

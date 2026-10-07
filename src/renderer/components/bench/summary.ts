@@ -67,9 +67,10 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   else if (p.cpuMoe !== undefined) parts.push(t('result.launch.cpuMoe', { n: p.cpuMoe }));
   if (p.flashAttention === 'on') parts.push(t('result.launch.flashAttention'));
   if (p.flashAttention === 'off') parts.push(t('result.launch.flashAttentionOff'));
-  if (p.ubatchSize !== undefined) parts.push(t('result.launch.ubatch', { n: integer(p.ubatchSize) }));
-  if (p.batchSize !== undefined) parts.push(t('result.launch.batch', { n: integer(p.batchSize) }));
-  if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: integer(p.maxNumBatchedTokens) }));
+  // Flag values stay raw, as typed on the command line ("ub 2048", not "ub 2.048"); only the context is grouped.
+  if (p.ubatchSize !== undefined) parts.push(t('result.launch.ubatch', { n: p.ubatchSize }));
+  if (p.batchSize !== undefined) parts.push(t('result.launch.batch', { n: p.batchSize }));
+  if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: p.maxNumBatchedTokens }));
   if (p.parallel !== undefined && p.parallel > 1) parts.push(t('result.launch.parallel', { n: p.parallel }));
   if (p.kvLayout !== undefined) parts.push(t(p.kvLayout === 'unified' ? 'result.launch.kvShared' : 'result.launch.kvPerUser'));
   if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: integer(p.cacheReuse) }));

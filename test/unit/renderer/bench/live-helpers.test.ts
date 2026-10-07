@@ -31,12 +31,12 @@ const SESSIONS: LivePoint = {
 
 describe('what is measured now', () => {
   it('says the request in flight in words and numbers', () => {
-    expect(nowText({ kind: 'latency', promptTokens: 4096, outputTokens: 512, rep: 3, reps: 10 }, f)).toBe('Prompt di 4096 token → 512 in uscita · ripetizione 3 di 10');
-    expect(nowText({ kind: 'latency', promptTokens: 4096, rep: 1, reps: 2, warmup: true }, f)).toBe('Prompt di 4096 token · riscaldamento 1 di 2');
+    expect(nowText({ kind: 'latency', promptTokens: 4096, outputTokens: 512, rep: 3, reps: 10 }, f)).toBe('Prompt di 4.096 token → 512 in uscita · ripetizione 3 di 10');
+    expect(nowText({ kind: 'latency', promptTokens: 4096, rep: 1, reps: 2, warmup: true }, f)).toBe('Prompt di 4.096 token · riscaldamento 1 di 2');
     expect(nowText({ kind: 'latency', rep: 2, warmup: true }, f)).toBe('riscaldamento 2');
     expect(nowText({ kind: 'latency', rep: 4 }, f)).toBe('ripetizione 4');
     expect(nowText({ kind: 'context-sweep', depth: 32768, outputTokens: 128 }, f)).toBe('Contesto riempito fino a 32.768 token · 128 token in uscita');
-    expect(nowText({ kind: 'context-sweep', promptTokens: 8192 }, f)).toBe('Contesto riempito fino a 8192 token');
+    expect(nowText({ kind: 'context-sweep', promptTokens: 8192 }, f)).toBe('Contesto riempito fino a 8.192 token');
     expect(nowText({ kind: 'context-sweep' }, f)).toBe('Contesto riempito un po’ alla volta');
     expect(nowText({ kind: 'concurrency', concurrency: 8, promptTokens: 512 }, f)).toBe('8 utenti insieme · prompt di 512 token ciascuno');
     expect(nowText({ kind: 'concurrency' }, f)).toBe('Più utenti insieme');
@@ -49,9 +49,9 @@ describe('what is measured now', () => {
     expect(nowText({ kind: 'load' }, f)).toBe('Caricamento del modello');
     expect(nowText({ kind: 'first-token' }, f)).toBe('Primo token dopo il caricamento');
     expect(nowText({ kind: 'llama-bench' }, f)).toBe('Test standard llama-bench');
-    expect(nowText({ kind: 'tune-probe', promptTokens: 1024, outputTokens: 64 }, f)).toBe('Prova rapida · Prompt di 1024 token → 64 in uscita');
+    expect(nowText({ kind: 'tune-probe', promptTokens: 1024, outputTokens: 64 }, f)).toBe('Prova rapida · Prompt di 1.024 token → 64 in uscita');
     expect(nowText({ kind: 'tune-screen' }, f)).toBe('Confronto con la migliore finora');
-    expect(nowText({ kind: 'fidelity', promptTokens: 2048 }, f)).toBe('Confronto del testo generato · Prompt di 2048 token');
+    expect(nowText({ kind: 'fidelity', promptTokens: 2048 }, f)).toBe('Confronto del testo generato · Prompt di 2.048 token');
     expect(relevantPhases({ profile: 'full', seed: 1, steps: [{ kind: 'sessions', depth: 0, levels: [1, 2], turns: 3, followupTokens: 256, outputTokens: 256 }] })).toEqual(['prepare', 'sessions', 'cleanup']);
     // Every step kind has its own phase: none falls into llama-bench.
     const steps: Step[] = [
@@ -81,10 +81,10 @@ describe('what is measured now', () => {
     expect(scenarioLines({ profile: 'full', seed: 1, steps }, f)).toEqual([
       '1 caricamento a freddo',
       '2 caricamenti a caldo',
-      expect.stringContaining('prompt da 512 e 4096 token'),
+      expect.stringContaining('prompt da 512 e 4.096 token'),
       'velocità con il contesto sempre più pieno',
       expect.stringContaining('utenti insieme'),
-      'conversazioni lunghe da 4096 token: 1 alla volta, 2 messaggi ciascuna',
+      'conversazioni lunghe da 4.096 token: 1 alla volta, 2 messaggi ciascuna',
       'test standard llama-bench',
     ]);
     expect(scenarioLines({ profile: 'full', seed: 1, steps: [{ kind: 'load', cache: 'cold', reps: 3 }, { kind: 'load', cache: 'warm', reps: 1 }] }, f)).toEqual([
@@ -248,18 +248,18 @@ describe('what each user gets', () => {
     expect(rich.columns).not.toContain('Rispetto a 1 utente (%)');
     expect(rich.rows.map((r) => r.level)).toEqual([1, 2, 3, 4]);
     expect(rich.rows[0]!.cells.every((c, i) => i === 0 || c === '–')).toBe(true);
-    expect(rich.rows[3]!.cells).toEqual(['4', '512', '128', '8192 condiviso', '1900', '42,5', '38,2', '380', '440', '170', '6100', '16', '0']);
-    expect(usersTable([users(2, { contextPerUser: 4096, contextShared: false })], f).rows[0]!.cells[1]).toBe('4096');
+    expect(rich.rows[3]!.cells).toEqual(['4', '512', '128', '8.192 condiviso', '1.900', '42,5', '38,2', '380', '440', '170', '6.100', '16', '0']);
+    expect(usersTable([users(2, { contextPerUser: 4096, contextShared: false })], f).rows[0]!.cells[1]).toBe('4.096');
     expect(soloDecode([users(2)])).toBeUndefined();
   });
 
   it('reads one level in a sentence, numbers only', () => {
     const solo = soloDecode([users(1)]);
     expect(usersSentence(users(4, { perRequestPrefillTpsP50: 1900 }), solo, f)).toBe(
-      'Con 4 utenti ognuno legge a 1900 tok/s e scrive a 42,5 tok/s (85% di quando è da solo); il primo token arriva in 0,38 s (0,44 s nel caso peggiore). In tutto 170 tok/s.',
+      'Con 4 utenti ognuno legge a 1.900 tok/s e scrive a 42,5 tok/s (85% di quando è da solo); il primo token arriva in 0,38 s (0,44 s nel caso peggiore). In tutto 170 tok/s.',
     );
     expect(usersSentence(users(1), solo, f)).toBe('Con 1 utente scrive a 50,0 tok/s; il primo token arriva in 0,32 s (0,37 s nel caso peggiore). In tutto 50 tok/s.');
     expect(usersSentence(users(2), undefined, f)).toContain('Con 2 utenti ognuno scrive a 47,5 tok/s;');
-    expect(usersSentence(users(1, { perRequestPrefillTpsP50: 2400 }), solo, f)).toContain('Con 1 utente legge a 2400 tok/s e scrive a 50,0 tok/s;');
+    expect(usersSentence(users(1, { perRequestPrefillTpsP50: 2400 }), solo, f)).toContain('Con 1 utente legge a 2.400 tok/s e scrive a 50,0 tok/s;');
   });
 });

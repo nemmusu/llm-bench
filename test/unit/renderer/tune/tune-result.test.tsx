@@ -49,7 +49,7 @@ describe('tune result', () => {
     expect(within(rec).getByText('Cache KV q4_0 · flash attention · ub 2048 · b 4096')).toBeTruthy();
     expect(within(rec).getByText('64K')).toBeTruthy();
     expect(within(rec).getByText('60,0 tok/s')).toBeTruthy();
-    expect(within(rec).getByText('6400 tok/s')).toBeTruthy();
+    expect(within(rec).getByText('6.400 tok/s')).toBeTruthy();
     expect(within(rec).getByText('29,8 GB')).toBeTruthy();
     // Its preset is in the page header (and on its row of the ranking).
     expect(screen.getAllByRole('group', { name: /^Preset di Qwen3 8B/ }).length).toBeGreaterThan(1);
@@ -151,7 +151,7 @@ describe('tune result', () => {
     await userEvent.click(screen.getByRole('button', { name: /Prove scartate/ }));
     expect(screen.getByText('Con contesto 32K la memoria video non bastava: il motore non è partito.')).toBeTruthy();
     expect(screen.getByText(/Windows ha spostato 2,0 GB nella RAM condivisa/)).toBeTruthy();
-    expect(screen.getByText('contesto 48K · generazione 31,0 tok/s · lettura 2400 tok/s · VRAM picco 31,1 GB · RAM condivisa 2,0 GB')).toBeTruthy();
+    expect(screen.getByText('contesto 48K · generazione 31,0 tok/s · lettura 2.400 tok/s · VRAM picco 31,1 GB · RAM condivisa 2,0 GB')).toBeTruthy();
     expect(screen.getByText('Il motore non riconosce un parametro')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Comando della prova 2: Cache KV f16 · flash attention, contesto 32K' })).toBeTruthy();
     const capacity = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });

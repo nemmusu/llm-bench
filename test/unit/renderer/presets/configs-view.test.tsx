@@ -57,7 +57,7 @@ describe('Risultati → Configurazioni', () => {
     // In plain words, only what differs from the defaults; the context in its own column.
     const qwen = rowOf(/Qwen3 8B/);
     expect(within(qwen).getByText('flash attention')).toBeTruthy();
-    expect(within(qwen).getByText('8192')).toBeTruthy();
+    expect(within(qwen).getByText('8.192')).toBeTruthy();
     expect(within(rowOf(/Mistral/)).getByText('Impostazioni predefinite')).toBeTruthy();
     // Two tests behind the Qwen3 8B configuration: the median of 183,45 and 186.
     expect(within(qwen).getByText('184,7')).toBeTruthy();
@@ -98,14 +98,14 @@ describe('Risultati → Configurazioni', () => {
     await table();
     await userEvent.click(within(rowOf(/Qwen3 8B/)).getByRole('button', { name: 'Mostra i 2 test di Qwen3 8B' }));
     const dialog = await screen.findByRole('dialog', { name: 'Test di questa configurazione' });
-    expect(within(dialog).getByText(/Qwen3 8B · Q4_K_M · llama.cpp b11438 \(CUDA 13.4\) · Contesto 8192 · cache KV f16 · flash attention/)).toBeTruthy();
+    expect(within(dialog).getByText(/Qwen3 8B · Q4_K_M · llama.cpp b11438 \(CUDA 13.4\) · Contesto 8\.192 · cache KV f16 · flash attention/)).toBeTruthy();
     expect(within(dialog).getByRole('columnheader', { name: /Generazione a 512/ }).textContent).toContain('(tok/s)');
     const links = within(dialog).getAllByRole('link');
     expect(links).toHaveLength(2);
     expect(within(dialog).getAllByText('Completo')).toHaveLength(2);
     expect(within(dialog).getByText('186,0')).toBeTruthy();
     expect(within(dialog).getAllByText('16 utenti')).toHaveLength(1);
-    expect(within(dialog).getAllByText(/^\d+ ciascuno · \d+ in tutto$/)).toHaveLength(1);
+    expect(within(dialog).getAllByText('90 ciascuno · 1.435 in tutto')).toHaveLength(1);
     await userEvent.click(links[1]!);
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${IDS.full}`));
   });

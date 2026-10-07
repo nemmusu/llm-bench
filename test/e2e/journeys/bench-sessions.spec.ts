@@ -27,7 +27,7 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await page.getByLabel('Contesto di ogni conversazione (token)').fill('2048');
     await page.getByLabel('Messaggi per conversazione').fill('3');
     await expect(page.getByText(/il primo messaggio legge tutto il contesto, i successivi riusano quanto già letto/)).toBeVisible();
-    await expect(page.getByText(/conversazioni lunghe da 2048 token: 1 e 2 alla volta, 3 messaggi ciascuna/)).toBeVisible();
+    await expect(page.getByText(/conversazioni lunghe da 2\.048 token: 1 e 2 alla volta, 3 messaggi ciascuna/)).toBeVisible();
     await scan(page, 'expert panel with long conversations');
 
     await page.getByRole('button', { name: 'Avvia benchmark' }).click();
@@ -39,11 +39,11 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     // The result: the cache is reused from the second message, the second conversation queues.
     const section = page.getByRole('region', { name: 'Conversazioni lunghe', exact: true });
     await expect(section).toBeVisible();
-    await expect(section.getByText(/^Con 1 sessione il primo messaggio aspetta .* per leggere 2048 token; dal secondo il server riusa il 9\d,\d% del contesto/)).toBeVisible();
+    await expect(section.getByText(/^Con 1 sessione il primo messaggio aspetta .* per leggere 2\.048 token; dal secondo il server riusa il 9\d,\d% del contesto/)).toBeVisible();
     await expect(section.getByText(/^Con 2 sessioni la seconda aspetta in coda /)).toBeVisible();
     await expect(section.getByText('Contesto tenuto in memoria:')).toBeVisible();
     const table = section.getByRole('table', { name: 'Conversazioni lunghe, per numero di sessioni insieme' });
-    await expect(table.getByRole('columnheader', { name: 'Attesa prima risposta a 2048 token' })).toBeVisible();
+    await expect(table.getByRole('columnheader', { name: 'Attesa prima risposta a 2.048 token' })).toBeVisible();
     await expect(table.getByRole('columnheader', { name: 'Contesto riusato (%)' })).toBeVisible();
     await expect(table.getByRole('row')).toHaveCount(3);
     // llama.cpp says how long it read: the queue is measured, not estimated.
@@ -70,8 +70,8 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await expect(h1(page, 'Confronta')).toBeVisible();
     const cmp = page.getByRole('table', { name: 'Confronta' });
     await expect(cmp.getByText('A · Prima')).toBeVisible();
-    await expect(cmp.getByRole('row', { name: /Lettura del contesto a 2048 token/ })).toContainText(/volte più veloce/);
-    await expect(cmp.getByRole('row', { name: /Attesa prima risposta a 2048 token/ })).toContainText(/volte più breve|−\d+%/);
+    await expect(cmp.getByRole('row', { name: /Lettura del contesto a 2\.048 token/ })).toContainText(/volte più veloce/);
+    await expect(cmp.getByRole('row', { name: /Attesa prima risposta a 2\.048 token/ })).toContainText(/volte più breve|−\d+%/);
     await expect(cmp.getByRole('row', { name: /Contesto tenuto in memoria/ })).toContainText('uguale');
     await scan(page, 'compare long conversations');
 
@@ -91,7 +91,7 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     for (const heading of ['Il servizio', 'Modello e configurazione', 'Velocità e tempi di attesa', 'Il contesto si legge una volta sola', 'Come funziona la coda', 'Contesto tenuto in memoria', 'Confronto con la configurazione precedente', 'Glossario']) {
       expect(sheet).toContain(`## ${heading}`);
     }
-    expect(sheet).toMatch(/\| Lettura del contesto a 2048 token \| .* \| .* \| \d+(,\d)? volte più veloce \|/);
+    expect(sheet).toMatch(/\| Lettura del contesto a 2\.048 token \| .* \| .* \| \d+(,\d)? volte più veloce \|/);
     expect(sheet).toContain('http://gpu:8080/v1');
     expect(sheet).not.toContain('password123');
     expect(sheet).toContain('llama-server');

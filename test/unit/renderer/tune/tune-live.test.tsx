@@ -172,7 +172,7 @@ describe('live screen of a tune run', () => {
 
     // The quick checks of the attempt in progress fill "Misure finora".
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'tune-probe', promptTokens: 4 * K, outputTokens: 64, rep: 1, reps: 2 } }));
-    expect(screen.getByText('Prova rapida · Prompt di 4096 token → 64 in uscita · ripetizione 1 di 2')).toBeTruthy();
+    expect(screen.getByText('Prova rapida · Prompt di 4.096 token → 64 in uscita · ripetizione 1 di 2')).toBeTruthy();
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-probe', point: point(4 * K, 61, 5000), attempt: 5 } }));
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-probe', point: point(4 * K, 70, 5000), attempt: 6 } }));
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'tune-screen', point: point(8 * K, 10, 500) } }));
@@ -204,7 +204,7 @@ describe('live screen of a tune run', () => {
     expect(screen.getByText('Preparazione dei CUDA graph · 30 di 67 (45%)')).toBeTruthy();
     expect(screen.getByText('vLLM')).toBeTruthy();
     expect(within(screen.getByRole('list', { name: 'Fasi del test' })).getByText('Fedeltà')).toBeTruthy();
-    expect(screen.getByText('Contesto 8192 · cache KV auto')).toBeTruthy();
+    expect(screen.getByText('Contesto 8.192 · cache KV auto')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Copia comando' }));
     expect(clipboard.writeText).toHaveBeenCalledWith(launch.command.bash);
   });
@@ -222,10 +222,10 @@ describe('live screen of any run', () => {
     expect(within(byPrompt()).getAllByRole('row').map((r) => r.textContent)).toEqual([
       'Prompt (token)Lettura prompt (tok/s)Primo token (ms)Generazione (tok/s)Ripetizioni',
       '512–––in corso',
-      '4096–––in attesa',
+      '4.096–––in attesa',
     ]);
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'latency', point: point(512, 190.4, 9000) } }));
-    expect(within(byPrompt()).getAllByRole('row')[1]!.textContent).toBe('5129000' + '57' + '190,4' + '2 di 5');
+    expect(within(byPrompt()).getAllByRole('row')[1]!.textContent).toBe('512' + '9.000' + '57' + '190,4' + '2 di 5');
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'context-sweep', depth: 32 * K, outputTokens: 128 } }));
     expect(screen.getByRole('table', { name: 'Contesto per gradi' }).textContent).toContain('32.768');
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'context-sweep', point: point(K, 180, 8800) } }));
