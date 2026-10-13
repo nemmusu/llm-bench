@@ -518,7 +518,8 @@ describe('models: download', () => {
     api.on('GET /api/models/search', (_b, q) => page(q));
     act(() => release());
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(60));
-    expect(api.calls.at(-1)?.path).toContain('cursor=30');
+    // The last search asked for the second page (other polls, such as telemetry, may come after it).
+    expect(api.calls.filter((c) => c.path.startsWith('/api/models/search')).at(-1)?.path).toContain('cursor=30');
     // The end of the grid comes into view: the next page loads by itself.
     const observer = observers.at(-1) as (typeof observers)[number];
     act(() => observer.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
