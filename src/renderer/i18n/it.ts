@@ -1075,6 +1075,7 @@ export const it = {
       stoppedTitle: 'Docker è spento',
       stoppedBody: '{engine} gira dentro Docker. Lo avvio io e poi continuo da solo: di solito ci vuole un minuto.',
       stoppedBodyPlain: 'Lo avvio io: di solito ci vuole un minuto.',
+      stoppedHint: 'Si apre Docker Desktop: puoi lasciarlo acceso per i prossimi test.',
       startingTitle: 'Avvio Docker…',
       startingBody: 'Aspetto che Docker sia pronto, poi continuo da solo.',
       stuckTitle: 'Docker non risponde',

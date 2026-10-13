@@ -752,6 +752,10 @@ async function fakeWorld(dataDir) {
     GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
     FAKE_WSL_STATE: path.join(dataDir, 'fake-wsl'),
     FAKE_WSL_CONFIG: path.join(dataDir, 'fake-wsl.json'),
+    // "Perché è successo": Docker Desktop's settings and log as captured on 2026-10-09 (Resource Saver's stop
+    // that never finished), in a folder of the mockups' own; and a stuck fake Docker found in a second.
+    GPUBENCH_DOCKER_DESKTOP_DIR: dockerDesktopDir(dataDir),
+    GPUBENCH_DOCKER_TIMINGS: JSON.stringify({ activeEveryMs: 1000, idleEveryMs: 1000, stuckStoppingMs: 300, desktopStatusEveryMs: 300, startPollMs: 300, restartCommandTimeoutMs: 6000, restartWaitMs: 20000 }),
   };
   const close = async () => {
     await Promise.all([github.close(), hub.close(), dockerApi.close(), new Promise((r) => dockerHub.close(r))]);
@@ -1297,6 +1301,161 @@ async function ninferScenes(browser, info, world, written) {
 }
 
 
+/** A folder standing in for Docker Desktop's (settings-store.json, log/host): the real stuck capture of 2026-10-09. */
+function dockerDesktopDir(dataDir) {
+  const dir = path.join(dataDir, 'docker-desktop');
+  mkdirSync(path.join(dir, 'log', 'host'), { recursive: true });
+  writeFileSync(path.join(dir, 'settings-store.json'), JSON.stringify({ AutoStart: false, SettingsVersion: 46 }));
+  const stuck = readFileSync(path.join(root, 'test', 'fixtures', 'docker', 'desktop-backend-stuck.log'), 'utf8');
+  writeFileSync(path.join(dir, 'log', 'host', 'com.docker.backend.exe.log'), stuck);
+  return dir;
+}
+
+/**
+ * Docker off or stuck, as the user meets it (fake Docker switched through <state>/mode.json):
+ * 70 the start dialog with Docker off ("Avvia Docker"); 71 "Docker non risponde" on every page;
+ * 72 why it happened and how to avoid it; 73 the restart in progress; 74 the Engines card stuck.
+ */
+async function dockerScenes(browser, info, world, written) {
+  const names = ['docker-off-start', 'docker-stuck-banner', 'docker-stuck-why', 'docker-restarting', 'engines-docker-stuck'];
+  const want = (name) => !only || only.includes(name);
+  if (!names.some(want)) return;
+  const stateDir = world.env.FAKE_DOCKER_STATE;
+  const setDocker = (mode) => {
+    mkdirSync(stateDir, { recursive: true });
+    if (mode) writeFileSync(path.join(stateDir, 'mode.json'), JSON.stringify(mode));
+    else rmSync(path.join(stateDir, 'mode.json'), { force: true });
+  };
+  /** The fake Docker is stuck and LLM Bench has noticed (its watchdog looks every second). */
+  const stuck = async (extra = {}) => {
+    setDocker({ mode: 'stuck', ...extra });
+    for (let i = 0; i < 60 && (await api(info, 'GET', '/api/docker/status')).state !== 'not-responding'; i++) await sleep(500);
+  };
+  /** A restart that may still be under way ends; Docker answers again. */
+  const back = async () => {
+    setDocker(undefined);
+    await api(info, 'DELETE', '/api/docker/recovery');
+    for (let i = 0; i < 80 && (await api(info, 'GET', '/api/docker/status?fresh=1')).state !== 'running'; i++) await sleep(500);
+  };
+  const shotAll = async (n, name, route, wait, opts = {}) => {
+    if (!want(name)) return;
+    for (const theme of ['light', 'dark']) {
+      for (const size of opts.sizes ?? NINFER_SIZES) {
+        if (opts.before) await opts.before();
+        await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, ...opts.settings });
+        const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+        const page = await context.newPage();
+        await page.goto(`${info.url}#${route}`);
+        await page.getByText(wait).first().waitFor({ timeout: 60000 });
+        await page.evaluate(() => document.fonts.ready);
+        if (opts.act) await opts.act(page);
+        await page.waitForTimeout(1200);
+        await page.mouse.move(size.w - 4, size.h - 4);
+        const file = path.join(outDir, `${n}-${name}-${theme}${size.suffix}.png`);
+        await shoot(page, file);
+        written.push(file);
+        await context.close();
+      }
+    }
+  };
+  try {
+    await idle(info);
+    await stopServers(info);
+    // 70: a test with llama.cpp in Docker, Docker off: the same dialog asks to start it.
+    await shotAll(70, 'docker-off-start', '/', 'Pronto a misurare', {
+      settings: { lastEngine: { kind: 'llamacpp-docker' } },
+      before: () => setDocker({ mode: 'daemon-down' }),
+      act: async (page) => {
+        await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+        await page.getByRole('dialog', { name: 'Docker è spento' }).getByRole('button', { name: 'Avvia Docker' }).waitFor({ timeout: 30000 });
+      },
+    });
+    await back();
+    // 71, 72: stuck stopping (Docker Desktop's cache answers, its own status says "stopping").
+    await stuck();
+    await shotAll(71, 'docker-stuck-banner', '/results', 'Docker non risponde');
+    await shotAll(72, 'docker-stuck-why', '/results', 'Docker non risponde', {
+      act: async (page) => {
+        await page.getByRole('alert').getByRole('button', { name: 'Perché e come evitarlo' }).click();
+        await page.getByRole('dialog', { name: 'Docker non risponde' }).getByText('Per evitarlo la prossima volta').waitFor({ timeout: 30000 });
+      },
+    });
+    await shotAll(74, 'engines-docker-stuck', '/engines', 'Motori', {
+      act: async (page) => {
+        const card = page.getByRole('region', { name: 'Docker', exact: true });
+        await card.getByText('Non risponde', { exact: true }).waitFor({ timeout: 30000 });
+        await card.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      },
+    });
+    // 73: "Riavvia Docker", its first step taking a while (Docker Desktop's own restart does not answer).
+    await shotAll(73, 'docker-restarting', '/results', 'Docker non risponde', {
+      sizes: [NINFER_SIZES[0]],
+      // The previous restart ends first (its "restart" gives up after 6 s, then a forced stop and a start).
+      before: async () => {
+        await back();
+        // A restart still going on (its command gives up after 6 s) would undo the next "stuck".
+        await sleep(12_000);
+        await back();
+        await stuck({ restart: 'hang' });
+      },
+      act: async (page) => {
+        await page.getByRole('alert').getByRole('button', { name: 'Riavvia Docker' }).click();
+        await page.getByRole('dialog', { name: 'Riavvio Docker…' }).getByText('Riavvio di Docker Desktop', { exact: true }).waitFor({ timeout: 30000 });
+      },
+    });
+  } finally {
+    await back().catch(() => undefined);
+  }
+}
+
+/** The tray menu (a native menu Playwright cannot photograph) drawn from the real trayMenu() as a list: 75. */
+async function trayScene(browser, written) {
+  if (only && !only.includes('tray-docker')) return;
+  const { build } = await import('esbuild');
+  const out = await build({ entryPoints: [path.join(root, 'src', 'main', 'tray-menu.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' });
+  const tmp = path.join(os.tmpdir(), `llmbench-tray-${process.pid}.mjs`);
+  writeFileSync(tmp, out.outputFiles[0].text);
+  const { trayMenu } = await import(pathToFileURL(tmp).href);
+  rmSync(tmp, { force: true });
+  const server = { id: 's1', modelName: 'Qwen3 8B', port: 8080, url: 'http://127.0.0.1:8080/v1', status: 'ready', network: 'local', presetName: 'Chat veloce' };
+  const base = { servers: [server], presets: [{ id: 'p1', name: 'Chat veloce', port: 8080, running: true }, { id: 'p2', name: 'Revisione codice', port: 8090, running: false }], closeBehavior: 'tray-if-servers', launchAtLogin: false, language: 'it' };
+  const menus = [
+    ['Docker non risponde', { ...base, docker: { state: 'not-responding', control: true } }],
+    ['Docker spento', { ...base, servers: [], presets: base.presets.map((p) => ({ ...p, running: false })), docker: { state: 'stopped', control: true } }],
+    ['Riavvio in corso', { ...base, docker: { state: 'not-responding', busy: 'restarting', control: true } }],
+  ];
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+  const render = (items) =>
+    items
+      .map((i) => {
+        if (i.type === 'separator') return '<div class="sep"></div>';
+        const cls = i.heading ? 'item heading' : i.enabled === false ? 'item off' : 'item';
+        return `<div class="${cls}">${esc(i.label)}${i.submenu ? '<span class="chev">›</span>' : ''}</div>`;
+      })
+      .join('');
+  for (const theme of ['light', 'dark']) {
+    const dark = theme === 'dark';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+      body{margin:0;padding:32px;font:14px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;background:${dark ? '#1f1f1f' : '#e8ecf2'};color:${dark ? '#f3f3f3' : '#1b1b1b'};display:flex;gap:28px;align-items:flex-start}
+      figure{margin:0;display:flex;flex-direction:column;gap:10px}
+      figcaption{font-size:12px;font-weight:600;color:${dark ? '#bdbdbd' : '#4a5568'}}
+      .menu{width:300px;padding:4px;border-radius:8px;background:${dark ? '#2c2c2c' : '#f9f9f9'};border:1px solid ${dark ? '#3d3d3d' : '#dcdcdc'};box-shadow:0 8px 24px rgba(0,0,0,${dark ? 0.5 : 0.16})}
+      .item{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:4px}
+      .item.heading{color:${dark ? '#9d9d9d' : '#6b6b6b'};font-weight:600}
+      .item.off{color:${dark ? '#6f6f6f' : '#a6a6a6'}}
+      .sep{height:1px;margin:4px 8px;background:${dark ? '#3d3d3d' : '#e0e0e0'}}
+      .chev{color:${dark ? '#9d9d9d' : '#6b6b6b'}}
+    </style></head><body>${menus.map(([caption, state]) => `<figure><figcaption>${esc(caption)}</figcaption><div class="menu">${render(trayMenu(state, 'it'))}</div></figure>`).join('')}</body></html>`;
+    const context = await browser.newContext({ viewport: { width: 1040, height: 620 }, deviceScaleFactor: 1, colorScheme: theme });
+    const page = await context.newPage();
+    await page.setContent(html);
+    const file = path.join(outDir, `75-tray-docker-${theme}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    written.push(file);
+    await context.close();
+  }
+}
+
 async function shoot(page, file, { full } = {}) {
   if (full) {
     // The page scrolls inside <main>: grow the viewport to the content so one image shows it all.
@@ -1374,6 +1533,8 @@ async function main() {
     await spillScenes(browser, info, world, written);
     await ninferScenes(browser, info, world, written);
     await serverScenes(browser, info, written);
+    await dockerScenes(browser, info, world, written);
+    await trayScene(browser, written);
   } finally {
     await browser.close();
     const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));

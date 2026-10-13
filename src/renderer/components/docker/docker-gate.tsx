@@ -6,7 +6,7 @@
  * the command to run instead.
  */
 import { useNavigate } from '@tanstack/react-router';
-import { Check, Loader, Play, RotateCcw } from 'lucide-react';
+import { Check, Container, Loader, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { DOCKER_RESTART_STEPS, type DockerState } from '../../../contract/docker';
 import type { AppErrorData, ErrorCode } from '../../../contract/errors';
@@ -18,6 +18,7 @@ import { ErrorCallout } from '../library/error-callout';
 import { Button } from '../ui/button';
 import { CodeBlock } from '../ui/code-block';
 import { Dialog, DialogContent } from '../ui/dialog';
+import { Progress } from '../ui/progress';
 import { DockerCause } from './docker-cause';
 
 export type GateView = 'checking' | 'ready' | 'stopped' | 'starting' | 'stuck' | 'restarting' | 'deep' | 'failed' | 'error' | 'manual-start' | 'manual-restart' | 'other';
@@ -52,19 +53,21 @@ export function RestartProgress({ event, className }: { event: InstallEvent; cla
   const { t, duration } = useI18n();
   const step = (DOCKER_RESTART_STEPS as readonly string[]).includes(event.stage) ? (event.stage as (typeof DOCKER_RESTART_STEPS)[number]) : 'restart';
   const servers = step === 'servers' && event.bytesTotal ? `${event.label ? ` · ${event.label}` : ''} (${event.bytesDone + 1}/${event.bytesTotal})` : '';
+  const label = `${t(`dockerFix.steps.${step}`)}${servers}`;
+  // Before the first step is known (the click's own marker): at the start of the bar.
+  const steps = event.steps ?? 3;
+  const at = event.step ?? 1;
+  const stepOf = t('dockerFix.steps.stepOf', { step: at, steps });
   return (
     <div className={cn('flex flex-col gap-2', className)} aria-live="polite">
       <div className="flex items-center gap-2 text-sm">
         <Loader aria-hidden className="size-4 shrink-0 animate-spin text-accent [animation-duration:2.4s]" />
-        <span className="min-w-0 flex-1 font-medium text-fg">
-          {t(`dockerFix.steps.${step}`)}
-          {servers}
-        </span>
-        {event.step !== undefined && event.steps !== undefined && (
-          <span className="shrink-0 text-xs text-fg-3 tabular-nums">{t('dockerFix.steps.stepOf', { step: event.step, steps: event.steps })}</span>
-        )}
+        <span className="min-w-0 flex-1 font-medium text-fg">{label}</span>
+        <span className="shrink-0 text-xs text-fg-3 tabular-nums">{stepOf}</span>
       </div>
-      {step !== 'servers' && event.bytesDone > 0 && <p className="text-xs text-fg-3 tabular-nums">{t('dockerFix.elapsed', { time: duration(event.bytesDone) })}</p>}
+      {/* Each step half done while it runs: the bar moves at every step. */}
+      <Progress size="sm" value={(100 * (at - 0.5)) / steps} label={t('dockerFix.gate.restartingTitle')} valueText={`${stepOf} · ${label}`} />
+      {step !== 'servers' && event.bytesDone >= 1000 && <p className="text-xs text-fg-3 tabular-nums">{t('dockerFix.elapsed', { time: duration(event.bytesDone) })}</p>}
       {event.slow && <p className="text-xs text-warning-text">{t('dockerFix.slow')}</p>}
     </div>
   );
@@ -226,7 +229,12 @@ export function useDockerGate({ engineLabel, onReady, autoRestart }: DockerGateO
         view: 'stopped',
         title: t('dockerFix.gate.stoppedTitle'),
         description: engineLabel ? t('dockerFix.gate.stoppedBody', { engine: engineLabel }) : t('dockerFix.gate.stoppedBodyPlain'),
-        body: null,
+        body: (
+          <p className="flex items-center gap-2 text-xs text-fg-3">
+            <Container aria-hidden className="size-4 shrink-0" />
+            {t('dockerFix.gate.stoppedHint')}
+          </p>
+        ),
         actions: (
           <Button variant="primary" onClick={() => begin('start')}>
             <Play aria-hidden />

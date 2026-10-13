@@ -1073,6 +1073,7 @@ export const en: Messages = {
       stoppedTitle: 'Docker is not running',
       stoppedBody: '{engine} runs inside Docker. I start it and then carry on by myself: it usually takes a minute.',
       stoppedBodyPlain: 'I start it: it usually takes a minute.',
+      stoppedHint: 'Docker Desktop opens: you can leave it running for the next tests.',
       startingTitle: 'Starting Docker…',
       startingBody: 'Waiting for Docker to be ready, then I carry on by myself.',
       stuckTitle: 'Docker is not responding',

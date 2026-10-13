@@ -138,7 +138,8 @@ export function DockerCard() {
       footer={action}
     >
       <p className="text-sm text-fg-2">{t(`engines.docker.explain.${state}`, { version: docker.data?.version ?? '' })}</p>
-      {docker.data?.reason && state !== 'running' && <p className="text-xs text-fg-3">{t('engines.docker.reason', { reason: docker.data.reason })}</p>}
+      {/* Not responding: "Perché è successo" says it in words instead. */}
+      {docker.data?.reason && state !== 'running' && state !== 'not-responding' && <p className="text-xs text-fg-3">{t('engines.docker.reason', { reason: docker.data.reason })}</p>}
       {startEvent?.stage === 'error' && <ErrorCallout error={startEvent.error ?? { code: 'DOCKER_NOT_RUNNING', message: 'start' }} />}
       {dockerActions.restartEvent?.stage === 'error' && state !== 'not-responding' && <ErrorCallout error={dockerActions.restartEvent.error ?? { code: 'DOCKER_NOT_RESPONDING', message: 'restart' }} />}
       {state === 'not-responding' && <DockerCause windows={!linux} />}
