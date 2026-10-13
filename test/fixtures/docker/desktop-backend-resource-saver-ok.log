@@ -1,0 +1,8 @@
+[2026-10-13T19:24:16.515882800Z][com.docker.backend.exe.engines] setting engine linux/wsl state stopped -> starting
+[2026-10-13T19:24:24.317326600Z][com.docker.backend.exe.engines] setting engine linux/wsl state starting -> running
+[2026-10-13T19:30:24.327979900Z][com.docker.backend.exe.idle] timer expired (5m0s)
+[2026-10-13T19:30:24.330485200Z][com.docker.backend.exe.idle] system idle for 5m0.0029269s -> reducing
+[2026-10-13T19:30:24.649400600Z][com.docker.backend.exe.idle] stopping VM
+[2026-10-13T19:30:24.649400600Z][com.docker.backend.exe.engines] setting engine linux/wsl state running -> stopping
+[2026-10-13T19:30:24.976515200Z][com.docker.backend.exe.engines] setting engine linux/wsl state stopping -> stopping
+[2026-10-13T19:30:25.409688400Z][com.docker.backend.exe.engines] setting engine linux/wsl state stopping -> stopped

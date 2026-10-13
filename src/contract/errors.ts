@@ -37,6 +37,8 @@ export const ERROR_CODES = [
   'DOWNLOAD_CHECKSUM',
   'DOCKER_NOT_INSTALLED',
   'DOCKER_NOT_RUNNING',
+  /** Docker Desktop is there but its engine does not answer: "Riavvia Docker" (params reason: needs-deep, restart-failed, no-desktop-cli…). */
+  'DOCKER_NOT_RESPONDING',
   'DOCKER_NO_GPU',
   'DOCKER_PERMISSION',
   'DOCKER_UNSUPPORTED',

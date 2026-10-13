@@ -12,9 +12,12 @@
  *   Avvia preset ▸                    (the saved presets)
  *   Ferma tutti i server
  *   ───
+ *   Docker: non risponde              (Docker's state, where LLM Bench can start or restart it)
+ *   Riavvia Docker                    (or "Avvia Docker" when it is off)
+ *   ───
  *   Esci
  */
-import type { ShellState } from '../contract/servers';
+import type { ShellDocker, ShellState } from '../contract/servers';
 import { trayText, type TrayLang } from './tray-text';
 
 export type TrayCommand =
@@ -24,6 +27,8 @@ export type TrayCommand =
   | { kind: 'restart'; id: string }
   | { kind: 'start-preset'; id: string }
   | { kind: 'stop-all' }
+  | { kind: 'docker-start' }
+  | { kind: 'docker-restart' }
   | { kind: 'quit' };
 
 export interface TrayItem {
@@ -72,8 +77,33 @@ export function trayMenu(state: ShellState | undefined, lang: TrayLang): TrayIte
         }))
       : [{ label: t('noPresets'), enabled: false }],
   });
-  items.push({ label: t('stopAll'), command: { kind: 'stop-all' }, enabled: servers.length > 0 }, SEPARATOR, { label: t('quit'), command: { kind: 'quit' } });
+  items.push({ label: t('stopAll'), command: { kind: 'stop-all' }, enabled: servers.length > 0 }, ...dockerSection(state?.docker, t), SEPARATOR, { label: t('quit'), command: { kind: 'quit' } });
   return items;
+}
+
+/**
+ * Docker's state and the one command that helps: "Avvia Docker" when it is off, "Riavvia Docker"
+ * when it does not answer (and while it runs). Shown where LLM Bench can start it (Docker Desktop on
+ * Windows); elsewhere only when it does not answer.
+ */
+function dockerSection(d: ShellDocker | undefined, t: (k: Parameters<typeof trayText>[1]) => string): TrayItem[] {
+  if (!d || !(d.control || d.state === 'not-responding')) return [];
+  const heading = (key: Parameters<typeof trayText>[1]): TrayItem => ({ label: t(key), enabled: false, heading: true });
+  if (d.busy) return [SEPARATOR, heading(d.busy === 'restarting' ? 'dockerRestarting' : 'dockerStarting')];
+  const restart: TrayItem[] = d.control ? [{ label: t('dockerRestart'), command: { kind: 'docker-restart' } }] : [];
+  switch (d.state) {
+    case 'not-responding':
+      return [SEPARATOR, heading('dockerStuck'), ...restart];
+    case 'running':
+      return [SEPARATOR, heading('dockerRunning'), ...restart];
+    case 'stopped':
+      return [SEPARATOR, heading('dockerStopped'), { label: t('dockerStart'), command: { kind: 'docker-start' } }];
+    case 'starting':
+      return [SEPARATOR, heading('dockerStarting')];
+    default:
+      // Not installed, no GPU, no permission…: the window explains those.
+      return [];
+  }
 }
 
 /** Windows cuts tray tooltips at 127 characters. */
@@ -81,9 +111,11 @@ export const TOOLTIP_MAX = 127;
 
 export function trayTooltip(state: ShellState | undefined, lang: TrayLang): string {
   const servers = state?.servers ?? [];
-  if (!servers.length) return trayText(lang, 'tooltipIdle');
+  // A stuck Docker is why servers stopped working: said in the tooltip too.
+  const stuck = state?.docker?.state === 'not-responding' ? ` · ${trayText(lang, 'tooltipDockerStuck')}` : '';
+  if (!servers.length) return `${trayText(lang, 'tooltipIdle')}${stuck}`;
   const list = servers.map((s) => (s.status === 'loading' ? trayText(lang, 'tooltipLoading', { model: s.modelName }) : `${s.modelName} (${s.port})`)).join(', ');
-  const text = servers.length === 1 ? trayText(lang, 'tooltipOne', { list }) : trayText(lang, 'tooltipMany', { n: servers.length, list });
+  const text = `${servers.length === 1 ? trayText(lang, 'tooltipOne', { list }) : trayText(lang, 'tooltipMany', { n: servers.length, list })}${stuck}`;
   return text.length > TOOLTIP_MAX ? `${text.slice(0, TOOLTIP_MAX - 1)}…` : text;
 }
 

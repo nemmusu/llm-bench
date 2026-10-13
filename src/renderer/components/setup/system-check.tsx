@@ -27,6 +27,7 @@ const ICONS: Record<CheckId, ReactNode> = {
 export const INSTALL_KEYS: Partial<Record<CheckActionKind, string>> = {
   'install-llamacpp': 'llamacpp-native',
   'start-docker': 'docker-desktop',
+  'restart-docker': 'docker-restart',
   'install-docker': 'docker-desktop',
   'install-docker-linux': 'docker-linux',
   'install-uv': 'uv',
@@ -36,6 +37,7 @@ export const INSTALL_KEYS: Partial<Record<CheckActionKind, string>> = {
 const START_PATHS: Partial<Record<CheckActionKind, string>> = {
   'install-llamacpp': '/api/engines/llamacpp-native/install',
   'start-docker': '/api/docker/start',
+  'restart-docker': '/api/docker/restart',
   'install-docker': '/api/setup/docker/install',
   'install-docker-linux': '/api/setup/docker/install',
   'install-uv': '/api/setup/uv/install',

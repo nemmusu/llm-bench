@@ -66,15 +66,18 @@ describe('DockerEnvironment.status', () => {
 
   it('caches for a short window and shares an in-flight probe', async () => {
     const { e, proc, clock } = env(() => running());
+    const versions = () => proc.calls.filter((c) => c.args[0] === 'version');
     await Promise.all([e.status(), e.status()]);
-    expect(proc.calls).toHaveLength(1);
+    expect(versions()).toHaveLength(1);
     await e.status();
-    expect(proc.calls).toHaveLength(1);
+    expect(versions()).toHaveLength(1);
     clock.t += 5000;
     await e.status();
-    expect(proc.calls).toHaveLength(2);
+    expect(versions()).toHaveLength(2);
     await e.status({ fresh: true });
-    expect(proc.calls).toHaveLength(3);
+    expect(versions()).toHaveLength(3);
+    // Docker Desktop's own status is asked once a minute, in the background.
+    expect(proc.calls.filter((c) => c.args[0] === 'desktop')).toHaveLength(1);
   });
 });
 
@@ -176,16 +179,18 @@ describe('DockerEnvironment.startDesktop', () => {
       startPollMs: 2000,
     });
     const progress: StartProgress[] = [];
+    // Docker Desktop is up but its engine never got ready: only a restart helps.
     await expect(e.startDesktop(new AbortController().signal, (p) => progress.push(p))).rejects.toMatchObject({
-      code: 'DOCKER_NOT_RUNNING',
+      code: 'DOCKER_NOT_RESPONDING',
       params: { reason: 'start-timeout', timeoutMs: 10_000 },
     });
     expect(progress.some((p) => p.slow)).toBe(true);
+    expect(await e.status({ fresh: true })).toMatchObject({ state: 'not-responding', reason: 'start-timeout' });
 
     const timeoutNoDetail = env((args) => (args[0] === 'desktop' ? ok() : fail(1, 'Docker Desktop is starting')), { startTimeoutMs: 1 });
     timeoutNoDetail.proc.calls.length = 0;
     const err = await timeoutNoDetail.e.startDesktop(new AbortController().signal).catch((x: unknown) => x);
-    expect(err).toMatchObject({ code: 'DOCKER_NOT_RUNNING' });
+    expect(err).toMatchObject({ code: 'DOCKER_NOT_RESPONDING' });
 
     const ac = new AbortController();
     const c = env((args) => (args[0] === 'desktop' ? ok() : DOWN));

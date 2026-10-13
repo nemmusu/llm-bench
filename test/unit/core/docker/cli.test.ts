@@ -187,7 +187,7 @@ describe('parsers', () => {
       parseCliVersion({ ...base, stderr: 'Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.', stdout: JSON.stringify({ Server: {} }) }).server
         ?.podman,
     ).toBe(true);
-    expect(parseCliVersion({ ...base, stdout: 'null' })).toEqual({ code: 0, stdout: 'null', stderr: '' });
+    expect(parseCliVersion({ ...base, stdout: 'null' })).toEqual({ code: 0, timedOut: false, stdout: 'null', stderr: '' });
     expect(parseCliVersion({ ...base, stdout: fx('wsl-shim.stdout.txt') }).client).toBeUndefined();
   });
 });

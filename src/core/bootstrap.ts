@@ -133,6 +133,8 @@ export async function boot(b: BootEnv): Promise<CoreHandle> {
   const port = Number(env.GPUBENCH_PORT ?? argValue(b.argv, 'port') ?? 0);
   const llamaLauncherPrefix = parseArgvEnv(env.GPUBENCH_LLAMA_LAUNCHER);
   const core = await createCore(deps, { token, port, services: llamaLauncherPrefix ? { llamaLauncherPrefix } : {} });
+  // Notices when Docker stops answering while our servers or a test use it; keeps the tray's Docker state fresh.
+  core.services.dockerControl.watch();
 
   let closing: Promise<void> | undefined;
   const shutdown = () =>
@@ -169,6 +171,7 @@ export async function boot(b: BootEnv): Promise<CoreHandle> {
       hub: core.ctx.hub,
       shutdown: core.ctx.shutdown,
       log: deps.log,
+      docker: s.dockerControl,
     });
   } else {
     b.stdout(JSON.stringify({ ready: true, port: core.port, token, url: `${core.url}/?token=${token}` }) + '\n');

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dockerStateSchema } from './docker';
 import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsSchema } from './engines';
 import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
@@ -73,7 +74,7 @@ export const systemResponseSchema = z.object({
     }),
   ),
   docker: z.object({
-    state: z.enum(['not-installed', 'stopped', 'starting', 'running', 'no-permission', 'no-gpu', 'unsupported', 'unknown']),
+    state: dockerStateSchema,
     version: z.string().optional(),
   }),
   paths: z.object({ dataDir: z.string(), resultsDir: z.string(), modelsDir: z.string(), enginesDir: z.string() }),

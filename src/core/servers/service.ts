@@ -50,6 +50,8 @@ export interface ServeServiceDeps {
   notices?: ServerNotices;
   /** A start nobody was watching failed (the main process shows a notification). */
   notify?: (name: string) => void;
+  /** A ready server ended on its own (not stopped from here): a Docker one may have been taken down by Docker. */
+  onEnded?: (info: ServerInfo) => void;
 }
 
 interface Running {
@@ -232,6 +234,7 @@ export class ServeService {
       if (this.running.get(info.id) === entry) {
         this.running.delete(info.id);
         this.deps.onChange();
+        this.deps.onEnded?.(entry.info);
       }
     });
     return entry.info;

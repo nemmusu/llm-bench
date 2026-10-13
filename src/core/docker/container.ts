@@ -5,7 +5,7 @@ import type { EngineInstance, LaunchPlan, PhaseMark } from '../engines/types';
 import { ignore } from '../engines/util';
 import type { InferenceClient } from '../inference/types';
 import { AsyncQueue } from '../process/runner';
-import { classifyDockerError, GPUBENCH_LABEL, isOurs, MARKER_LABEL, parseTimestampedLine, type DockerCli } from './cli';
+import { classifyDockerError, GPUBENCH_LABEL, isEngineHang, isOurs, MARKER_LABEL, parseTimestampedLine, type DockerCli } from './cli';
 
 export const CONTAINER_PREFIX = 'gpubench-';
 
@@ -83,6 +83,8 @@ export interface StartContainerOptions {
   stopTimeoutSec?: number;
   /** Called when `docker run` failed for lack of GPU support (DockerEnvironment.noteGpuFailure). */
   onNoGpu?(detail?: string): void;
+  /** Called when `docker run` got no answer from Docker (DockerEnvironment.reportHang). */
+  onHang?(detail?: string): void;
   /** `docker run -d` timeout: creating a GPU container takes seconds, but Desktop can be slow. */
   runTimeoutMs?: number;
   /** Upper bound of the post-ready wait for late log lines (default 1 s; does not change tReady). */
@@ -118,6 +120,11 @@ export async function startContainer(o: StartContainerOptions): Promise<DockerEn
   });
   const id = (run.stdout.trim().split(/\r?\n/).pop() as string).trim();
   if (run.code !== 0 || !/^[0-9a-f]{12,64}$/.test(id)) {
+    if (!o.signal.aborted && isEngineHang(run)) {
+      // Docker does not answer: nothing to clean up now (that would hang too); the restart takes care of it.
+      o.onHang?.(`${run.stderr}${run.timedOut ? ' (docker run did not answer)' : ''}`);
+      throw new AppError('DOCKER_NOT_RESPONDING', 'Docker did not answer docker run', { params: { reason: run.timedOut ? 'timeout' : 'deadline' }, detail: run.stderr.slice(-2000) });
+    }
     // A failed `docker run` can leave a "Created" container behind: it is ours (name + label).
     await removeIfOurs(cli, name, plan.marker);
     if (o.signal.aborted) throw new AppError('CANCELLED', 'Engine start cancelled');

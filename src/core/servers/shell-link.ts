@@ -2,11 +2,12 @@
  * The core's side of the tray: it tells the Electron main process what runs (servers, presets, the
  * close behaviour, the language) whenever that changes, and carries out the tray's commands
  * ("Ferma (chiudi modello)", "Riavvia", "Avvia preset", "Ferma tutti i server"), the start-up of the
- * "Avvia all'apertura" presets and the saving of the API key. Messages: contract/servers.ts.
+ * "Avvia all'apertura" presets and the saving of the API key; and Docker: its state in the menu,
+ * "Avvia Docker" / "Riavvia Docker", a notification when it stops answering. Messages: contract/servers.ts.
  */
 import type { ServerInfo } from '../../contract/api';
 import type { ServerEvent } from '../../contract/events';
-import { shellToCoreSchema, type CoreToShell, type ServerPreset, type ShellState } from '../../contract/servers';
+import { shellToCoreSchema, type CoreToShell, type ServerPreset, type ShellDocker, type ShellState } from '../../contract/servers';
 import type { Settings } from '../../contract/settings';
 import type { Logger } from '../deps';
 import type { ServerKeys } from './api-key';
@@ -19,8 +20,13 @@ export interface ShellChannel {
   on(ev: 'message', cb: (e: { data: unknown }) => void): void;
 }
 
-/** What the tray shows, from the servers, the presets and the settings. */
-export function shellStateOf(servers: readonly ServerInfo[], presets: readonly ServerPreset[], settings: Pick<Settings, 'closeBehavior' | 'launchAtLogin' | 'language'>): ShellState {
+/** What the tray shows, from the servers, the presets, the settings and Docker. */
+export function shellStateOf(
+  servers: readonly ServerInfo[],
+  presets: readonly ServerPreset[],
+  settings: Pick<Settings, 'closeBehavior' | 'launchAtLogin' | 'language'>,
+  docker?: ShellDocker,
+): ShellState {
   const runningPresets = new Set(servers.map((s) => s.presetId).filter((id): id is string => id !== undefined));
   return {
     servers: servers.map((s) => ({
@@ -36,6 +42,7 @@ export function shellStateOf(servers: readonly ServerInfo[], presets: readonly S
     closeBehavior: settings.closeBehavior,
     launchAtLogin: settings.launchAtLogin,
     language: settings.language,
+    ...(docker ? { docker } : {}),
   };
 }
 
@@ -49,6 +56,14 @@ export interface ShellLinkDeps {
   hub: { subscribe(fn: (e: ServerEvent) => void): () => void };
   shutdown: AbortSignal;
   log: Logger;
+  /** DockerControl: its state for the menu, its commands, and when it gets stuck. */
+  docker?: {
+    shell(): ShellDocker | undefined;
+    subscribe(fn: () => void): () => void;
+    onStuck(fn: () => void): () => void;
+    start(): boolean;
+    restart(): boolean;
+  };
 }
 
 export interface ShellLink {
@@ -64,7 +79,7 @@ export function attachShell(d: ShellLinkDeps): ShellLink {
 
   const push = async (): Promise<void> => {
     const [presets, settings] = await Promise.all([d.presets.list(), d.settings.get()]);
-    const state = shellStateOf(d.serve.list(), presets, settings);
+    const state = shellStateOf(d.serve.list(), presets, settings, d.docker?.shell());
     const json = JSON.stringify(state);
     if (json !== last) {
       last = json;
@@ -91,6 +106,9 @@ export function attachShell(d: ShellLinkDeps): ShellLink {
     if (e.type === 'servers.changed') schedule();
   });
   d.settings.subscribe(schedule);
+  d.docker?.subscribe(schedule);
+  // Nobody may be looking at the window while a server runs in Docker: the tray says it.
+  d.docker?.onStuck(() => post({ type: 'shell-notice', notice: { kind: 'docker-stuck' } }));
 
   const failed = (what: string) => (e: unknown) => d.log.warn(`tray: ${what} failed`, { error: String(e) });
   d.channel.on('message', (e) => {
@@ -116,6 +134,8 @@ export function attachShell(d: ShellLinkDeps): ShellLink {
           });
         }
         else if (msg.action === 'start-preset' && msg.id) void d.serve.startUnattended(msg.id, 'tray-start-failed', d.shutdown);
+        else if (msg.action === 'docker-start') d.docker?.start();
+        else if (msg.action === 'docker-restart') d.docker?.restart();
         break;
       default:
         // 'shutdown' and 'hf-token' belong to bootstrap.ts.

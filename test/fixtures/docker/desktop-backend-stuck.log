@@ -1,0 +1,18 @@
+[2026-10-09T19:19:52.766997600Z][com.docker.backend.exe.apiproxy] usage ContainerStopCliLinux + 1
+[2026-10-09T19:19:54.683220300Z][com.docker.backend.exe.idle] busy -> idle
+[2026-10-09T19:19:54.683220300Z][com.docker.backend.exe.idle] timer started (5m0s)
+[2026-10-09T19:24:54.890446500Z][com.docker.backend.exe.idle] timer expired (5m0s)
+[2026-10-09T19:24:54.892450300Z][com.docker.backend.exe.idle] system idle for 5m0.0021581s -> reducing
+[2026-10-09T19:24:55.162871900Z][com.docker.backend.exe.idle] stopping VM
+[2026-10-09T19:24:55.162871900Z][com.docker.backend.exe.engines] engine stop requested
+[2026-10-09T19:24:55.162871900Z][com.docker.backend.exe.engines] setting engine linux/wsl state running -> stopping
+[2026-10-09T19:24:55.311336400Z][com.docker.backend.exe.engines] engine linux/wsl shutdown requested (cancel cause: context canceled)
+[2026-10-09T19:24:55.311336400Z][com.docker.backend.exe.engines] setting engine linux/wsl state stopping -> stopping
+[2026-10-09T19:24:55.313836200Z][com.docker.backend.exe.procd] received state {Docker:stopping DockerAPI:running HasNoVirtualization:false Idle:running IsPaused:false Mode:linux}
+[2026-10-09T19:24:55.494732600Z][com.docker.backend.exe.engines] engine linux/wsl stopping hypervisor process
+[2026-10-09T19:24:55.494732600Z][com.docker.backend.exe.distro] terminating main distribution
+[2026-10-09T19:24:55.537287400Z][com.docker.backend.exe.distro] unmounting data disk
+[2026-10-09T19:24:55.878653900Z][com.docker.backend.exe.distro] skipping data disk compaction
+[2026-10-09T19:25:09.578587900Z][com.docker.backend.exe.apicache] cache << HEAD /_ping
+[2026-10-09T19:42:21.737640600Z][com.docker.backend.exe.ipc] (abd518fa) 3643f1dc-BackendAPI S<-C Docker-Desktop/4.94.0 (Windows; x64; GUI) POST /engine/restart
+[2026-10-09T20:28:04.072285500Z][com.docker.backend.exe.apicache] cache << GET /v1.56/version

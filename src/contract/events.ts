@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dockerStateSchema } from './docker';
 import { appErrorSchema } from './errors';
 import { gpuSampleSchema } from './hardware';
 import { downloadJobSchema } from './models';
@@ -213,5 +214,7 @@ export const serverEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('runs.changed') }),
   /** A server started, became ready, stopped or exited, or a server preset changed: GET /api/servers (and /presets) again. */
   z.object({ type: z.literal('servers.changed') }),
+  /** Docker's state changed (it stopped answering, came back, was started or restarted): GET /api/docker/status again. */
+  z.object({ type: z.literal('docker.changed'), state: dockerStateSchema }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;

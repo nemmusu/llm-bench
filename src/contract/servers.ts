@@ -17,6 +17,7 @@
  * The rest of the server routes (list, plan, start, stop) are in api.ts.
  */
 import { z } from 'zod';
+import { dockerStateSchema } from './docker';
 import { engineConfigSchema, launchParamsSchema } from './engines';
 import { appErrorSchema } from './errors';
 import { recipeChoiceSchema } from './recipes';
@@ -119,7 +120,8 @@ export type ServerLog = z.infer<typeof serverLogSchema>;
 /** A start nobody was watching that failed: "Avvia all'apertura", or a preset started from the tray. */
 export const serverNoticeSchema = z.object({
   id: z.string(),
-  kind: z.enum(['autostart-failed', 'tray-start-failed']),
+  /** 'docker-restore-failed': a server Docker took down did not start again after Docker came back. */
+  kind: z.enum(['autostart-failed', 'tray-start-failed', 'docker-restore-failed']),
   presetId: z.string().optional(),
   /** The preset's name. */
   name: z.string(),
@@ -152,6 +154,16 @@ export const shellPresetSchema = z.object({
 });
 export type ShellPreset = z.infer<typeof shellPresetSchema>;
 
+/** Docker as the tray shows it ("Avvia Docker", "Riavvia Docker"). */
+export const shellDockerSchema = z.object({
+  state: dockerStateSchema,
+  /** A start or a restart LLM Bench asked for is under way. */
+  busy: z.enum(['starting', 'restarting']).optional(),
+  /** LLM Bench can start and restart it (Docker Desktop on Windows; on Linux it is a system service). */
+  control: z.boolean(),
+});
+export type ShellDocker = z.infer<typeof shellDockerSchema>;
+
 /** Everything the main process needs for the tray and the window: sent whenever any of it changes. */
 export const shellStateSchema = z.object({
   servers: z.array(shellServerSchema),
@@ -159,19 +171,27 @@ export const shellStateSchema = z.object({
   closeBehavior: closeBehaviorSchema,
   launchAtLogin: z.boolean(),
   language: z.enum(['it', 'en']),
+  /** Absent until the core knows (and in tests of the rest). */
+  docker: shellDockerSchema.optional(),
 });
 export type ShellState = z.infer<typeof shellStateSchema>;
 
 /** Tray menu commands the core carries out. */
-export const trayActionSchema = z.enum(['stop', 'restart', 'stop-all', 'start-preset']);
+export const trayActionSchema = z.enum(['stop', 'restart', 'stop-all', 'start-preset', 'docker-start', 'docker-restart']);
 export type TrayAction = z.infer<typeof trayActionSchema>;
 
 /** Core → main. */
 export const coreToShellSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), port: z.number().int() }),
   z.object({ type: z.literal('shell-state'), state: shellStateSchema }),
-  /** A preset started from the tray or at start-up did not start: the main process shows a notification. */
-  z.object({ type: z.literal('shell-notice'), notice: z.object({ kind: z.literal('start-failed'), name: z.string() }) }),
+  /**
+   * The main process shows a notification: a preset started from the tray or at start-up did not
+   * start, or Docker stopped answering while our servers or a test use it.
+   */
+  z.object({
+    type: z.literal('shell-notice'),
+    notice: z.discriminatedUnion('kind', [z.object({ kind: z.literal('start-failed'), name: z.string() }), z.object({ kind: z.literal('docker-stuck') })]),
+  }),
   /** A new API key: the main process keeps it encrypted and answers with `server-api-key`. */
   z.object({ type: z.literal('server-api-key-save'), key: z.string() }),
 ]);

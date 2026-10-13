@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { CoreContext } from '../../../../src/core/context';
+import { DockerControl } from '../../../../src/core/docker/control';
 import type { DockerEnvironment, DockerStatusDetail, StartProgress } from '../../../../src/core/docker/environment';
 import type { ImageService } from '../../../../src/core/docker/images';
 import type { PullProgress } from '../../../../src/core/docker/pull-progress';
 import { createDockerRoutes, type DockerRoutesDeps } from '../../../../src/core/docker/routes';
 import { errorResponse } from '../../../../src/core/server/http-error';
+import { silentLog, steppingClock } from './helpers';
 
 type Ev = ServerEvent & Record<string, unknown>;
 
@@ -24,13 +26,24 @@ function deferred<T>() {
 function setup(over: Partial<DockerRoutesDeps> = {}, envOver: Partial<DockerEnvironment> = {}, imagesOver: Partial<ImageService> = {}) {
   const events: Ev[] = [];
   let state: DockerStatusDetail = { state: 'stopped', version: '29.8.0' };
+  const restarts: { deep: boolean | undefined }[] = [];
   const env = {
+    platform: 'win32',
     status: async (o?: { fresh?: boolean }) => ({ ...state, fresh: o?.fresh ?? false }),
+    probe: async () => ({ ...state, probed: true }),
+    peek: () => state,
+    onChange: () => () => {},
     startDesktop: async (_s: AbortSignal, onProgress?: (p: StartProgress) => void) => {
       onProgress?.({ state: 'starting', elapsedMs: 1500, slow: false, method: 'cli' });
       state = { state: 'running', version: '29.8.0' };
       return state;
     },
+    restartDesktop: async (_s: AbortSignal, _p: unknown, o?: { deep?: boolean }) => {
+      restarts.push({ deep: o?.deep });
+      state = { state: 'running', version: '29.8.0' };
+      return state;
+    },
+    openDesktop: async () => undefined,
     gpuCheck: async (image: string) => ({ image, gpus: ['GPU 0: RTX 5090'] }),
     cleanupOrphans: async (keep: Iterable<string> = []) => ({ removed: [{ id: 'a', name: `kept:${[...keep].join(',')}` }] }),
     ...envOver,
@@ -45,12 +58,23 @@ function setup(over: Partial<DockerRoutesDeps> = {}, envOver: Partial<DockerEnvi
     },
     ...imagesOver,
   } as unknown as ImageService;
+  const publish = (e: ServerEvent) => events.push(e as Ev);
+  const control = new DockerControl({
+    env,
+    publish,
+    servers: { list: () => [], start: async () => Promise.reject(new Error('no servers here')), stop: async () => undefined },
+    clock: steppingClock(),
+    log: silentLog,
+    shutdown: over.shutdown ?? new AbortController().signal,
+  });
   const deps: DockerRoutesDeps = {
     env,
+    control,
     images,
     vllm: { tags: async (o) => [{ name: 'v0.31.0', refresh: o?.refresh ?? false }] },
-    publish: (e) => events.push(e as Ev),
+    publish,
     defaultGpuImage: async () => 'ghcr.io/ggml-org/llama.cpp:server-cuda',
+    diagnose: async () => ({ cause: 'resource-saver', evidence: ['line'], resourceSaver: { enabled: true, timeoutSeconds: 300 } }),
     ...over,
   };
   const app = new Hono();
@@ -58,7 +82,7 @@ function setup(over: Partial<DockerRoutesDeps> = {}, envOver: Partial<DockerEnvi
   createDockerRoutes(deps)(app, {} as CoreContext);
   const post = (url: string, body?: unknown) =>
     app.request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? '{}' : JSON.stringify(body) });
-  return { app, events, post, setState: (s: DockerStatusDetail) => (state = s) };
+  return { app, events, post, control, restarts, setState: (s: DockerStatusDetail) => (state = s) };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
@@ -215,11 +239,46 @@ describe('docker routes', () => {
     const ctx = { hub: { publish: (e: ServerEvent) => events.push(e as Ev) } } as unknown as CoreContext;
     createDockerRoutes((c) => ({
       env: { status: async () => ({ state: 'running' }) } as unknown as DockerEnvironment,
+      control: {} as DockerControl,
       images: {} as ImageService,
       vllm: { tags: async () => [] },
       publish: (e) => c.hub.publish(e),
       defaultGpuImage: async () => 'x/y',
+      diagnose: async () => ({ cause: 'unknown', evidence: [] }),
     }))(app, ctx);
     expect(await (await app.request('/api/docker/status')).json()).toEqual({ state: 'running' });
+  });
+
+  it('GET /api/docker/status?probe=1 asks the engine itself', async () => {
+    const { app } = setup();
+    expect(await (await app.request('/api/docker/status?probe=1')).json()).toEqual({ state: 'stopped', version: '29.8.0', probed: true });
+  });
+
+  it('POST /api/docker/restart: normal (no body), deep, and one at a time', async () => {
+    const { post, app, restarts, events } = setup();
+    expect(await (await app.request('/api/docker/restart', { method: 'POST' })).json()).toEqual({ ok: true });
+    await tick();
+    expect(await (await post('/api/docker/restart', { deep: true })).json()).toEqual({ ok: true });
+    await tick();
+    expect(restarts).toEqual([{ deep: false }, { deep: true }]);
+    expect(events.filter((e) => e.kind === 'docker-restart').map((e) => e.stage)).toEqual(['running', 'running']);
+    expect((await post('/api/docker/restart', { deep: 'yes' })).status).toBe(400);
+  });
+
+  it('GET /api/docker/diagnosis and POST /api/docker/open', async () => {
+    let opened = 0;
+    const { app, post } = setup({}, { openDesktop: async () => void opened++ });
+    expect(await (await app.request('/api/docker/diagnosis')).json()).toMatchObject({ cause: 'resource-saver', resourceSaver: { enabled: true } });
+    expect(await (await post('/api/docker/open')).json()).toEqual({ ok: true });
+    expect(opened).toBe(1);
+    const linux = setup({}, { openDesktop: async () => Promise.reject(new AppError('DOCKER_UNSUPPORTED', 'windows only')) });
+    expect((await linux.post('/api/docker/open')).status).toBe(503);
+  });
+
+  it('GET, POST and DELETE /api/docker/recovery', async () => {
+    const { app, post } = setup();
+    expect(await (await app.request('/api/docker/recovery')).json()).toEqual({ servers: [], restoring: false });
+    expect(await (await post('/api/docker/recovery')).json()).toEqual({ ok: true });
+    expect(await (await app.request('/api/docker/recovery', { method: 'DELETE' })).json()).toEqual({ ok: true });
   });
 });

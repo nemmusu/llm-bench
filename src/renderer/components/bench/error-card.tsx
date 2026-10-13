@@ -16,6 +16,7 @@ const FIX: Partial<Record<ErrorCode, FixKind>> = {
   ENGINE_NO_KERNEL_IMAGE: 'engines',
   DOCKER_NOT_INSTALLED: 'engines',
   DOCKER_NOT_RUNNING: 'engines',
+  DOCKER_NOT_RESPONDING: 'engines',
   DOCKER_NO_GPU: 'engines',
   DOCKER_PERMISSION: 'engines',
   DOCKER_UNSUPPORTED: 'engines',

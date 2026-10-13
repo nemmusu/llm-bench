@@ -11,6 +11,8 @@ export const MARKER_LABEL = 'gpubench.marker';
 /** What `docker version --format json` told us. `server` is undefined when the daemon is unreachable. */
 export interface CliVersion {
   code: number | null;
+  /** The CLI did not answer within its time limit (Docker Desktop is up but its engine hangs). */
+  timedOut: boolean;
   client?: { version: string; context?: string; os?: string };
   server?: { version: string; os?: string; platform?: string; podman: boolean };
   stdout: string;
@@ -119,6 +121,14 @@ const NO_GPU = [
 
 export type DaemonState = 'stopped' | 'starting' | 'no-permission';
 
+/** What Docker Desktop's API proxy says when the engine behind it never answers. */
+export const ENGINE_HANG = /context deadline exceeded/i;
+
+/** A docker CLI call that shows a hung engine: no answer in time, or the proxy's deadline. */
+export function isEngineHang(out: Pick<RunOutput, 'timedOut' | 'stdout' | 'stderr'>): boolean {
+  return out.timedOut || ENGINE_HANG.test(`${out.stderr}\n${out.stdout}`);
+}
+
 /** Daemon-level state from a CLI error, or undefined when the message is about something else. */
 export function daemonStateFrom(stderr: string): DaemonState | undefined {
   if (PERMISSION.some((re) => re.test(stderr))) return 'no-permission';
@@ -144,6 +154,8 @@ export function classifyDockerError(out: Pick<RunOutput, 'code' | 'stdout' | 'st
   if (WSL_SHIM.test(text)) return err('DOCKER_NOT_INSTALLED', 'Docker Desktop WSL integration is off', { reason: 'wsl-integration' });
   const daemon = daemonStateFrom(text);
   if (daemon === 'no-permission') return err('DOCKER_PERMISSION', 'No permission to use the Docker daemon');
+  // Docker Desktop's API proxy gave up waiting for an engine that does not answer (stuck stopping or starting).
+  if (ENGINE_HANG.test(text)) return err('DOCKER_NOT_RESPONDING', 'Docker does not answer', { reason: 'deadline' });
   if (daemon !== undefined) return err('DOCKER_NOT_RUNNING', 'Docker is not running', { reason: daemon });
   const cuda = /unsatisfied condition: cuda\s*>=\s*([\d.]+)/i.exec(text);
   if (cuda) return err('DRIVER_TOO_OLD', 'The NVIDIA driver is too old for this image', { cuda: cuda[1] as string });
@@ -213,9 +225,21 @@ export class DockerCli {
     return this.o.proc.spawn({ cmd, args: [...pre, ...args], owner, ...(env ? { env } : {}) });
   }
 
-  async version(): Promise<CliVersion> {
-    const out = await this.exec(['version', '--format', 'json'], { timeoutMs: 20_000 });
+  async version(timeoutMs = 20_000): Promise<CliVersion> {
+    const out = await this.exec(['version', '--format', 'json'], { timeoutMs });
     return parseCliVersion(out);
+  }
+
+  /**
+   * Docker Desktop's own view of its engine (`docker desktop status`, Docker Desktop ≥ 4.37):
+   * 'running', 'starting', 'stopping', 'stopped'… lower-cased. `missing`: no Docker Desktop CLI plugin.
+   */
+  async desktopStatus(timeoutMs: number): Promise<DesktopStatus> {
+    const out = await this.exec(['desktop', 'status', '--format', 'json'], { timeoutMs });
+    if (out.timedOut) return { timedOut: true, missing: false };
+    if (NO_DESKTOP_PLUGIN.test(`${out.stderr}\n${out.stdout}`)) return { timedOut: false, missing: true };
+    const status = out.code === 0 ? parseDesktopStatus(out.stdout) : undefined;
+    return { timedOut: false, missing: false, ...(status !== undefined ? { status } : {}) };
   }
 
   /** Container JSON (`docker container inspect`), undefined when it does not exist. */
@@ -286,6 +310,44 @@ export class DockerCli {
   }
 }
 
+/** `docker desktop` is not there (Docker Desktop older than 4.37, or Docker Engine). */
+export const NO_DESKTOP_PLUGIN = /'desktop' is not a docker command|unknown command:? "?desktop/i;
+
+export interface DesktopStatus {
+  /** Lower-cased engine status ('running', 'stopping'…); undefined when Docker Desktop could not tell. */
+  status?: string;
+  timedOut: boolean;
+  missing: boolean;
+}
+
+/**
+ * The status in `docker desktop status --format json` (any 'Status' or 'State' field, at any depth), or
+ * in its table form ("Status    running").
+ */
+export function parseDesktopStatus(stdout: string): string | undefined {
+  const find = (v: unknown): string | undefined => {
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        const r = find(x);
+        if (r !== undefined) return r;
+      }
+      return undefined;
+    }
+    if (!v || typeof v !== 'object') return undefined;
+    for (const [k, x] of Object.entries(v)) if (/^(status|state)$/i.test(k) && typeof x === 'string' && x) return x.toLowerCase();
+    for (const x of Object.values(v)) {
+      const r = find(x);
+      if (r !== undefined) return r;
+    }
+    return undefined;
+  };
+  try {
+    return find(JSON.parse(stdout) as unknown);
+  } catch {
+    return /^\s*status\s+(\S+)/im.exec(stdout)?.[1]?.toLowerCase();
+  }
+}
+
 function firstJson(stdout: string): Record<string, unknown> | undefined {
   try {
     const v = JSON.parse(stdout) as unknown;
@@ -298,7 +360,7 @@ function firstJson(stdout: string): Record<string, unknown> | undefined {
 
 /** Parses `docker version --format json` (Server is null when the daemon is unreachable). */
 export function parseCliVersion(out: RunOutput): CliVersion {
-  const res: CliVersion = { code: out.code, stdout: out.stdout, stderr: out.stderr };
+  const res: CliVersion = { code: out.code, timedOut: out.timedOut, stdout: out.stdout, stderr: out.stderr };
   let j: { Client?: Record<string, unknown> | null; Server?: Record<string, unknown> | null } | undefined;
   try {
     j = JSON.parse(out.stdout.trim().split(/\r?\n/)[0] as string) as typeof j;

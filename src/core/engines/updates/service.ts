@@ -73,7 +73,7 @@ function installer(a: EngineAdapter): Installer {
   return a as Installer;
 }
 
-const DOCKER_PROBLEMS = new Set(['DOCKER_NOT_INSTALLED', 'DOCKER_NOT_RUNNING', 'DOCKER_PERMISSION', 'DOCKER_UNSUPPORTED']);
+const DOCKER_PROBLEMS = new Set(['DOCKER_NOT_INSTALLED', 'DOCKER_NOT_RUNNING', 'DOCKER_NOT_RESPONDING', 'DOCKER_PERMISSION', 'DOCKER_UNSUPPORTED']);
 
 export class EngineUpdates {
   private readonly pypiCache = new Map<string, { at: number; value: Promise<PypiRelease> }>();

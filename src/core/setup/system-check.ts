@@ -21,6 +21,8 @@ export type CheckActionKind =
   | 'open-driver-page'
   | 'install-docker'
   | 'start-docker'
+  /** Docker Desktop is up but does not answer: "Riavvia Docker". */
+  | 'restart-docker'
   | 'install-docker-linux'
   | 'install-uv'
   | 'install-vllm'
@@ -294,6 +296,9 @@ export class SystemCheck {
         return item('optional', { code: 'DOCKER_NOT_RUNNING', action: { kind: 'start-docker' } });
       case 'starting':
         return item('optional');
+      case 'not-responding':
+        // Linux: a system service, restarted with its own command (the UI says which).
+        return item('warning', { code: 'DOCKER_NOT_RESPONDING', ...(platform === 'win32' ? { action: { kind: 'restart-docker' } } : {}) });
       case 'not-installed':
         return item('optional', { code: 'DOCKER_NOT_INSTALLED', ...(await this.dockerInstallAction(params)) });
       case 'no-permission':

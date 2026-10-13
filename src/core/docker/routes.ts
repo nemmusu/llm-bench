@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { dockerRestartRequestSchema, type DockerDiagnosis } from '../../contract/docker';
 import { AppError, toAppErrorData, type AppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import type { CoreContext } from '../context';
 import type { RouteModule } from '../server/app';
 import { parseBody } from '../server/http-error';
+import type { DockerControl } from './control';
 import type { DockerEnvironment, DockerStatusDetail, GpuCheckResult } from './environment';
 import type { ImageService } from './images';
 import { parseImageRef } from './image-ref';
@@ -15,12 +17,16 @@ export interface VllmTagSource {
 
 export interface DockerRoutesDeps {
   env: DockerEnvironment;
+  /** "Avvia Docker", "Riavvia Docker", the servers Docker took down. */
+  control: DockerControl;
   images: ImageService;
   vllm: VllmTagSource;
   /** EventHub.publish of the core. */
   publish(e: ServerEvent): void;
   /** Image used by gpu-check when the request names none (e.g. the configured llama.cpp image). */
   defaultGpuImage(): Promise<string>;
+  /** Why Docker got stuck (Docker Desktop's own log and settings, read only). */
+  diagnose(): Promise<DockerDiagnosis>;
   /** Markers of runs in progress: their containers are never removed by cleanup. */
   activeMarkers?(): Iterable<string>;
   /** Core shutdown: aborts a running pull or Docker Desktop start. */
@@ -30,20 +36,25 @@ export interface DockerRoutesDeps {
 /** 'engine.install' event plus the extra fields this module adds (see the contract-change note). */
 type DockerEvent = Extract<ServerEvent, { type: 'engine.install' }> & {
   image?: string;
-  state?: string;
-  slow?: boolean;
   error?: AppErrorData;
 };
 
 const pullSchema = z.object({ image: z.string().min(1), kind: z.string().optional() });
 const gpuCheckSchema = z.object({ image: z.string().min(1).optional() });
 
+const UP = new Set(['running', 'no-gpu', 'unsupported']);
+
 /**
- *   GET  /api/docker/status        -> DockerStatusDetail
+ *   GET  /api/docker/status        -> DockerStatusDetail (?fresh=1 skips the 2 s cache; ?probe=1 also asks the engine itself)
  *   POST /api/docker/start         -> { ok: true, state } at once; progress as 'engine.install'
  *                                     events { kind: 'docker-desktop', stage: 'starting' | 'running' | 'error',
  *                                     bytesDone: elapsed ms, state, slow }. GET /status reports
  *                                     "starting" meanwhile, so polling it works too.
+ *   POST /api/docker/restart       ({ deep? }) -> { ok: true } at once; progress as 'engine.install' events of
+ *                                     kind 'docker-restart' (contract/docker.ts)
+ *   GET  /api/docker/diagnosis     -> DockerDiagnosis
+ *   POST /api/docker/open          -> { ok: true } (Docker Desktop's window)
+ *   GET|POST|DELETE /api/docker/recovery -> DockerRecovery | { ok: true } (servers Docker took down)
  *   POST /api/docker/gpu-check     ({ image? }) -> GpuCheckResult (DOCKER_NO_GPU… as an error)
  *   POST /api/docker/pull          ({ image, kind? }) -> { ok: true }; progress as 'engine.install'
  *                                     events { kind, image, stage: 'download' | 'extract' | 'done' | 'error' }
@@ -54,7 +65,6 @@ export function createDockerRoutes(svc: DockerRoutesDeps | ((ctx: CoreContext) =
   return (app, ctx) => {
     const s = typeof svc === 'function' ? svc(ctx) : svc;
     const pulls = new Set<string>();
-    let starting = false;
 
     const linked = () => {
       const ac = new AbortController();
@@ -63,27 +73,39 @@ export function createDockerRoutes(svc: DockerRoutesDeps | ((ctx: CoreContext) =
       return { signal: ac.signal, dispose: () => s.shutdown?.removeEventListener('abort', onShutdown) };
     };
 
-    app.get('/api/docker/status', async (c) => c.json(await s.env.status({ fresh: c.req.query('fresh') === '1' })));
+    app.get('/api/docker/status', async (c) =>
+      c.json(c.req.query('probe') === '1' ? await s.env.probe() : await s.env.status({ fresh: c.req.query('fresh') === '1' })),
+    );
 
     app.post('/api/docker/start', async (c) => {
       const now: DockerStatusDetail = await s.env.status({ fresh: true });
-      if (now.state === 'running' || now.state === 'no-gpu' || now.state === 'unsupported') return c.json({ ok: true as const, state: now.state });
-      if (!starting) {
-        starting = true;
-        const l = linked();
-        const emit = (e: Omit<DockerEvent, 'type' | 'kind'>) => s.publish({ type: 'engine.install', kind: 'docker-desktop', ...e } as DockerEvent);
-        void s.env
-          .startDesktop(l.signal, (p) => emit({ stage: 'starting', bytesDone: p.elapsedMs, state: p.state, slow: p.slow }))
-          .then(
-            (r) => emit({ stage: 'running', bytesDone: 0, state: r.state }),
-            (e: unknown) => emit({ stage: 'error', bytesDone: 0, error: toAppErrorData(e) }),
-          )
-          .finally(() => {
-            starting = false;
-            l.dispose();
-          });
-      }
+      if (UP.has(now.state)) return c.json({ ok: true as const, state: now.state });
+      s.control.start();
       return c.json({ ok: true as const, state: 'starting' as const });
+    });
+
+    app.post('/api/docker/restart', async (c) => {
+      // No body (the system check's one-click fix) = the normal restart.
+      const body = dockerRestartRequestSchema.parse(await c.req.json().catch(() => ({})));
+      s.control.restart({ deep: body.deep });
+      return c.json({ ok: true as const });
+    });
+
+    app.get('/api/docker/diagnosis', async (c) => c.json(await s.diagnose()));
+
+    app.post('/api/docker/open', async (c) => {
+      await s.env.openDesktop();
+      return c.json({ ok: true as const });
+    });
+
+    app.get('/api/docker/recovery', (c) => c.json(s.control.recovery()));
+    app.post('/api/docker/recovery', (c) => {
+      s.control.restore();
+      return c.json({ ok: true as const });
+    });
+    app.delete('/api/docker/recovery', (c) => {
+      s.control.forget();
+      return c.json({ ok: true as const });
     });
 
     app.post('/api/docker/gpu-check', async (c) => {

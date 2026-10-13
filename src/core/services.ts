@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import type { RunPlan, StartServerRequest } from '../contract/api';
+import type { DockerHangReason } from '../contract/docker';
 import { AppError } from '../contract/errors';
 import type { LocalModel } from '../contract/models';
 import { fileExists } from './bench/recipes';
@@ -10,10 +11,13 @@ import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
 import { createCacheRoutes } from './cache/routes';
 import { createConfigRoutes } from './configs/routes';
+import { GPUBENCH_LABEL } from './docker/cli';
+import { DockerControl } from './docker/control';
+import { diagnoseDocker, diagnosisDeps } from './docker/diagnosis';
 import { createModelVolumeRoutes } from './docker/model-volume-routes';
 import { ModelVolumes, modelVolumeName } from './docker/model-volumes';
 import { createDockerRoutes } from './docker/routes';
-import { createDockerServices, type DockerServices } from './docker/services';
+import { createDockerServices, dockerTimings, type DockerServices } from './docker/services';
 import { LlamaDockerAdapter } from './engines/llamacpp-docker/adapter';
 import { smFromComputeCap } from './engines/shared/compat';
 import type { DockerLaunchPlan } from './engines/shared/docker-engine';
@@ -87,6 +91,8 @@ export interface CoreServices {
   registry: EngineRegistry;
   llama: LlamaNativeAdapter;
   docker: DockerServices;
+  /** "Avvia Docker", "Riavvia Docker", its watchdog and the servers it took down. */
+  dockerControl: DockerControl;
   vllmDocker: VllmDockerAdapter;
   sglangDocker: SglangDockerAdapter;
   /** "Aggiorna" on the engine cards (vLLM, SGLang, custom engines). */
@@ -300,7 +306,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     cudaVersion: async () => (await ctx.telemetry.probe().catch(() => []))[0]?.cudaVersion,
     ...(opts.llamaLauncherPrefix ? { launcherPrefix: opts.llamaLauncherPrefix } : {}),
   });
-  const docker = createDockerServices(deps);
+  // GPUBENCH_DOCKER_TIMINGS: E2E and mockups find a stuck (fake) Docker in seconds.
+  const timings = dockerTimings(deps.env.GPUBENCH_DOCKER_TIMINGS);
+  const docker = createDockerServices(deps, timings.env);
   const dockerEngine = { deps, cli: docker.cli, environment: docker.env, images: docker.images, createClient };
   const vllmDocker = new VllmDockerAdapter({
     ...dockerEngine,
@@ -516,6 +524,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     vramUsedMiB: async () => (await ctx.telemetry.snapshot())[0]?.memUsedMiB ?? undefined,
     presets,
     notices,
+    // A Docker server that ended on its own may have been taken down by Docker ("Riavvia i server che erano attivi").
+    onEnded: (info) => void dockerControl.serverEnded(info),
   });
 
   let lastMarker: string | undefined;
@@ -571,6 +581,20 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     fileExists,
   });
 
+  const dockerControl = new DockerControl({
+    env: docker.env,
+    publish: (e) => ctx.hub.publish(e),
+    servers: serve,
+    notices,
+    // A benchmark's engine is a container when its command is our `docker run` (label gpubench=1).
+    dockerRunActive: () => bench.active()?.launch?.command.argv.includes(`${GPUBENCH_LABEL}=1`) === true,
+    resetApi: () => docker.api.reset(),
+    ...timings.control,
+    clock: deps.clock,
+    log: deps.log,
+    shutdown: ctx.shutdown,
+  });
+
   return {
     keys,
     presets,
@@ -579,6 +603,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     registry,
     llama,
     docker,
+    dockerControl,
     vllmDocker,
     sglangDocker,
     updates,
@@ -619,10 +644,16 @@ export function serviceModules(s: CoreServices): RouteModule[] {
     ),
     createDockerRoutes((ctx) => ({
       env: s.docker.env,
+      control: s.dockerControl,
       images: s.docker.images,
       vllm: s.vllmDocker,
       publish: (e) => ctx.hub.publish(e),
       defaultGpuImage: async () => (await ctx.settings.get()).lastEngine?.image ?? 'ghcr.io/ggml-org/llama.cpp:server-cuda',
+      diagnose: () => {
+        const now = s.docker.env.peek();
+        const hang = now?.state === 'not-responding' ? (now.reason as DockerHangReason) : undefined;
+        return diagnoseDocker(diagnosisDeps(ctx.deps.platform, ctx.deps.env, () => ctx.deps.clock.wall()), hang);
+      },
       // The running benchmark's container and every server started from here survive a cleanup.
       activeMarkers: () => [s.activeMarker(), ...s.serve.list().map((x) => x.id)].filter((m): m is string => m !== undefined),
       shutdown: ctx.shutdown,

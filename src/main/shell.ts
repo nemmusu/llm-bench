@@ -273,7 +273,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     if (c.kind === 'open') showWindow();
     else if (c.kind === 'copy') e.clipboard.writeText(c.url);
     else if (c.kind === 'quit') void requestQuit();
-    else if (c.kind === 'stop-all') s.core?.postMessage({ type: 'tray', action: 'stop-all' });
+    else if (c.kind === 'stop-all' || c.kind === 'docker-start' || c.kind === 'docker-restart') s.core?.postMessage({ type: 'tray', action: c.kind });
     else s.core?.postMessage({ type: 'tray', action: c.kind, id: c.id });
   }
 
@@ -322,13 +322,15 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     s.core?.postMessage({ type: 'server-api-key', key, storage: secure ? 'encrypted' : 'plain' });
   }
 
-  function onCoreMessage(msg: { type?: string; port?: number; state?: unknown; notice?: { name?: unknown }; key?: unknown } | null): void {
+  function onCoreMessage(msg: { type?: string; port?: number; state?: unknown; notice?: { kind?: unknown; name?: unknown }; key?: unknown } | null): void {
     if (msg?.type === 'shell-state') {
       const parsed = shellStateSchema.safeParse(msg.state);
       if (!parsed.success) return;
       s.app = parsed.data;
       refreshTray();
       void syncLoginItem(parsed.data.launchAtLogin);
+    } else if (msg?.type === 'shell-notice' && msg.notice?.kind === 'docker-stuck') {
+      notify(t('dockerStuckTitle'), t('dockerStuckBody'));
     } else if (msg?.type === 'shell-notice' && typeof msg.notice?.name === 'string') {
       notify(t('startFailedTitle'), t('startFailedBody', { name: msg.notice.name }));
     } else if (msg?.type === 'server-api-key-save' && typeof msg.key === 'string') {

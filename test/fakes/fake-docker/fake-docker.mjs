@@ -18,7 +18,13 @@
 // Environment:
 //   FAKE_DOCKER_STATE     state dir (containers.json, logs/, daemon.json…); default <tmp>/gpubench-fake-docker
 //   FAKE_DOCKER_MODE      running (default) | daemon-down | no-desktop-plugin | starting | permission-denied |
-//                         no-gpu | podman | windows-containers | wsl-shim | old-driver
+//                         no-gpu | podman | windows-containers | wsl-shim | old-driver |
+//                         stuck (engine stuck stopping: version and reads answer from Docker Desktop's cache,
+//                         `desktop status` says stopping, everything else fails with "context deadline exceeded") |
+//                         hung (nothing answers but `docker desktop`)
+//   <state>/mode.json     { mode, restart, forceStop } wins over FAKE_DOCKER_MODE (switch while the app runs);
+//                         restart / forceStop: 'ok' (default: containers end, Docker comes back after
+//                         FAKE_DOCKER_START_MS / stays off) | 'hang' | 'fail'. desktop.log lists the desktop commands run.
 //   FAKE_DOCKER_OS        windows | linux: wording of daemon errors (default: this OS)
 //   FAKE_DOCKER_START_MS  daemon-down: time from `desktop start` to running (default 300)
 //   FAKE_DOCKER_MISSING   comma-separated image refs that are not present locally (until pulled)
@@ -51,7 +57,9 @@ const SELF = fileURLToPath(import.meta.url);
 const env = process.env;
 const ENGINE = env.FAKE_DOCKER_ENGINE ?? fileURLToPath(new URL('../fake-engine/cli.mjs', import.meta.url));
 const STATE = env.FAKE_DOCKER_STATE ?? path.join(os.tmpdir(), 'gpubench-fake-docker');
-const MODE = env.FAKE_DOCKER_MODE ?? 'running';
+// <state>/mode.json ({ mode, restart, forceStop }) wins over FAKE_DOCKER_MODE: tests and mockups switch Docker while the app runs.
+const MODE_FILE = readJson('mode.json', {});
+const MODE = MODE_FILE.mode ?? env.FAKE_DOCKER_MODE ?? 'running';
 const WIN = (env.FAKE_DOCKER_OS ?? (process.platform === 'win32' ? 'windows' : 'linux')) === 'windows';
 const VERSION = '29.8.0';
 
@@ -146,13 +154,40 @@ function daemonError(state) {
     : 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?';
 }
 
-/** Commands that need the daemon fail like the real CLI when it is not reachable. */
-function requireDaemon() {
+/** What Docker Desktop's API proxy answers for an engine stuck stopping (it gave up after 15 s). */
+const DEADLINE = 'Error response from daemon: request returned 500 Internal Server Error for API route and version http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/containers/create, check if the server supports the requested API version: context deadline exceeded';
+
+/**
+ * Commands that need the daemon fail like the real CLI when it is not reachable. "stuck": Docker
+ * Desktop's API cache still answers reads (ps, inspect), anything that needs the engine fails.
+ */
+function requireDaemon(read = false) {
+  if (MODE === 'stuck') {
+    if (read) return true;
+    err(DEADLINE);
+    process.exitCode = 1;
+    return false;
+  }
   const s = daemonState();
   if (s === 'up') return true;
   err(daemonError(s));
   process.exitCode = 1;
   return false;
+}
+
+/** Docker Desktop stopping or restarting: every running container ends (like the real VM going away). */
+async function killAll() {
+  for (const c of containers().filter((x) => x.state === 'running')) {
+    writeFileSync(p(`stopping-${c.id}`), '');
+    killEngine(c.id, 'SIGKILL');
+    await waitExit(c.id, 5000);
+  }
+}
+
+/** Never answers (the CLI's caller times out and kills us). */
+function hang() {
+  setInterval(() => {}, 1 << 30);
+  return new Promise(() => {});
 }
 
 // --------------------------------------------------------------------------------- commands
@@ -213,15 +248,60 @@ function cmdVersion() {
   return 0;
 }
 
-function cmdDesktop(args) {
+/** desktop.log: every `docker desktop` command that changes something, one per line (tests read it). */
+function logDesktop(args) {
+  mkdirSync(STATE, { recursive: true });
+  appendFileSync(p('desktop.log'), `${args.join(' ')}\n`);
+}
+
+/** Docker Desktop goes down (and comes back after FAKE_DOCKER_START_MS when `starting`); a stuck engine is not stuck any more. */
+function desktopDown(starting) {
+  writeJson('mode.json', { ...MODE_FILE, mode: 'daemon-down' });
+  writeJson('daemon.json', starting ? { startRequestedAt: Date.now() } : {});
+}
+
+/**
+ * The Docker Desktop CLI plugin: start [--detach], restart, stop [--force], status --format json.
+ * mode.json { restart, forceStop }: 'ok' (default) | 'hang' (never answers) | 'fail' (exit 1).
+ */
+async function cmdDesktop(args) {
   if (MODE === 'no-desktop-plugin') {
     err("docker: 'desktop' is not a docker command.\nSee 'docker --help'");
     return 1;
   }
-  if (args[0] !== 'start') {
-    err(`docker: unknown command: docker desktop ${args[0] ?? ''}`);
+  const [sub] = args;
+  if (sub === 'status') {
+    // Docker Desktop's backend hangs too when everything does.
+    if (MODE === 'hung') return hang();
+    if (MODE === 'stuck') {
+      out(JSON.stringify({ Status: 'stopping', SessionID: 'fake-session' }));
+      return 0;
+    }
+    const s = daemonState();
+    if (s === 'down') {
+      err('Could not retrieve status. Is Docker Desktop running?');
+      return 1;
+    }
+    out(JSON.stringify({ Status: s === 'starting' ? 'starting' : 'running', SessionID: 'fake-session' }));
+    return 0;
+  }
+  if (sub === 'restart' || sub === 'stop') {
+    const how = (sub === 'restart' ? MODE_FILE.restart : MODE_FILE.forceStop) ?? 'ok';
+    logDesktop(args);
+    if (how === 'hang') return hang();
+    if (how === 'fail') {
+      err(`Error: could not ${sub} Docker Desktop: the backend did not answer`);
+      return 1;
+    }
+    await killAll();
+    desktopDown(sub === 'restart');
+    return 0;
+  }
+  if (sub !== 'start') {
+    err(`docker: unknown command: docker desktop ${sub ?? ''}`);
     return 1;
   }
+  logDesktop(args);
   if (daemonState() === 'down') writeJson('daemon.json', { startRequestedAt: Date.now() });
   return 0;
 }
@@ -773,7 +853,7 @@ function psRow(c) {
 }
 
 function cmdPs(args) {
-  if (!requireDaemon()) return 1;
+  if (!requireDaemon(true)) return 1;
   const all = args.includes('-a') || args.includes('--all');
   const filters = [];
   let format;
@@ -826,7 +906,7 @@ function inspectJson(c) {
 
 function cmdInspect(args) {
   const refs = args.filter((a) => !a.startsWith('-'));
-  if (!requireDaemon()) return 1;
+  if (!requireDaemon(true)) return 1;
   const found = [];
   let code = 0;
   for (const r of refs) {
@@ -843,7 +923,7 @@ function cmdInspect(args) {
 
 function cmdImageInspect(args) {
   const refs = args.filter((a) => !a.startsWith('-'));
-  if (!requireDaemon()) return 1;
+  if (!requireDaemon(true)) return 1;
   const missing = missingImages();
   const found = [];
   let code = 0;
@@ -904,6 +984,8 @@ async function main(argv) {
   // Global flags the real CLI accepts before the command.
   while (argv[0] === '--context' || argv[0] === '-H' || argv[0] === '--host') argv = argv.slice(2);
   const [cmd, ...rest] = argv;
+  // "hung": Docker Desktop is up but nothing behind it answers (only its own CLI plugin can restart it).
+  if (MODE === 'hung' && cmd !== 'desktop' && cmd !== '__container' && cmd !== '__api') return hang();
   switch (cmd) {
     case 'version':
       return cmdVersion();

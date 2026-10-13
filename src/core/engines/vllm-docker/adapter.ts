@@ -193,6 +193,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
       diagnose: (lines, exit) => diagnoseVllm(lines, exit, { docker: true, suggestTag, ...(repo !== undefined ? { repo } : {}) }),
       signal,
       onNoGpu: (detail) => this.o.environment.noteGpuFailure(image, detail),
+      onHang: this.o.environment.reportHang,
       ...(this.o.pollMs !== undefined ? { pollMs: this.o.pollMs } : {}),
       ...(this.o.readyTimeoutMs !== undefined ? { readyTimeoutMs: this.o.readyTimeoutMs } : {}),
       ...(this.o.stopTimeoutSec !== undefined ? { stopTimeoutSec: this.o.stopTimeoutSec } : {}),
