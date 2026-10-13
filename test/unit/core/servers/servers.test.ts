@@ -9,7 +9,7 @@ import { ServerKeys } from '../../../../src/core/servers/api-key';
 import { ServerNotices } from '../../../../src/core/servers/notices';
 import { ServerPresets } from '../../../../src/core/servers/presets';
 import { createServerRoutes } from '../../../../src/core/servers/routes';
-import { ServeService, type ServeServiceDeps } from '../../../../src/core/servers/service';
+import { modelLabelOf, ServeService, type ServeServiceDeps } from '../../../../src/core/servers/service';
 import { AppError } from '../../../../src/contract/errors';
 import { errorResponse } from '../../../../src/core/server/http-error';
 import type { CoreContext } from '../../../../src/core/context';
@@ -318,6 +318,14 @@ describe('ServeService', () => {
     await svc.settled();
     await stopping;
     await expect(svc.settled()).resolves.toBeUndefined();
+  });
+});
+
+describe('model label', () => {
+  it('the model\'s own name and its quantization, once', () => {
+    expect(modelLabelOf({ displayName: 'qwen3-8b-q4_k_m', quant: 'Q4_K_M', facts: { name: 'Qwen3 8B' } })).toBe('Qwen3 8B · Q4_K_M');
+    expect(modelLabelOf({ displayName: 'Qwen3-8B-Q4_K_M', quant: 'Q4_K_M' })).toBe('Qwen3-8B-Q4_K_M');
+    expect(modelLabelOf({ displayName: 'Qwen/Qwen3-8B' })).toBe('Qwen/Qwen3-8B');
   });
 });
 

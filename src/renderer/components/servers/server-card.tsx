@@ -11,7 +11,7 @@ import { cn } from '../../lib/cn';
 import { useServerApiKey, useServerLog } from '../../lib/queries-servers';
 import { MIB_PER_GB, prettyEngineLabel } from '../bench/format';
 import { LoadLine } from '../bench/load-line';
-import { copyText } from '../bench/servers';
+import { copyText } from '../../lib/clipboard';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
@@ -87,11 +87,15 @@ function Snippets({ target }: { target: SnippetTarget }) {
           ]}
         />
       </div>
-      {kind === 'http' && <CodeBlock commands={httpSnippets(shown)} label={t('servers.card.snippets.http')} />}
+      {/* Shown with the key hidden, copied with the real one. */}
+      {kind === 'http' && <CodeBlock commands={httpSnippets(shown)} copyCommands={httpSnippets(target)} label={t('servers.card.snippets.http')} />}
       {kind === 'python' && (
-        <div className="relative">
-          <CodeBlock commands={{ powershell: pythonSnippet(shown, noKeyComment), bash: pythonSnippet(shown, noKeyComment) }} label={t('servers.card.snippets.python')} single />
-        </div>
+        <CodeBlock
+          commands={{ powershell: pythonSnippet(shown, noKeyComment), bash: pythonSnippet(shown, noKeyComment) }}
+          copyCommands={{ powershell: pythonSnippet(target, noKeyComment), bash: pythonSnippet(target, noKeyComment) }}
+          label={t('servers.card.snippets.python')}
+          single
+        />
       )}
       {kind === 'client' && (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 px-4 py-3">
@@ -102,12 +106,6 @@ function Snippets({ target }: { target: SnippetTarget }) {
             {t('servers.card.snippets.copySettings')}
           </Button>
         </div>
-      )}
-      {target.apiKey && kind !== 'client' && (
-        <Button size="sm" variant="ghost" className="self-start" onClick={() => copyAll(kind === 'http' ? httpSnippets(target)[window.gpubench?.platform === 'win32' || !window.gpubench ? 'powershell' : 'bash'] : pythonSnippet(target, noKeyComment))}>
-          <Copy aria-hidden />
-          {t('servers.card.snippets.copyWithKey')}
-        </Button>
       )}
       {target.apiKey && <p className="text-xs text-fg-3">{t('servers.card.snippets.keyHidden')}</p>}
     </div>

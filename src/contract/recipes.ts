@@ -48,7 +48,8 @@ export type RecipeArgTarget = z.infer<typeof recipeArgTargetSchema>;
 export function recipeArgTargetOf(kind: EngineKind): RecipeArgTarget | undefined {
   if (kind === 'command') return 'command';
   const base = engineBaseOf(kind);
-  return base === 'external' ? undefined : base;
+  // NInfer takes its own settings (LaunchParams.ninfer), not command-line recipes (merge of the NInfer and recipes contracts).
+  return base === 'external' || base === 'ninfer' ? undefined : base;
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;

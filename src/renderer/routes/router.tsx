@@ -10,6 +10,8 @@ import { NotFoundPage } from './not-found';
 import { ResultPage } from './result';
 import { ResultsPage } from './results';
 import { RunPage } from './run';
+import { ServerStartPage } from './server-start';
+import { ServersPage } from './servers';
 import { SettingsPage } from './settings';
 import { WelcomePage } from './welcome';
 
@@ -23,6 +25,8 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: BenchmarkPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/welcome', component: WelcomePage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/run/$runId', component: RunPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/servers', component: ServersPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/servers/new', component: ServerStartPage }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/results',

@@ -1,37 +1,29 @@
 /**
- * The dialogs of the start flow (see start-flow.tsx), for a benchmark and for "Avvia solo il server":
- * the confirmation, installs and downloads with progress, the "GPU busy" question, starting, the
- * failure, and (servers) the address once it is ready.
+ * The dialogs of the start flow (see start-flow.tsx), for a benchmark and for a server: the downloads
+ * confirmation (benchmarks; a server is confirmed on its own page), installs and downloads with
+ * progress, the "GPU busy" question, starting (a server can go on in the background), the failure.
  */
-import { Box, Check, Container, Download, Loader, Server, Square, TriangleAlert } from 'lucide-react';
+import { Box, Check, Container, Download, Loader, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { RunPlan, ServerInfo, ServerPlan, StartRunRequest, StartServerRequest } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
-import type { LaunchParams } from '../../../contract/engines';
 import { useI18n, type MessageKey } from '../../i18n';
+import { useServers } from '../../lib/queries-runs';
 import { Button } from '../ui/button';
-import { CodeBlock } from '../ui/code-block';
 import { Dialog, DialogContent } from '../ui/dialog';
-import { HelpTip } from '../ui/help-tip';
 import { Progress } from '../ui/progress';
 import { ErrorCard, fixFor } from './error-card';
-import type { Need } from './needs';
-import { FitSummary, PlanWarnings } from './plan-card';
-import { ServerReady, useStopServer } from './servers';
-import { Link } from '@tanstack/react-router';
-import { useServers } from '../../lib/queries-runs';
-import { buildLabel, depthLabel, kvName } from '../tune/tune-format';
-import { engineKindOfLabel } from './live-now';
 import { LoadLine } from './load-line';
+import type { Need } from './needs';
 
-/** While "Avvia solo il server" waits: what the engine is doing (the core lists a server as soon as it is launched). */
-function ServerLoading() {
+/** While a server starts: what the engine is doing (the core lists a server as soon as it is launched). */
+function ServerLoading({ port }: { port: number | undefined }) {
   const servers = useServers(1000);
-  const s = servers.data?.filter((x) => x.loading).at(-1);
-  return s?.loading ? <LoadLine progress={s.loading} engineKind={engineKindOfLabel(s.engineLabel)} className="mt-3" /> : null;
+  const s = servers.data?.filter((x) => x.loading && (port === undefined || x.port === port)).at(-1);
+  return s?.loading ? <LoadLine progress={s.loading} engineKind={s.engineKind} className="mt-3" /> : null;
 }
 
-/** What is being started: a benchmark (then the live screen) or only the server (then its address). */
+/** What is being started: a benchmark (then the live screen) or a server (then the Server page). */
 export type Job =
   | { mode: 'run'; request: StartRunRequest; onStarted?: (runId: string) => void }
   | {
@@ -49,7 +41,7 @@ export interface FlowOpts {
   /** What to fetch first: the plan's list, or a guess when no plan could be made. */
   needs: Need[];
   plan?: RunPlan | ServerPlan;
-  /** Why no plan could be made (shown in the server confirmation; the start then says it again). */
+  /** Why no plan could be made. */
   planError?: AppErrorData;
   /** Also the name of the model download in the confirmation and in the downloads panel. */
   modelLabel: string;
@@ -73,8 +65,7 @@ export type Flow =
   | { step: 'busy'; job: Job; opts: FlowOpts; names: string; ownServers: ServerInfo[] }
   /** `planning`: the preview of these exact choices is still on its way. */
   | { step: 'starting'; job: Job; opts: FlowOpts; planning?: boolean }
-  | { step: 'error'; job: Job; opts: FlowOpts; error: AppErrorData }
-  | { step: 'ready'; job: Job; opts: FlowOpts; server: ServerInfo };
+  | { step: 'error'; job: Job; opts: FlowOpts; error: AppErrorData };
 
 /** The same job, acknowledged to run on a GPU other programs are using. */
 export function sharedJob(job: Job): Job {
@@ -121,7 +112,7 @@ const NEED_WHAT = { engine: 'benchmark.needs.installEngine', image: 'benchmark.n
 const NEED_WHY = { engine: 'benchmark.needs.engineWhy', image: 'benchmark.needs.imageWhy' } as const;
 
 /** What gets installed or downloaded first, with sizes. */
-function NeedList({ needs, mode }: { needs: Need[]; mode: Mode }) {
+export function NeedList({ needs, mode }: { needs: Need[]; mode: Mode }) {
   const { t, bytes } = useI18n();
   return (
     <ul className="flex flex-col gap-2">
@@ -197,78 +188,6 @@ function stageKey(stage: string | undefined): 'resolve' | 'download' | 'extract'
   }
 }
 
-/** "Contesto 64K e cache q4_0 dal test «Trova le impostazioni migliori» del 07/10", with a link to that result. */
-function TunedContext({ tuned }: { tuned: NonNullable<ServerPlan['tuned']> }) {
-  const f = useI18n();
-  const date = new Intl.DateTimeFormat(f.locale, { day: '2-digit', month: '2-digit' }).format(new Date(tuned.createdAt));
-  const what = { ctx: depthLabel(tuned.contextSize, f), kv: kvName(tuned.kvCacheType, f), date };
-  return (
-    <>
-      {tuned.users !== undefined ? f.t('servers.flow.contextTunedUsers', { ...what, users: tuned.users }) : f.t('servers.flow.contextTuned', what)}{' '}
-      <Link to="/results/$runId" params={{ runId: tuned.runId }} className="rounded-xs font-medium text-accent-text underline-offset-4 hover:underline focus-ring">
-        {f.t('servers.flow.contextTunedLink')}
-      </Link>
-      {/* "Dal test fatto con b10997; ora usi b11438: fai un ricontrollo rapido." */}
-      {tuned.otherBuild && <span className="mt-1 block text-warning-text">{f.t('servers.flow.otherBuild', { build: buildLabel(tuned.otherBuild.build, f), current: buildLabel(tuned.otherBuild.current, f) })}</span>}
-    </>
-  );
-}
-
-/**
- * "Avvia il server": always asked, even with nothing to download. The context in plain words, the
- * VRAM verdict, what is fetched first, warnings and the exact command.
- */
-function ServeConfirm({ request, opts }: { request: StartServerRequest; opts: FlowOpts }) {
-  const { t, integer } = useI18n();
-  const plan = opts.plan as ServerPlan | undefined;
-  // Set in expert mode, or the exact settings of a past run ("Avvia solo il server così").
-  const params: Partial<LaunchParams> = request.params ?? {};
-  const own = (params.contextSize ?? params.maxModelLen) !== undefined;
-  return (
-    <div className="flex flex-col gap-4">
-      {plan ? (
-        <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-          {plan.contextSize !== undefined && (
-            <div className="flex flex-col gap-1 sm:col-span-2">
-              <dt className="inline-flex items-center gap-1 text-xs text-fg-3">
-                {t('servers.flow.context')}
-                <HelpTip term={t('servers.flow.context')}>{t('servers.flow.contextHelp')}</HelpTip>
-              </dt>
-              <dd className="text-md font-semibold text-fg tabular-nums">{t('servers.flow.contextValue', { n: integer(plan.contextSize) })}</dd>
-              <dd className="text-fg-2">{!own && plan.tuned ? <TunedContext tuned={plan.tuned} /> : t(own ? 'servers.flow.contextOwn' : 'servers.flow.contextAuto')}</dd>
-            </div>
-          )}
-          {plan.fit && (
-            <div className="flex flex-col gap-1 sm:col-span-2">
-              <dt className="text-xs text-fg-3">{t('benchmark.plan.fit')}</dt>
-              <dd>
-                <FitSummary fit={plan.fit} />
-              </dd>
-            </div>
-          )}
-        </dl>
-      ) : (
-        // No preview (offline, model gone…): the start may still work, or says why again.
-        <ErrorCard error={opts.planError as AppErrorData} headingLevel={3} />
-      )}
-      {opts.needs.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-fg-3">{t('servers.flow.needs')}</p>
-          <NeedList needs={opts.needs} mode="serve" />
-        </div>
-      )}
-      {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} />}
-      <p className="text-xs text-fg-3">{t('servers.confirmHint')}</p>
-      {plan && (
-        <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-medium text-fg-3">{t('servers.flow.command')}</p>
-          <CodeBlock commands={plan.command} label={t('servers.flow.command')} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 export interface StartDialogsProps {
   flow: Flow;
   onClose: () => void;
@@ -277,33 +196,15 @@ export interface StartDialogsProps {
   /** POST the start again (after "Continua comunque", or a retry). */
   onContinue: (job: Job, opts: FlowOpts, pre: Pre) => Promise<void>;
   onStopServers: (job: Job, opts: FlowOpts, servers: ServerInfo[]) => Promise<void>;
+  /** "Continua in background" while a server loads. */
+  onBackground: () => void;
 }
 
-export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServers }: StartDialogsProps) {
+export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServers, onBackground }: StartDialogsProps) {
   const { t, bytes } = useI18n();
-  const stop = useStopServer();
   const open = flow.step !== 'idle';
   let content: ReactNode = null;
-  if (flow.step === 'confirm' && flow.job.mode === 'serve') {
-    content = (
-      <DialogContent
-        size="lg"
-        title={t('servers.flow.title')}
-        description={t('servers.flow.description', { model: flow.opts.modelLabel, engine: flow.opts.engineLabel })}
-        footer={
-          <>
-            <Button onClick={onClose}>{t('common.cancel')}</Button>
-            <Button variant="primary" onClick={() => void onConfirm(flow.job, flow.opts)}>
-              <Server aria-hidden />
-              {t('servers.flow.start')}
-            </Button>
-          </>
-        }
-      >
-        <ServeConfirm request={flow.job.request} opts={flow.opts} />
-      </DialogContent>
-    );
-  } else if (flow.step === 'confirm') {
+  if (flow.step === 'confirm') {
     const total = flow.opts.needs.reduce((a, n) => a + (n.bytes ?? 0), 0);
     content = (
       <DialogContent
@@ -388,13 +289,14 @@ export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServe
     );
   } else if (flow.step === 'starting') {
     const [title, body] = TEXT[flow.job.mode][flow.planning ? 'planning' : 'starting'];
+    const serving = flow.job.mode === 'serve' && !flow.planning;
     content = (
-      <DialogContent title={t(title)}>
+      <DialogContent title={t(title)} {...(serving ? { footer: <Button onClick={onBackground}>{t('servers.flow.background')}</Button> } : {})}>
         <p className="flex items-center gap-2 text-sm text-fg-2" aria-live="polite">
           <Loader aria-hidden className="size-4 animate-spin text-accent" />
           {t(body)}
         </p>
-        {flow.job.mode === 'serve' && !flow.planning && <ServerLoading />}
+        {serving && <ServerLoading port={(flow.job.request as StartServerRequest).port} />}
       </DialogContent>
     );
   } else if (flow.step === 'error') {
@@ -419,27 +321,6 @@ export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServe
             </>
           }
         />
-      </DialogContent>
-    );
-  } else if (flow.step === 'ready') {
-    const server = flow.server;
-    content = (
-      <DialogContent
-        title={t('servers.flow.readyTitle')}
-        description={t('servers.readyBody')}
-        footer={
-          <>
-            <Button variant="danger-outline" onClick={() => void stop(server).then(onClose)}>
-              <Square aria-hidden />
-              {t('servers.stop')}
-            </Button>
-            <Button variant="primary" onClick={onClose}>
-              {t('servers.keepRunning')}
-            </Button>
-          </>
-        }
-      >
-        <ServerReady info={server} />
       </DialogContent>
     );
   }

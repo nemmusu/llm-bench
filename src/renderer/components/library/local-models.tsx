@@ -6,7 +6,7 @@ import type { LocalModel } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { useDeleteModel, useEngineStatuses, useLibraryModels } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
-import { useStartFlow } from '../bench/start-flow';
+import { useOpenServerFlow } from '../servers/use-open-flow';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
@@ -97,12 +97,12 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   const volumes = useVolumeSupport();
   const engines = useEngineStatuses();
   const { settings } = useSettings();
-  const flow = useStartFlow();
+  const openServer = useOpenServerFlow();
   const [target, setTarget] = useState<LocalModel>();
   /** "Avvia server": this model with the recommended settings for this card (the core picks them). */
   const serve = (m: LocalModel) => {
     const engine = serveEngineFor(m, settings.lastEngine, engines.data);
-    flow.serve({ engine, model: { localId: m.id } }, { modelLabel: m.identity.displayName, engineLabel: t(`benchmark.engines.${engine.kind}`) });
+    openServer({ engine, model: { localId: m.id } });
   };
   if (local.isError) return <ErrorCallout error={local.error} action={{ label: t('common.retry'), onClick: () => void local.refetch() }} />;
   if (!local.data) return <Skeleton className="h-40" />;
@@ -144,7 +144,6 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         cancelLabel={t('common.cancel')}
         onConfirm={() => del.mutate((target as LocalModel).id)}
       />
-      {flow.ui}
     </>
   );
 }

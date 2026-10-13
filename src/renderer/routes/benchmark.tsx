@@ -15,7 +15,7 @@ import { BenchModelPicker } from '../components/bench/model-picker';
 import { initialModelKey, modelOptions, newestTried, requestModel, savedModelId, triedHere, type ModelOption } from '../components/bench/model-options';
 import { PlanCard, type FitPatch } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
-import { ServersPanel } from '../components/bench/servers';
+import { useOpenServerFlow } from '../components/servers/use-open-flow';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
@@ -174,6 +174,7 @@ function BenchmarkScreen() {
   const curated = useCurated(vramGB);
   const tierGB = curated.data?.tierGB;
   const flow = useStartFlow();
+  const openServer = useOpenServerFlow();
   const expert = settings.expertMode;
 
   const savedEngine = draft?.engine ?? settings.lastEngine;
@@ -282,9 +283,18 @@ function BenchmarkScreen() {
     toast.success(t('spill.fix.applied'));
   };
 
-  /** The same engine, model and expert parameters, without a test: the core fills in the rest for this card. */
+  /**
+   * The same engine, model and expert parameters, without a test: "Avvia un server" opens with them
+   * (the core fills in the rest for this card), and that page starts it.
+   */
   const serve = () => {
-    flow.serve({ engine: base.engine, model: base.model, params: base.params }, { modelLabel, engineLabel, onStarted: () => remember() });
+    remember();
+    openServer({
+      engine: base.engine,
+      model: base.model,
+      ...(base.params ? { params: base.params } : {}),
+      ...(option?.source === 'curated' && option.preset && draft?.hub ? { hub: draft.hub } : {}),
+    });
   };
 
   const engineFooter = (() => {
@@ -498,7 +508,6 @@ function BenchmarkScreen() {
 
         <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
           <GpuCard />
-          <ServersPanel />
           <RecentRuns />
         </section>
       </div>

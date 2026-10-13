@@ -61,6 +61,12 @@ interface Running {
 
 const notFound = (id: string) => new AppError('VALIDATION', 'No such server', { params: { id, reason: 'not_found' } });
 
+/** "Qwen3 8B · Q4_K_M": the model's own name (GGUF metadata) and its quantization, as the library shows it. */
+export function modelLabelOf(identity: Pick<ModelTarget['identity'], 'displayName' | 'quant' | 'facts'>): string {
+  const name = identity.facts?.name ?? identity.displayName;
+  return identity.quant && !name.includes(identity.quant) ? `${name} · ${identity.quant}` : name;
+}
+
 /**
  * The servers of the Server page ("Avvia un server", a preset, "Avvia il server così", the tray):
  * an engine started with the chosen or recommended settings on a stable port, left running for other
@@ -169,7 +175,7 @@ export class ServeService {
       baseUrl: instance.baseUrl,
       openaiUrl: `${instance.baseUrl}/v1`,
       modelName: apiName ?? model.identity.displayName,
-      modelLabel: model.identity.displayName,
+      modelLabel: modelLabelOf(model.identity),
       engineLabel: [plan.engine.customEngine?.name ?? plan.engine.name, plan.engine.build ?? plan.engine.version].filter(Boolean).join(' '),
       engineKind: plan.kind,
       startedAt: new Date(this.deps.clock.wall()).toISOString(),

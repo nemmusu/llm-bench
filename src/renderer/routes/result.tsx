@@ -15,7 +15,7 @@ import { engineLabelOf, modelLabelOf, shortGpuName } from '../components/bench/f
 import { Details } from '../components/bench/result-details';
 import { Launch } from '../components/bench/result-launch';
 import { Overview } from '../components/bench/result-overview';
-import { copyText } from '../components/bench/servers';
+import { copyText } from '../lib/clipboard';
 import { useStartFlow } from '../components/bench/start-flow';
 import { configLabelOf } from '../components/presets/config-label';
 import { PresetActions } from '../components/presets/preset-actions';
@@ -235,7 +235,6 @@ function ResultView({ run }: { run: RunResult }) {
         </TabsContent>
       </Tabs>
       {flow.ui}
-      {launch.ui}
     </Page>
   );
 }

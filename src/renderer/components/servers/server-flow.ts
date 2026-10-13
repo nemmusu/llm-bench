@@ -8,10 +8,14 @@ import type { StartServerRequest } from '../../../contract/api';
 import type { ConfigEntry, DepthPoint } from '../../../contract/configs';
 import { customEngineKindOf, type CustomEngineInfo, type MissingFlag } from '../../../contract/custom-engines';
 import type { EngineConfig, EngineKind, EngineStatus, LaunchParams } from '../../../contract/engines';
-import type { ModelIdentity } from '../../../contract/models';
+import type { LocalModel, ModelIdentity } from '../../../contract/models';
 import type { ServerModel, ServerNetwork, ServerPreset, ServerSettingsSource } from '../../../contract/servers';
+import { ninferKindFor } from '../../../contract/ninfer';
+import type { CuratedModel } from '../../../contract/views';
+import { modelOptions, requestModel, type ModelOption } from '../bench/model-options';
 import type { DraftHubModel, PresetProvenance } from '../bench/run-context';
 import { defaultDepth, depthChoices, pointAt } from '../configs/depths';
+import { hubOption } from '../presets/use-preset-draft';
 
 /** What a page hands to the flow ("Avvia solo il server", "Avvia il server così", "Avvia server", "Modifica"). */
 export interface ServerDraft {
@@ -44,14 +48,17 @@ export function takeServerDraft(qc: QueryClient): ServerDraft | undefined {
 // ---- engines -------------------------------------------------------------------------------------
 
 /** The files an engine reads. */
-export type ModelFormat = 'gguf' | 'safetensors';
+export type ModelFormat = 'gguf' | 'safetensors' | 'ninfer';
 
-const BUILTIN: Record<ModelFormat, readonly EngineKind[]> = {
-  gguf: ['llamacpp-native', 'llamacpp-docker'],
-  safetensors: ['vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native'],
-};
+/** Built-in engines of a format; NInfer runs natively on Linux and through WSL on Windows. */
+function builtinKinds(format: ModelFormat, platform: string): EngineKind[] {
+  if (format === 'gguf') return ['llamacpp-native', 'llamacpp-docker'];
+  if (format === 'safetensors') return ['vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native'];
+  const ninfer = ninferKindFor(platform);
+  return ninfer ? [ninfer] : [];
+}
 
-/** The kinds of a format's built-in engines, for a custom engine's base. */
+/** The formats a custom engine reads, by its base (a command template never reads a .ninfer artifact). */
 const BASE_FORMATS: Record<CustomEngineInfo['engine']['base'], readonly ModelFormat[]> = {
   llamacpp: ['gguf'],
   vllm: ['safetensors'],
@@ -77,8 +84,8 @@ export function engineKeyOf(config: Pick<EngineConfig, 'kind' | 'customEngineId'
 }
 
 /** Built-in engines for the model's files first, then the custom engines (forks, command templates) that read them. */
-export function engineChoices(format: ModelFormat, statuses: readonly EngineStatus[], customs: readonly CustomEngineInfo[]): EngineChoice[] {
-  const builtin = BUILTIN[format].map((kind) => ({
+export function engineChoices(format: ModelFormat, statuses: readonly EngineStatus[], customs: readonly CustomEngineInfo[], platform: string): EngineChoice[] {
+  const builtin = builtinKinds(format, platform).map((kind) => ({
     key: `builtin:${kind}`,
     config: { kind },
     kind,
@@ -98,9 +105,53 @@ export function engineChoices(format: ModelFormat, statuses: readonly EngineStat
   return [...builtin, ...custom];
 }
 
-/** The format a model is read in: a GGUF for llama.cpp, a Hugging Face folder for vLLM and SGLang. */
+/** The format a model is read in: a GGUF for llama.cpp, a .ninfer artifact for NInfer, a Hugging Face folder for vLLM and SGLang. */
 export function formatOf(identity: Pick<ModelIdentity, 'format'>): ModelFormat {
-  return identity.format === 'gguf' ? 'gguf' : 'safetensors';
+  return identity.format === 'gguf' || identity.format === 'ninfer' ? identity.format : 'safetensors';
+}
+
+// ---- models --------------------------------------------------------------------------------------
+
+/** A .ninfer artifact on the PC (the Benchmark page's lists have GGUF and safetensors only). */
+function ninferOption(m: LocalModel): ModelOption {
+  const id = m.identity;
+  return {
+    key: `local:${m.id}`,
+    source: 'local',
+    name: id.facts?.name ?? id.displayName,
+    ...(id.quant ? { quant: id.quant } : {}),
+    ...(id.sizeBytes !== undefined ? { sizeBytes: id.sizeBytes } : {}),
+    local: m,
+  };
+}
+
+const sameHub = (o: ModelOption, hub: DraftHubModel): boolean =>
+  o.source === 'curated' ? o.curated.repo === hub.repo && o.curated.file === hub.file : o.local.identity.repo === hub.repo && o.local.identity.file === hub.file;
+
+/**
+ * Every model a server can run: GGUF and Hugging Face folders on the PC and the suggestions for this
+ * card, the .ninfer artifacts, and a test's model to download again (when it is not one of them).
+ */
+export function serverModelOptions(local: readonly LocalModel[], curated: readonly CuratedModel[], hub?: DraftHubModel): ModelOption[] {
+  const all = [...modelOptions('llamacpp-native', local, curated), ...modelOptions('vllm-docker', local, curated), ...local.filter((m) => m.identity.format === 'ninfer').map(ninferOption)];
+  if (hub && !all.some((o) => sameHub(o, hub))) all.push(hubOption(hub));
+  return all;
+}
+
+export function optionFormat(o: ModelOption): ModelFormat {
+  return o.source === 'local' ? formatOf(o.local.identity) : o.curated.file === undefined ? 'safetensors' : 'gguf';
+}
+
+/** The option a draft (or a preset being changed) names: same library model, or same Hugging Face file. */
+export function optionFor(options: readonly ModelOption[], model: ServerModel | undefined): ModelOption | undefined {
+  if (!model) return undefined;
+  if (model.localId !== undefined) return options.find((o) => o.source === 'local' && o.local.id === model.localId);
+  return options.find((o) => (o.source === 'curated' ? o.curated.repo === model.repo && o.curated.file === model.file : o.local.identity.repo === model.repo && o.local.identity.file === model.file));
+}
+
+/** The request's model part of an option. */
+export function optionModel(o: ModelOption): ServerModel {
+  return requestModel(o) as ServerModel;
 }
 
 // ---- tests and presets of a model ---------------------------------------------------------------
