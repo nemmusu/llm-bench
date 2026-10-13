@@ -1,8 +1,8 @@
-import { Cpu, Hammer, RotateCcw, SquarePen } from 'lucide-react';
+import { Cpu, Download, FolderSearch, Hammer, RotateCcw, SquarePen } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { EngineConfig, EngineStatus } from '../../../contract/engines';
-import { ninferPresetsFor, type NinferKind } from '../../../contract/ninfer';
+import { NINFER_DEFAULT_DIR, ninferPresetsFor, ninferServeOf, type NinferKind } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { activeEvent, useEngineStatuses, useInstallEvent } from '../../lib/queries-library';
 import { useNinferCheck, useNinferDistros, useNinferKind, useSaveNinfer } from '../../lib/queries-ninfer';
@@ -21,6 +21,9 @@ import { NinferBuildDialog } from './ninfer-build-dialog';
 import { EngineUpdatePanel } from './engine-update';
 import { NinferArtifacts } from './ninfer-artifacts';
 import { presetTitle } from './ninfer-format';
+import { NinferProblem, ninferNotBuilt } from './ninfer-problem';
+
+export { NinferProblem } from './ninfer-problem';
 
 type Tone = StatusDotProps['tone'];
 
@@ -36,7 +39,8 @@ export function ninferStatus(status: EngineStatus | undefined, t: ReturnType<typ
 
 /**
  * NInfer: where its build is (Linux, or a WSL distro and the path inside it), checked by running
- * its help; the guided build; the built-in settings it offers for .ninfer models.
+ * its help; "Scarica e compila NInfer" (the guided build, saved by itself once built); the built-in
+ * settings it offers for .ninfer models.
  */
 export function NinferCard() {
   const { t } = useI18n();
@@ -78,12 +82,14 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
   const [distro, setDistro] = useState<string | undefined>(undefined);
   const chosenDistro = distro ?? savedDistro ?? list.find((d) => d.default)?.name ?? list[0]?.name;
   const [path, setPath] = useState(savedPath ?? '');
-  const [editing, setEditing] = useState(false);
-  const [build, setBuild] = useState(false);
+  // "Ho già NInfer: indica la cartella" (or "Cambia"): the path field instead of the guided build.
+  const [manual, setManual] = useState(false);
+  // The guided build: the folder it starts with (a checkout to build in place, else the default one).
+  const [build, setBuild] = useState<string | undefined>(undefined);
   const check = useNinferCheck();
   const event = useInstallEvent(kind);
   const running = activeEvent(event);
-  const configured = savedPath !== undefined && !editing;
+  const configured = savedPath !== undefined && !manual;
 
   const cfgOf = (p: string): EngineConfig => ({ kind, ninferPath: p, ...(wsl && chosenDistro ? { wslDistro: chosenDistro } : {}) });
   // The button is enabled only with a path.
@@ -93,7 +99,7 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
       onSuccess: (s) => {
         if (!s.installed) return;
         save.mutate({ ...settings.ninfer, ...(wsl ? { wsl: { distro: chosenDistro as string, path: p } } : { native: { path: p } }) });
-        setEditing(false);
+        setManual(false);
         toast.success(t('ninfer.where.saved'));
       },
     });
@@ -103,11 +109,39 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
   // The check's own answer (a path not saved yet), else the saved build's status.
   const shown = check.data ?? status;
   const presets = ninferPresetsFor({ name: 'qwen3.8-27b' });
+  // The saved checkout is there but its ninfer-serve does not answer (not built yet, or broken): it is compiled in place.
+  const notBuilt = configured && ninferNotBuilt(shown);
+  const checkout = savedPath !== undefined ? ninferServeOf(savedPath).repo : undefined;
+  const noWsl = wsl && distros.data?.wsl === false;
+
+  const distroField = wsl && (
+    <Field label={t('ninfer.distro.label')} hint={t('ninfer.distro.hint')}>
+      {({ id, describedBy }) =>
+        distros.isPending ? (
+          <Skeleton className="h-9" />
+        ) : (
+          <Select<string>
+            id={id}
+            aria-describedby={describedBy}
+            value={chosenDistro ?? ''}
+            onValueChange={setDistro}
+            options={list.map((d) => ({
+              value: d.name,
+              label: d.name,
+              text: d.name,
+              ...(d.default ? { description: t('ninfer.distro.default') } : {}),
+              ...(d.version === 1 ? { description: t('ninfer.distro.wsl1'), disabled: true } : {}),
+            }))}
+          />
+        )
+      }
+    </Field>
+  );
 
   return (
     <div className="flex flex-col gap-4">
       {shown?.problems.includes('ENGINE_GPU_UNSUPPORTED') && <Callout tone="danger" title={t('ninfer.gpuOnly')} />}
-      {wsl && distros.data?.wsl === false && <Callout tone="warning" title={t('ninfer.distro.noWslTitle')}>{t('ninfer.distro.noWsl')}</Callout>}
+      {noWsl && <Callout tone="warning" title={t('ninfer.distro.noWslTitle')}>{t('ninfer.distro.noWsl')}</Callout>}
       {configured ? (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3">
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
@@ -128,11 +162,17 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
           </dl>
           {shown && !shown.installed && <NinferProblem status={shown} fallback={savedPath} />}
           <div className="flex flex-wrap gap-2">
+            {notBuilt && !running && (
+              <Button size="sm" variant="primary" onClick={() => setBuild(checkout)}>
+                <Hammer aria-hidden />
+                {t('ninfer.setup.build')}
+              </Button>
+            )}
             <Button size="sm" onClick={recheck} disabled={check.isPending}>
               <RotateCcw aria-hidden />
               {t('ninfer.where.recheck')}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="ghost" onClick={() => setManual(true)}>
               <SquarePen aria-hidden />
               {t('ninfer.where.change')}
             </Button>
@@ -148,54 +188,48 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {wsl && (
-            <Field label={t('ninfer.distro.label')} hint={t('ninfer.distro.hint')}>
-              {({ id, describedBy }) =>
-                distros.isPending ? (
-                  <Skeleton className="h-9" />
-                ) : (
-                  <Select<string>
-                    id={id}
-                    aria-describedby={describedBy}
-                    value={chosenDistro ?? ''}
-                    onValueChange={setDistro}
-                    options={list.map((d) => ({
-                      value: d.name,
-                      label: d.name,
-                      text: d.name,
-                      ...(d.default ? { description: t('ninfer.distro.default') } : {}),
-                      ...(d.version === 1 ? { description: t('ninfer.distro.wsl1'), disabled: true } : {}),
-                    }))}
-                  />
-                )
-              }
-            </Field>
-          )}
-          <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')}>
-            {({ id, describedBy }) => (
-              <div className="flex gap-2">
-                <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="min-w-0 flex-1 font-mono" spellCheck={false} />
-                <Button variant="primary" className="shrink-0" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
-                  {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
-                </Button>
+          {distroField}
+          {manual ? (
+            <>
+              <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')}>
+                {({ id, describedBy }) => (
+                  <div className="flex gap-2">
+                    <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="min-w-0 flex-1 font-mono" spellCheck={false} />
+                    <Button variant="primary" className="shrink-0" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
+                      {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
+                    </Button>
+                  </div>
+                )}
+              </Field>
+              {check.data && !check.data.installed && <NinferProblem status={check.data} fallback={path} />}
+              <Button size="sm" variant="ghost" className="self-start" onClick={() => setBuild(NINFER_DEFAULT_DIR)} disabled={running !== undefined || (wsl && !chosenDistro)}>
+                <Download aria-hidden />
+                {t('ninfer.setup.download')}
+              </Button>
+            </>
+          ) : (
+            !running && (
+              // Nothing there yet: the obvious way is LLM Bench doing it (download, build, save); a build of one's own is the other.
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-fg-2">{t('ninfer.setup.intro', { where: wsl ? t('ninfer.build.whereWsl', { distro: chosenDistro ?? '–' }) : t('ninfer.build.whereLinux') })}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="primary" onClick={() => setBuild(NINFER_DEFAULT_DIR)} disabled={(wsl && !chosenDistro) || noWsl}>
+                    <Download aria-hidden />
+                    {t('ninfer.setup.download')}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setManual(true)}>
+                    <FolderSearch aria-hidden />
+                    {t('ninfer.setup.have')}
+                  </Button>
+                </div>
               </div>
-            )}
-          </Field>
-          {check.data && !check.data.installed && (
-            <NinferProblem status={check.data} fallback={path} />
+            )
           )}
         </div>
       )}
       {check.isError && <ErrorCallout error={check.error} />}
       {save.isError && <ErrorCallout error={save.error} />}
-      {running ? (
-        <InstallProgress event={running} label={t('ninfer.build.running')} />
-      ) : (
-        <Button size="sm" variant="secondary" className="self-start" onClick={() => setBuild(true)} disabled={wsl && !chosenDistro}>
-          <Hammer aria-hidden />
-          {t('ninfer.build.open')}
-        </Button>
-      )}
+      {running && <InstallProgress event={running} label={t('ninfer.build.running')} />}
       <section className="flex flex-col gap-1.5" aria-label={t('ninfer.presets.cardTitle')}>
         <h3 className="text-sm font-semibold text-fg">{t('ninfer.presets.cardTitle')}</h3>
         <ul className="flex flex-col gap-1 text-sm text-fg-2">
@@ -206,27 +240,15 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
         <p className="text-xs text-fg-3">{t('ninfer.presets.cardHint')}</p>
       </section>
       {wsl && <p className="text-xs text-fg-3">{t('ninfer.wslModels', { distro: chosenDistro ?? 'Ubuntu' })}</p>}
-      <NinferBuildDialog open={build} onOpenChange={setBuild} kind={kind} distro={chosenDistro} />
+      <NinferBuildDialog
+        open={build !== undefined}
+        // It has no trigger: it only ever asks to close.
+        onOpenChange={() => setBuild(undefined)}
+        kind={kind}
+        distro={wsl ? chosenDistro : undefined}
+        dir={build as string}
+        onBuilt={() => setManual(false)}
+      />
     </div>
   );
-}
-
-const KNOWN_PROBLEMS = ['ninfer_not_found', 'distro_missing', 'wsl_missing'] as const;
-type KnownProblem = (typeof KNOWN_PROBLEMS)[number] | 'ninfer_not_built';
-
-/** Why NInfer cannot be used, in its own words (a wrong path, a distro that is gone), else the error catalog's. */
-export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback: string }) {
-  const { t } = useI18n();
-  const reason = status.problemParams?.reason;
-  if (typeof reason === 'string' && (KNOWN_PROBLEMS as readonly string[]).includes(reason)) {
-    // The checkout is there (its commit is known) but nothing is built yet: say so, the build compiles it in place.
-    const r = reason === 'ninfer_not_found' && status.version ? 'ninfer_not_built' : (reason as KnownProblem);
-    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback), distro: String(status.problemParams?.distro ?? ''), commit: status.version ?? '' };
-    return (
-      <Callout tone="danger" title={t(`ninfer.problems.${r}.title`, params)}>
-        {t(`ninfer.problems.${r}.body`, params)}
-      </Callout>
-    );
-  }
-  return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_NOT_INSTALLED', message: status.location ?? fallback, ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
 }

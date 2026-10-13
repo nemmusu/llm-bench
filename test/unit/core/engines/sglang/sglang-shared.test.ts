@@ -153,7 +153,8 @@ describe('SGLang failures', () => {
     expect(diagnoseSglang(lines('oom.log'), exit)).toMatchObject({ code: 'ENGINE_OOM' });
     expect(diagnoseSglang(lines('mem-fraction.log'), exit)).toMatchObject({ code: 'ENGINE_OOM', params: { reason: 'mem-fraction' } });
     expect(diagnoseSglang(lines('context.log'), exit)).toMatchObject({ code: 'MODEL_TOO_LARGE', params: { reason: 'context', maxModelLen: 131072, modelMaxLen: 40960 } });
-    expect(diagnoseSglang(lines('arch.log'), exit)).toMatchObject({ code: 'MODEL_INVALID', params: { reason: 'architecture' } });
+    expect(diagnoseSglang(lines('arch.log'), exit)).toMatchObject({ code: 'ENGINE_MODEL_UNSUPPORTED', params: { engine: 'SGLang', reason: 'architecture', value: 'BonsaiTernaryForCausalLM' } });
+    expect(diagnoseSglang(['ValueError: Unsupported architectures: Qwen9ForCausalLM'], exit)).toMatchObject({ code: 'ENGINE_MODEL_UNSUPPORTED', params: { value: 'Qwen9ForCausalLM' } });
     expect(diagnoseSglang(['RuntimeError: CUDA error: no kernel image is available for execution on the device'], exit)).toMatchObject({ code: 'ENGINE_NO_KERNEL_IMAGE' });
     expect(diagnoseSglang(['Error: spawn /x/python ENOENT'], exit)).toMatchObject({ code: 'ENGINE_START_FAILED' });
     expect(diagnoseSglang(["ModuleNotFoundError: No module named 'sglang'"], exit)).toMatchObject({ code: 'ENGINE_NOT_INSTALLED', params: { reason: 'sglang_missing' } });

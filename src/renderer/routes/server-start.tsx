@@ -10,6 +10,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { StartServerRequest } from '../../contract/api';
+import { customEngineConfigOf, customEngineForModel } from '../../contract/custom-engines';
 import type { EngineConfig } from '../../contract/engines';
 import { ninferPresetOf, ninferPresetsFor } from '../../contract/ninfer';
 import type { ServerNetwork, ServerPresetInput } from '../../contract/servers';
@@ -102,9 +103,11 @@ export function ServerStartPage() {
   const recipe = useModelRecipe(recipeTarget);
   const [recipeOn, setRecipeOn] = useState(!draft?.recipeOff);
 
-  // 2. The engine: the user's pick, the one handed over (a test's, a preset's), the recipe's, a suggested one,
-  //    else the first usable one for the model's files.
+  // 2. The engine: the user's pick, the one handed over (a test's, a preset's), the recipe's, a suggested one, a
+  //    custom engine whose rules are for this model (NInfer-all for a GGUF-NInfer artifact), else the first usable
+  //    one for the model's files.
   const choices = engineChoices(format, engines.data ?? [], customList, system.data?.os.platform ?? 'win32');
+  const forModel = option?.source === 'local' ? customEngineForModel(customList.map((c) => c.engine), option.local.identity) : undefined;
   const [engineKey, setEngineKey] = useState<string | undefined>(undefined);
   const choiceOf = (config: EngineConfig | undefined) => (config ? choices.find((c) => c.key === engineKeyOf(config) && !c.disabled) : undefined);
   const engineChoice =
@@ -112,6 +115,7 @@ export function ServerStartPage() {
     choiceOf(draft?.engine) ??
     (recipeOn ? choiceOf(recipe.engine) : undefined) ??
     choiceOf(draft?.suggestedEngine) ??
+    choiceOf(forModel ? customEngineConfigOf(forModel) : undefined) ??
     choices.find((c) => !c.disabled);
   // A handed-over engine keeps its own executable or image (a test's custom build, the llama.cpp used last).
   const handed = [draft?.engine, draft?.suggestedEngine].find((e) => e !== undefined && engineKeyOf(e) === engineChoice?.key);
@@ -149,10 +153,15 @@ export function ServerStartPage() {
   const configParams =
     configRun.data && local.data ? presetOf(configRun.data, local.data, system.data?.paths.enginesDir, { combo: configSource?.combo }).params : undefined;
   // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), a test's own NInfer settings, or LLM Bench's choice.
-  const ninferPresets = option?.source === 'local' && format === 'ninfer' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name }) : [];
+  const ninferPresets =
+    option?.source === 'local' && format === 'ninfer'
+      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name, repo: option.local.identity.repo, file: option.local.identity.file })
+      : [];
   // Handed-over NInfer settings are the preset they match, else offered as they are ('run').
   const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(undefined);
-  const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (ninferPresetOf(draft!.params!, ninferPresets) ?? 'run') : 'ninfer-recommended');
+  // A variant of NInfer starts with its model card's settings (they may need its own KV type); NInfer with its recommended ones.
+  const firstChoice: NinferChoice = engineChoice?.base === 'ninfer' && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended';
+  const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (ninferPresetOf(draft!.params!, ninferPresets) ?? 'run') : firstChoice);
   const ninferParams = ninferChoice === 'run' ? draft!.params : withNinferPreset(undefined, ninferPresets.find((p) => p.id === ninferChoice)?.params);
   const modelPresets = option ? presetsForModel(presets.data ?? [], optionModel(option)) : [];
   const pickedPreset = modelPresets.find((p) => p.id === presetId);

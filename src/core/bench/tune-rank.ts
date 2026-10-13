@@ -32,7 +32,7 @@ export const TIE_TAIL = 0.1;
 export function kvPrecisionRank(kv: TuneKvType): number {
   if (kv === 'f16' || kv === 'auto' || kv === 'bf16') return 0;
   if (kv === 'q8_0' || kv === 'fp8' || kv === 'int8') return 1;
-  if (kv === 'k8v4') return 1.5;
+  if (kv === 'k8v4' || kv === 'rk8v4') return 1.5;
   return 2;
 }
 

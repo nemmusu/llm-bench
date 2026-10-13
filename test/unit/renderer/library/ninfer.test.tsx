@@ -60,6 +60,9 @@ describe('NInfer card', () => {
     expect(await within(c).findByText('Serve una RTX 5090')).toBeTruthy();
     expect(within(c).getByText('NInfer funziona solo con una RTX 5090.')).toBeTruthy();
     expect(within(c).queryByRole('combobox', { name: 'Distribuzione WSL' })).toBeNull();
+    // Nothing there yet: LLM Bench offers to download and build it; a build of one's own is the other way.
+    expect(within(c).getByText(/NInfer non è ancora su questo PC/)).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Ho già NInfer: indica la cartella' }));
     const field = within(c).getByRole('textbox', { name: 'Dove si trova NInfer' });
     await userEvent.click(within(c).getByRole('button', { name: 'Controlla e usa' }));
     expect(api.calls.some((x) => x.path === '/api/engines/ninfer/check')).toBe(false);
@@ -88,6 +91,8 @@ describe('NInfer card', () => {
     expect(distro.textContent).toContain('Ubuntu-24.04');
     await userEvent.click(distro);
     await userEvent.click(await screen.findByRole('option', { name: /Debian/ }));
+    expect(within(c).getByText(/lo compilo io, dentro Debian/)).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Ho già NInfer: indica la cartella' }));
     const field = within(c).getByRole('textbox', { name: 'Dove si trova NInfer' });
     await userEvent.type(field, '/bad');
     await userEvent.click(within(c).getByRole('button', { name: 'Controlla e usa' }));
@@ -104,7 +109,9 @@ describe('NInfer card', () => {
     const api = ninferApi();
     api.on('GET /api/engines/ninfer/distros', () => ({ wsl: false, distros: [] }));
     renderLib('/engines', api);
-    expect(await within(await card()).findByText('WSL non è pronto')).toBeTruthy();
+    const c = await card();
+    expect(await within(c).findByText('WSL non è pronto')).toBeTruthy();
+    expect((within(c).getByRole('button', { name: 'Scarica e compila NInfer' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('a saved build: where it is, its commit, a problem it has, a new check, a change of path', async () => {
@@ -145,7 +152,7 @@ describe('NInfer card', () => {
     await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/check')?.body).toEqual({ kind: 'ninfer-native', ninferPath: '/opt/ninfer' }));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'build', bytesDone: 3, step: 3, steps: 10 }));
     expect(await within(c).findByText('Compilazione')).toBeTruthy();
-    expect(within(c).queryByRole('button', { name: 'Compila NInfer…' })).toBeNull();
+    expect(within(c).queryByRole('button', { name: 'Scarica e compila NInfer' })).toBeNull();
   });
 
   it('a check that takes time says so', async () => {
@@ -154,7 +161,8 @@ describe('NInfer card', () => {
     api.on('POST /api/engines/ninfer/check', () => new Promise<EngineStatus>((r) => (answer = r)));
     renderLib('/engines', api);
     const c = await card();
-    await userEvent.type(await within(c).findByRole('textbox', { name: 'Dove si trova NInfer' }), '/n');
+    await userEvent.click(await within(c).findByRole('button', { name: 'Ho già NInfer: indica la cartella' }));
+    await userEvent.type(within(c).getByRole('textbox', { name: 'Dove si trova NInfer' }), '/n');
     await userEvent.click(within(c).getByRole('button', { name: 'Controlla e usa' }));
     expect(await within(c).findByRole('button', { name: 'Controllo…' })).toBeTruthy();
     act(() => answer(status({ installed: false })));
@@ -202,6 +210,10 @@ const plan = (over: Partial<NinferBuildPlan> = {}): NinferBuildPlan => ({
   ],
   aptCommand: 'sudo apt install cmake ninja-build',
   cudaFromNvidia: true,
+  source: { url: 'https://github.com/Neroued/ninfer.git' },
+  downloadBytes: 28_611 * 1024,
+  cpus: 16,
+  minutes: 10,
   ready: false,
   ...over,
 });
@@ -215,10 +227,13 @@ describe('Compila NInfer', () => {
     renderLib('/engines', api);
     const c = await card();
     await within(c).findByRole('combobox', { name: 'Distribuzione WSL' });
-    await userEvent.click(within(c).getByRole('button', { name: 'Compila NInfer…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Compila NInfer' });
-    expect(within(dialog).getByText(/dentro Ubuntu-24.04/)).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Compila' }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(within(c).getByRole('button', { name: 'Scarica e compila NInfer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Scarica e compila NInfer' });
+    expect(within(dialog).getByText(/lo compila dentro Ubuntu-24.04/)).toBeTruthy();
+    // Checked as soon as it opens: what it downloads and how long it takes (the cores of the distro).
+    expect(await within(dialog).findByText('Da scaricare: circa 27,9 MB.')).toBeTruthy();
+    expect(within(dialog).getByText('Compilazione: circa 10 minuti con 16 core.')).toBeTruthy();
+    expect((within(dialog).getByRole('button', { name: 'Scarica e compila' }) as HTMLButtonElement).disabled).toBe(true);
     const folder = within(dialog).getByRole('textbox', { name: 'Cartella' });
     await userEvent.clear(folder);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Controlla' }));
@@ -227,19 +242,22 @@ describe('Compila NInfer', () => {
     expect(within(dialog).getByText('Manca')).toBeTruthy();
     expect(within(dialog).getByRole('region', { name: 'Comando da copiare' }).textContent).toContain('sudo apt install cmake ninja-build');
     expect(within(dialog).getByText(/Il toolkit CUDA/)).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Compila' }) as HTMLButtonElement).disabled).toBe(true);
-    // Everything there, an existing checkout: built in place.
-    next = plan({ existing: true, prereqs: [{ id: 'git', found: true, packages: ['git'] }], aptCommand: undefined, cudaFromNvidia: false, ready: true });
+    expect((within(dialog).getByRole('button', { name: 'Scarica e compila' }) as HTMLButtonElement).disabled).toBe(true);
+    // Everything there, an existing checkout: built in place, nothing to download (cores unknown: the time alone).
+    next = plan({ existing: true, prereqs: [{ id: 'git', found: true, packages: ['git'] }], aptCommand: undefined, cudaFromNvidia: false, ready: true, cpus: undefined, downloadBytes: undefined, minutes: 20 });
     await userEvent.type(folder, '~/src/ninfer');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Controlla' }));
-    expect(await within(dialog).findByText(/c’è già NInfer/)).toBeTruthy();
+    expect(await within(dialog).findByText(/Il codice è già in questa cartella/)).toBeTruthy();
+    expect(within(dialog).getByText('Niente da scaricare: compilo la copia che c’è già.')).toBeTruthy();
+    expect(within(dialog).getByText('Compilazione: circa 20 minuti.')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Compila NInfer' })).toBe(dialog);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Compila' }));
     await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/build')?.body).toEqual({ kind: 'ninfer-wsl', dir: '/home/u/ninfer', distro: 'Ubuntu-24.04', confirm: true }));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-wsl', stage: 'clone', bytesDone: 40, step: 40, steps: 100 }));
     expect(await within(dialog).findByText('Download del codice')).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-wsl', stage: 'done', bytesDone: 0, result: { ninferPath: '/home/u/ninfer/build/apps/ninfer-serve' } }));
     expect(await screen.findByText('NInfer è pronto: /home/u/ninfer/build/apps/ninfer-serve')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Compila NInfer' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('shows a failed check and a failed build; on Linux it builds on this PC', async () => {
@@ -249,26 +267,60 @@ describe('Compila NInfer', () => {
     api.on('POST /api/engines/ninfer/build', () => ({ ok: true }));
     renderLib('/engines', api);
     const c = await card();
-    await userEvent.click(await within(c).findByRole('button', { name: 'Compila NInfer…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Compila NInfer' });
+    await userEvent.click(await within(c).findByRole('button', { name: 'Scarica e compila NInfer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Scarica e compila NInfer' });
     expect(within(dialog).getByText(/su questo PC/)).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Controlla' }));
     await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/build-plan')).toHaveLength(1));
+    expect((await within(dialog).findAllByText(/no answer|imprevisto/)).length).toBeGreaterThan(0);
     broken = false;
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Cartella' }), '2');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Controlla' }));
-    await userEvent.click(await within(dialog).findByRole('button', { name: 'Compila' }));
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Scarica e compila' }));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'error', bytesDone: 0 }));
     expect(await within(dialog).findByText('Installazione del motore non riuscita')).toBeTruthy();
     // A second attempt that ends without saying where: still done.
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Compila' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scarica e compila' }));
     await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/build')).toHaveLength(2));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'done', bytesDone: 0 }));
     expect(await screen.findByText(/NInfer è pronto/)).toBeTruthy();
     // Opened again and closed without building.
-    await userEvent.click(await within(c).findByRole('button', { name: 'Compila NInfer…' }));
-    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Compila NInfer' })).getByRole('button', { name: 'Annulla' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Compila NInfer' })).toBeNull());
+    await userEvent.click(await within(c).findByRole('button', { name: 'Scarica e compila NInfer' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Scarica e compila NInfer' })).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('a saved checkout not built yet: "Compila NInfer" builds it in place; "Ho già" can still choose to download', async () => {
+    const api = ninferApi({
+      engines: [status({ version: '81c8ce093b2c', location: '/home/u/ninfer/build/apps/ninfer-serve', problemParams: { reason: 'ninfer_not_found' } })],
+      settings: { ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/u/ninfer' } } },
+    });
+    api.on('POST /api/engines/ninfer/build-plan', () => plan({ existing: true, ready: true, prereqs: [], aptCommand: undefined, cudaFromNvidia: false }));
+    renderLib('/engines', api);
+    const c = await card();
+    expect(await within(c).findByText('NInfer c’è ma non è ancora compilato')).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Compila NInfer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Compila NInfer' });
+    await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/build-plan')?.body).toEqual({ kind: 'ninfer-wsl', dir: '/home/u/ninfer', distro: 'Ubuntu-24.04' }));
+    expect(await within(dialog).findByRole('button', { name: 'Compila' })).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+    // "Cambia": the path field, and the download from there too.
+    await userEvent.click(within(c).getByRole('button', { name: 'Cambia' }));
+    await userEvent.click(within(c).getByRole('button', { name: 'Scarica e compila NInfer' }));
+    await screen.findByRole('dialog');
+    await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/build-plan').at(-1)?.body).toEqual({ kind: 'ninfer-wsl', dir: '~/ninfer', distro: 'Ubuntu-24.04' }));
+  });
+
+  it('a folder holding another repository is never built there', async () => {
+    const api = ninferApi();
+    api.on('POST /api/engines/ninfer/build-plan', () => plan({ existing: true, otherRepo: 'https://github.com/someone/else.git', ready: false, prereqs: [], aptCommand: undefined, cudaFromNvidia: false }));
+    renderLib('/engines', api);
+    const c = await card();
+    await within(c).findByRole('combobox', { name: 'Distribuzione WSL' });
+    await userEvent.click(within(c).getByRole('button', { name: 'Scarica e compila NInfer' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('In questa cartella c’è un altro repository (https://github.com/someone/else.git): scegli un’altra cartella.')).toBeTruthy();
+    expect(within(dialog).queryByText(/Il codice è già in questa cartella/)).toBeNull();
+    expect((within(dialog).getByRole('button', { name: 'Compila' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

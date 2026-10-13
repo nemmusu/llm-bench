@@ -8,6 +8,12 @@
  * (CustomEngineCheck.missing, run note 'flag_unsupported'). An 'openai-server' engine is a command
  * template LLM Bench starts and stops (kind 'command'), measured like an external endpoint.
  *
+ * A 'ninfer' engine is a variant of NInfer (a fork with the same ninfer-serve, plus options and weight
+ * formats of its own: NInfer-all, ninfer-fusion-kvmem…): it runs through the NInfer adapter, natively
+ * on Linux or inside its WSL distro on Windows (kind 'ninfer-native' / 'ninfer-wsl'), with every NInfer
+ * feature (presets, tuner, load progress, chat client). Its checkout can be cloned and built by LLM
+ * Bench's guided build (POST /api/engines/ninfer/build with `variant`), from its `source`.
+ *
  *   GET    /api/engines/custom                -> CustomEngineInfo[] (every saved engine, its kind and check)
  *   POST   /api/engines/custom                (CustomEngineDraft) -> CustomEngine (id from its name)
  *   PUT    /api/engines/custom/:id            (CustomEngineDraft) -> CustomEngine
@@ -20,9 +26,21 @@
 import { z } from 'zod';
 import { engineKindSchema, engineStatusSchema, type EngineConfig, type EngineKind } from './engines';
 
-export const CUSTOM_ENGINE_BASES = ['llamacpp', 'vllm', 'sglang', 'openai-server'] as const;
+export const CUSTOM_ENGINE_BASES = ['llamacpp', 'vllm', 'sglang', 'ninfer', 'openai-server'] as const;
 export const customEngineBaseSchema = z.enum(CUSTOM_ENGINE_BASES);
 export type CustomEngineBase = z.infer<typeof customEngineBaseSchema>;
+
+/** An https git repository LLM Bench may clone ("https://github.com/iamwavecut/ninfer-all.git"). */
+export const GIT_URL = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/[A-Za-z0-9._~/-]+$/;
+/** A branch name (no leading dash: it becomes a git argument). */
+export const GIT_BRANCH = /^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,99}$/;
+
+/** Where a variant's source comes from: the repository and the branch to clone (absent = its default). */
+export const gitSourceSchema = z.object({
+  url: z.string().trim().regex(GIT_URL),
+  branch: z.string().trim().regex(GIT_BRANCH).optional(),
+});
+export type GitSource = z.infer<typeof gitSourceSchema>;
 
 /** Placeholders of a command template; {port} is required (LLM Bench picks a free port). */
 export const COMMAND_PLACEHOLDERS = ['model', 'modelDir', 'port', 'host', 'ctx', 'alias'] as const;
@@ -35,22 +53,27 @@ export type CommandPlaceholder = (typeof COMMAND_PLACEHOLDERS)[number];
  *   docker   an image:tag built on the base's official image (same entrypoint and flags)
  *   command  'openai-server' only: the command template, and which OpenAI API it is measured with:
  *            'completions' (/v1/completions) or 'chat' (/v1/chat/completions, for servers without the former)
+ *   ninfer   'ninfer' only: its ninfer-serve or checkout as Linux sees it (inside `distro` on Windows,
+ *            where it runs in WSL), and the repository it was (or will be) cloned from
  */
 export const customEngineRunSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('native'), path: z.string().trim().min(1) }),
   z.object({ mode: z.literal('docker'), image: z.string().trim().min(1) }),
   z.object({ mode: z.literal('command'), template: z.string().trim().min(1).max(4000), api: z.enum(['completions', 'chat']).default('completions') }),
+  z.object({ mode: z.literal('ninfer'), path: z.string().trim().min(1), distro: z.string().trim().min(1).optional(), source: gitSourceSchema.optional() }),
 ]);
 export type CustomEngineRun = z.infer<typeof customEngineRunSchema>;
 
 /**
  * "Usa per questi modelli": LLM Bench proposes the engine (a suggestion the user can change) for a
  * model whose repo, file or name contains one of `names` (plain text, any case; "/regex/" for a
- * regular expression), or whose quantization is one of `quants` (PQ2_0, PTQ1_0…).
+ * regular expression), whose quantization is one of `quants` (PQ2_0, PTQ1_0…), or that an earlier run
+ * said its engine could not read for one of `layouts` (ENGINE_MODEL_UNSUPPORTED: "gguf_blocks_v1").
  */
 export const modelMatchSchema = z.object({
   names: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
   quants: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  layouts: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
 });
 export type ModelMatch = z.infer<typeof modelMatchSchema>;
 
@@ -75,7 +98,7 @@ const draftShape = {
 /** What makes an engine usable at all: base and mode agree, the template names a port, rules compile. */
 function refineEngine(e: { base: CustomEngineBase; run: CustomEngineRun; match?: ModelMatch | undefined }, ctx: z.RefinementCtx): void {
   const issue = (path: (string | number)[], reason: string) => ctx.addIssue({ code: 'custom', path, message: reason, params: { reason } });
-  if ((e.base === 'openai-server') !== (e.run.mode === 'command')) issue(['run', 'mode'], 'mode_mismatch');
+  if ((e.base === 'openai-server') !== (e.run.mode === 'command') || (e.base === 'ninfer') !== (e.run.mode === 'ninfer')) issue(['run', 'mode'], 'mode_mismatch');
   if (e.run.mode === 'docker' && !DOCKER_IMAGE.test(e.run.image)) issue(['run', 'image'], 'bad_image');
   if (e.run.mode === 'command') {
     const t = templateProblem(e.run.template);
@@ -122,9 +145,10 @@ export const customEnginesSettingSchema = z
 /** Docker image reference (validated again by the core before it becomes a CLI argument). */
 const DOCKER_IMAGE = /^[a-z0-9][a-z0-9._/:@-]*$/i;
 
-/** The engine kind a custom engine runs as (its base's adapter). */
+/** The engine kind a custom engine runs as (its base's adapter). A NInfer variant with a distro runs in WSL. */
 export function customEngineKindOf(e: Pick<CustomEngine, 'base' | 'run'>): EngineKind {
   if (e.base === 'openai-server') return 'command';
+  if (e.base === 'ninfer') return e.run.mode === 'ninfer' && e.run.distro !== undefined ? 'ninfer-wsl' : 'ninfer-native';
   const docker = e.run.mode === 'docker';
   if (e.base === 'llamacpp') return docker ? 'llamacpp-docker' : 'llamacpp-native';
   if (e.base === 'vllm') return docker ? 'vllm-docker' : 'vllm-native';
@@ -141,6 +165,7 @@ export function customBaseOfKind(kind: EngineKind): CustomEngineBase | undefined
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
   if (kind === 'vllm-native' || kind === 'vllm-docker') return 'vllm';
   if (kind === 'sglang-native' || kind === 'sglang-docker') return 'sglang';
+  if (kind === 'ninfer-native' || kind === 'ninfer-wsl') return 'ninfer';
   return kind === 'command' ? 'openai-server' : undefined;
 }
 
@@ -246,13 +271,35 @@ export interface MatchableModel {
   repo?: string | undefined;
   file?: string | undefined;
   quant?: string | undefined;
+  /** Weight layouts or formats an engine could not read for this model in an earlier run (RunSummary.unreadable). */
+  unreadable?: readonly string[] | undefined;
+  /**
+   * The file format (gguf, safetensors, ninfer…), when known: an engine whose base cannot read it never
+   * matches ("…-GGUF-NInfer" repos also ship plain GGUFs, which llama.cpp reads). Unknown: the rules alone.
+   */
+  format?: string | undefined;
+}
+
+/** The formats each base reads (the OpenAI-compatible program: whatever its command loads). */
+export const CUSTOM_BASE_FORMATS: Readonly<Record<CustomEngineBase, readonly string[]>> = {
+  llamacpp: ['gguf'],
+  vllm: ['safetensors'],
+  sglang: ['safetensors'],
+  ninfer: ['ninfer'],
+  'openai-server': ['gguf', 'safetensors'],
+};
+
+/** The base can load a model of this format (unknown format: yes). */
+export function customBaseReads(base: CustomEngineBase, format: string | undefined): boolean {
+  return format === undefined || CUSTOM_BASE_FORMATS[base].includes(format);
 }
 
 /** The model meets one of the rules (no rules: never). */
-export function matchesModel(match: ModelMatch | undefined, model: MatchableModel): boolean {
+export function matchesModel(match: Pick<ModelMatch, 'names' | 'quants'> & { layouts?: readonly string[] | undefined } | undefined, model: MatchableModel): boolean {
   if (!match) return false;
   const text = [model.repo, model.file, model.displayName].filter((s): s is string => s !== undefined).join('\n');
   if (match.names.some((n) => patternOf(n)?.(text) === true)) return true;
+  if ((match.layouts ?? []).some((l) => model.unreadable?.includes(l) === true)) return true;
   const quants = new Set(match.quants.map((q) => q.toLowerCase()));
   if (model.quant !== undefined && quants.has(model.quant.toLowerCase())) return true;
   // The quant is often only in the file name ("Bonsai-8B-PQ2_0.gguf").
@@ -261,8 +308,8 @@ export function matchesModel(match: ModelMatch | undefined, model: MatchableMode
 }
 
 /** The first saved engine whose rules match the model: LLM Bench's suggestion. */
-export function customEngineForModel<E extends Pick<CustomEngine, 'match'>>(engines: readonly E[], model: MatchableModel): E | undefined {
-  return engines.find((e) => matchesModel(e.match, model));
+export function customEngineForModel<E extends Pick<CustomEngine, 'match' | 'base'>>(engines: readonly E[], model: MatchableModel): E | undefined {
+  return engines.find((e) => customBaseReads(e.base, model.format) && matchesModel(e.match, model));
 }
 
 // ---- built-in templates --------------------------------------------------------------------------
@@ -270,22 +317,48 @@ export function customEngineForModel<E extends Pick<CustomEngine, 'match'>>(engi
 export interface CustomEngineTemplate {
   id: string;
   base: Exclude<CustomEngineBase, 'openai-server'>;
+  /** Its own name (a project name, the same in every language). */
+  label: string;
   /** The rules a new engine from this template starts with. */
   match: ModelMatch;
+  /** NInfer variants: the repository LLM Bench clones for the guided build, and the folder it suggests. */
+  source?: GitSource;
+  dir?: string;
 }
 
 /**
- * Ready-made engines the user only has to point at their copy. "Fork PrismML di llama.cpp (modelli
- * Bonsai)": PrismML's Ternary-Bonsai GGUFs store weights as PQ2_0 / PTQ1_0, which only that fork reads.
- * Names and explanations are localized by the renderer (engines.custom.templates.<id>).
+ * Ready-made engines the user only has to point at (or let LLM Bench build). Explanations are localized
+ * by the renderer (engines.custom.templates.<id>).
+ *  - "Fork PrismML di llama.cpp (modelli Bonsai)": PrismML's Ternary-Bonsai GGUFs store weights as
+ *    PQ2_0 / PTQ1_0, which only that fork reads.
+ *  - "NInfer-all (modelli GGUF-NInfer)": NInfer artifacts converted from GGUF keep the GGUF quantization
+ *    blocks (tensor layout gguf_blocks_v1), which only NInfer-all reads (github.com/iamwavecut/ninfer-all,
+ *    branch master; its --kv-dtype adds rk8v4, rk4v4…).
  */
 export const CUSTOM_ENGINE_TEMPLATES: readonly CustomEngineTemplate[] = [
-  { id: 'prismml-bonsai', base: 'llamacpp', match: { names: ['bonsai'], quants: ['PQ2_0', 'PTQ1_0'] } },
+  { id: 'prismml-bonsai', base: 'llamacpp', label: 'PrismML', match: { names: ['bonsai'], quants: ['PQ2_0', 'PTQ1_0'], layouts: [] } },
+  {
+    id: 'ninfer-all',
+    base: 'ninfer',
+    label: 'NInfer-all',
+    match: { names: ['GGUF-NInfer'], quants: [], layouts: ['gguf_blocks_v1'] },
+    source: { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' },
+    dir: '~/ninfer-all',
+  },
 ];
 
 /** A template whose rules match the model (offered when no saved engine does). */
 export function templateForModel(model: MatchableModel): CustomEngineTemplate | undefined {
-  return CUSTOM_ENGINE_TEMPLATES.find((t) => matchesModel(t.match, model));
+  return CUSTOM_ENGINE_TEMPLATES.find((t) => customBaseReads(t.base, model.format) && matchesModel(t.match, model));
+}
+
+/** The template that reads a weight layout or format a build did not know ("gguf_blocks_v1" → NInfer-all). */
+export function templateForLayout(layout: string): CustomEngineTemplate | undefined {
+  return CUSTOM_ENGINE_TEMPLATES.find((t) => t.match.layouts.includes(layout));
+}
+
+export function customEngineTemplate(id: string | undefined): CustomEngineTemplate | undefined {
+  return CUSTOM_ENGINE_TEMPLATES.find((t) => t.id === id);
 }
 
 // ---- checks --------------------------------------------------------------------------------------
@@ -313,6 +386,8 @@ export const customEngineCheckSchema = z.object({
   missing: z.array(missingFlagSchema).default([]),
   /** Command engines: the placeholders the template uses. */
   placeholders: z.array(z.string()).optional(),
+  /** NInfer variants: the --kv-dtype values its --help lists (the official ones and its own: rk8v4…). */
+  kvDtypes: z.array(z.string()).optional(),
 });
 export type CustomEngineCheck = z.infer<typeof customEngineCheckSchema>;
 

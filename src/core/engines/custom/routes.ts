@@ -4,7 +4,8 @@
  *
  * A check runs what the base would run to know a build: llama.cpp `--version` + `--help`, vLLM
  * `--version` + `serve --help`, SGLang `import sglang` + `--help` (Docker: in the image, when it is
- * there). A command template is only validated and its program looked up: nothing is executed.
+ * there), a NInfer variant its ninfer-serve `--help` and commit (in its WSL distro on Windows). A
+ * command template is only validated and its program looked up: nothing is executed.
  */
 import { z } from 'zod';
 import {
@@ -49,7 +50,9 @@ export async function checkCustomEngine(registry: EngineRegistry, engine: Custom
   const caps = status.available ? await adapter.capabilities(cfg).catch(() => undefined) : undefined;
   const flags = caps?.flags ?? new Set<string>();
   if (flags.size === 0) return { kind, status, flagCount: 0, missing: [] };
-  return { kind, status, flagCount: flags.size, missing: missingStandardFlags(engineBaseOf(kind) as FlagBase, flags) };
+  // A NInfer variant: the KV types its --help lists (its own, like rk8v4, among them).
+  const kvDtypes = engine.base === 'ninfer' ? caps?.choices?.['--kv-dtype'] : undefined;
+  return { kind, status, flagCount: flags.size, missing: missingStandardFlags(engineBaseOf(kind) as FlagBase, flags), ...(kvDtypes ? { kvDtypes } : {}) };
 }
 
 const duplicateSchema = z.object({ name: z.string().trim().min(1).max(60).optional() });

@@ -2,18 +2,20 @@ import { useNavigate } from '@tanstack/react-router';
 import { CircleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AppErrorData, ErrorCode } from '../../../contract/errors';
-import { useI18n } from '../../i18n';
+import { errorText, useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/button';
 import { noteText } from './notes';
 
 /** The "cosa fare" button each error code leads to. */
-export type FixKind = 'engines' | 'models' | 'pickModel' | 'settings' | 'system' | 'continueAnyway' | 'openLog' | 'results' | 'activeRun' | 'retry';
+export type FixKind = 'engines' | 'updateEngine' | 'models' | 'pickModel' | 'settings' | 'system' | 'continueAnyway' | 'openLog' | 'results' | 'activeRun' | 'retry';
 
 const FIX: Partial<Record<ErrorCode, FixKind>> = {
   ENGINE_NOT_INSTALLED: 'engines',
   ENGINE_INSTALL_FAILED: 'engines',
   ENGINE_NO_KERNEL_IMAGE: 'engines',
+  // A newer build may read the model (the engine's "Aggiorna" is on the Engines page).
+  ENGINE_MODEL_UNSUPPORTED: 'updateEngine',
   DOCKER_NOT_INSTALLED: 'engines',
   DOCKER_NOT_RUNNING: 'engines',
   DOCKER_NOT_RESPONDING: 'engines',
@@ -54,10 +56,12 @@ export interface ErrorCardProps {
   extra?: ReactNode;
   className?: string;
   headingLevel?: 2 | 3;
+  /** The model the failure is about (a variant that reads it is set up for it: "Aggiungi NInfer-all"). */
+  model?: { weakKey?: string | undefined; name: string } | undefined;
 }
 
 /** A failure explained: what happened, what to do, one button that does it, technical details folded. */
-export function ErrorCard({ error, handlers = {}, extra, className, headingLevel = 2 }: ErrorCardProps) {
+export function ErrorCard({ error, handlers = {}, extra, className, headingLevel = 2, model }: ErrorCardProps) {
   const f = useI18n();
   const { t } = f;
   const navigate = useNavigate();
@@ -65,8 +69,13 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
   // A busy GPU says who holds it (and how much is free) in the user's language: the core's English message
   // is for the log only.
   const busy = error.code === 'VRAM_BUSY' && error.params?.names !== undefined ? noteText({ code: error.code, params: error.params }, f) : undefined;
+  // A model this build cannot read, and a built-in variant that reads it: adding that variant is the first thing to do.
+  const template = error.code === 'ENGINE_MODEL_UNSUPPORTED' && typeof error.params?.template === 'string' ? error.params.template : undefined;
+  const addVariant = () =>
+    void navigate({ to: '/engines', search: { customTemplate: template as string, ...(model?.weakKey ? { model: model.weakKey } : {}), ...(model ? { modelName: model.name } : {}) } });
   const routes: Partial<Record<FixKind, () => void>> = {
     engines: () => void navigate({ to: '/engines' }),
+    updateEngine: () => void navigate({ to: '/engines' }),
     models: () => void navigate({ to: '/models' }),
     pickModel: () => void navigate({ to: '/' }),
     settings: () => void navigate({ to: '/settings' }),
@@ -84,13 +93,18 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
           <Heading className="text-md font-semibold text-fg">{t(`errors.${error.code}.title`, error.params)}</Heading>
           {busy && <p className="text-sm text-fg-2">{busy.body}</p>}
           <p className="text-sm text-fg-2">
-            <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {t(`errors.${error.code}.what`, error.params)}
+            <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {errorText(f, error.code, error.params).what}
           </p>
           {(onFix || extra) && (
             <div className="flex flex-wrap gap-2 pt-1">
+              {template && (
+                <Button size="sm" variant="primary" onClick={addVariant}>
+                  {t('fixes.addVariant', error.params)}
+                </Button>
+              )}
               {onFix && (
-                <Button size="sm" variant="primary" onClick={onFix}>
-                  {t(`fixes.${kind}`)}
+                <Button size="sm" variant={template ? 'secondary' : 'primary'} onClick={onFix}>
+                  {t(`fixes.${kind}`, error.params)}
                 </Button>
               )}
               {extra}

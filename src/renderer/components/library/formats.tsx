@@ -24,6 +24,17 @@ export function formatOfEngine(e: EngineFilter): CatalogFormat {
 /** Model formats as the badges show them. */
 export type ModelFormat = 'gguf' | 'safetensors' | 'ninfer';
 
+/**
+ * The format a catalog row stands for when its engine rules are checked: the one the search asks for
+ * when the repo ships it, else its first runnable one. A mixed "…-GGUF-NInfer" repo listed for GGUF is
+ * not "Richiede NInfer-all"; listed for NInfer, it is.
+ */
+export function rowFormatOf(formats: readonly string[], engine: EngineFilter): ModelFormat | undefined {
+  const asked = formatOfEngine(engine);
+  if (asked !== 'any' && formats.includes(asked)) return asked;
+  return (['gguf', 'safetensors', 'ninfer'] as const).find((f) => formats.includes(f));
+}
+
 const ICONS = { gguf: Layers, safetensors: Package, ninfer: Cpu } as const;
 
 /**
@@ -94,13 +105,14 @@ export function FormatBadges({ m, engine, className }: { m: Pick<HubModel, 'form
 
 /**
  * "Richiede il fork PrismML di llama.cpp" next to models only a custom engine reads (PrismML's ternary
- * Bonsai quants): one click opens the Engines page with that engine ready to set up.
+ * Bonsai quants; "Richiede NInfer-all" for GGUF-NInfer artifacts): one click opens the Engines page with
+ * that engine ready to set up.
  */
 export function ForkBadge({ model, weakKey, label }: { model: MatchableModel; weakKey?: string | undefined; label: string }) {
   const { t } = useI18n();
   const template = templateForModel(model);
   if (!template) return null;
-  const name = t(`models.fork.names.${template.id as 'prismml-bonsai'}`);
+  const name = t(`models.fork.names.${template.id as 'prismml-bonsai' | 'ninfer-all'}`);
   // The Engines page opens its "Aggiungi motore" from these; an unknown template just opens the page.
   const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), modelName: label };
   return (

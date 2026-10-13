@@ -503,7 +503,7 @@ export function mergeRecipeParams(user: LaunchParams, patch: RecipePatch): { par
  * template means the engine made from it, else (for a model the template is for) the saved engine
  * whose own model rules match the model.
  */
-export function recipeCustomEngine<E extends Pick<CustomEngine, 'id' | 'template' | 'match'>>(engine: RecipeEngine | undefined, engines: readonly E[], model?: RecipeModelRef): E | undefined {
+export function recipeCustomEngine<E extends Pick<CustomEngine, 'id' | 'template' | 'match' | 'base'>>(engine: RecipeEngine | undefined, engines: readonly E[], model?: RecipeModelRef): E | undefined {
   if (engine?.type === 'custom') return engines.find((e) => e.id === engine.id);
   if (engine?.type !== 'template') return undefined;
   const made = engines.find((e) => e.template === engine.template);
@@ -553,7 +553,7 @@ export type AppliedRecipe = z.infer<typeof appliedRecipeSchema>;
 
 // ---- built-in recipes -----------------------------------------------------------------------------
 
-export const RECIPE_TEMPLATE_IDS = ['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer'] as const;
+export const RECIPE_TEMPLATE_IDS = ['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer', 'ninfer-all'] as const;
 export type RecipeTemplateId = (typeof RECIPE_TEMPLATE_IDS)[number];
 
 /** What the built-in recipes look at to say whether they fit a model. */
@@ -565,8 +565,11 @@ export interface RecipeTemplateModel extends RecipeModelRef {
   auxKinds?: readonly ('mmproj' | 'mtp' | 'draft' | 'other')[] | undefined;
 }
 
-/** Why a built-in recipe does not fit a model: 'no_context' (trained context unknown), 'no_file', 'not_bonsai', 'format' (not for this kind of model). */
-export type TemplateBlock = 'no_context' | 'no_file' | 'not_bonsai' | 'format';
+/**
+ * Why a built-in recipe does not fit a model: 'no_context' (trained context unknown), 'no_file',
+ * 'not_bonsai', 'not_gguf_ninfer' (only for GGUF-NInfer artifacts), 'format' (not for this kind of model).
+ */
+export type TemplateBlock = 'no_context' | 'no_file' | 'not_bonsai' | 'not_gguf_ninfer' | 'format';
 
 export interface RecipeTemplate {
   id: RecipeTemplateId;
@@ -641,6 +644,14 @@ export const RECIPE_TEMPLATES: readonly RecipeTemplate[] = [
     docs: ['https://github.com/Neroued/ninfer'],
     blocked: (m) => (m.format === 'ninfer' ? undefined : 'format'),
     build: () => ({ engine: { type: 'builtin', kind: 'ninfer-native' } }),
+  },
+  {
+    // GGUF-NInfer artifacts keep GGUF's quantization blocks (layout gguf_blocks_v1): only NInfer-all reads them.
+    id: 'ninfer-all',
+    parts: ['engine'],
+    docs: ['https://github.com/iamwavecut/ninfer-all'],
+    blocked: (m) => (m.format !== 'ninfer' ? 'format' : templateForModel(m)?.id === 'ninfer-all' ? undefined : 'not_gguf_ninfer'),
+    build: () => ({ engine: { type: 'template', template: 'ninfer-all' } }),
   },
 ];
 

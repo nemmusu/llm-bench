@@ -196,9 +196,10 @@ export function diagnoseVllm(lines: readonly string[], exit: ExitInfo, ctx: Vllm
       ? err('DOCKER_NO_GPU', 'The container cannot see the GPU', {}, noGpu)
       : err('GPU_NOT_FOUND', 'vLLM cannot see the GPU', {}, noGpu);
   }
-  const model = find(
-    /does not appear to have a file named config\.json|Unrecognized model in|Model architectures? \[.*\] (?:is|are) not supported|No config format found|Invalid repository ID or local directory/,
-  );
+  // "Model architectures ['Qwen3NextForCausalLM'] are not supported for now": this vLLM is older than the model.
+  const arch = find(/Model architectures? \[['"]?([\w.-]+)['"]?.*\] (?:is|are) not supported/);
+  if (arch) return err('ENGINE_MODEL_UNSUPPORTED', `vLLM does not support ${arch[1] as string}`, { engine: 'vLLM', reason: 'architecture', value: arch[1] as string }, arch);
+  const model = find(/does not appear to have a file named config\.json|Unrecognized model in|No config format found|Invalid repository ID or local directory/);
   if (model) return err('MODEL_INVALID', `Model failed to load: ${model.input.trim()}`, {}, model);
   return err('ENGINE_EXITED', `Engine exited with ${String(params.code)}`);
 }

@@ -1,0 +1,3 @@
+2026-10-13 21:01:50.687  INFO  starting engine
+2026-10-13 21:01:51.827  ERROR startup failed | planning runtime | 874 ms
+2026-10-13 21:01:51.829  FATAL server failed during startup | weight/000130: unknown tensor layout: gguf_blocks_v1

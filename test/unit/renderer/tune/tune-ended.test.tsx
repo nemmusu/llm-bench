@@ -98,7 +98,7 @@ describe('a search that was cancelled', () => {
     open(cancelledRun());
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Test annullato prima della fine')).toBeTruthy();
-    expect(screen.getByText(/^Ho fatto 1 prove prima che il test finisse\./)).toBeTruthy();
+    expect(screen.getByText('Ho fatto 1 prova prima che il test finisse. Qui sotto quello che avevo misurato fin lì.')).toBeTruthy();
     expect(screen.getByText('Con cache f16 arrivi almeno a 4K: la ricerca non è finita.')).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
     const rows = within(table).getAllByRole('row').slice(1);
@@ -126,6 +126,7 @@ describe('a search that was cancelled', () => {
     await h1(/Qwen3 8B/);
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('Misurata in parte (test annullato)')).toBeTruthy();
+    expect(screen.getByText(/^Ho fatto 1 prova prima che il test finisse\./)).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
     expect(table.textContent).toContain('Ricerca non finita (test annullato): a 256K non entrava, sotto non provato.');
   });
@@ -135,6 +136,12 @@ describe('a search that was cancelled', () => {
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Test interrotto da un errore')).toBeTruthy();
     expect(screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' }).textContent).toContain('Non provato (test interrotto da un errore).');
+  });
+
+  it('several launches before the error: how many', async () => {
+    open({ ...cancelledRun({ attempts: [reference, attempt('capacity', 'q8_0', 256 * K, 'oom')] }), status: 'failed', error: { code: 'ENGINE_BAD_FLAG', message: 'bad flag' } });
+    await h1(/Qwen3 8B/);
+    expect(screen.getByText(/^Ho fatto 2 prove prima che il test finisse\./)).toBeTruthy();
   });
 });
 

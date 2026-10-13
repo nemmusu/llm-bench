@@ -2,9 +2,16 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { customEngineConfigOf, customEngineForModel, templateForModel, type CustomEngine, type MatchableModel } from '../../../contract/custom-engines';
 import type { EngineConfig } from '../../../contract/engines';
+import type { RunSummary } from '../../../contract/results';
 import { useI18n, type MessageKey } from '../../i18n';
 import { Button } from '../ui/button';
 import { Callout } from '../ui/callout';
+
+/** The weight layouts or formats an engine could not read for this model in earlier runs ("gguf_blocks_v1"), if any. */
+export function unreadableFor(runs: readonly Pick<RunSummary, 'modelWeakKey' | 'unreadable'>[] | undefined, weakKey: string): string[] | undefined {
+  const seen = (runs ?? []).flatMap((r) => (r.modelWeakKey === weakKey && r.unreadable !== undefined ? [r.unreadable] : []));
+  return seen.length ? [...new Set(seen)] : undefined;
+}
 
 export interface EngineSuggestionProps {
   /** The chosen model (its repo, file, name and quant are what the rules look at). */
@@ -42,10 +49,12 @@ export function EngineSuggestion({ model, current, engines, onUse }: EngineSugge
   }
   const template = templateForModel(model);
   if (!template) return null;
-  const name = t(`engines.custom.templates.${template.id}.inSentence` as MessageKey);
+  // A NInfer variant is added (downloaded and built by LLM Bench); a fork is pointed at.
+  const variant = template.base === 'ninfer';
+  const name = variant ? template.label : t(`engines.custom.templates.${template.id}.inSentence` as MessageKey);
   return (
-    <Callout tone="warning" title={t('engines.custom.suggest.requiresTitle', { template: name })}>
-      <p>{t('engines.custom.suggest.requiresBody')}</p>
+    <Callout tone="warning" title={variant ? t('ninfer.variant.requiresTitle', { name }) : t('engines.custom.suggest.requiresTitle', { template: name })}>
+      <p>{variant ? t('ninfer.variant.requiresBody', { name }) : t('engines.custom.suggest.requiresBody')}</p>
       {more && <p className="mt-1">{t(`engines.custom.templates.${template.id}.explain` as MessageKey)}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         <Button
@@ -58,7 +67,7 @@ export function EngineSuggestion({ model, current, engines, onUse }: EngineSugge
             })
           }
         >
-          {t('engines.custom.suggest.locate')}
+          {variant ? t('ninfer.variant.add', { name }) : t('engines.custom.suggest.locate')}
         </Button>
         <Button size="sm" variant="ghost" aria-expanded={more} onClick={() => setMore((m) => !m)}>
           {more ? t('engines.custom.suggest.hide') : t('engines.custom.suggest.learnMore')}

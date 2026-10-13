@@ -143,6 +143,13 @@ export async function startFakeGithub(initial = {}) {
       res.end(body);
       return;
     }
+    // NInfer's guided build asks a repository's size (KiB, as GitHub says it) before it clones it.
+    const repoSize = { '/repos/Neroued/ninfer': 28_611, '/repos/iamwavecut/ninfer-all': 39_367 }[url.pathname];
+    if (repoSize !== undefined) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ full_name: url.pathname.slice('/repos/'.length), size: repoSize, default_branch: 'master' }));
+      return;
+    }
     const dl = /^\/download\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if (dl) {
       if (opts.downloadStatus) {

@@ -223,8 +223,10 @@ export async function buildTuneSetup(
     ...(past ? { learned: past.learned } : {}),
     ...(recheck ? { recheck } : {}),
   };
-  if (engineBaseOf(kind) === 'ninfer') return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, seen, ...(users !== undefined ? { users } : {}) });
   const caps = await p.adapter.capabilities(p.engine).catch(() => undefined);
+  if (engineBaseOf(kind) === 'ninfer') {
+    return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, seen, kvDtypes: caps?.choices?.['--kv-dtype'], ...(users !== undefined ? { users } : {}) });
+  }
   const prefer = past?.prefer;
   if (!isLlamaCpp(kind)) {
     const util = vllmTuneUtilization(gpu);

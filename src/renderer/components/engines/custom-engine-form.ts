@@ -1,6 +1,8 @@
 /** The add/edit dialog's form ⇄ CustomEngineDraft: plain text fields, checked like the core checks them. */
 import {
   customEngineDraftSchema,
+  GIT_BRANCH,
+  GIT_URL,
   splitCommandLine,
   type CustomEngine,
   type CustomEngineBase,
@@ -8,7 +10,7 @@ import {
   type CustomEngineTemplate,
 } from '../../../contract/custom-engines';
 
-export type EngineMode = 'native' | 'docker' | 'command';
+export type EngineMode = 'native' | 'docker' | 'command' | 'ninfer';
 
 export interface CustomEngineForm {
   base: CustomEngineBase;
@@ -18,6 +20,10 @@ export interface CustomEngineForm {
   image: string;
   template: string;
   api: 'completions' | 'chat';
+  /** NInfer variants: the WSL distro it runs in (Windows), and the repository its guided build clones. */
+  distro: string;
+  repoUrl: string;
+  branch: string;
   /** One line, split like a command line. */
   extraArgs: string;
   /** NAME=value, one per line. */
@@ -30,7 +36,7 @@ export interface CustomEngineForm {
   templateId?: string | undefined;
 }
 
-export type FormField = 'name' | 'path' | 'image' | 'template' | 'extraArgs' | 'env' | 'names';
+export type FormField = 'name' | 'path' | 'image' | 'template' | 'repoUrl' | 'branch' | 'extraArgs' | 'env' | 'names';
 
 /** What is wrong with a field: a message key under engines.custom.dialog, with values. */
 export interface FieldProblem {
@@ -46,6 +52,9 @@ export const EMPTY_FORM: CustomEngineForm = {
   image: '',
   template: '',
   api: 'completions',
+  distro: '',
+  repoUrl: '',
+  branch: '',
   extraArgs: '',
   env: '',
   names: '',
@@ -66,10 +75,13 @@ export function formOf(e: CustomEngine): CustomEngineForm {
     base: e.base,
     name: e.name,
     mode: r.mode,
-    path: r.mode === 'native' ? r.path : '',
+    path: r.mode === 'native' || r.mode === 'ninfer' ? r.path : '',
     image: r.mode === 'docker' ? r.image : '',
     template: r.mode === 'command' ? r.template : '',
     api: r.mode === 'command' ? r.api : 'completions',
+    distro: r.mode === 'ninfer' ? (r.distro ?? '') : '',
+    repoUrl: r.mode === 'ninfer' ? (r.source?.url ?? '') : '',
+    branch: r.mode === 'ninfer' ? (r.source?.branch ?? '') : '',
     extraArgs: e.extraArgs.map((a) => (/[\s"']/.test(a) ? (a.includes('"') ? `'${a}'` : `"${a}"`) : a)).join(' '),
     env: Object.entries(e.env)
       .map(([k, v]) => `${k}=${v}`)
@@ -81,15 +93,34 @@ export function formOf(e: CustomEngine): CustomEngineForm {
   };
 }
 
-/** A new engine from a built-in template: its base and rules, the name in the user's language. */
+/** A new engine from a built-in template: its base, rules and (a NInfer variant) repository, the name in the user's language. */
 export function formOfTemplate(t: CustomEngineTemplate, name: string): CustomEngineForm {
-  return { ...EMPTY_FORM, base: t.base, name, mode: 'native', names: t.match.names.join(', '), quants: t.match.quants.join(', '), templateId: t.id };
+  return {
+    ...EMPTY_FORM,
+    base: t.base,
+    name,
+    mode: modeFor(t.base, 'native'),
+    names: t.match.names.join(', '),
+    quants: t.match.quants.join(', '),
+    repoUrl: t.source?.url ?? '',
+    branch: t.source?.branch ?? '',
+    templateId: t.id,
+  };
 }
 
-/** The mode a base takes: openai-server is always a command; a base keeps native/docker. */
+/** The mode a base takes: openai-server is always a command, a NInfer variant always 'ninfer'; a fork keeps native/docker. */
 export function modeFor(base: CustomEngineBase, mode: EngineMode): EngineMode {
   if (base === 'openai-server') return 'command';
-  return mode === 'command' ? 'native' : mode;
+  if (base === 'ninfer') return 'ninfer';
+  return mode === 'command' || mode === 'ninfer' ? 'native' : mode;
+}
+
+/** A NInfer variant's repository as the form has it: undefined when empty, else its URL and branch (checked by draftOf). */
+export function sourceOfForm(f: Pick<CustomEngineForm, 'repoUrl' | 'branch'>): { url: string; branch?: string } | undefined {
+  const url = f.repoUrl.trim();
+  if (!url) return undefined;
+  const branch = f.branch.trim();
+  return { url, ...(branch ? { branch } : {}) };
 }
 
 /** The draft to send, or what is wrong, field by field. */
@@ -97,7 +128,10 @@ export function draftOf(f: CustomEngineForm): { draft?: CustomEngineDraft; probl
   const problems: Partial<Record<FormField, FieldProblem>> = {};
   const mode = modeFor(f.base, f.mode);
   if (!f.name.trim()) problems.name = { key: 'required' };
-  if (mode === 'native' && !f.path.trim()) problems.path = { key: 'required' };
+  if ((mode === 'native' || mode === 'ninfer') && !f.path.trim()) problems.path = { key: 'required' };
+  const source = mode === 'ninfer' ? sourceOfForm(f) : undefined;
+  if (source && !GIT_URL.test(source.url)) problems.repoUrl = { key: 'badRepo' };
+  if (source?.branch !== undefined && !GIT_BRANCH.test(source.branch)) problems.branch = { key: 'badBranch' };
   if (mode === 'docker' && !f.image.trim()) problems.image = { key: 'required' };
   const extraArgs = splitCommandLine(f.extraArgs);
   if (extraArgs === undefined) problems.extraArgs = { key: 'templateProblems.unbalanced_quote' };
@@ -110,8 +144,15 @@ export function draftOf(f: CustomEngineForm): { draft?: CustomEngineDraft; probl
   });
   const names = list(f.names);
   const quants = list(f.quants);
+  const distro = f.distro.trim();
   const run =
-    mode === 'native' ? { mode, path: f.path.trim() } : mode === 'docker' ? { mode, image: f.image.trim() } : { mode, template: f.template.trim(), api: f.api };
+    mode === 'native'
+      ? { mode, path: f.path.trim() }
+      : mode === 'docker'
+        ? { mode, image: f.image.trim() }
+        : mode === 'ninfer'
+          ? { mode, path: f.path.trim(), ...(distro ? { distro } : {}), ...(source ? { source } : {}) }
+          : { mode, template: f.template.trim(), api: f.api };
   const draft: CustomEngineDraft = {
     name: f.name.trim(),
     base: f.base,

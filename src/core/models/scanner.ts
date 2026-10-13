@@ -1,6 +1,6 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { NINFER_FILE, NINFER_MANIFEST, NINFER_SUMS, parseNinferManifest, parseSha256Sums, precisionFromText } from '../../contract/formats';
+import { NINFER_FILE, NINFER_MANIFEST, NINFER_SUMS, ninferManifestFromName, parseNinferManifest, parseSha256Sums, precisionFromText } from '../../contract/formats';
 import type { LocalModel } from '../../contract/models';
 import { trainedContextOf } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
@@ -506,15 +506,19 @@ export class ModelScanner {
       const fromManifest = mine?.sha256 && SHA_RE.test(mine.sha256) && mine.bytes === f.size ? mine.sha256 : undefined;
       const sha256 = known.sha ?? fromManifest ?? sums.get(f.name);
       const paramsB = paramsFromLabel(mine?.name ?? f.name) ?? paramsFromLabel(src.repo ?? '');
+      // No manifest ("senza manifest"): the parts its name announces, and the model is said to be so.
+      const components = mine ? mine.components : ninferManifestFromName(f.name).components;
       const facts: ModelFactsEx = {
         ...(mine?.architecture ? { architecture: mine.architecture } : {}),
         ...(mine?.name ? { name: mine.name } : {}),
-        ...(mine?.components.length ? { components: mine.components } : {}),
+        ...(components.length ? { components } : {}),
+        ...(mine ? {} : { noManifest: true }),
         ...(paramsB ? { paramsB } : {}),
         // The manifest does not say the trained context: NInfer's models' own (contract/ninfer.ts), as the bench and tuner read it.
         contextLength: trainedContextOf({ format: 'ninfer' }),
       };
-      const quant = precisionFromText(f.name);
+      // "…-nvfp4.ninfer" names a precision; a GGUF-converted artifact its GGUF quant ("…-Q6_K-MTP.ninfer").
+      const quant = precisionFromText(f.name) ?? quantFromFilename(f.name.replace(NINFER_FILE, ''));
       const identity: LocalModel['identity'] = {
         displayName: f.name.replace(NINFER_FILE, ''),
         format: 'ninfer',

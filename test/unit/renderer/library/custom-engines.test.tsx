@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 const engine = (o: Partial<CustomEngine> & Pick<CustomEngine, 'id' | 'name' | 'base' | 'run'>): CustomEngine => customEngineSchema.parse(o);
-const prism = engine({ id: 'prismml', name: 'PrismML', base: 'llamacpp', run: { mode: 'native', path: '/prism/llama-server' }, match: { names: ['bonsai'], quants: ['PQ2_0'] }, notes: 'Compilato con CUDA 13.' });
+const prism = engine({ id: 'prismml', name: 'PrismML', base: 'llamacpp', run: { mode: 'native', path: '/prism/llama-server' }, match: { names: ['bonsai'], quants: ['PQ2_0'], layouts: [] }, notes: 'Compilato con CUDA 13.' });
 const card = (name: string) => screen.findByRole('region', { name });
 const linux = system({ os: { platform: 'linux', release: '6', arch: 'x64', name: 'Ubuntu 24.04', isWsl: false } });
 

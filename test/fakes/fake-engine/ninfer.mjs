@@ -13,7 +13,7 @@ const MIB = 1024 * 1024;
 /** KV elements per token (Qwen3.8-27B: 16 full-attention layers × 4 KV heads × 256 × K and V) and the MTP layer. */
 const KV_TEXT = 16 * 4 * 256 * 2;
 const KV_MTP = 4 * 256 * 2;
-const KV_BYTES = { bf16: 2, int8: 1 + 2 / 64, fp8: 1 + 2 / 64, nvfp4: 0.5 + 1 / 16, k8v4: (1 + 2 / 64 + 0.5 + 1 / 16) / 2 };
+const KV_BYTES = { bf16: 2, int8: 1 + 2 / 64, fp8: 1 + 2 / 64, nvfp4: 0.5 + 1 / 16, k8v4: (1 + 2 / 64 + 0.5 + 1 / 16) / 2, rk8v4: (1 + 2 / 64 + 0.5 + 1 / 16) / 2 };
 const PAGE = 64;
 const CONTEXT_MIB = 600;
 
@@ -34,6 +34,11 @@ function stamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 const fmt = (n) => n.toLocaleString('en-US');
+
+/** One ninfer-serve log line ("2026-10-13 21:01:51.829  FATAL server failed during startup | …") written with `write`. */
+export function ninferLog(write, level, msg) {
+  write(`${stamp()}  ${level.padEnd(5)} ${msg}`);
+}
 const gib = (mib) => `${(mib / 1024).toFixed(2)} GiB`;
 
 function readBody(req) {

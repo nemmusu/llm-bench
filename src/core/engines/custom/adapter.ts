@@ -2,7 +2,8 @@
  * Custom engines (settings.customEngines) on top of the engine adapters. A config with a
  * `customEngineId` is filled in from the saved engine (its executable, image, Python or command)
  * and goes to its base's adapter: same flags, timings, logs and tuner as the base. Its extra
- * arguments come before the run's own, its environment under the run's own. A fork whose --help
+ * arguments come before the run's own, its environment under the run's own. A NInfer variant (base
+ * 'ninfer') names its own ninfer-serve and WSL distro (EngineConfig.ninferPath / wslDistro). A fork whose --help
  * lacks some of LLM Bench's flags gets a command without them (PlanOptions.knownFlags) and the plan
  * says which (LaunchPlan.unsupported). Labels, Configurazioni and config keys carry its name
  * (EngineIdentity.name / customEngine).
@@ -31,8 +32,11 @@ export function expandCustom(engine: CustomEngine, cfg: EngineConfig): CoreEngin
   else if (run.mode === 'command') {
     out.command = run.template;
     out.flavor = run.api === 'chat' ? 'openai-chat' : 'openai';
-  }
-  else if (engine.base === 'llamacpp') out.executable = run.path;
+  } else if (run.mode === 'ninfer') {
+    // A NInfer variant: its own build (and distro) instead of the one saved for NInfer.
+    out.ninferPath = run.path;
+    if (run.distro !== undefined) out.wslDistro = run.distro;
+  } else if (engine.base === 'llamacpp') out.executable = run.path;
   else if (engine.base === 'vllm') out.vllmPath = run.path;
   else out.sglangPath = run.path;
   if (Object.keys(engine.env).length > 0) out.probeEnv = { ...engine.env };

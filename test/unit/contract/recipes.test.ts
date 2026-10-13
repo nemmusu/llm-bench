@@ -321,7 +321,7 @@ describe('the preferred engine', () => {
   it('a template: the engine made from it, else (for its models) a saved engine whose rules match', () => {
     const made = engine({ template: 'prismml-bonsai' });
     expect(recipeCustomEngine({ type: 'template', template: 'prismml-bonsai' }, [engine({ id: 'x' }), made])).toBe(made);
-    const byRules = engine({ id: 'mine', match: { names: ['bonsai'], quants: [] } });
+    const byRules = engine({ id: 'mine', match: { names: ['bonsai'], quants: [], layouts: [] } });
     expect(recipeCustomEngine({ type: 'template', template: 'prismml-bonsai' }, [byRules], bonsai)).toBe(byRules);
     // Not a Bonsai model, or no model: only the engine made from the template counts.
     expect(recipeCustomEngine({ type: 'template', template: 'prismml-bonsai' }, [byRules], qwen)).toBeUndefined();
@@ -335,7 +335,7 @@ describe('built-in recipes', () => {
   const t = (id: string) => recipeTemplate(id)!;
 
   it('the library: YaRN, MTP, PrismML for Bonsai, images; each says what it sets and where it is documented', () => {
-    expect(RECIPE_TEMPLATES.map((x) => x.id)).toEqual(['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer']);
+    expect(RECIPE_TEMPLATES.map((x) => x.id)).toEqual(['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer', 'ninfer-all']);
     expect(RECIPE_TEMPLATES.every((x) => x.parts.length > 0 && x.docs.every((d) => d.startsWith('https://')))).toBe(true);
     expect(recipeTemplate('nope')).toBeUndefined();
   });

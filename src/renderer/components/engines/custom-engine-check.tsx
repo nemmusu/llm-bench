@@ -4,15 +4,17 @@ import type { EngineKind } from '../../../contract/engines';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { ErrorCallout } from '../library/error-callout';
 import { Callout } from '../ui/callout';
+import { NinferProblem } from './ninfer-problem';
 
 /** "llama.cpp · PrismML fork": the kind it runs as, then its name (engine choices, labels). */
 export function customEngineLabel(t: Formatters['t'], e: Pick<CustomEngine, 'name' | 'base' | 'run'>): string {
   return `${t(`benchmark.engines.${customEngineKindOf(e)}`)} · ${e.name}`;
 }
 
-/** Where it is: the executable or venv, the Docker image, or the command. */
+/** Where it is: the executable or venv, the Docker image, the command, or a NInfer variant's build (and its WSL distro). */
 export function customEngineWhere(e: Pick<CustomEngine, 'run'>): string {
   const r = e.run;
+  if (r.mode === 'ninfer') return r.distro ? `${r.path} · ${r.distro}` : r.path;
   return r.mode === 'native' ? r.path : r.mode === 'docker' ? r.image : r.template;
 }
 
@@ -43,6 +45,8 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
       </Callout>
     );
   }
+  // A NInfer variant says why in NInfer's own words (a path without ninfer-serve, a checkout not built yet, a distro gone).
+  if (run.mode === 'ninfer' && !status.available) return <NinferProblem status={status} fallback={run.path} />;
   if (notInstalled && run.mode === 'native') {
     return (
       <Callout tone="danger" title={t('engines.custom.check.notFound', { path: run.path })}>
@@ -77,6 +81,7 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
           <p>{check.flagCount > 0 ? `${t('engines.custom.check.flags', { n: integer(check.flagCount) })}${optional.length === 0 ? ` · ${t('engines.custom.check.allFlags')}` : ''}` : t('engines.custom.check.noHelp', { base: baseLabel })}</p>
         )}
       </Callout>
+      {check.kvDtypes && <p className="text-sm text-fg-2">{t('ninfer.variant.kvDtypes', { list: check.kvDtypes.join(', ') })}</p>}
       {optional.length > 0 && (
         <Callout tone="warning" title={t('engines.custom.check.missingTitle')}>
           <ul className="flex flex-col gap-0.5">

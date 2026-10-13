@@ -184,8 +184,11 @@ export function diagnoseSglang(lines: readonly string[], exit: ExitInfo, ctx: Sg
   if (gated) return err('HF_AUTH_REQUIRED', 'The model needs a Hugging Face token', withRepo, gated);
   const notFound = find(/RepositoryNotFoundError|Repository Not Found for url|is not a local folder and is not a valid model identifier/);
   if (notFound) return err('HF_NOT_FOUND', 'Model repository not found', withRepo, notFound);
-  const arch = find(/Model architectures? \[.*\] (?:is|are) not supported|Unsupported architectures?:/);
-  if (arch) return err('MODEL_INVALID', `Model not supported by SGLang: ${arch.input.trim()}`, { reason: 'architecture' }, arch);
+  const arch = find(/Model architectures? \[['"]?([\w.-]+)['"]?.*\] (?:is|are) not supported|Unsupported architectures?: ['"]?([\w.-]+)/);
+  if (arch) {
+    const value = (arch[1] ?? arch[2]) as string;
+    return err('ENGINE_MODEL_UNSUPPORTED', `Model not supported by SGLang: ${arch.input.trim()}`, { engine: 'SGLang', reason: 'architecture', value }, arch);
+  }
   const unrecognized = find(/error: unrecognized arguments: (\S+)/);
   if (unrecognized) return err('ENGINE_BAD_FLAG', `Rejected argument: ${unrecognized[1] as string}`, { flag: unrecognized[1] as string }, unrecognized);
   const badValue = find(/error: argument (-{1,2}[\w-]+)(?:\/-{1,2}[\w-]+)*: invalid/);

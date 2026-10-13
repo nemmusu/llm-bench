@@ -2,7 +2,9 @@
  * What "Trova le impostazioni migliori" searches with NInfer (tune-space.ts has the other engines):
  *
  *  - KV precision (capacity ladder): bf16 → int8 → nvfp4 ("Accurata" also k8v4, between them); at the
- *    int8 rung int8 vs fp8 (the same memory, other kernels: a descent dimension 'kv8');
+ *    int8 rung int8 vs fp8 (the same memory, other kernels: a descent dimension 'kv8'). A variant whose
+ *    --help lists rk8v4 (NInfer-all: K 8-bit, V 4-bit, rotated) gets it after int8; types its build
+ *    does not list are left out;
  *  - speculative decoding: the backends the artifact carries (manifest: MTP for the 27B models, DFlash
  *    for 35B-A3B, DFlash2 for Qwen3.8-27B) and off; draft tokens around NInfer's own recommendation
  *    (MTP 3: 2, 3, 4; DFlash / DFlash2 7: 5, 7, 9); "Accurata" also the optimized proposal head on/off;
@@ -46,8 +48,18 @@ export function ninferBackends(manifest: Pick<NinferManifest, 'components' | 'na
   return order.filter((b) => has.has(b));
 }
 
+/** The capacity ladder of a budget for a build that lists `kvDtypes` (undefined = the official list). */
+export function ninferKvLadder(budget: TuneBudget, kvDtypes?: readonly string[]): TuneKvType[] {
+  const ladder: TuneKvType[] = [...NINFER_KV_LADDER[budget]];
+  if (!kvDtypes) return ladder;
+  if (kvDtypes.includes('rk8v4')) ladder.splice(ladder.indexOf('int8') + 1, 0, 'rk8v4');
+  return ladder.filter((kv) => kvDtypes.includes(kv));
+}
+
 export interface NinferSpaceOptions {
   budget: TuneBudget;
+  /** The --kv-dtype values the build lists (EngineCaps.choices); undefined = the official ones. */
+  kvDtypes?: readonly string[] | undefined;
   /** The user's launch parameters (benchmark NInfer settings included). */
   params: LaunchParams;
   /** Goal 'multi': users at once. */
@@ -72,7 +84,7 @@ export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
   dims.push({ key: 'kv8', values: (v) => (v.kv === 'int8' ? ['int8', 'fp8'] : []) });
   if (thorough) dims.push({ key: 'vision', values: () => [vision, !vision] });
   return {
-    kvLadder: NINFER_KV_LADDER[o.budget],
+    kvLadder: ninferKvLadder(o.budget, o.kvDtypes),
     base: (kv) => ({
       kv,
       spec: first ?? 'off',
@@ -114,11 +126,20 @@ export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
  */
 export async function ninferTuneInput(
   common: Omit<TunerInput, 'space'>,
-  o: { budget: TuneBudget; params: LaunchParams; model: ModelTarget; gpu?: { totalMiB: number; freeMiB: number } | undefined; seen?: TuneExpect | undefined; users?: number },
+  o: {
+    budget: TuneBudget;
+    params: LaunchParams;
+    model: ModelTarget;
+    gpu?: { totalMiB: number; freeMiB: number } | undefined;
+    seen?: TuneExpect | undefined;
+    users?: number;
+    /** The build's --kv-dtype values (a variant's own among them). */
+    kvDtypes?: readonly string[] | undefined;
+  },
 ): Promise<TunerInput> {
   const info = await ninferArtifactInfo(o.model).catch(() => undefined);
   const { predict: _generic, ...rest } = common;
-  const space = ninferSpace({ budget: o.budget, params: o.params, backends: ninferBackends(info?.manifest), ...(o.users !== undefined ? { users: o.users } : {}) });
+  const space = ninferSpace({ budget: o.budget, params: o.params, backends: ninferBackends(info?.manifest), kvDtypes: o.kvDtypes, ...(o.users !== undefined ? { users: o.users } : {}) });
   const gpu = o.gpu;
   return {
     ...rest,

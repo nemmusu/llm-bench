@@ -365,6 +365,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     pypi: deps.endpoints.pypi ?? 'https://pypi.org',
     clock: deps.clock,
     ninfer: ninfer.updaters,
+    ninferVariant: (engine) => ninfer.variantUpdater(engine),
   });
   const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.

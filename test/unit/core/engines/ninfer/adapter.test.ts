@@ -162,7 +162,8 @@ describe('artifacts', () => {
     expect(await ninferArtifactInfo(model)).toMatchObject({ bytes: 8192, label: 'qwen3_8_27b_nvfp4', manifest: { name: 'qwen3.8-27b', containerVersion: 3 } });
     const bare = ninferModel(path.join(tmp(), 'b'), { manifest: false });
     expect(artifactOf(bare)).toEqual({ file: bare.local.paths[0] });
-    expect(await ninferArtifactInfo(bare)).not.toHaveProperty('manifest');
+    // Without a manifest ("senza manifest"): what its name says (no MTP, no DFlash in "qwen3_8_27b_nvfp4").
+    expect(await ninferArtifactInfo(bare)).toMatchObject({ manifest: { components: ['text'] }, noManifest: true });
     // A file that is gone: the library's size.
     const gone = { ...bare, local: { ...bare.local, paths: [path.join(tmp(), 'gone.ninfer')] } };
     expect((await ninferArtifactInfo(gone)).bytes).toBe(4096);
@@ -173,7 +174,7 @@ describe('artifacts', () => {
     expect((await ninferArtifactInfo(unsized)).bytes).toBe(0);
     const broken = ninferModel(path.join(tmp(), 'c'));
     writeFileSync(broken.local.paths[1] as string, '{ not json');
-    expect(await ninferArtifactInfo(broken)).not.toHaveProperty('manifest');
+    expect(await ninferArtifactInfo(broken)).toMatchObject({ manifest: { components: ['text'] }, noManifest: true });
     const { adapter } = native();
     expect(await adapter.manifestOf(broken.local.paths[1])).toBeUndefined();
     expect(await adapter.manifestOf(undefined)).toBeUndefined();

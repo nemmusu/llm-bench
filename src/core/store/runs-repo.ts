@@ -135,6 +135,7 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(head ? { decodeTokens: contextTokensOf(head, calibrated), speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
     ...(prefill ? { prefillTokens: contextTokensOf(largest!, calibrated) } : {}),
     validity: run.validity,
+    ...(run.error?.code === 'ENGINE_MODEL_UNSUPPORTED' && typeof run.error.params?.value === 'string' ? { unreadable: run.error.params.value } : {}),
     file,
   };
 }

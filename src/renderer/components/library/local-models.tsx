@@ -107,7 +107,14 @@ function LocalRow({
               <TriedFor weakKey={id.weakKey} sha256={id.sha256} previous={m.previous} />
             </>
           )}
-          {id.format === 'gguf' && <ForkBadge model={id} weakKey={id.weakKey} label={id.displayName} />}
+          {(id.format === 'gguf' || id.format === 'ninfer') && <ForkBadge model={id} weakKey={id.weakKey} label={id.displayName} />}
+          {id.facts?.noManifest && (
+            <Tooltip content={t('ninfer.library.noManifestHelp')}>
+              <Badge tone="outline" size="sm" tabIndex={0} className="focus-ring">
+                {t('ninfer.library.noManifest')}
+              </Badge>
+            </Tooltip>
+          )}
           {recipe.recipe && (
             <Badge size="sm" tone="accent">
               <SquareTerminal aria-hidden />

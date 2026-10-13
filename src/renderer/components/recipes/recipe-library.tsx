@@ -14,9 +14,14 @@ import { depthLabel } from '../tune/tune-format';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { SegmentedControl } from '../ui/segmented-control';
-import { templateEngineLink, type RecipeTarget } from './recipe-model';
+import { templateEngineAction, templateEngineLink, type RecipeTarget } from './recipe-model';
 
-const ICONS: Record<RecipeTemplateId, typeof Ruler> = { yarn: Ruler, mtp: Gauge, 'prismml-bonsai': Cpu, vision: Image, ninfer: Server };
+const ICONS: Record<RecipeTemplateId, typeof Ruler> = { yarn: Ruler, mtp: Gauge, 'prismml-bonsai': Cpu, vision: Image, ninfer: Server, 'ninfer-all': Server };
+
+/** Built-in recipes that choose a custom engine made from a template of the same id (the PrismML fork, NInfer-all). */
+const ENGINE_TEMPLATES = ['prismml-bonsai', 'ninfer-all'] as const;
+type EngineTemplateId = (typeof ENGINE_TEMPLATES)[number];
+const enginesFrom = (id: RecipeTemplateId): id is EngineTemplateId => (ENGINE_TEMPLATES as readonly string[]).includes(id);
 
 export interface RecipeLibraryProps {
   open: boolean;
@@ -63,8 +68,9 @@ function TemplateCard({ template, target, onUse }: { template: RecipeTemplate; t
   const rope = trained === undefined ? undefined : yarnScaling(Number(yarn), trained);
   const Icon = ICONS[template.id];
   const sets = template.parts.map((p) => t(`recipes.applied.partNames.${p}`)).join(' · ');
-  // The PrismML card: whether the fork is set up already.
-  const fork = template.id === 'prismml-bonsai' && !blocked ? recipeCustomEngine({ type: 'template', template: 'prismml-bonsai' }, settings.customEngines, target.ref) : undefined;
+  // The PrismML and NInfer-all cards: whether that engine is set up already.
+  const engineTemplate = enginesFrom(template.id) ? template.id : undefined;
+  const fork = engineTemplate && !blocked ? recipeCustomEngine({ type: 'template', template: engineTemplate }, settings.customEngines, target.ref) : undefined;
   const docs = template.docs[0] as string;
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 shadow-xs data-[blocked=true]:bg-surface-2/60" data-blocked={blocked !== undefined}>
@@ -95,18 +101,16 @@ function TemplateCard({ template, target, onUse }: { template: RecipeTemplate; t
               {rope && <span className="text-xs text-fg-3 tabular-nums">{t('recipes.library.yarn.factor', { factor: number(rope.factor, 2), trained: integer(trained as number) })}</span>}
             </span>
           )}
-          {template.id === 'prismml-bonsai' && (
-            <span className="text-xs text-fg-2">{fork ? t('recipes.library.prismml-bonsai.found', { name: fork.name }) : t('recipes.library.prismml-bonsai.missing')}</span>
-          )}
+          {engineTemplate && <span className="text-xs text-fg-2">{fork ? t(`recipes.library.${engineTemplate}.found`, { name: fork.name }) : t(`recipes.library.${engineTemplate}.missing`)}</span>}
           <span className="ml-auto flex items-center gap-2">
             <Button variant="link" size="sm" onClick={() => void window.gpubench?.openExternal(docs)}>
               <BookOpen aria-hidden />
               {t('recipes.actions.docs')}
               <ExternalLink aria-hidden />
             </Button>
-            {template.id === 'prismml-bonsai' && !fork && (
-              <Button size="sm" onClick={() => void router.history.push(templateEngineLink('prismml-bonsai', target))}>
-                {t('recipes.engineMissing.action')}
+            {engineTemplate && !fork && (
+              <Button size="sm" onClick={() => void router.history.push(templateEngineLink(engineTemplate, target))}>
+                {templateEngineAction(engineTemplate, f)}
               </Button>
             )}
             <Button size="sm" variant="primary" onClick={() => onUse(template.id === 'yarn' ? { yarnTarget: Number(yarn) } : {})} aria-label={`${t('recipes.library.use')}: ${t(`recipes.library.${template.id}.title`)}`}>

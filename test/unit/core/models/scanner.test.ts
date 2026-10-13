@@ -436,8 +436,24 @@ describe('ModelScanner', () => {
     expect(q.paths.map((p) => path.basename(p))).toEqual(['qwen3_8_27b_nvfp4.ninfer', 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS']);
     expect(byName(models, 'other')?.identity).toMatchObject({ sha256: 'c'.repeat(64), facts: { paramsB: 27 } });
     // The manifest does not say the trained context: NInfer's models' own, even without a manifest.
-    expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: { contextLength: 262_144 } });
+    expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: { contextLength: 262_144, noManifest: true, components: ['text'] } });
     expect(byName(models, 'mine')?.identity.sha256).toBeUndefined();
+  });
+
+  it('a GGUF-NInfer artifact without a manifest, in a folder of its repo: recognised "senza manifest", with what its name says', async () => {
+    const repo = path.join(library, 'nerkyor', 'Qwen3.8-27B-Coder390-GGUF-NInfer');
+    const file = path.join(mkdirAll(path.join(repo, 'GGUF-NInfer')), 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer');
+    writeFileSync(file, Buffer.alloc(3000));
+    sidecar(repo, 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', {});
+    const models = await scanner().scan();
+    expect(byName(models, 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP')?.identity).toMatchObject({
+      format: 'ninfer',
+      repo: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer',
+      file: 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer',
+      quant: 'Q6_K',
+      sizeBytes: 3000,
+      facts: { noManifest: true, components: ['text', 'mtp'], paramsB: 27, contextLength: 262_144 },
+    });
   });
 
   it('a model folder added as a folder of its own (the "exact folder" of the Linux copy); a download with no weights yet', async () => {

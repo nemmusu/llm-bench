@@ -123,7 +123,7 @@ export function engineName(engine: EngineIdentity, f: Pick<Formatters, 't'>): st
   return engineLabelOf({ ...engine, name: `${custom.name} (${base})` });
 }
 
-const BASE_NAMES = { llamacpp: 'llama.cpp', vllm: 'vLLM', sglang: 'SGLang' } as const;
+const BASE_NAMES = { llamacpp: 'llama.cpp', vllm: 'vLLM', sglang: 'SGLang', ninfer: 'NInfer' } as const;
 
 // ---- "Confronta a": the depths every item (or at least two) measured --------------------------------
 

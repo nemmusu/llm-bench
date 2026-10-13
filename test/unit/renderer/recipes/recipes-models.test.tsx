@@ -62,7 +62,8 @@ describe('a library model’s commands', () => {
     expect(within(library).getByText('Accanto al modello non c’è un file MTP o draft: scaricalo dalla pagina del modello.')).toBeTruthy();
     expect(within(library).getByText('Solo per i modelli Bonsai di PrismML.')).toBeTruthy();
     expect(within(library).getByText('Accanto al modello non c’è un proiettore immagini (mmproj).')).toBeTruthy();
-    expect(within(library).getByText('Non serve per questo tipo di modello.')).toBeTruthy();
+    // NInfer and NInfer-all are for .ninfer models only.
+    expect(within(library).getAllByText('Non serve per questo tipo di modello.')).toHaveLength(2);
     expect(within(library).getByText('×7,50 rispetto ai 40.960 di addestramento')).toBeTruthy();
     await userEvent.click(within(library).getByRole('radio', { name: '500K' }));
     expect(within(library).getByText('×12,50 rispetto ai 40.960 di addestramento')).toBeTruthy();
@@ -361,6 +362,44 @@ describe('the PrismML fork for Bonsai models', () => {
     const library = await screen.findByRole('dialog', { name: 'Ricette pronte' });
     expect(within(library).getByText('Userà Fork PrismML.')).toBeTruthy();
     expect(within(library).queryByRole('button', { name: 'Indica dove si trova il fork' })).toBeNull();
+  });
+});
+
+describe('NInfer-all for GGUF-NInfer artifacts', () => {
+  const gguf = localModel('gg', {
+    identity: { displayName: 'Coder-Q6_K-MTP', format: 'ninfer', repo: 'nerkyor/Coder-GGUF-NInfer', file: 'Coder-Q6_K-MTP.ninfer', quant: 'Q6_K', weakKey: 'local/gg' },
+  });
+
+  it('its ready recipe: NInfer-all not added yet leads to the Engines page; once added, it says which one', async () => {
+    const api = libApi(world({ local: [gguf] }));
+    withPlans(api);
+    const { router } = renderLib('/models', api);
+    const dialog = await openCommands('Coder-Q6_K-MTP');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scegli da una ricetta pronta' }));
+    const library = await screen.findByRole('dialog', { name: 'Ricette pronte' });
+    expect(within(library).getByRole('heading', { name: 'NInfer-all per i modelli GGUF-NInfer' })).toBeTruthy();
+    expect(within(library).getByText('Non hai ancora aggiunto NInfer-all.')).toBeTruthy();
+    // Used: the saved recipe says its engine is still to add.
+    await userEvent.click(within(library).getByRole('button', { name: 'Usa: NInfer-all per i modelli GGUF-NInfer' }));
+    const editor = await screen.findByRole('dialog', { name: 'Scrivi i comandi per Coder-Q6_K-MTP' });
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(saved(api)[0]?.engine).toEqual({ type: 'template', template: 'ninfer-all' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aggiungi NInfer-all' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/engines'));
+    expect(router.state.location.search).toMatchObject({ customTemplate: 'ninfer-all', model: 'local/gg' });
+    await router.navigate({ to: '/models' });
+    const fromCard = await openCommands('Coder-Q6_K-MTP');
+    await userEvent.click(within(fromCard).getByRole('button', { name: 'Scegli da una ricetta pronta' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Ricette pronte' })).getByRole('button', { name: 'Aggiungi NInfer-all' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/engines'));
+    cleanup();
+    const all = customEngineSchema.parse({ id: 'ninfer-all', name: 'NInfer-all', base: 'ninfer', template: 'ninfer-all', run: { mode: 'ninfer', path: '/home/u/ninfer-all', distro: 'Ubuntu-24.04' } });
+    const withAll = libApi(world({ local: [gguf], settings: { ...world().settings, customEngines: [all] } as Settings }));
+    withPlans(withAll);
+    renderLib('/models', withAll);
+    const again = await openCommands('Coder-Q6_K-MTP');
+    await userEvent.click(within(again).getByRole('button', { name: 'Scegli da una ricetta pronta' }));
+    expect(within(await screen.findByRole('dialog', { name: 'Ricette pronte' })).getByText('Userà NInfer-all.')).toBeTruthy();
   });
 });
 
