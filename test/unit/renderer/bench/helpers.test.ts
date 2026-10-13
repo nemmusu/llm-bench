@@ -5,8 +5,6 @@ import type { EngineStatus } from '../../../../src/contract/engines';
 import type { LocalModel } from '../../../../src/contract/models';
 import type { RunResult, RunSummary } from '../../../../src/contract/results';
 import type { CuratedModel } from '../../../../src/contract/views';
-import { alignPairs, concurrencyPairs, decodePairs, pairBarsOption, pairLinesOption } from '../../../../src/renderer/components/bench/compare-charts';
-import { diffRows, metricRows } from '../../../../src/renderer/components/bench/compare-rows';
 import { deltaView, relativeChange } from '../../../../src/renderer/components/bench/delta';
 import { EMPTY_ENGINE_FORM, engineConfigOf, engineFormOf, isHttpUrl, savableEngine } from '../../../../src/renderer/components/bench/engine-form';
 import {
@@ -50,7 +48,8 @@ import { findLocalModel, rerunOf } from '../../../../src/renderer/components/ben
 import { readRunContext, saveDraft, saveRunContext, takeDraft } from '../../../../src/renderer/components/bench/run-context';
 import { launchSummaryParts, paramParts, scenarioLines } from '../../../../src/renderer/components/bench/summary';
 import { sharedGpuList, validityBody } from '../../../../src/renderer/components/bench/validity';
-import { readChartTokens } from '../../../../src/renderer/components/charts/echarts';
+import { diffRows } from '../../../../src/renderer/components/compare/compare-diff';
+import { compareRows, itemOf } from '../../../../src/renderer/components/compare/compare-model';
 import { createFormatters } from '../../../../src/renderer/i18n';
 import { HOST_ID, IDS, seeded, summaries } from './fixtures';
 
@@ -589,38 +588,36 @@ describe('live state', () => {
 
 describe('compare', () => {
   it('lines up the numbers and the settings that differ', () => {
-    const a = seeded(IDS.moe);
-    const b = seeded(IDS.gemma);
-    const rows = metricRows(a, b, it_);
-    expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'cold', 'warm', 'vram', 'concurrency', 'efficiency', 'score']);
-    for (const r of rows) expect(r.format(1234.5)).toMatch(/\d/);
-    expect(metricRows(seeded(IDS.failed), seeded(IDS.failed), it_).map((r) => r.id)).toEqual(['vram']);
-    const diff = diffRows(a, b, it_);
+    const a = itemOf(seeded(IDS.moe));
+    const b = itemOf(seeded(IDS.gemma));
+    for (const r of compareRows([a, b], 512, it_)) expect(r.format(1234.5)).toMatch(/\d/);
+    // A run that measured nothing: its context and its memory, nothing else.
+    expect(compareRows([itemOf(seeded(IDS.failed)), itemOf(seeded(IDS.failed))], undefined, it_).map((r) => r.id)).toEqual(['maxContext', 'vram']);
+    const diff = diffRows([a, b], it_);
     expect(diff.find((d) => d.label === 'Modello')).toMatchObject({ differs: true });
     expect(diff.find((d) => d.label === 'Driver')).toMatchObject({ differs: false });
-    expect(diff.find((d) => d.label === 'Flash attention')).toMatchObject({ a: 'on', b: 'Automatico' });
-    const v = diffRows(seeded(IDS.vllm), { ...seeded(IDS.full), hardware: { ...seeded(IDS.full).hardware, gpus: [] }, model: { ...seeded(IDS.full).model, quant: undefined, sizeBytes: undefined, sha256: undefined }, engine: { kind: 'llamacpp-native', name: 'llama.cpp' } }, en);
-    expect(v.find((d) => d.label === 'Docker image')).toMatchObject({ a: 'sha256:6f1a8c2e', b: '–' });
-    expect(v.find((d) => d.label === 'Graphics card')?.b).toBe('–');
+    expect(diff.find((d) => d.label === 'Flash attention')).toMatchObject({ values: ['on', 'Automatico'] });
+    const full = seeded(IDS.full);
+    const bare = { ...full, hardware: { ...full.hardware, gpus: [] }, model: { ...full.model, quant: undefined, sizeBytes: undefined, sha256: undefined }, engine: { kind: 'llamacpp-native' as const, name: 'llama.cpp' } };
+    const v = diffRows([itemOf(seeded(IDS.vllm)), itemOf(bare)], en);
+    expect(v.find((d) => d.label === 'Docker image')).toMatchObject({ values: ['sha256:6f1a8c2e', '–'] });
+    expect(v.find((d) => d.label === 'Graphics card')?.values[1]).toBe('–');
     expect(v.find((d) => d.label === 'Environment variables')).toBeUndefined();
   });
 
-  it('aligns and draws two runs on one chart', () => {
-    const p = alignPairs([{ x: 1, y: 10 }, { x: 4, y: 40 }], [{ x: 2, y: 20 }, { x: 4, y: 44 }], (q) => q.x, (q) => q.y);
-    expect(p).toEqual({ x: [1, 2, 4], a: [10, null, 40], b: [null, 20, 44] });
-    expect(decodePairs(seeded(IDS.full), seeded(IDS.quick)).x).toContain(8192);
-    expect(concurrencyPairs(seeded(IDS.full), seeded(IDS.gemma)).x).toEqual([1, 2, 4, 8, 16]);
-    const tk = readChartTokens();
-    const opts = { nameA: 'A', nameB: 'B', format: (v: number) => `${v} t`, xLabel: (v: number) => `x${v}`, xName: 'X' };
-    const bars = pairBarsOption(tk, p, opts) as { tooltip: { valueFormatter: (v: unknown) => string }; series: unknown[] };
-    expect(bars.series).toHaveLength(2);
-    expect(bars.tooltip.valueFormatter(3)).toBe('3 t');
-    expect(bars.tooltip.valueFormatter(null)).toBe('–');
-    const lines = pairLinesOption(tk, p, opts) as { tooltip: { valueFormatter: (v: unknown) => string }; xAxis: { axisLabel: { formatter: (v: number) => string } }; series: { data: unknown[] }[] };
-    expect(lines.tooltip.valueFormatter(undefined)).toBe('–');
-    expect(lines.tooltip.valueFormatter(2)).toBe('2 t');
-    expect(lines.xAxis.axisLabel.formatter(4)).toBe('x4');
-    expect(lines.series[0]!.data).toEqual([[1, 10], [2, null], [4, 40]]);
+  it('live gauges remember what each speed was measured on; a new tune launch forgets it', () => {
+    let s = liveReducer(initialLive(), { type: 'run.step', runId: 'r', current: { kind: 'latency', promptTokens: 4096 } }, 'r');
+    s = liveReducer(s, { type: 'run.live', runId: 'r', decodeTps: 50, prefillTps: 2000 }, 'r');
+    expect(s.decodeAt).toEqual({ kind: 'latency', promptTokens: 4096 });
+    s = liveReducer(s, { type: 'run.step', runId: 'r', current: { kind: 'concurrency', concurrency: 4 } }, 'r');
+    s = liveReducer(s, { type: 'run.live', runId: 'r', decodeTps: 180 }, 'r');
+    // Users at once: the total on the generation gauge; reading still the prompt's.
+    expect(s.decodeAt).toEqual({ kind: 'concurrency', concurrency: 4 });
+    expect(s.prefillAt).toEqual({ kind: 'latency', promptTokens: 4096 });
+    const tune = { budget: 'fast' as const, maxLaunches: 1, dimensions: [], capacity: [], depths: [], attempts: [], combinations: [], fastestByDepth: [] };
+    s = liveReducer(s, { type: 'run.tune', runId: 'r', tuning: tune, current: { stage: 'capacity', kvType: 'q4_0', contextSize: 8192, points: [], command: { argv: [], powershell: '', bash: '' }, params: { extraArgs: [], env: {} }, atMs: 5 } }, 'r');
+    expect(s.decodeAt).toBeUndefined();
+    expect(s.prefillAt).toBeUndefined();
   });
 });
 

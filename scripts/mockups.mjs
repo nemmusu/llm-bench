@@ -42,6 +42,10 @@ const TEAM_NOW = '01K6Z1N0W0000000000000000B';
 const QUICK_ID = '01K6TX9Q2W5E8R1T4Y7U3I6OPA';
 const SPILL_CLEAN_ID = '01K6WB0C1EAN000000000000AA';
 const SPILL_ID = '01K6WC5P5Q00000000000000AB';
+// Four seeded Standard/Completo tests of different models, for the four-way comparison.
+const GEMMA_ID = '01K6WQ8D3N7B2X5C9V4M6K1JHT';
+const MOE_ID = '01K6WJ2F6R9T3Y8U1I4O7P5ASD';
+const GPTOSS_ID = '01K6QH3B6N9M2Q5W8E1R4T7YUI';
 
 const curated = JSON.parse(readFileSync(path.join(root, 'resources', 'curated-models.json'), 'utf8'));
 /** The curated reference model, served by the fake Hugging Face (not on the PC: it is previewed before its download). */
@@ -91,6 +95,30 @@ async function stopServers(info) {
 async function openConfigTests(page) {
   await page.getByRole('button', { name: /^Mostra i 2 test/ }).click();
   await page.getByRole('dialog', { name: 'Test di questa configurazione' }).waitFor({ timeout: 30000 });
+}
+
+/** Risultati: "Confronta" on three tests, the tray at the bottom says so. */
+async function pickThree(page) {
+  for (const name of [/^Confronta Qwen3 30B A3B/, /^Confronta Gemma 4 31B/, /^Confronta gpt-oss 20B/]) await page.getByRole('button', { name }).first().click();
+  await page.getByRole('region', { name: 'Da confrontare' }).waitFor({ timeout: 10000 });
+}
+
+/** "Confronta modelli": two models picked, the second with its configuration chooser. */
+async function pickModels(page) {
+  await page.getByRole('checkbox', { name: /Gemma 4 31B/ }).click();
+  await page.getByRole('checkbox', { name: /Qwen3 8B/ }).first().click();
+}
+
+/** "Cosa cambia tra loro" opened. */
+async function openDiff(page) {
+  await page.getByRole('button', { name: /Cosa cambia tra loro/ }).click();
+  await page.getByRole('table', { name: 'Cosa cambia tra loro' }).scrollIntoViewIfNeeded();
+}
+
+/** The picks live in the page (and its storage): the next screens start without them. */
+async function forgetPicks(_info, page) {
+  await page.evaluate(() => localStorage.removeItem('gpubench.compare'));
+  await page.reload();
 }
 
 /** "Usa questo preset" on the fastest configuration: the Benchmark page with its banner and the exact command. */
@@ -158,7 +186,8 @@ const SCREENS = [
   { n: 10, name: 'settings', route: '/settings', wait: 'Impostazioni' },
   { n: 11, name: 'palette', route: '/', wait: 'Avvia benchmark', keys: 'Control+K' },
   { n: 12, name: 'result-en', route: `/results/${RESULT_ID}`, wait: 'GPU Bench score', settings: { language: 'en' } },
-  { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Cosa cambia tra i due' },
+  // An older two-run link (?a=&b=): the same comparison as ?ids=.
+  { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Chi va più veloce', small: true, full: true, after: forgetPicks },
   { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
   { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
   { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
@@ -167,13 +196,19 @@ const SCREENS = [
   { n: 21, name: 'configs-tests', route: '/results?view=configs', wait: 'Confronta a', act: openConfigTests },
   { n: 22, name: 'benchmark-preset', route: '/results?view=configs', wait: 'Confronta a', act: presetFromConfigs, full: true },
   { n: 23, name: 'long-conversations', route: `/results/${TEAM_NOW}`, wait: 'Conversazioni lunghe', act: showLongConversations, small: true, full: true },
-  { n: 24, name: 'compare-words', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', full: true },
-  { n: 25, name: 'sheet-dialog', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', act: openSheetDialog },
-  { n: 26, name: 'sheet-html', route: `/compare?a=${TEAM_BEFORE}&b=${TEAM_NOW}`, wait: 'Cosa cambia tra i due', act: openSheetHtml, full: true },
+  { n: 24, name: 'compare-words', route: `/compare?ids=${TEAM_BEFORE},${TEAM_NOW}`, wait: 'Chi va più veloce', full: true, after: forgetPicks },
+  { n: 25, name: 'sheet-dialog', route: `/compare?ids=${TEAM_BEFORE},${TEAM_NOW}`, wait: 'Chi va più veloce', act: openSheetDialog, after: forgetPicks },
+  { n: 26, name: 'sheet-html', route: `/compare?ids=${TEAM_BEFORE},${TEAM_NOW}`, wait: 'Chi va più veloce', act: openSheetHtml, full: true, after: forgetPicks },
   // The "Trova le impostazioni migliori" choice with its options (the run and the result: tuneScenes, 28 and 29).
   { n: 27, name: 'benchmark-tune', route: '/', wait: 'Pronto a misurare', act: chooseTune, small: true, full: true },
   // A run that spilled into shared memory (the real numbers of the 0.3.0 report). Live: spillScenes, 31-33.
   { n: 30, name: 'result-spill', route: `/results/${SPILL_ID}`, wait: 'Il modello non è entrato tutto nella memoria della scheda', small: true, full: true },
+  // Confronta: four models side by side, their differences, the tray, the start screens.
+  { n: 34, name: 'compare-4', route: `/compare?ids=${GPTOSS_ID},${MOE_ID},${GEMMA_ID},${RESULT_ID}`, wait: 'Chi va più veloce', small: true, full: true, after: forgetPicks },
+  { n: 35, name: 'compare-diff', route: `/compare?ids=${COMPARE_A},${RESULT_ID},01K6ZC2B3C4D5E6F7G8H9J0KMN`, wait: 'Chi va più veloce', act: openDiff, after: forgetPicks },
+  { n: 36, name: 'compare-tray', route: '/results', wait: 'Risultati', act: pickThree, small: true, after: forgetPicks },
+  { n: 37, name: 'compare-models', route: '/compare?view=models', wait: 'La più veloce', act: pickModels, small: true, full: true, after: forgetPicks },
+  { n: 38, name: 'compare-runs', route: '/compare?view=runs', wait: 'sui test che vuoi mettere fianco a fianco', small: true },
 ];
 
 /** Slow enough that the live screen is mid-run when it is photographed. */
@@ -713,7 +748,7 @@ async function main() {
             written.push(fullFile);
           }
           // Screens that changed what is on the page leave it fresh for the next ones.
-          if (s.after) await s.after(info);
+          if (s.after) await s.after(info, page);
           if (s.act) await page.reload();
         }
         await context.close();

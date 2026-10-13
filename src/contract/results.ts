@@ -807,6 +807,16 @@ export const runSummarySchema = z.object({
   parallelTps: z.number().optional(),
   /** Generation speed each of those users got (median per request). */
   parallelPerUserTps: z.number().optional(),
+  /**
+   * What the speeds above were measured on, so lists can say it next to them: the tokens in the
+   * context of decodeTps / ttftMs (the headline prompt, or depth) and of prefillTps (the longest
+   * prompt), whether they are prompt lengths ('prompt': latency step) or context depths ('depth':
+   * context sweep, tune runs), and the prompt each parallel user sent.
+   */
+  decodeTokens: z.number().int().optional(),
+  prefillTokens: z.number().int().optional(),
+  speedBasis: z.enum(['prompt', 'depth']).optional(),
+  parallelPromptTokens: z.number().int().optional(),
   validity: z.array(validityFlagSchema).default([]),
   /** Which file this summary came from (results folder may be shared). */
   file: z.string(),

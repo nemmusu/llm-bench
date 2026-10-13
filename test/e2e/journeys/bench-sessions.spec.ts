@@ -60,18 +60,19 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await page.getByRole('button', { name: 'Avvia benchmark' }).click();
     await expect(h1(page, /Qwen3-0\.6B/)).toBeVisible({ timeout: 120_000 });
 
-    // Compare the two: the older one is "Prima", the newer one "Ora".
+    // Compare the two: "Confronta" on each, then the tray; the older one is A.
     await page.getByRole('navigation', { name: 'Navigazione principale' }).getByRole('link', { name: 'Risultati' }).click();
     await expect(page.getByText('2 risultati')).toBeVisible();
-    const rows = page.getByRole('checkbox', { name: /Seleziona Qwen3/ });
-    await rows.nth(0).click();
-    await rows.nth(1).click();
-    await page.getByRole('button', { name: 'Confronta', exact: true }).click();
+    const toggles = page.getByRole('button', { name: /^Confronta Qwen3/ });
+    await toggles.nth(0).click();
+    await toggles.nth(1).click();
+    await page.getByRole('region', { name: 'Da confrontare' }).getByRole('button', { name: 'Confronta', exact: true }).click();
     await expect(h1(page, 'Confronta')).toBeVisible();
-    const cmp = page.getByRole('table', { name: 'Confronta' });
-    await expect(cmp.getByText('A · Prima')).toBeVisible();
-    await expect(cmp.getByRole('row', { name: /Lettura del contesto a 2\.048 token/ })).toContainText(/volte più veloce/);
-    await expect(cmp.getByRole('row', { name: /Attesa prima risposta a 2\.048 token/ })).toContainText(/volte più breve|−\d+%/);
+    const cmp = page.getByRole('table', { name: 'Confronto misura per misura' });
+    const read = cmp.getByRole('row', { name: /Lettura del contesto a 2\.048 token/ });
+    await expect(read).toContainText('il più veloce');
+    await expect(read).toContainText(/volte più lento/);
+    await expect(cmp.getByRole('row', { name: /Attesa prima risposta a 2\.048 token/ })).toContainText(/volte più tempo|\+\d+%/);
     await expect(cmp.getByRole('row', { name: /Contesto tenuto in memoria/ })).toContainText('uguale');
     await scan(page, 'compare long conversations');
 
@@ -88,10 +89,11 @@ test('long conversations: run them, read the cache reuse and the queue, compare 
     await expect.poll(() => (existsSync(file) ? readFileSync(file, 'utf8').length : 0)).toBeGreaterThan(500);
     const sheet = readFileSync(file, 'utf8');
     expect(sheet).toContain('# Assistente E2E: ');
-    for (const heading of ['Il servizio', 'Modello e configurazione', 'Velocità e tempi di attesa', 'Il contesto si legge una volta sola', 'Come funziona la coda', 'Contesto tenuto in memoria', 'Confronto con la configurazione precedente', 'Glossario']) {
+    for (const heading of ['Il servizio', 'Modello e configurazione', 'Velocità e tempi di attesa', 'Il contesto si legge una volta sola', 'Come funziona la coda', 'Contesto tenuto in memoria', 'Confronto con le altre configurazioni', 'Glossario']) {
       expect(sheet).toContain(`## ${heading}`);
     }
-    expect(sheet).toMatch(/\| Lettura del contesto a 2\.048 token \| .* \| .* \| \d+(,\d)? volte più veloce \|/);
+    expect(sheet).toMatch(/\| Lettura del contesto a 2\.048 token \| .* \| .* \| B · Qwen3-0\.6B.*: \d+(,\d)? volte più veloce \|/);
+    expect(sheet).toContain('(questa scheda)');
     expect(sheet).toContain('http://gpu:8080/v1');
     expect(sheet).not.toContain('password123');
     expect(sheet).toContain('llama-server');

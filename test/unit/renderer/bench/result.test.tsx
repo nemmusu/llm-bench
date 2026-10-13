@@ -67,7 +67,11 @@ describe('result overview', () => {
     expect(screen.getByText(/llama-server\.exe \(PID 18244, 2,3 GB\)/)).toBeTruthy();
     const kpis = screen.getByRole('region', { name: 'Numeri principali' });
     expect(within(kpis).getByText(/misurato sul motore · stima 6,7 GB · su 31,8 GB/)).toBeTruthy();
-    expect(within(kpis).getByText('16 utenti')).toBeTruthy();
+    // Every speed with what it was measured on: the prompt it read, the context it wrote with, the users.
+    expect(within(kpis).getByText(/^scrittura con 512 token già nel contesto · ≈ \d+ parole\/s/)).toBeTruthy();
+    expect(within(kpis).getByText('lettura di un prompt da 512 token')).toBeTruthy();
+    expect(within(kpis).getByText(/^dopo un prompt da 512 token/)).toBeTruthy();
+    expect(within(kpis).getByText('con 16 utenti insieme, prompt da 512 token ciascuno')).toBeTruthy();
     expect(within(kpis).getByText(/disco ~/)).toBeTruthy();
 
     await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(3));
@@ -236,9 +240,15 @@ describe('how it was started', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(api.settings.expertMode).toBe(false);
     act(() => router.history.back());
-    await userEvent.click(await screen.findByRole('button', { name: 'Confronta con…' }));
+    // Into the comparison: the tray asks for at least one more, and opens the list to pick it from.
+    const toggle = await screen.findByRole('button', { name: /^Confronta Mistral Small/ });
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    const tray = screen.getByRole('region', { name: 'Da confrontare' });
+    await userEvent.click(within(tray).getByRole('button', { name: 'Scegli gli altri' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/compare'));
-    expect(router.state.location.search).toEqual({ a: IDS.quick });
+    expect(router.state.location.search).toEqual({ view: 'runs' });
+    expect(await screen.findByText('Scelto 1 su 4: scegline almeno un altro')).toBeTruthy();
   });
 
   it('starts only the server with the run’s exact settings: confirmation, address, stop', async () => {

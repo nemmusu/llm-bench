@@ -227,15 +227,17 @@ describe('Risultati → Configurazioni', () => {
   it('the Test list says what each user got, when the test measured it', async () => {
     const api = world();
     const list = summaries(api.world.runs).map((s) =>
-      s.id === IDS.gemma ? { ...s, parallelTps: undefined, parallelPerUserTps: undefined } : s.id === IDS.moe ? { ...s, parallelPerUserTps: undefined } : s,
+      s.id === IDS.gemma ? { ...s, parallelTps: undefined, parallelPerUserTps: undefined, parallelPromptTokens: undefined } : s.id === IDS.moe ? { ...s, parallelPerUserTps: undefined } : s,
     );
     api.world.routes['GET /api/runs'] = () => list;
     renderApp('/results', api);
     const gemma = (await screen.findByRole('link', { name: /Gemma 4 31B/ })).closest('tr')!;
     expect(within(gemma).getByText('4 utenti')).toBeTruthy();
     expect(within(gemma).queryByText(/in tutto/)).toBeNull();
+    // With the prompt each user sent (the context of those speeds), the numbers in the header's unit.
     const moe = screen.getByRole('link', { name: /Qwen3 30B A3B/ }).closest('tr')!;
-    expect(within(moe).getByText(/^[\d.]+ tok\/s in tutto$/)).toBeTruthy();
+    expect(within(moe).getByText('4 utenti · prompt da 512 token')).toBeTruthy();
+    expect(within(moe).getByText(/^[\d.]+ in tutto$/)).toBeTruthy();
   });
 
   it('empty, loading, failing; a test that cannot be read', async () => {

@@ -15,9 +15,9 @@ export function exerciseFormatters(option: unknown): string[] {
     if (typeof node === 'function') {
       const fn = node as Fn;
       if (key === 'formatter') {
-        // Axis-tooltip formatters get the hovered points; label formatters a value or a param object.
-        const points = [0, 1, 2].map((i) => ({ seriesIndex: i, data: [1, 50] }));
-        const gaps = [0, 1, 2].map((i) => ({ seriesIndex: i, data: [1, null] }));
+        // Axis-tooltip formatters get the hovered points (the first category: index 0, value 12); label formatters a value or a param object.
+        const points = [0, 1, 2].map((i) => ({ seriesIndex: i, dataIndex: 0, seriesName: `S${i}`, color: '#000', value: 12, data: [1, 50] }));
+        const gaps = [0, 1, 2].map((i) => ({ seriesIndex: i, dataIndex: 0, seriesName: `S${i}`, color: '#000', value: null, data: [1, null] }));
         for (const arg of [points, gaps, 3, { value: [4, 40] }]) {
           try {
             out.push(String(fn(arg)));

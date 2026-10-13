@@ -1,289 +1,108 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Equal, Share2 } from 'lucide-react';
-import { useCallback, useState, type ReactNode } from 'react';
-import type { RunResult, RunSummary } from '../../contract/results';
-import { concurrencyPairs, decodePairs, pairBarsOption, pairLinesOption, type PairSeries } from '../components/bench/compare-charts';
-import { diffRows, metricRows, type MetricRow } from '../components/bench/compare-rows';
-import { rowWords } from '../components/bench/compare-words';
+import { useEffect, useMemo, useState } from 'react';
+import { itemOf } from '../components/compare/compare-model';
+import { entryOfRun, entryOfSummary } from '../components/compare/compare-entries';
+import { CompareStart, type StartView } from '../components/compare/compare-start';
+import { Comparison } from '../components/compare/compare-view';
 import { ErrorCard } from '../components/bench/error-card';
-import { engineLabelOf, modelLabelOf, prettyEngineLabel, shortGpuName, summaryModelLabel } from '../components/bench/format';
-import { SheetDialog } from '../components/bench/sheet-dialog';
-import { ChartCard } from '../components/charts/chart-card';
-import { EChart } from '../components/charts/echart';
-import type { ChartTokens } from '../components/charts/echarts';
 import { Page } from '../components/shell/page';
 import { Button } from '../components/ui/button';
-import { Card, CardHeader, CardTitle } from '../components/ui/card';
-import { Select } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
-import { Switch } from '../components/ui/switch';
 import { useI18n } from '../i18n';
-import { cn } from '../lib/cn';
-import { apiErrorData, useRun, useRuns } from '../lib/queries-runs';
+import { COMPARE_MAX, idsOf, parseIds, sameRef, setCompareSelection, useCompareSelection, type CompareRef } from '../lib/compare-selection';
+import { useRunsById } from '../lib/queries-compare';
+import { apiErrorData, useRuns } from '../lib/queries-runs';
 
+/**
+ * /compare?ids=A,B~2,C&at=4096          two to four items (a run, or "run~combination"), compared at 4K
+ * /compare?view=models | view=runs      the start screen: pick models, or tests
+ * /compare?a=A&b=B                      older links: the same as ids=A,B
+ */
 export interface CompareSearch {
-  a?: string;
-  b?: string;
+  ids?: string;
+  at?: number;
+  view?: StartView;
 }
 
-/** Router search validation for /compare?a=…&b=… */
+const text = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/** Router search validation: tokens checked and capped at four, a positive depth, a known view. */
 export function validateCompareSearch(search: Record<string, unknown>): CompareSearch {
-  const pick = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-  const a = pick(search.a);
-  const b = pick(search.b);
-  return { ...(a ? { a } : {}), ...(b ? { b } : {}) };
+  const ids = idsOf(parseIds(text(search.ids) ?? [text(search.a), text(search.b)].filter(Boolean).join(',')));
+  const at = Number(search.at);
+  const view = search.view === 'models' || search.view === 'runs' ? search.view : undefined;
+  return { ...(ids ? { ids } : {}), ...(Number.isInteger(at) && at > 0 ? { at } : {}), ...(view ? { view } : {}) };
 }
 
-function Head({ children, className }: { children: ReactNode; className?: string }) {
-  return <th scope="col" className={cn('h-10 border-b border-border px-4 text-right text-xs font-medium text-fg-3 first:pl-card first:text-left last:pr-card', className)}>{children}</th>;
-}
-
-/** The difference in words: "2,2 volte più veloce", "+16%", "−54%", "prima riletto da capo, ora 1,00 s". */
-function Delta({ row }: { row: MetricRow }) {
+/** Two to four items from the address: loaded, then compared. */
+function CompareItems({ refs, at }: { refs: CompareRef[]; at: number | undefined }) {
   const f = useI18n();
   const { t } = f;
-  const d = rowWords(row, f);
-  if (!d) return <span className="text-fg-3">–</span>;
-  if (d.direction === 'same')
+  const navigate = useNavigate();
+  const ids = useMemo(() => [...new Set(refs.map((r) => r.runId))], [refs]);
+  const { runs, failed } = useRunsById(ids);
+  const items = useMemo(() => (runs.every(Boolean) ? refs.map((r) => itemOf(runs[ids.indexOf(r.runId)]!, r)) : undefined), [runs, refs, ids]);
+  // The picks follow what is compared, so Risultati and the tray show the same items.
+  useEffect(() => {
+    if (items) setCompareSelection(items.map((it) => entryOfRun(it.run, it.comboIndex, f)));
+  }, [items, f]);
+  const go = (next: CompareRef[], depth = at) =>
+    void navigate({ to: '/compare', search: next.length >= 2 ? { ids: idsOf(next), ...(depth === undefined ? {} : { at: depth }) } : { view: 'runs' as const }, replace: true });
+  if (failed) {
+    const missing = ids[failed.index]!;
     return (
-      <span className="inline-flex items-center gap-1 text-fg-3">
-        <Equal aria-hidden className="size-3.5" />
-        {t('compare.same')}
-      </span>
+      <ErrorCard
+        error={apiErrorData(failed.error)}
+        extra={
+          <Button size="sm" onClick={() => go(refs.filter((r) => r.runId !== missing))}>
+            {t('compare.removeMissing')}
+          </Button>
+        }
+      />
     );
-  return (
-    <span className={cn('inline-flex items-center gap-1 font-medium', d.good ? 'text-success-text' : 'text-danger-text')}>
-      {d.direction === 'up' ? <ArrowUpRight aria-hidden className="size-3.5" /> : <ArrowDownRight aria-hidden className="size-3.5" />}
-      {d.text}
-      <span className="sr-only">({d.good ? t('compare.better') : t('compare.worse')})</span>
-    </span>
-  );
+  }
+  if (!items) return <Skeleton className="h-96 w-full" />;
+  const onItems = (next: CompareRef[]) => {
+    // What stays picked when this page is left for the list (fewer than two): the items still in it.
+    setCompareSelection(items.filter((it) => next.some((r) => sameRef(r, it.ref))).map((it) => entryOfRun(it.run, it.comboIndex, f)));
+    go(next);
+  };
+  return <Comparison items={items} at={at} onDepth={(d) => go(refs, d)} onItems={onItems} onAdd={() => void navigate({ to: '/compare', search: { view: 'runs' } })} />;
 }
 
-function runOption(r: RunSummary, dateTime: (iso: string) => string) {
-  return { value: r.id, label: `${summaryModelLabel(r)} · ${prettyEngineLabel(r.engineLabel)} · ${dateTime(r.createdAt)}`, description: shortGpuName(r.gpuName) };
-}
-
-/** Two pickers when the page is opened without both runs. */
-function Pickers({ search }: { search: CompareSearch }) {
-  const { t, dateTime } = useI18n();
-  const navigate = useNavigate();
-  const runs = useRuns();
-  const list = (runs.data ?? []).filter((r) => r.status === 'completed');
-  const go = (next: CompareSearch) => void navigate({ to: '/compare', search: next, replace: true });
-  const options = list.map((r) => runOption(r, dateTime));
-  return (
-    <Card className="flex flex-col gap-4 p-card">
-      <p className="text-sm text-fg-2">{t('compare.pickBody')}</p>
-      {runs.isPending ? (
-        <Skeleton className="h-10 w-full" />
-      ) : list.length < 2 ? (
-        <p className="text-sm text-fg-3">{t('compare.notEnough')}</p>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Select aria-label={t('compare.pickA')} value={search.a ?? ''} onValueChange={(v) => go({ ...search, a: v })} options={options} />
-          <Select aria-label={t('compare.pickB')} value={search.b ?? ''} onValueChange={(v) => go({ ...search, b: v })} options={options} />
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function PairChart({ title, help, series, kind, nameA, nameB, format, xLabel, xName }: {
-  title: string;
-  help: string;
-  series: PairSeries;
-  kind: 'bars' | 'lines';
-  nameA: string;
-  nameB: string;
-  format: (v: number) => string;
-  xLabel: (v: number) => string;
-  xName: string;
-}) {
-  const build = useCallback(
-    (tk: ChartTokens) => (kind === 'bars' ? pairBarsOption : pairLinesOption)(tk, series, { nameA, nameB, format, xLabel, xName }),
-    [kind, series, nameA, nameB, format, xLabel, xName],
-  );
-  const cell = (v: number | null) => (v === null ? '–' : format(v));
-  return (
-    <ChartCard
-      title={title}
-      help={help}
-      table={{ columns: [xName, nameA, nameB], numeric: [0, 1, 2], rows: series.x.map((x, i) => [xLabel(x), cell(series.a[i]!), cell(series.b[i]!)]) }}
-    >
-      <EChart build={build} height={260} label={title} />
-    </ChartCard>
-  );
-}
-
-function Comparison({ a, b }: { a: RunResult; b: RunResult }) {
+/** Items in the address but not picked (an older "?a=" link, a single item): they join the picks. */
+function useAdoptRefs(refs: CompareRef[]) {
   const f = useI18n();
-  const { t, number, integer } = f;
-  const navigate = useNavigate();
-  const [onlyDiff, setOnlyDiff] = useState(false);
-  const [sheet, setSheet] = useState(false);
-  // An older A and a newer B read as "Prima" and "Ora", like a before/after page.
-  const ordered = Date.parse(a.createdAt) < Date.parse(b.createdAt);
-  const cell = (r: MetricRow, v: number | undefined, reread: boolean | undefined) =>
-    v === undefined ? '–' : reread ? `${t('longConversations.compare.reread')} (${r.format(v)})` : r.format(v);
-  const metrics = metricRows(a, b, f);
-  const diffs = diffRows(a, b, f);
-  const shown = onlyDiff ? diffs.filter((d) => d.differs) : diffs;
-  const title = (r: RunResult, letter: string) => (
-    <span className="flex flex-col items-end gap-0.5">
-      <span className="text-2xs font-semibold tracking-wide text-accent-text uppercase">{letter}</span>
-      <span className="text-sm font-semibold text-fg">{modelLabelOf(r.model)}</span>
-      <span className="font-normal">{engineLabelOf(r.engine)}</span>
-      <span className="font-normal">{f.dateTime(r.createdAt)}</span>
-    </span>
-  );
-  const nameA = `A · ${modelLabelOf(a.model)}`;
-  const nameB = `B · ${modelLabelOf(b.model)}`;
-  const decode = decodePairs(a, b);
-  const conc = concurrencyPairs(a, b);
-  const tps1 = useCallback((v: number) => `${number(v, 1)} tok/s`, [number]);
-  const tps0 = useCallback((v: number) => `${integer(v)} tok/s`, [integer]);
-  const groups = ['engine', 'model', 'params', 'system'] as const;
-  return (
-    <div className="flex flex-col gap-section">
-      <Card className="overflow-x-auto">
-        <table className="w-full border-separate border-spacing-0 text-sm">
-          <caption className="sr-only">{t('compare.title')}</caption>
-          <thead>
-            <tr>
-              <Head>{t('compare.metric')}</Head>
-              <Head>{title(a, ordered ? `A · ${t('longConversations.compare.before')}` : 'A')}</Head>
-              <Head>{title(b, ordered ? `B · ${t('longConversations.compare.now')}` : 'B')}</Head>
-              <Head>{t('compare.difference')}</Head>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map((r) => (
-              <tr key={r.id} className="hover:bg-surface-2">
-                <th scope="row" className="h-row border-b border-border px-4 pl-card text-left font-medium">
-                  {r.label}
-                </th>
-                <td className="h-row border-b border-border px-4 text-right tabular-nums">{cell(r, r.a, r.reread?.a)}</td>
-                <td className="h-row border-b border-border px-4 text-right tabular-nums">{cell(r, r.b, r.reread?.b)}</td>
-                <td className="h-row border-b border-border px-4 pr-card text-right tabular-nums">
-                  <Delta row={r} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-
-      {(decode.x.length > 0 || conc.x.length > 0) && (
-        <div className="grid gap-section lg:grid-cols-2">
-          {decode.x.length > 0 && (
-            <PairChart
-              title={t('compare.chartDecode')}
-              help={t('compare.chartDecodeHelp')}
-              series={decode}
-              kind="bars"
-              nameA={nameA}
-              nameB={nameB}
-              format={tps1}
-              xLabel={integer}
-              xName={t('result.promptTokens')}
-            />
-          )}
-          {conc.x.length > 0 && (
-            <PairChart
-              title={t('compare.chartConcurrency')}
-              help={t('compare.chartConcurrencyHelp')}
-              series={conc}
-              kind="lines"
-              nameA={nameA}
-              nameB={nameB}
-              format={tps0}
-              xLabel={integer}
-              xName={t('result.users')}
-            />
-          )}
-        </div>
-      )}
-
-      <Card className="overflow-hidden">
-        <CardHeader className="items-center pb-3">
-          <CardTitle>{t('compare.params')}</CardTitle>
-          <label className="flex items-center gap-2 text-sm font-medium text-fg">
-            <Switch checked={onlyDiff} onCheckedChange={setOnlyDiff} />
-            {t('compare.onlyDiff')}
-          </label>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0 text-sm">
-            <caption className="sr-only">{t('compare.params')}</caption>
-            <thead>
-              <tr>
-                <Head>{t('compare.parameter')}</Head>
-                <Head>A</Head>
-                <Head>B</Head>
-              </tr>
-            </thead>
-            {groups.map((g) => {
-              const rows = shown.filter((d) => d.group === g);
-              if (!rows.length) return null;
-              return (
-                <tbody key={g}>
-                  <tr>
-                    <th scope="colgroup" colSpan={3} className="bg-surface-2/60 px-card py-1.5 text-left text-2xs font-semibold tracking-wide text-fg-3 uppercase">
-                      {t(`compare.groups.${g}`)}
-                    </th>
-                  </tr>
-                  {rows.map((d) => (
-                    <tr key={`${g}-${d.label}`} className={cn(d.differs && 'bg-warning-soft/60')}>
-                      <th scope="row" className="h-row border-b border-border px-4 pl-card text-left font-medium">
-                        {d.label}
-                        {d.differs && <span className="sr-only"> ({t('compare.differs')})</span>}
-                      </th>
-                      <td className={cn('h-row border-b border-border px-4 text-right font-mono text-xs break-all', d.differs && 'font-semibold text-fg')}>{d.a}</td>
-                      <td className={cn('h-row border-b border-border px-4 pr-card text-right font-mono text-xs break-all', d.differs && 'font-semibold text-fg')}>{d.b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              );
-            })}
-          </table>
-          {shown.length === 0 && <p className="px-card py-6 text-center text-sm text-fg-3">{t('compare.noDiff')}</p>}
-        </div>
-      </Card>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="ghost" onClick={() => void navigate({ to: '/compare', search: { a: b.id, b: a.id }, replace: true })}>
-          <ArrowLeftRight aria-hidden />
-          {t('compare.swap')}
-        </Button>
-        <Button onClick={() => setSheet(true)}>
-          <Share2 aria-hidden />
-          {t('sheet.open')}
-        </Button>
-      </div>
-      <SheetDialog open={sheet} onOpenChange={setSheet} run={b} before={a} />
-    </div>
-  );
+  const runs = useRuns();
+  const { items } = useCompareSelection();
+  useEffect(() => {
+    const add = refs
+      .filter((r) => !items.some((e) => sameRef(e, r)))
+      .flatMap((r) => (runs.data ?? []).filter((s) => s.id === r.runId).map((s) => ({ ...entryOfSummary(s, f), ...(r.combo === undefined ? {} : { combo: r.combo }) })))
+      .slice(0, COMPARE_MAX - items.length);
+    if (add.length) setCompareSelection([...items, ...add]);
+  }, [runs.data, refs, items, f]);
 }
 
-/** Side-by-side comparison of two runs: deltas, overlaid charts, every different setting. */
+function Start({ refs, view }: { refs: CompareRef[]; view: StartView | undefined }) {
+  const navigate = useNavigate();
+  const sel = useCompareSelection();
+  useAdoptRefs(refs);
+  // Something already picked: the tests to add to it; nothing yet: the models. Chosen once, not at every pick.
+  const [initial] = useState<StartView>(() => (sel.items.length || refs.length ? 'runs' : 'models'));
+  const shown = view ?? initial;
+  return <CompareStart view={shown} onView={(v) => void navigate({ to: '/compare', search: { view: v }, replace: true })} />;
+}
+
+/** "Confronta": from two to four models or tests side by side, at the same measured context. */
 export function ComparePage() {
   const { t } = useI18n();
   const search = useSearch({ from: '/compare' });
-  const a = useRun(search.a);
-  const b = useRun(search.b);
-  const failed = a.isError ? a.error : b.isError ? b.error : undefined;
+  const refs = useMemo(() => parseIds(search.ids), [search.ids]);
+  const comparing = refs.length >= 2 && !search.view;
   return (
-    <Page title={t('compare.title')} subtitle={t('compare.subtitle')} width="wide">
-      <div className="flex flex-col gap-section">
-        <Pickers search={search} />
-        {failed ? (
-          <ErrorCard error={apiErrorData(failed)} />
-        ) : a.data && b.data ? (
-          <Comparison a={a.data} b={b.data} />
-        ) : search.a && search.b ? (
-          <Skeleton className="h-64 w-full" />
-        ) : null}
-      </div>
+    <Page title={t('compare.title')} subtitle={comparing ? t('compare.subtitle', { n: refs.length }) : t('compare.startSubtitle')} width="wide">
+      {comparing ? <CompareItems refs={refs} at={search.at} /> : <Start refs={refs} view={search.view} />}
     </Page>
   );
 }

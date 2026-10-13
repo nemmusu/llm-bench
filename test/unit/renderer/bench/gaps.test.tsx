@@ -5,7 +5,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { StartRunRequest } from '../../../../src/contract/api';
 import type { DownloadJob } from '../../../../src/contract/models';
 import type { RunResult } from '../../../../src/contract/results';
-import { diffRows } from '../../../../src/renderer/components/bench/compare-rows';
 import { peakConcurrency } from '../../../../src/renderer/components/bench/format';
 import { filterRuns, NO_FILTERS } from '../../../../src/renderer/components/bench/history';
 import { kpisOf } from '../../../../src/renderer/components/bench/kpis';
@@ -17,6 +16,8 @@ import { reportOf } from '../../../../src/renderer/lib/export/report';
 import { ApiError } from '../../../../src/renderer/lib/api';
 import { apiErrorData } from '../../../../src/renderer/lib/queries-runs';
 import { processList } from '../../../../src/renderer/components/bench/start-flow';
+import { diffRows } from '../../../../src/renderer/components/compare/compare-diff';
+import { itemOf } from '../../../../src/renderer/components/compare/compare-model';
 import { renderApp } from '../helpers';
 import { exerciseFormatters } from './charts';
 import { IDS, seeded, summaries } from './fixtures';
@@ -49,13 +50,6 @@ const start = () => userEvent.click(screen.getByRole('button', { name: 'Avvia be
 const posted = (api: ReturnType<typeof benchApi>, path: string) => api.calls.filter((c) => c.method === 'POST' && c.path === path);
 const notInstalled = () => benchApi().world.engines.map((e) => (e.kind === 'llamacpp-native' ? { ...e, installed: false, available: false } : e));
 const job = (over: Partial<DownloadJob> = {}): DownloadJob => ({ id: 'j', label: 'g', files: [], dest: 'x', state: 'running', bytesDone: 0, createdAt: '2026-10-06T00:00:00.000Z', ...over });
-
-async function choose(combobox: string, option: string | RegExp) {
-  const trigger = await screen.findByRole('combobox', { name: combobox });
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: 'Enter' });
-  fireEvent.click(await screen.findByRole('option', { name: option }));
-}
 
 describe('pure edge cases', () => {
   it('helpers with missing values', () => {
@@ -90,7 +84,7 @@ describe('pure edge cases', () => {
       [bare, full],
       [full, bare],
     ] as const) {
-      const rows = diffRows(a, b, it_);
+      const rows = diffRows([itemOf(a), itemOf(b)], it_);
       expect(rows.find((r) => r.label === 'Argomenti extra')?.differs).toBe(true);
       expect(rows.find((r) => r.label === 'Variabili d’ambiente')?.differs).toBe(true);
       expect(rows.find((r) => r.label === 'Driver')?.differs).toBe(true);
@@ -476,14 +470,14 @@ describe('results and result: odd data', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('compare a full run with a quick one: missing numbers have no difference', async () => {
+  it('compare a full run with a quick one: a number only one of them measured has no winner', async () => {
     const { router } = renderApp(`/compare?a=${IDS.full}&b=${IDS.quick}`, benchApi());
-    const table = await screen.findByRole('table', { name: 'Confronta' });
+    const table = await screen.findByRole('table', { name: 'Confronto misura per misura' });
     const cold = within(table).getByRole('row', { name: /Caricamento a freddo/ });
-    expect(within(cold).getAllByText('–')).toHaveLength(2);
-    act(() => void router.navigate({ to: '/compare', search: { a: IDS.quick, b: IDS.full } }));
-    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronta' })).getAllByRole('row', { name: /Caricamento a freddo/ })).toHaveLength(1));
-    await choose('Risultato A', /Gemma/);
-    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronta' })).getByRole('row', { name: /Caricamento a freddo/ }).textContent).toContain('3,2 volte più breve'));
+    expect(within(cold).getByText('non misurato')).toBeTruthy();
+    expect(within(cold).queryByText(/il più|volte/)).toBeNull();
+    act(() => void router.navigate({ to: '/compare', search: { ids: `${IDS.gemma},${IDS.full}` } }));
+    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Confronto misura per misura' })).getByRole('row', { name: /Caricamento a freddo/ }).textContent).toContain('3,2 volte più tempo'));
+    expect(within(screen.getByRole('table', { name: 'Confronto misura per misura' })).getByRole('row', { name: /Caricamento a freddo/ }).textContent).toContain('il più breve');
   });
 });

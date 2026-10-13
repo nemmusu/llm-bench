@@ -1,9 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { RunResult } from '../../../../src/contract/results';
 import { summarize } from '../../../../src/core/bench/stats';
-import { commonDepth, deltaWords, longConversationRows, rowWords, type WordsRow } from '../../../../src/renderer/components/bench/compare-words';
+import { deltaWords } from '../../../../src/renderer/components/bench/compare-words';
 import { formFromScenario, scenarioFromForm, DEFAULT_SCENARIO_FORM } from '../../../../src/renderer/components/bench/expert-form';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
 import { relevantPhases } from '../../../../src/renderer/components/bench/phases';
@@ -171,78 +170,27 @@ describe('differences in words', () => {
     expect(words(100, 100.2, true, 'speed')?.direction).toBe('same');
     expect(deltaWords(undefined, 5, { higherIsBetter: true, kind: 'speed' }, it_)).toBeUndefined();
   });
-
-  it('long-conversation rows at the deepest depth both runs measured, "prima riletto da capo"', () => {
-    const { before, now } = teamRuns();
-    const rows = longConversationRows(before, now, it_);
-    expect(rows.map((r) => r.label)).toEqual([
-      'Lettura del contesto a 200.000 token',
-      'Velocità di scrittura a 200.000 token',
-      'Contesto tenuto in memoria',
-      'Attesa prima risposta a 200.000 token',
-      'Attesa risposte successive a 200.000 token',
-      'Contesto riusato a 200.000 token',
-    ]);
-    const text = (id: string) => rowWords(rows.find((r) => r.id === id) as WordsRow, it_)?.text;
-    expect(text('readAt')).toBe('2,2 volte più veloce');
-    expect(text('writeAt')).toBe('+16%');
-    expect(text('kvCapacity')).toBe('2,2 volte di più');
-    expect(text('firstWaitAt')).toBe('2,2 volte più breve');
-    expect(text('laterWaitAt')).toBe('prima riletto da capo, ora 1,00 s');
-    expect(rowWords(rows.find((r) => r.id === 'laterWaitAt') as WordsRow, it_)?.good).toBe(true);
-    // The other way round: now the context is re-read.
-    const back = longConversationRows(now, before, it_).find((r) => r.id === 'laterWaitAt') as WordsRow;
-    expect(rowWords(back, it_)).toMatchObject({ text: 'prima 1,00 s, ora riletto da capo', good: false, direction: 'up' });
-    expect(rows.find((r) => r.id === 'kvCapacity')?.format(889_820)).toBe('889.820 token');
-    expect(rows.find((r) => r.id === 'reuseAt')?.format(0.997)).toBe('99,7%');
-  });
-
-  it('equal depth only: different conversations fall back to the context sweep, never extrapolated', () => {
-    const { before, now } = teamRuns();
-    const shorter = withSessions(now, 'short', NOW_POINTS.map((p) => ({ ...p, depth: 32_000 })), undefined, now.createdAt);
-    expect(commonDepth(before, shorter)).toBeUndefined();
-    // Nearly equal depths (contexts of the same size, different margins) count as the same grid depth.
-    const at = (depth: number) => withSessions(now, String(depth), NOW_POINTS.map((p) => ({ ...p, depth })), undefined, now.createdAt);
-    expect(commonDepth(at(32_496), at(32_624))?.depth).toBe(32_768);
-    expect(longConversationRows(before, shorter, it_).map((r) => r.id)).toEqual(['kvCapacity']);
-    const sweep = (run: RunResult, depths: number[]) => ({ ...run, metrics: { ...run.metrics, contextSweep: depths.map((d) => ({ ...seeded(IDS.full).metrics.latency[0]!, promptTokens: d })) } });
-    const a = sweep(seeded(IDS.full), [1024, 4096, 32_624]);
-    const b = sweep(seeded(IDS.moe), [1024, 4096, 8192]);
-    expect(commonDepth(a, b)?.depth).toBe(4096);
-    const rows = longConversationRows(a, b, it_);
-    expect(rows.map((r) => r.id)).toEqual(['readAt', 'writeAt', 'firstWaitAt']);
-    expect(rows[0]?.label).toBe('Lettura del contesto a 4.096 token');
-    // A deeper sweep point wins over shallower conversations.
-    const both = sweep(now, [262_144]);
-    const both2 = sweep(before, [262_144]);
-    expect(commonDepth(both2, both)?.depth).toBe(262_144);
-    // Nothing comparable at all.
-    expect(longConversationRows(seeded(IDS.quick), seeded(IDS.full), it_)).toEqual([]);
-    // One side without reuse data: plain numbers.
-    const noShare = withSessions(now, 'ns', [sessionsPoint({ sessions: 1, laterTurns: { ttftMs: summarize([]), decodeTps: summarize([]) } })], undefined, now.createdAt);
-    const plain = longConversationRows(before, noShare, it_);
-    expect(longConversationRows(noShare, before, it_).find((r) => r.id === 'reuseAt')).toMatchObject({ a: undefined, b: 0 });
-    expect(plain.find((r) => r.id === 'laterWaitAt')?.b).toBeUndefined();
-    expect(plain.find((r) => r.id === 'reuseAt')?.b).toBeUndefined();
-  });
 });
 
 describe('Compare page with long conversations', () => {
-  it('shows the differences in words, "Prima" and "Ora", and saves the sheet with the comparison', async () => {
+  it('the waits and the reuse in words at the same depth, and the sheet about one of them with the whole comparison', async () => {
     const { before, now } = teamRuns();
     const saveFile = vi.fn(async (o: { defaultName: string }) => `C:\\out\\${o.defaultName}`);
     (window as { gpubench?: unknown }).gpubench = { saveFile, platform: 'win32', setTitleBarTheme: async () => undefined };
-    renderApp(`/compare?a=${TEAM_IDS.before}&b=${TEAM_IDS.now}`, benchApi({ runs: [...seededRuns(), before, now] }));
-    const table = await screen.findByRole('table', { name: 'Confronta' });
-    expect(within(table).getByText('A · Prima')).toBeTruthy();
-    expect(within(table).getByText('B · Ora')).toBeTruthy();
-    expect(within(table).getByRole('row', { name: /Lettura del contesto a 200\.000 token/ }).textContent).toContain('2,2 volte più veloce');
-    const later = within(table).getByRole('row', { name: /Attesa risposte successive/ });
-    expect(later.textContent).toContain('riletto da capo (4 min 06 s)');
-    expect(later.textContent).toContain('prima riletto da capo, ora 1,00 s');
+    renderApp(`/compare?ids=${TEAM_IDS.before},${TEAM_IDS.now}`, benchApi({ runs: [...seededRuns(), before, now] }));
+    const table = await screen.findByRole('table', { name: 'Confronto misura per misura' });
+    const read = within(table).getByRole('row', { name: /Lettura del contesto a 200\.000 token/ });
+    expect(read.textContent).toContain('2,2 volte più lento');
+    expect(read.textContent).toContain('il più veloce');
+    const later = within(table).getByRole('row', { name: /Attesa risposte successive a 200\.000 token/ });
+    expect(later.textContent).toContain('4 min 06 s · riletto da capo');
+    expect(later.textContent).toContain('1,00 s');
+    expect(within(table).getByRole('row', { name: /Contesto tenuto in memoria/ }).textContent).toContain('2,2 volte di meno');
     await userEvent.click(screen.getByRole('button', { name: 'Scheda da condividere' }));
     const dialog = await screen.findByRole('dialog', { name: 'Scheda da condividere' });
-    expect(within(dialog).getByText(/confronto con A, la configurazione di prima/)).toBeTruthy();
+    expect(within(dialog).getByText(/con il confronto con tutti gli altri/)).toBeTruthy();
+    // The newest by default; the others go in the comparison table.
+    expect(within(dialog).getByRole('combobox', { name: 'La scheda parla di' }).textContent).toContain('B · Qwen3-8B-FP8');
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Nome del servizio' }), 'Assistente del team');
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Indirizzo' }), 'http://admin:segreta@gpu:8000/v1?api_key=sk-abcdefghijklmnop');
     await userEvent.click(within(dialog).getByRole('radio', { name: /Pagina HTML/ }));
@@ -250,20 +198,33 @@ describe('Compare page with long conversations', () => {
     expect(await screen.findByText(/Scheda salvata: C:\\out\\gpubench_scheda_Assistente-del-team_/)).toBeTruthy();
     const saved = saveFile.mock.calls[0]![0] as unknown as { content: string; defaultName: string };
     expect(saved.defaultName).toMatch(/\.html$/);
-    expect(saved.content).toContain('Confronto con la configurazione precedente');
-    expect(saved.content).toContain('prima riletto da capo, ora 1,00 s');
+    expect(saved.content).toContain('Confronto con le altre configurazioni');
+    expect(saved.content).toContain('B · Qwen3-8B-FP8 (questa scheda)');
+    expect(saved.content).toContain('B · Qwen3-8B-FP8: 2,2 volte più veloce');
+    expect(saved.content).toContain('riletto da capo (4 min 06 s)');
     expect(saved.content).toContain('http://gpu:8000/v1?api_key=&lt;REDACTED&gt;');
     expect(saved.content).not.toContain('segreta');
     expect(saved.content).not.toContain('sk-abcdefghijklmnop');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('runs in the other order keep the letters only', async () => {
+  it('a sheet about the older one: it is "questa scheda", the newer one still wins its rows', async () => {
     const { before, now } = teamRuns();
-    renderApp(`/compare?a=${TEAM_IDS.now}&b=${TEAM_IDS.before}`, benchApi({ runs: [...seededRuns(), before, now] }));
-    const table = await screen.findByRole('table', { name: 'Confronta' });
-    expect(within(table).queryByText('A · Prima')).toBeNull();
-    expect(within(table).getByRole('row', { name: /Attesa risposte successive/ }).textContent).toContain('prima 1,00 s, ora riletto da capo');
+    const saveFile = vi.fn(async (o: { defaultName: string }) => `C:\\out\\${o.defaultName}`);
+    (window as { gpubench?: unknown }).gpubench = { saveFile, platform: 'win32', setTitleBarTheme: async () => undefined };
+    renderApp(`/compare?ids=${TEAM_IDS.now},${TEAM_IDS.before}`, benchApi({ runs: [...seededRuns(), before, now] }));
+    await screen.findByRole('table', { name: 'Confronto misura per misura' });
+    await userEvent.click(screen.getByRole('button', { name: 'Scheda da condividere' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Scheda da condividere' });
+    const about = within(dialog).getByRole('combobox', { name: 'La scheda parla di' });
+    about.focus();
+    fireEvent.keyDown(about, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'A · Qwen3-8B-FP8' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva la scheda' }));
+    await waitFor(() => expect(saveFile).toHaveBeenCalled());
+    const md = (saveFile.mock.calls[0]![0] as unknown as { content: string }).content;
+    expect(md).toContain('A · Qwen3-8B-FP8 (questa scheda)');
+    expect(md).toMatch(/\| Lettura del contesto a 200\.000 token \| 1\.763 tok\/s \| 795 tok\/s \| A · Qwen3-8B-FP8: 2,2 volte più veloce \|/);
   });
 });
 

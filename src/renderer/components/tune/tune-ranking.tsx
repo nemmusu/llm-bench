@@ -6,6 +6,9 @@ import { cn } from '../../lib/cn';
 import { UsersTable } from '../bench/concurrency-users';
 import { SweepTable } from '../bench/context-sweep';
 import { MIB_PER_GB } from '../bench/format';
+import { entryOfRun } from '../compare/compare-entries';
+import { CompareToggle } from '../compare/compare-tray';
+import { headerAt } from '../../lib/speed-at';
 import { PresetActions } from '../presets/preset-actions';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
@@ -166,7 +169,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
               <th scope="col" className="h-10 border-b border-border px-3 pb-2 text-left align-bottom text-xs font-medium text-fg-3">
                 {t('tune.columns.settings')}
               </th>
-              {views.map((v) => head(v.column.key, v.column.dir, t(v.header)))}
+              {views.map((v) => head(v.column.key, v.column.dir, v.column.atDepth && depth !== undefined ? headerAt(t(v.header), depth, f) : t(v.header)))}
             </tr>
           </thead>
           <tbody>
@@ -198,6 +201,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
                         </span>
                         <span className="flex flex-wrap items-start gap-2">
                           <PresetActions run={run} combo={r.index} at={depth} layout="compact" />
+                          <CompareToggle entry={entryOfRun(run, r.index, f)} />
                           <Button
                             size="sm"
                             variant="ghost"

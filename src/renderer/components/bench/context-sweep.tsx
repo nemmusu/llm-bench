@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react';
 import { nominalDepth, type LatencyPoint } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { axisName, pointTooltip } from '../../lib/speed-at';
 import { ChartCard } from '../charts/chart-card';
 import { depthLinesOption } from '../charts/depth-lines';
 import { EChart } from '../charts/echart';
@@ -30,7 +31,12 @@ export function ContextSweepChart({ points }: { points: readonly LatencyPoint[] 
           format: (v) => `${metric === 'decode' ? number(v, 1) : integer(v)} tok/s`,
           axis: integer,
           depthLabel: (d) => depthLabel(d, f),
-          xName: t('tune.chart.depth'),
+          xName: axisName('depth', f),
+          // "a 32.768 token di contesto: scrittura 54,6 tok/s, lettura 2.244 tok/s".
+          tooltipText: (d) => {
+            const p = sorted.find((q) => nominalDepth(q.promptTokens) === d)!;
+            return pointTooltip(p.promptTokens, 'depth', { write: p.decodeTps.median, read: prefillStat(p).median }, f);
+          },
         },
       ),
     [sorted, metric, t, number, integer, f],

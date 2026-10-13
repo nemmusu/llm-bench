@@ -4,7 +4,7 @@ import { answerSaveDialog, h1, launchSeeded, scan, skipWelcome, tempFile } from 
 
 test.describe.configure({ timeout: 120_000 });
 
-test('history: filter, compare two runs, export the result and a selection, import, delete', async () => {
+test('history: filter, export the result and a selection, import, delete', async () => {
   const gb = await launchSeeded();
   try {
     const { page } = gb;
@@ -32,28 +32,12 @@ test('history: filter, compare two runs, export the result and a selection, impo
     await page.getByRole('combobox', { name: 'Stato' }).click();
     await page.getByRole('option', { name: 'Tutti gli stati' }).click();
 
-    // Compare: select two rows, then open the comparison.
-    await expect(page.getByRole('button', { name: 'Confronta', exact: true })).toBeDisabled();
-    await page.getByRole('checkbox', { name: /Seleziona Qwen3 30B A3B/ }).click();
-    await page.getByRole('checkbox', { name: /Seleziona Gemma 4 31B/ }).click();
-    await expect(page.getByText('9 risultati · 2 selezionati')).toBeVisible();
-    await page.getByRole('button', { name: 'Confronta', exact: true }).click();
-    await expect(h1(page, 'Confronta')).toBeVisible();
-    const table = page.getByRole('table', { name: 'Confronta' });
-    // A is the older run (Qwen3 30B A3B), B the newer one (Gemma 4 31B, 3,7 times slower): said in words.
-    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('3,7 volte più lento');
-    await expect(page.getByRole('heading', { name: 'Generazione per lunghezza del testo' })).toBeVisible();
-    await page.getByRole('switch', { name: 'Solo le differenze' }).click();
-    await expect(page.getByRole('table', { name: 'Cosa cambia tra i due' })).toContainText('Gemma 4 31B');
-    await scan(page, 'compare');
-    await page.getByRole('button', { name: 'Scambia A e B' }).click();
-    await expect(table.getByRole('row', { name: /Generazione/ })).toContainText('3,7 volte più veloce');
-
-    // Export one result in every format, through the real "Save as" dialog.
-    await page.getByRole('navigation', { name: 'Navigazione principale' }).getByRole('link', { name: 'Risultati' }).click();
-    await expect(h1(page, 'Risultati')).toBeVisible();
+    // Export one result in every format, through the real "Save as" dialog. Its numbers say what they were measured on.
     await page.getByRole('link', { name: /Qwen3 30B A3B/ }).click();
     await expect(h1(page, /Qwen3 30B A3B/)).toBeVisible();
+    const kpis = page.getByRole('region', { name: 'Numeri principali' });
+    await expect(kpis.getByText(/^scrittura con 512 token già nel contesto/)).toBeVisible();
+    await expect(kpis.getByText('lettura di un prompt da 512 token')).toBeVisible();
     const csv = tempFile('result.csv');
     await answerSaveDialog(gb, csv);
     await page.getByRole('button', { name: 'Esporta' }).click();

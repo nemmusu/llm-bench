@@ -96,6 +96,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const vramMiB = recommended?.vramPeakMiB ?? m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
   const context = contextOf(run.launch);
   const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
+  const usersStep = run.scenario.steps.find((s) => s.kind === 'concurrency');
+  const usersPrompt = busiest?.promptTokens ?? (usersStep?.kind === 'concurrency' ? usersStep.promptTokens : undefined);
   return {
     id: run.id,
     createdAt: run.createdAt,
@@ -125,6 +127,9 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(t?.multi ? { tuneUsers: t.multi.users, tunePerUserContext: t.multi.perUserContext } : {}),
     ...(engineBuildOf(e) !== undefined ? { engineBuild: engineBuildOf(e) } : {}),
     ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps, parallelPerUserTps: busiest.perRequestDecodeTpsP50 } : {}),
+    ...(busiest && usersPrompt !== undefined ? { parallelPromptTokens: usersPrompt } : {}),
+    ...(head ? { decodeTokens: head.promptTokens, speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
+    ...(prefill ? { prefillTokens: largest!.promptTokens } : {}),
     validity: run.validity,
     file,
   };

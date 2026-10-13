@@ -37,6 +37,9 @@ export interface LiveState {
   progress: number;
   decodeTps?: number;
   prefillTps?: number;
+  /** The requests the speeds above were measured on (the gauges say it under the number). */
+  decodeAt?: CurrentStep;
+  prefillAt?: CurrentStep;
   ttftMs?: number;
   loadMs?: number;
   log: string[];
@@ -108,8 +111,8 @@ export function liveReducer(s: LiveState, e: ServerEvent, runId: string, now = D
     case 'run.live': {
       if (e.runId !== runId) return s;
       const next = { ...s };
-      if (e.decodeTps !== undefined) next.decodeTps = e.decodeTps;
-      if (e.prefillTps !== undefined) next.prefillTps = e.prefillTps;
+      if (e.decodeTps !== undefined) Object.assign(next, { decodeTps: e.decodeTps, decodeAt: s.current });
+      if (e.prefillTps !== undefined) Object.assign(next, { prefillTps: e.prefillTps, prefillAt: s.current });
       if (e.ttftMs !== undefined) next.ttftMs = e.ttftMs;
       if (e.loadMs !== undefined) next.loadMs = e.loadMs;
       return next;
@@ -135,6 +138,8 @@ export function liveReducer(s: LiveState, e: ServerEvent, runId: string, now = D
         if (e.current.atMs !== s.tuneCurrent?.atMs) {
           delete next.decodeTps;
           delete next.prefillTps;
+          delete next.decodeAt;
+          delete next.prefillAt;
           delete next.ttftMs;
         }
         next.tuneCurrent = e.current;

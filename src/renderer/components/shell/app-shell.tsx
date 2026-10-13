@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
+import { CompareTray } from '../compare/compare-tray';
 import { LibraryEvents } from '../library/library-events';
 import { CommandPalette, usePaletteShortcut } from './command-palette';
 import { Sidebar } from './sidebar';
@@ -77,6 +78,8 @@ export function AppShell() {
             >
               <Outlet />
             </motion.div>
+            {/* What is picked for "Confronta", on every page: stays at the bottom while the page scrolls. */}
+            <CompareTray />
           </main>
         </div>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

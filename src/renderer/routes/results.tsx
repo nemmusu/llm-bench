@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { CircleCheck, Download, GitCompareArrows, ListChecks, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
+import { Download, GitCompareArrows, ListChecks, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
 import { spilledRun, type RunSummary } from '../../contract/results';
@@ -8,7 +8,10 @@ import { ErrorCard } from '../components/bench/error-card';
 import { SpillBadge } from '../components/bench/spill';
 import { countKey, MIB_PER_GB, prettyEngineLabel, shortGpuName } from '../components/bench/format';
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS, type RunFilters } from '../components/bench/history';
+import { CompareToggle } from '../components/compare/compare-tray';
+import { entryOfSummary } from '../components/compare/compare-entries';
 import { ConfigsView } from '../components/configs/configs-view';
+import { NUMERIC, UnitHeader } from '../components/configs/unit-header';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -27,17 +30,13 @@ import { useI18n } from '../i18n';
 import { useApi } from '../lib/api-context';
 import { bundleRequest } from '../lib/export';
 import { saveTextFile } from '../lib/export/save';
+import { contextShort, tokensK } from '../lib/speed-at';
 import { apiErrorData, RUNS_KEY, useBenchSystem, useRuns, useRunsLiveRefresh } from '../lib/queries-runs';
 
 const col = columnHelper<RunSummary>();
 const statusTone = { completed: 'success', failed: 'danger', cancelled: 'neutral' } as const;
 
-/** History of every saved run: filters, sorting, compare two, import/export and delete. */
-/** A unit after a number: smaller and quieter, so the figures line up and stay readable. */
-function Unit({ children }: { children: string }) {
-  return <span className="text-xs font-normal text-fg-3">{children}</span>;
-}
-
+/** History of every saved run: filters, sorting, "Confronta" on every row, import/export and delete. */
 export function ResultsPage() {
   const f = useI18n();
   const { t, number, integer, dateTime } = f;
@@ -91,77 +90,95 @@ export function ResultsPage() {
             <span className="text-xs text-fg-3">
               {t(`benchmark.profiles.${c.row.original.profile}`)}
               {c.row.original.tunedCombinations !== undefined && ` · ${t(countKey(c.row.original.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: c.row.original.tunedCombinations })}`}
+              {/* The GPU Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
+              {c.row.original.score !== undefined && ` · ${t('results.score', { n: integer(c.row.original.score) })}`}
             </span>
           </span>
         ),
       }),
+      // The model, what went wrong (failed, cancelled, shared memory), then engine and card: one column, so the numbers fit.
       col.accessor('modelName', {
         header: t('results.columns.model'),
-        cell: (c) => (
-          <span className="flex flex-col leading-5">
-            <Link
-              to="/results/$runId"
-              params={{ runId: c.row.original.id }}
-              onClick={(e) => e.stopPropagation()}
-              className="self-start rounded-xs font-medium text-fg hover:text-accent-text focus-ring"
-            >
-              {c.getValue()}
-              {c.row.original.quant && !c.getValue().includes(c.row.original.quant) && <span className="font-normal text-fg-3"> {c.row.original.quant}</span>}
-            </Link>
-            <span className="text-xs text-fg-3">{prettyEngineLabel(c.row.original.engineLabel)}</span>
-          </span>
-        ),
+        meta: { className: 'py-1.5' },
+        cell: (c) => {
+          const r = c.row.original;
+          return (
+            <span className="flex flex-col leading-5">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <Link
+                  to="/results/$runId"
+                  params={{ runId: r.id }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded-xs font-medium text-fg hover:text-accent-text focus-ring"
+                >
+                  {c.getValue()}
+                  {r.quant && !c.getValue().includes(r.quant) && <span className="font-normal text-fg-3"> {r.quant}</span>}
+                </Link>
+                {r.status !== 'completed' ? (
+                  <Badge tone={statusTone[r.status]} size="sm" dot>
+                    {t(`result.status.${r.status}`)}
+                  </Badge>
+                ) : (
+                  spilledRun(r) && <SpillBadge />
+                )}
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-fg-3">
+                {prettyEngineLabel(r.engineLabel)} · {shortGpuName(r.gpuName)}
+                {system.data && r.hostId !== system.data.hostId && (
+                  <Badge tone="outline" size="sm" title={r.hostLabel}>
+                    {t('results.otherPc')}
+                  </Badge>
+                )}
+              </span>
+            </span>
+          );
+        },
       }),
-      col.accessor('gpuName', {
-        header: t('results.columns.gpu'),
-        cell: (c) => (
-          <span className="inline-flex items-center gap-2 text-fg-2">
-            {shortGpuName(c.getValue())}
-            {system.data && c.row.original.hostId !== system.data.hostId && (
-              <Badge tone="outline" size="sm" title={c.row.original.hostLabel}>
-                {t('results.otherPc')}
-              </Badge>
-            )}
-          </span>
-        ),
-      }),
-      // Missing measurements (failed or cancelled runs) always sort last.
+      // Missing measurements (failed or cancelled runs) always sort last. Every speed says what it was measured on.
       col.accessor('decodeTps', {
-        header: t('results.columns.decode'),
-        meta: { numeric: true },
+        header: () => <UnitHeader text={t('results.columns.decode')} />,
+        meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
           if (v === undefined) return <span className="text-fg-3">–</span>;
-          const history = decodeHistory(c.row.original, all);
+          const r = c.row.original;
+          const history = decodeHistory(r, all);
           return (
             <span className="inline-flex items-center justify-end gap-3">
-              {history.length > 1 && <Sparkline values={history} width={44} height={18} endDot={false} />}
-              <span className="whitespace-nowrap">
-                <b className="font-semibold">{number(v, 1)}</b> <Unit>tok/s</Unit>
+              {history.length > 1 && (
+                <span className="hidden 2xl:inline-flex">
+                  <Sparkline values={history} width={44} height={18} endDot={false} />
+                </span>
+              )}
+              <span className="flex flex-col items-end leading-5 whitespace-nowrap">
+                <b className="font-semibold">{number(v, 1)}</b>
+                {r.decodeTokens !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'write', tokens: r.decodeTokens, basis: r.speedBasis }, f)}</span>}
               </span>
             </span>
           );
         },
       }),
       col.accessor('prefillTps', {
-        header: t('results.columns.prefill'),
-        meta: { numeric: true },
+        header: () => <UnitHeader text={t('results.columns.prefill')} />,
+        meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
+          const r = c.row.original;
           return v === undefined ? (
-            '–'
+            <span className="text-fg-3">–</span>
           ) : (
-            <span className="whitespace-nowrap">
-              {integer(v)} <Unit>tok/s</Unit>
+            <span className="flex flex-col items-end leading-5 whitespace-nowrap">
+              <span>{integer(v)}</span>
+              {r.prefillTokens !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'read', tokens: r.prefillTokens, basis: r.speedBasis }, f)}</span>}
             </span>
           );
         },
       }),
       col.accessor('contextSize', {
-        header: t('results.columns.context'),
-        meta: { numeric: true },
+        header: () => <UnitHeader text={t('results.columns.context')} />,
+        meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
@@ -170,75 +187,49 @@ export function ResultsPage() {
             <span className="text-fg-3">–</span>
           ) : (
             <span className="flex flex-col items-end leading-5 whitespace-nowrap">
-              <span>
-                {integer(v)} <Unit>{t('results.tokens')}</Unit>
-              </span>
+              <span>{integer(v)}</span>
               {kv && <span className="text-xs text-fg-3">{t('results.tuning.kv', { kv })}</span>}
             </span>
           );
         },
       }),
       col.accessor('parallelUsers', {
-        header: t('results.columns.parallel'),
-        meta: { numeric: true },
+        header: () => <UnitHeader text={t('results.columns.parallel')} />,
+        meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          const { parallelTps: tps, parallelPerUserTps: each } = c.row.original;
+          const { parallelTps: tps, parallelPerUserTps: each, parallelPromptTokens: prompt } = c.row.original;
           if (v === undefined) return <span className="text-fg-3">–</span>;
-          // "4 utenti" / "43 tok/s ciascuno · 155 tok/s in tutto": what each user gets, then everyone together (older runs: what they have).
+          // "4 utenti · prompt da 512 token" / "43 ciascuno · 155 in tutto": what each user gets, then everyone together (older runs: what they have).
           const detail = [each !== undefined ? t('results.usersEach', { tps: integer(each) }) : undefined, tps !== undefined ? t('results.usersTotal', { tps: integer(tps) }) : undefined].filter(Boolean);
           return (
             <span className="flex flex-col items-end leading-5 whitespace-nowrap">
-              <span>{t('results.users', { n: v })}</span>
-              {detail.length > 0 && <span className="text-xs text-fg-3">{detail.join(' · ')}</span>}
+              {detail.length > 0 && <span>{detail.join(' · ')}</span>}
+              <span className="text-xs text-fg-3">{prompt === undefined ? t('results.users', { n: v }) : t('results.usersPrompt', { n: v, prompt: tokensK(prompt, f) })}</span>
             </span>
           );
         },
       }),
       col.accessor('vramPeakMiB', {
-        header: t('results.columns.vram'),
-        meta: { numeric: true },
+        header: () => <UnitHeader text={t('results.columns.vram')} />,
+        meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          return v === undefined ? '–' : `${number(v / MIB_PER_GB, 1)} GB`;
+          return v === undefined ? <span className="text-fg-3">–</span> : number(v / MIB_PER_GB, 1);
         },
       }),
-      col.accessor('score', {
-        header: t('results.columns.score'),
-        meta: { numeric: true },
-        sortUndefined: 'last',
-        cell: (c) => {
-          const v = c.getValue();
-          return v === undefined ? <span className="text-fg-3">–</span> : <b className="font-semibold">{integer(v)}</b>;
-        },
-      }),
-      col.accessor('status', {
-        header: t('results.columns.status'),
-        // Completed is the norm: a quiet check. Only failures, cancellations and runs that spilled to shared memory get a badge.
-        cell: (c) =>
-          c.getValue() === 'completed' && spilledRun(c.row.original) ? (
-            <SpillBadge />
-          ) : c.getValue() === 'completed' ? (
-            <span className="inline-flex text-success-text">
-              <CircleCheck aria-hidden className="size-4" />
-              <span className="sr-only">{t('result.status.completed')}</span>
-            </span>
-          ) : (
-            <Badge tone={statusTone[c.getValue()]} size="sm" dot>
-              {t(`result.status.${c.getValue()}`)}
-            </Badge>
-          ),
+      // "Confronta": always in sight at the end of the row (a failed run measured nothing to compare).
+      col.display({
+        id: 'compare',
+        meta: { className: 'sticky right-0 bg-surface shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.18)] group-hover:bg-surface-2' },
+        header: t('results.columns.compare'),
+        cell: (c) => (c.row.original.status === 'failed' ? null : <CompareToggle compact entry={entryOfSummary(c.row.original, f)} />),
       }),
     ],
-    [t, number, integer, dateTime, selected, toggle, all, system.data],
+    [t, f, number, integer, dateTime, selected, toggle, all, system.data],
   );
-
-  const compare = () => {
-    const [a, b] = [...chosen].sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt));
-    void navigate({ to: '/compare', search: { a: a!.id, b: b!.id } });
-  };
 
   const onImport = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -288,28 +279,33 @@ export function ResultsPage() {
       subtitle={t('results.subtitle')}
       width="wide"
       actions={
-        // Import, export, delete and compare work on tests: the Configurazioni view has its own actions per row.
-        view === 'runs' && (
-          <>
-            <input ref={fileRef} type="file" accept=".gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
-            <Button onClick={() => fileRef.current?.click()}>
-              <Upload aria-hidden />
-              {t('results.import')}
-            </Button>
-            <Button disabled={chosen.length === 0} onClick={() => void onExport()}>
-              <Download aria-hidden />
-              {chosen.length ? t('results.exportSelected', { n: chosen.length }) : t('results.export')}
-            </Button>
-            <Button disabled={chosen.length === 0} variant="danger-outline" onClick={() => setConfirmDelete(true)}>
-              <Trash2 aria-hidden />
-              {chosen.length ? t('results.deleteSelected', { n: chosen.length }) : t('results.delete')}
-            </Button>
-            <Button variant="primary" disabled={chosen.length !== 2} onClick={compare} title={chosen.length !== 2 ? t('results.compareHint') : undefined}>
+        // Import, export and delete work on tests: the Configurazioni view has its own actions per row.
+        <>
+          {view === 'runs' && (
+            <>
+              <input ref={fileRef} type="file" accept=".gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
+              <Button onClick={() => fileRef.current?.click()}>
+                <Upload aria-hidden />
+                {t('results.import')}
+              </Button>
+              <Button disabled={chosen.length === 0} onClick={() => void onExport()}>
+                <Download aria-hidden />
+                {chosen.length ? t('results.exportSelected', { n: chosen.length }) : t('results.export')}
+              </Button>
+              <Button disabled={chosen.length === 0} variant="danger-outline" onClick={() => setConfirmDelete(true)}>
+                <Trash2 aria-hidden />
+                {chosen.length ? t('results.deleteSelected', { n: chosen.length }) : t('results.delete')}
+              </Button>
+            </>
+          )}
+          {/* "Confronta modelli": the start screen, the models measured on this card with their fastest configuration. */}
+          <Button asChild>
+            <Link to="/compare" search={{ view: 'models' }}>
               <GitCompareArrows aria-hidden />
-              {t('results.compareSelected')}
-            </Button>
-          </>
-        )
+              {t('compare.openModels')}
+            </Link>
+          </Button>
+        </>
       }
     >
       <Tabs value={view} onValueChange={setView}>
