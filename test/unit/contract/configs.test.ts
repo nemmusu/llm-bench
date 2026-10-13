@@ -139,12 +139,44 @@ describe('configuration settings from a launch', () => {
   it('keeps any other flag (paths as bare names, regexes as written), sorted', () => {
     const o = llama(['--override-tensor', 'blk\\.\\d+\\.ffn=CPU', '--mlock', '--lora', 'D:\\loras\\x.gguf', '--rope-scaling=yarn', '-sm', 'row', '--chat-template-file', './t.jinja', '-x']);
     expect(o.other).toEqual(['--chat-template-file t.jinja', '--lora x.gguf', '--mlock', '--override-tensor blk\\.\\d+\\.ffn=CPU', '-sm row', '-x']);
-    // RoPE scaling is a setting of its own (factor 1 when only the type is given).
+    // RoPE scaling is a setting of its own (recipes, YaRN).
     expect(o.ropeScaling).toEqual({ type: 'yarn' });
     // Values that look like paths: absolute, relative, home, known file types.
     expect(llama(['--a', '/x/y', '--b', '../z', '--c', '~/w', '--d', 'f.bin', '--e', 'plain/text']).other).toEqual(['--a y', '--b z', '--c w', '--d f.bin', '--e plain/text']);
     // A lone "-" or a negative number is a value, not a flag.
     expect(llama(['--offset', '-3', '-']).other).toEqual(['--offset -3 -']);
+  });
+
+  it('RoPE scaling is one setting whichever engine says it (recipes, YaRN)', () => {
+    const yarn = { type: 'yarn', factor: 9.375, originalContext: 32768 };
+    expect(llama(['--rope-scaling', 'YaRN', '--rope-scale', '9.375', '--yarn-orig-ctx', '32768'])).toEqual({ ropeScaling: yarn, other: [] });
+    // The same from the launch params (no command line), for vLLM too.
+    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ ropeScaling: { type: 'yarn', factor: 9.375, originalContext: 32768 } }) })).toEqual({ ropeScaling: yarn, other: [] });
+    expect(configParamsOf({ engineKind: 'vllm-docker', params: P({ ropeScaling: { type: 'yarn', factor: 9.375, originalContext: 32768 } }) }).ropeScaling).toEqual(yarn);
+    // vLLM: --hf-overrides (other overrides stay a flag of their own), the older --rope-scaling JSON; SGLang.
+    const json = '{"rope_type":"yarn","factor":9.375,"original_max_position_embeddings":32768}';
+    expect(vllm(['--hf-overrides', `{"rope_scaling":${json},"max_position_embeddings":307200}`])).toEqual({ ropeScaling: yarn, other: ['--hf-overrides {"max_position_embeddings":307200}'] });
+    expect(vllm(['--rope-scaling', json])).toEqual({ ropeScaling: yarn, other: [] });
+    expect(configParamsOf({ engineKind: 'sglang-docker', argv: ['python3', '-m', 'sglang.launch_server', '--json-model-override-args', `{"rope_scaling":${json}}`] }).ropeScaling).toEqual(yarn);
+    // "type" spelled the old way, and 4 decimals: equal settings, equal key.
+    expect(vllm(['--rope-scaling', '{"type":"YARN","factor":2.3450381679,"original_max_position_embeddings":131000}']).ropeScaling).toEqual({ type: 'yarn', factor: 2.345, originalContext: 131000 });
+  });
+
+  it('RoPE scaling that changes nothing is no setting; what cannot be read stays as written', () => {
+    expect(llama(['--rope-scaling', 'none', '--rope-scale', '4'])).toEqual({ other: [] });
+    expect(llama(['--rope-scaling', 'yarn', '--rope-scale', '1'])).toEqual({ other: [] });
+    expect(llama(['--yarn-orig-ctx', '32768'])).toEqual({ other: [] });
+    // A bare factor: llama.cpp's linear scaling.
+    expect(llama(['--rope-scale', '2'])).toEqual({ ropeScaling: { type: 'linear', factor: 2 }, other: [] });
+    expect(llama(['--rope-scaling', 'yarn'])).toEqual({ ropeScaling: { type: 'yarn' }, other: [] });
+    expect(llama(['--rope-scaling', '--rope-scale', '0', '--yarn-orig-ctx', 'x'])).toEqual({ other: [] });
+    expect(vllm(['--hf-overrides'])).toEqual({ other: [] });
+    expect(vllm(['--hf-overrides', 'not json'])).toEqual({ other: ['--hf-overrides not json'] });
+    expect(vllm(['--hf-overrides', '[1]'])).toEqual({ other: ['--hf-overrides [1]'] });
+    expect(vllm(['--hf-overrides', '{"rope_scaling":null}'])).toEqual({ other: ['--hf-overrides {"rope_scaling":null}'] });
+    expect(vllm(['--hf-overrides', '{"rope_scaling":[1]}'])).toEqual({ other: ['--hf-overrides {"rope_scaling":[1]}'] });
+    expect(vllm(['--hf-overrides', '{"max_position_embeddings":131072}'])).toEqual({ other: ['--hf-overrides {"max_position_embeddings":131072}'] });
+    expect(vllm(['--hf-overrides', '{"rope_scaling":{"factor":-1,"original_max_position_embeddings":"x"}}'])).toEqual({ other: [] });
   });
 
   it('ignores flags given without their value, and stray words after a switch', () => {

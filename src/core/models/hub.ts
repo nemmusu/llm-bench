@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { AppError } from '../../contract/errors';
+import { NINFER_FILE, namesNinfer, otherFormatOf, otherFormatsOf, precisionFromConfig, precisionFromDtypes, precisionFromText, refineGgufKinds, type Precision } from '../../contract/formats';
 import type { HubFile, HubModel } from '../../contract/models';
 import { errorMessage, factsFromGguf, parseGgufHeader } from './gguf';
 import { factsFromHfConfig } from './hf-config';
@@ -7,7 +8,8 @@ import { parseShard } from './paths';
 import { paramsFromLabel, quantFromFilename, round3 } from './quant';
 import type { ModelFactsEx, TokenFn } from './types';
 
-export type HubFormat = 'gguf' | 'safetensors' | 'any';
+/** What a search asks for: GGUF (llama.cpp), safetensors (vLLM / SGLang), NInfer artifacts, or anything. */
+export type HubFormat = 'gguf' | 'safetensors' | 'ninfer' | 'any';
 export type HubSort = 'downloads' | 'likes' | 'lastModified' | 'createdAt' | 'trendingScore';
 
 export interface SearchOptions {
@@ -54,7 +56,8 @@ export interface HubClientOptions {
 /** Model card size cap: enough for any real README, bounded against hostile repos. */
 export const README_MAX_BYTES = 256 * 1024;
 
-const SEARCH_EXPAND = ['downloads', 'likes', 'lastModified', 'gated', 'cardData', 'safetensors', 'gguf', 'pipeline_tag', 'tags'];
+// siblings: the file names, so formats in sub-folders (GGUF/, a .ninfer artifact) show on the rows.
+const SEARCH_EXPAND = ['downloads', 'likes', 'lastModified', 'gated', 'cardData', 'safetensors', 'gguf', 'pipeline_tag', 'tags', 'siblings'];
 
 /**
  * Maps an HF error response to an AppError. HF sends `X-Error-Code` (GatedRepo, RepoNotFound,
@@ -89,18 +92,38 @@ function strs(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
+/**
+ * An MTP name that is only the head, never a whole model with its MTP layers fused in: an "mtp" prefix
+ * ("mtp-Qwen3.8-27B-Q8_0.gguf"), a word saying it is a part ("…-mtp-head"), or an MTP folder. A bare
+ * "-MTP" in a name ("…-Q4LynnStyle-MTP.gguf", "Qwen3.8-27B-MTP_(Q4_K_M).gguf") is a fused model;
+ * contract/formats.ts refineGgufKinds and the scanner's header check catch the heads named that way.
+ */
+export const MTP_HEAD_RE = /^mtp[-_.]|(^|[-_.])mtp[-_.]?(head|heads|module|layer|layers|proj|only)([-_.]|$)/i;
+/** Speculative-decoding drafts: EAGLE heads, "draft-…" / "…-draft-…" models. */
+const DRAFT_RE = /(^|[-_.])(draft|eagle\d*)([-_.]|$)/i;
+
 /** File role inside a repo, from its path. */
 export function fileKind(p: string): HubFile['kind'] {
   const base = path.posix.basename(p).toLowerCase();
   if (base.endsWith('.gguf')) {
     if (base.includes('mmproj')) return 'mmproj';
-    if (/(^|[-_.])mtp([-_.]|$)/.test(base) || /(^|\/)mtp\//i.test(p)) return 'mtp';
-    // Speculative-decoding drafts (EAGLE heads, *-draft) are not standalone models.
-    if (/(^|[-_.])(draft|eagle\d*)([-_.]|$)/.test(base)) return 'other';
+    if (MTP_HEAD_RE.test(base) || /(^|\/)mtp\//i.test(p)) return 'mtp';
+    // Speculative-decoding drafts (EAGLE heads, *-draft) ride along a model: extras, not choices.
+    if (DRAFT_RE.test(base)) return 'draft';
     return 'weights';
   }
-  if (base.endsWith('.safetensors') || /^pytorch_model.*\.bin$/.test(base)) return 'weights';
-  if (['config.json', 'generation_config.json', 'params.json', 'preprocessor_config.json'].includes(base) || base.endsWith('.index.json')) return 'config';
+  if (base.endsWith('.safetensors') || /^pytorch_model.*\.bin$/.test(base)) {
+    // MTP heads and drafts shipped as their own folders or files ("MTP-BF16/", "model_mtp.safetensors",
+    // "DFlash2-FP8/"): extras of a vLLM model, never one.
+    const stem = base.replace(/\.(safetensors|bin)$/, '');
+    for (const seg of [...path.posix.dirname(p).split('/').filter((x) => x !== '.'), stem]) {
+      if (/(^|[-_.])mtp([-_.]|$)/i.test(seg)) return 'mtp';
+      if (/^dflash/i.test(seg) || DRAFT_RE.test(seg)) return 'draft';
+    }
+    return 'weights';
+  }
+  if (NINFER_FILE.test(base)) return 'weights';
+  if (['config.json', 'generation_config.json', 'params.json', 'preprocessor_config.json'].includes(base) || base.endsWith('.index.json') || base.endsWith('.artifact-manifest.json')) return 'config';
   if (base.startsWith('tokenizer') || base.startsWith('chat_template') || ['vocab.json', 'merges.txt', 'special_tokens_map.json', 'added_tokens.json'].includes(base) || base.endsWith('.model')) return 'tokenizer';
   return 'other';
 }
@@ -131,10 +154,19 @@ export function toHubModel(raw: Record<string, unknown>): HubModel {
   const slash = repo.indexOf('/');
   const tags = strs(raw.tags);
   const card = obj(raw.cardData) ?? {};
-  const formats: HubModel['formats'] = [];
-  if (tags.includes('gguf') || obj(raw.gguf)) formats.push('gguf');
-  if (tags.includes('safetensors') || obj(raw.safetensors)) formats.push('safetensors');
   const name = repo.slice(slash + 1);
+  const siblings = (Array.isArray(raw.siblings) ? raw.siblings : []).map((x) => obj(x)?.rfilename).filter((x): x is string => typeof x === 'string');
+  // Other formats by tag and name, and by the files themselves ("mlx/…", "*.onnx"); PyTorch originals are no news.
+  const fromFiles = siblings.map(otherFormatOf).filter((x): x is string => x !== undefined && x !== 'PyTorch');
+  const announced = otherFormatsOf(name, tags);
+  const otherFormats = [...new Set([...announced, ...fromFiles])].sort();
+  const formats: HubModel['formats'] = [];
+  if (tags.includes('gguf') || obj(raw.gguf) || siblings.some((f) => /\.gguf$/i.test(f))) formats.push('gguf');
+  // MLX repos ship safetensors too, in a layout only MLX reads: not a model for vLLM / SGLang.
+  // (an MLX folder inside a mixed repo leaves its other safetensors alone).
+  if ((tags.includes('safetensors') || obj(raw.safetensors)) && !announced.includes('MLX')) formats.push('safetensors');
+  if (tags.includes('ninfer') || namesNinfer(name) || siblings.some((f) => NINFER_FILE.test(f))) formats.push('ninfer');
+  if (otherFormats.length > 0) formats.push('other');
   // safetensors metadata counts every tensor; a GGUF repo's count comes from one of its files
   // (sometimes a small MTP or mmproj file), so the size in the name wins over it.
   const safetensors = Number(obj(raw.safetensors)?.total ?? 0);
@@ -152,8 +184,14 @@ export function toHubModel(raw: Record<string, unknown>): HubModel {
     likes: Number(raw.likes ?? 0),
     gated,
     formats,
+    otherFormats,
     tags,
   };
+  if (formats.includes('safetensors')) {
+    const dtypes = obj(obj(raw.safetensors)?.parameters) as Record<string, number> | undefined;
+    const precision = precisionFromText(name, ...tags) ?? precisionFromDtypes(dtypes);
+    if (precision) model.precision = precision;
+  }
   if (typeof raw.lastModified === 'string') model.updatedAt = raw.lastModified;
   if (license) model.license = license;
   if (paramsB) model.paramsB = paramsB;
@@ -260,7 +298,9 @@ export class HubClient {
   /** One page of a hub search; follow `nextCursor` for more (HF pages with an opaque cursor). */
   search(q: string, opts: SearchOptions = {}): Promise<HubPage> {
     const p = new URLSearchParams();
-    if (q.trim()) p.set('search', q.trim());
+    // NInfer artifacts have no hub tag: their repos say "NInfer" in the name (ModelsService narrows by the words typed).
+    if (opts.format === 'ninfer') p.set('search', 'ninfer');
+    else if (q.trim()) p.set('search', q.trim());
     if (opts.author) p.set('author', opts.author);
     if (opts.format === 'gguf' || opts.format === 'safetensors') p.append('filter', opts.format);
     const range = paramsRange(opts.minParamsB, opts.maxParamsB);
@@ -328,8 +368,14 @@ export class HubClient {
         const next = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get('link') ?? '')?.[1];
         url = next ? new URL(next, this.baseUrl).toString() : undefined;
       }
-      return out;
+      return refineGgufKinds(out);
     });
+  }
+
+  /** A small JSON file of a repo (an NInfer manifest), cached like the rest. */
+  json(repo: string, file: string, revision = 'main'): Promise<unknown> {
+    const url = this.resolveUrl(repo, revision, file);
+    return this.cached(`json ${url}`, this.ttl, () => this.getJson(url, repo));
   }
 
   /** Raw model card (README.md), capped at README_MAX_BYTES. */
@@ -360,18 +406,25 @@ export class HubClient {
     });
   }
 
-  /** Facts of a safetensors repo from config.json + the file list (for vLLM). */
-  configFacts(repo: string, revision = 'main'): Promise<{ facts: ModelFactsEx; fileBytes: number }> {
-    return this.cached(`config ${repo}@${revision}`, this.ttl, async () => {
+  /**
+   * Facts of a safetensors model from its config.json + the file list (for vLLM / SGLang): the repo's
+   * root, or the variant folder `dir` ("FP8", "INT4/W4A16"). Only that folder's weights count.
+   */
+  configFacts(repo: string, revision = 'main', dir = ''): Promise<{ facts: ModelFactsEx; fileBytes: number; precision?: Precision }> {
+    return this.cached(`config ${repo}@${revision}:${dir}`, this.ttl, async () => {
       const [config, files, info] = await Promise.all([
-        this.getJson(this.resolveUrl(repo, revision, 'config.json'), repo),
+        this.getJson(this.resolveUrl(repo, revision, dir ? `${dir}/config.json` : 'config.json'), repo),
         this.files(repo, revision),
         this.info(repo),
       ]);
-      const weights = files.filter((f) => f.kind === 'weights' && f.path.endsWith('.safetensors'));
+      const inDir = (p: string) => path.posix.dirname(p) === (dir || '.');
+      const weights = files.filter((f) => f.kind === 'weights' && f.path.endsWith('.safetensors') && inDir(f.path));
       const fileBytes = weights.reduce((a, f) => a + f.sizeBytes, 0);
-      const parameterCount = info.paramsB !== undefined && info.paramsB > 0 ? info.paramsB * 1e9 : undefined;
-      return { facts: factsFromHfConfig(config, { name: repo, parameterCount, fileBytes }), fileBytes };
+      // The hub's parameter count covers every variant's tensors: only a single root model owns it.
+      const variants = new Set(files.filter((f) => f.kind === 'weights' && f.path.endsWith('.safetensors')).map((f) => path.posix.dirname(f.path)));
+      const parameterCount = info.paramsB !== undefined && info.paramsB > 0 && variants.size <= 1 ? info.paramsB * 1e9 : undefined;
+      const precision = precisionFromText(dir) ?? precisionFromConfig(config);
+      return { facts: factsFromHfConfig(config, { name: repo, parameterCount, fileBytes }), fileBytes, ...(precision ? { precision } : {}) };
     });
   }
 

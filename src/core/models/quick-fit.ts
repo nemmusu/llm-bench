@@ -1,31 +1,55 @@
+import { precisionFromText } from '../../contract/formats';
+import { ninferFit } from '../../contract/ninfer';
 import type { HubModel, QuickFit } from '../../contract/models';
 import type { CuratedModel } from './curated';
 import { estimateFit, levelRank } from './fit';
+import { bytesPerParam } from './quant';
 import type { HubFormat } from './hub';
 import type { GpuMem } from './types';
 
-/** Precision a safetensors repo ships in, from its name and tags (AWQ, FP8…); BF16 otherwise. */
-export function safetensorsQuant(m: Pick<HubModel, 'name' | 'tags'>): string {
-  const text = `${m.name} ${m.tags.join(' ')}`.toUpperCase();
-  if (/NVFP4|MXFP4/.test(text)) return 'MXFP4';
-  if (/\bAWQ\b|GPTQ|INT4|W4A16|4BIT|BNB/.test(text)) return 'AWQ';
-  if (/FP8|INT8|W8A8|8BIT/.test(text)) return 'FP8';
-  return 'BF16';
+/** Precision a safetensors repo ships in (the search result's, else from its name and tags); BF16 otherwise. */
+export function safetensorsQuant(m: Pick<HubModel, 'name' | 'tags'> & { precision?: HubModel['precision'] }): string {
+  return m.precision ?? precisionFromText(m.name, ...m.tags) ?? 'BF16';
 }
 
-function target(gguf: boolean, quant: string) {
-  return gguf ? ({ quant: 'Q4_K_M', engine: 'llamacpp-native', family: 'llamacpp' } as const) : ({ quant, engine: 'vllm-docker', family: 'vllm' } as const);
+type Family = QuickFit['engine'];
+
+/**
+ * How a format is judged: GGUF at Q4_K_M on llama.cpp; safetensors at their precision on vLLM (SGLang
+ * reserves memory the same way). NInfer artifacts go through NInfer's own estimate (quickFit).
+ */
+function target(family: Family, quant: string) {
+  // NInfer's hub-size bound uses llama.cpp's math (the card bound only; each result is judged by ninferFit).
+  if (family === 'llamacpp' || family === 'ninfer') return { quant: 'Q4_K_M', engine: 'llamacpp-native', family } as const;
+  return { quant, engine: 'vllm-docker', family } as const;
+}
+
+/** The format a search result is judged in: the one the filter asks for, else GGUF, safetensors, NInfer in this order. */
+function familyOf(m: Pick<HubModel, 'formats'>, format: HubFormat): Family {
+  if (format === 'gguf') return 'llamacpp';
+  if (format === 'safetensors') return 'vllm';
+  if (format === 'ninfer') return 'ninfer';
+  if (m.formats.includes('gguf')) return 'llamacpp';
+  return !m.formats.includes('safetensors') && m.formats.includes('ninfer') ? 'ninfer' : 'vllm';
 }
 
 /**
  * VRAM verdict of a search result from its parameter count only: no file or header reads, so a
  * whole page of results gets badges at once. GGUF repos are judged at Q4_K_M (what the download
- * dialog usually preselects), safetensors repos at their own precision on vLLM.
+ * dialog usually preselects), safetensors repos at their own precision on vLLM, NInfer artifacts at theirs.
  */
 export function quickFit(m: HubModel, gpu: GpuMem, format: HubFormat = 'any'): QuickFit | undefined {
   if (m.paramsB === undefined) return undefined;
-  const gguf = format === 'gguf' || (format !== 'safetensors' && m.formats.includes('gguf'));
-  const t = target(gguf, safetensorsQuant(m));
+  // Only formats GPU Bench cannot run (an MLX repo): no verdict to give.
+  if (format === 'any' && m.formats.length > 0 && m.formats.every((f) => f === 'other')) return undefined;
+  const family = familyOf(m, format);
+  if (family === 'ninfer') {
+    // NInfer's own estimate on an artifact the size the parameters and precision suggest (search results carry no file sizes).
+    const quant = precisionFromText(m.name) ?? 'NVFP4';
+    const est = ninferFit({ artifactBytes: m.paramsB * 1e9 * bytesPerParam(quant), label: m.name, gpu });
+    return { level: est.level, needMiB: est.needMiB, availableMiB: est.availableMiB, quant, engine: 'ninfer' };
+  }
+  const t = target(family, safetensorsQuant(m));
   const est = estimateFit({ facts: { paramsB: m.paramsB, quant: t.quant }, gpu, engine: t.engine });
   return { level: est.level, needMiB: est.needMiB, availableMiB: est.availableMiB, quant: t.quant, engine: t.family };
 }
@@ -40,7 +64,7 @@ export function quickFits(fit: QuickFit | undefined): boolean {
  * hub for "only models that fit", so pages come back full. Each result is still judged on its own.
  */
 export function maxFittingParamsB(gpu: GpuMem, format: HubFormat): number {
-  const t = target(format !== 'safetensors', 'AWQ');
+  const t = target(format === 'safetensors' ? 'vllm' : format === 'ninfer' ? 'ninfer' : 'llamacpp', 'AWQ');
   const fits = (paramsB: number) => levelRank(estimateFit({ facts: { paramsB, quant: t.quant }, gpu, engine: t.engine }).level) <= levelRank('tight');
   if (!fits(0.001)) return 0;
   let lo = 0;

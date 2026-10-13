@@ -13,7 +13,7 @@ import type { EngineKind, EngineStatus } from '../../contract/engines';
 import type { AppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import type { GpuInfo, GpuSample } from '../../contract/hardware';
-import type { DownloadJob, FitEstimate, HubFile, HubModel, HubSearchPage, LocalModel } from '../../contract/models';
+import type { DownloadJob, FitEstimate, HubFile, HubModel, HubSearchPage, LocalModel, VramNow } from '../../contract/models';
 import type { RunSummary } from '../../contract/results';
 import type { Settings } from '../../contract/settings';
 import type {
@@ -47,7 +47,8 @@ export type CatalogSort = 'trendingScore' | 'downloads' | 'likes' | 'createdAt' 
 /** Filters of the model catalog (Modelli → Scarica). */
 export interface CatalogParams {
   q: string;
-  format: 'gguf' | 'safetensors' | 'any';
+  /** What the core searches: GGUF (llama.cpp), safetensors (vLLM / SGLang), NInfer artifacts, or anything. */
+  format: 'gguf' | 'safetensors' | 'ninfer' | 'any';
   sort: CatalogSort;
   /** Parameter-count range in billions; undefined ends are open. */
   minParamsB?: number | undefined;
@@ -244,6 +245,12 @@ export function useDeleteModel() {
   });
 }
 
+/** GET /api/models/vram: what other programs hold on the card right now (null without an NVIDIA GPU). */
+export function useVramNow() {
+  const api = useApi();
+  return useQuery({ queryKey: ['lib', 'vram'], queryFn: () => api.get<VramNow | null>('/api/models/vram'), refetchInterval: 10_000, refetchIntervalInBackground: false });
+}
+
 /** POST /api/models/fit; `req` undefined disables the query. */
 export function useFit(req: FitRequest | undefined) {
   const api = useApi();
@@ -338,11 +345,15 @@ export function useRelated(repo: string | undefined) {
   });
 }
 
-export function useHubFit(repo: string, engine: EngineKind | undefined) {
+/**
+ * The choices of a hub repo for one format: GGUF quants (a llama.cpp engine), safetensors folders (vLLM /
+ * SGLang) or NInfer artifacts (`format` 'ninfer'). `engine` undefined disables the query.
+ */
+export function useHubFit(repo: string, engine: EngineKind | undefined, format?: 'ninfer') {
   const api = useApi();
   return useQuery({
-    queryKey: [...libKeys.hub, 'fit', repo, engine],
-    queryFn: () => api.post<HubFitResult>(`/api/models/hub/${repoPath(repo)}/fit`, { engine }),
+    queryKey: [...libKeys.hub, 'fit', repo, engine, format],
+    queryFn: () => api.post<HubFitResult>(`/api/models/hub/${repoPath(repo)}/fit`, { engine, ...(format ? { format } : {}) }),
     enabled: engine !== undefined,
     staleTime: 5 * 60_000,
     retry: false,

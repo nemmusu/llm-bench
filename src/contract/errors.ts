@@ -49,6 +49,8 @@ export const ERROR_CODES = [
   'DOCKER_VOLUME_FAILED',
   'ENGINE_MISSING_LIBRARY',
   'ENGINE_UPDATE_FAILED',
+  /** The engine runs on one GPU model only (NInfer: an RTX 5090); params engine, gpu. */
+  'ENGINE_GPU_UNSUPPORTED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

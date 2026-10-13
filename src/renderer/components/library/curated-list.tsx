@@ -14,13 +14,13 @@ import { Skeleton } from '../ui/skeleton';
 import { RowFacts, RowTitle, rowClass } from './catalog-rows';
 import { DownloadDialog, type DownloadChoice } from './download-dialog';
 import { ErrorCallout } from './error-callout';
+import type { CatalogFormat } from './formats';
 import { curatedWeakKey, fileName } from './helpers';
 import { TriedFor } from './model-badges';
 
-export type EngineFormat = 'gguf' | 'safetensors' | 'any';
-
-/** The suggestions an engine format can run: GGUF for llama.cpp, whole repos for vLLM, or both. */
-export function curatedFor<T extends Pick<CuratedModel, 'engine'>>(models: readonly T[], format: EngineFormat): T[] {
+/** The suggestions a format can run: GGUF for llama.cpp, whole repos for vLLM / SGLang, both; none for NInfer yet. */
+export function curatedFor<T extends Pick<CuratedModel, 'engine'>>(models: readonly T[], format: CatalogFormat): T[] {
+  if (format === 'ninfer') return [];
   const engine = format === 'gguf' ? 'llamacpp' : format === 'safetensors' ? 'vllm' : undefined;
   return models.filter((m) => !engine || m.engine === engine);
 }

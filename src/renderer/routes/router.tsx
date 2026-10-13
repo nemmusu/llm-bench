@@ -1,4 +1,5 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter, type RouterHistory } from '@tanstack/react-router';
+import { validateModelsSearch } from '../components/library/catalog-search';
 import { AppShell } from '../components/shell/app-shell';
 import { BenchmarkPage } from './benchmark';
 import { ComparePage, validateCompareSearch } from './compare';
@@ -32,15 +33,8 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({ getParentRoute: () => rootRoute, path: '/results/$runId', component: ResultPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/compare', component: ComparePage, validateSearch: validateCompareSearch }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/models',
-    component: ModelsPage,
-    validateSearch: (s: Record<string, unknown>): { tab?: 'download'; view?: 'curated' | 'tried' } => ({
-      ...(s.tab === 'download' ? { tab: 'download' as const } : {}),
-      ...(s.view === 'curated' || s.view === 'tried' ? { view: s.view } : {}),
-    }),
-  }),
+  // Tab and every catalog choice live in the URL (components/library/catalog-search.ts).
+  createRoute({ getParentRoute: () => rootRoute, path: '/models', component: ModelsPage, validateSearch: validateModelsSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: '/models/hub/$owner/$name', component: ModelDetailPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/engines', component: EnginesPage, validateSearch: validateEnginesSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: '/monitor', component: MonitorPage }),
@@ -48,7 +42,9 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 export function createAppRouter(history: RouterHistory = createHashHistory()) {
-  return createRouter({ routeTree, history, scrollRestoration: true, defaultPreload: false });
+  // The content panel (#main) is the scrolling element: a new page starts at its top, "back" returns
+  // to where the previous one was (the catalog's list, page after page).
+  return createRouter({ routeTree, history, scrollRestoration: true, scrollToTopSelectors: ['#main'], defaultPreload: false });
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;

@@ -96,7 +96,10 @@ describe('ModelsService', () => {
     const all = (await svc.search('', {})).models;
     expect(all.find((m) => m.repo === 'huge/Giant-400B-GGUF')?.fit?.level).toBe('partial');
     expect(all.find((m) => m.repo === 'nosize/Mystery-GGUF')?.fit).toBeUndefined();
-    expect(all.find((m) => m.repo === 'Qwen/Qwen3-0.6B')?.fit).toMatchObject({ quant: 'BF16', engine: 'vllm' });
+    // A repo with a GGUF next to its safetensors is mixed: with every engine shown it is judged for llama.cpp,
+    // with the safetensors filter at its own precision for vLLM / SGLang.
+    expect(all.find((m) => m.repo === 'Qwen/Qwen3-0.6B')).toMatchObject({ formats: ['gguf', 'safetensors'], fit: { quant: 'Q4_K_M', engine: 'llamacpp' } });
+    expect((await svc.search('qwen3-0.6b', { format: 'safetensors' })).models[0]?.fit).toMatchObject({ quant: 'BF16', engine: 'vllm' });
     const fits = (await svc.search('', { onlyFits: true })).models.map((m) => m.repo);
     expect(fits).toContain('ggml-org/Qwen3-0.6B-GGUF');
     expect(fits).toContain('Qwen/Qwen3-0.6B');
@@ -138,9 +141,19 @@ describe('ModelsService', () => {
     expect(second.models[0]?.repo).not.toBe(first.models[0]?.repo);
   });
 
-  it('finds nothing that fits when the GPU has no free VRAM', async () => {
+  it('judges the card, not what is free right now: a busy card still finds models, a tiny one none', async () => {
     gpu = { totalMiB: 8192, freeMiB: 0 };
+    expect((await service().search('', { onlyFits: true })).models.length).toBeGreaterThan(0);
+    gpu = { totalMiB: 1024, freeMiB: 1024 };
     expect((await service().search('', { onlyFits: true })).models).toEqual([]);
+  });
+
+  it('keeps only repos vLLM / SGLang can read when the filter asks for safetensors', async () => {
+    hub.addRepo({ id: 'mlx-community/Qwen3-0.6B-4bit', tags: ['mlx', 'safetensors'], files: [{ path: 'model.safetensors', size: 10 }] });
+    const st = await service().search('qwen3-0.6b', { format: 'safetensors' });
+    expect(st.models.map((m) => m.repo)).toEqual(['Qwen/Qwen3-0.6B']);
+    const any = await service().search('qwen3-0.6b');
+    expect(any.models.find((m) => m.repo === 'mlx-community/Qwen3-0.6B-4bit')).toMatchObject({ formats: ['other'], otherFormats: ['MLX'] });
   });
 
   it('proxies hub files, readme, related and remote facts', async () => {
@@ -176,7 +189,8 @@ describe('ModelsService', () => {
     // Not enough free VRAM for that context with every layer on the GPU: what would fit comes with it.
     gpu = { totalMiB: 8192, freeMiB: 400 };
     const tight = await svc.fit({ localId: local, engine: 'llamacpp-native', params: { contextSize: 262_144, extraArgs: [], env: {} } });
-    expect(tight.level === 'partial' || tight.level === 'no').toBe(true);
+    expect(tight.levelNow === 'partial' || tight.levelNow === 'no').toBe(true);
+    expect(tight.busyMiB).toBe(8192 - 400);
     expect(tight.fixes?.maxContext).toBeLessThan(262_144);
     expect(a).not.toHaveProperty('fixes');
     gpu = undefined;
@@ -234,8 +248,121 @@ describe('ModelsService', () => {
     gpu = { totalMiB: 100, freeMiB: 1 };
     const none = await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native');
     expect(none.best).toBeUndefined();
+    // A format the repo does not ship: no choices.
+    gpu = GPU_32GB;
+    expect(await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'vllm-docker')).toEqual({ choices: [], facts: {} });
+    hub.addRepo({ id: 'only/Safetensors', files: [{ path: 'config.json', content: '{}' }, { path: 'model.safetensors', size: 10 }] });
+    expect(await svc.hubFit('only/Safetensors', 'llamacpp-native')).toEqual({ choices: [], facts: {} });
     gpu = undefined;
     await expect(svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native')).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
+  });
+
+  it('a mixed repo: GGUF quants for llama.cpp, one choice per safetensors folder for vLLM, each with exactly its files', async () => {
+    const config = (q?: object) => JSON.stringify({ architectures: ['Qwen3ForCausalLM'], num_hidden_layers: 4, num_attention_heads: 8, num_key_value_heads: 2, head_dim: 64, torch_dtype: 'bfloat16', ...(q ? { quantization_config: q } : {}) });
+    hub.addRepo({
+      id: 'mixed/Kitchen-27B-GGUF-NInfer',
+      tags: ['gguf', 'safetensors'],
+      files: [
+        { path: 'README.md', content: '# Kitchen' },
+        { path: 'assets/demo.mp4', size: 4096 },
+        { path: 'GGUF/Kitchen-27B-Q4LynnStyle-MTP.gguf', gguf: { ...hubLlamaLike({ name: 'Kitchen', sizeLabel: '27B' }), totalSize: 96 * 1024 } },
+        { path: 'GGUF/Kitchen-27B-Q4LynnStyle-Q8MTP.gguf', gguf: { ...hubLlamaLike({ name: 'Kitchen', sizeLabel: '27B' }), totalSize: 98 * 1024 } },
+        { path: 'GGUF/mmproj-Kitchen-Q8_0.gguf', size: 8 * 1024 },
+        { path: 'GGUF/mtp-Kitchen-27B-Q8_0.gguf', size: 8 * 1024 },
+        { path: 'BF16/config.json', content: config() },
+        { path: 'BF16/tokenizer.json', content: '{}' },
+        { path: 'BF16/model.safetensors', size: 200 * 1024 },
+        { path: 'BF16/README.md', content: 'no' },
+        { path: 'FP8/config.json', content: config({ quant_method: 'fp8' }) },
+        { path: 'FP8/model.safetensors', size: 100 * 1024 },
+        { path: 'broken/config.json', content: '{nope' },
+        { path: 'broken/model.safetensors', size: 10 },
+        { path: 'GGUF-NInfer/model.ninfer', size: 50 * 1024 },
+      ],
+    });
+    const svc = service();
+    const g = await svc.hubFit('mixed/Kitchen-27B-GGUF-NInfer', 'llamacpp-native');
+    expect(g.choices.map((c) => c.quant)).toEqual(['Q4LynnStyle · Q8MTP', 'Q4LynnStyle · MTP']);
+    expect(g.choices.every((c) => c.files.every((f) => f.path.endsWith('.gguf') && f.kind === 'weights'))).toBe(true);
+    expect(g.facts.blockCount).toBe(4);
+    const v = await svc.hubFit('mixed/Kitchen-27B-GGUF-NInfer', 'vllm-docker');
+    // The folder whose config cannot be read is left out; the others are judged with their own config.
+    expect(v.choices.map((c) => [c.groupKey, c.dir, c.quant])).toEqual([
+      ['BF16/*', 'BF16', 'BF16'],
+      ['FP8/*', 'FP8', 'FP8'],
+    ]);
+    expect(v.choices[0]?.files.map((f) => f.path)).toEqual(['BF16/config.json', 'BF16/model.safetensors', 'BF16/tokenizer.json']);
+    expect(v.choices[0]?.sizeBytes).toBe(v.choices[0]!.files.reduce((a, f) => a + f.sizeBytes, 0));
+    // The weak key the scanner gives the downloaded folder: first weights file, weights bytes, no quant.
+    expect(v.choices[1]?.weakKey).toBe(`mixed/Kitchen-27B-GGUF-NInfer/model.safetensors//${100 * 1024}`);
+    expect(v.best).toBe('BF16/*');
+    expect(v.facts.blockCount).toBe(4);
+    // A gated repo stops at once, whatever folder.
+    hub.addRepo({ id: 'gated/Variants', gated: 'manual', files: [{ path: 'FP8/config.json', content: config() }, { path: 'FP8/model.safetensors', size: 10 }] });
+    await expect(svc.hubFit('gated/Variants', 'vllm-docker')).rejects.toMatchObject({ code: 'HF_GATED' });
+    // Nothing readable at all: no choices, no facts.
+    hub.addRepo({ id: 'broken/Variants', files: [{ path: 'X/config.json', content: '{' }, { path: 'X/model.safetensors', size: 10 }] });
+    expect(await svc.hubFit('broken/Variants', 'vllm-docker')).toEqual({ choices: [], facts: {} });
+  });
+
+  it('NInfer: one choice per .ninfer artifact (manifest read, the NInfer estimate), searched by name; a local artifact too', async () => {
+    const manifest = { artifact: { filename: 'qwen3_8_27b_nvfp4.ninfer', bytes: 64 * 1024, container_version: 3, architecture: 'qwen3_8', name: 'Qwen3.8 27B', components: ['text', 'vision', 'mtp'] } };
+    hub.addRepo({
+      id: 'neroued/Qwen3.8-27B-nvfp4-NInfer',
+      tags: ['text-generation'],
+      files: [
+        { path: 'qwen3_8_27b_nvfp4.ninfer', size: 64 * 1024 },
+        { path: 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', content: JSON.stringify(manifest) },
+        { path: 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS', content: 'x' },
+        { path: 'README.md', content: '# NInfer' },
+      ],
+    });
+    hub.addRepo({ id: 'neroued/Qwen3.8-4B-nvfp4-NInfer', files: [{ path: 'q4b.ninfer', size: 1024 }] });
+    const svc = service();
+    const r = await svc.hubFit('neroued/Qwen3.8-27B-nvfp4-NInfer', 'llamacpp-native', { format: 'ninfer' });
+    expect(r.choices).toHaveLength(1);
+    const c = r.choices[0]!;
+    expect(c).toMatchObject({ groupKey: 'qwen3_8_27b_nvfp4.ninfer', quant: 'NVFP4', dir: '', manifest: { containerVersion: 3, components: ['text', 'vision', 'mtp'] } });
+    expect(c.files.map((f) => f.path).sort()).toEqual(['Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS', 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', 'qwen3_8_27b_nvfp4.ninfer']);
+    // NInfer's own estimate (contract/ninfer.ts), on the card's total; what is free now alongside.
+    expect(c.fit.notes).toContain('ninfer.estimate');
+    expect(c.fit).toMatchObject({ totalMiB: GPU_32GB.totalMiB, availableMiB: GPU_32GB.totalMiB - 1024 });
+    expect(c.fit.levelNow).toBeDefined();
+    expect(c.weakKey).toBe(`neroued/Qwen3.8-27B-nvfp4-NInfer/qwen3_8_27b_nvfp4.ninfer//${64 * 1024}`);
+    expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 });
+    expect(r.best).toBe('qwen3_8_27b_nvfp4.ninfer');
+    // Without a manifest: still a choice; a repo without .ninfer: none.
+    expect((await svc.hubFit('neroued/Qwen3.8-4B-nvfp4-NInfer', 'llamacpp-native', { format: 'ninfer' })).choices[0]?.manifest).toBeUndefined();
+    expect(await svc.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native', { format: 'ninfer' })).toEqual({ choices: [], facts: {} });
+    // A mixed repo with GGUF next to the artifact: its KV layout comes from the GGUF header.
+    hub.addRepo({
+      id: 'mixed/Coder-GGUF-NInfer',
+      files: [
+        { path: 'GGUF/Coder-Q4_K_M.gguf', gguf: { ...hubLlamaLike({ name: 'Coder', sizeLabel: '27B', layers: 6 }), totalSize: 96 * 1024 } },
+        { path: 'NInfer/coder_nvfp4.ninfer', size: 32 * 1024 },
+      ],
+    });
+    const mixed = await svc.hubFit('mixed/Coder-GGUF-NInfer', 'llamacpp-native', { format: 'ninfer' });
+    expect(mixed.facts.blockCount).toBe(6);
+    expect(mixed.choices[0]?.dir).toBe('NInfer');
+    // The NInfer filter searches by name and narrows by the words typed.
+    const found = await svc.search('27b nvfp4', { format: 'ninfer' });
+    expect(found.models.map((m) => m.repo)).toEqual(['neroued/Qwen3.8-27B-nvfp4-NInfer']);
+    expect(found.models[0]?.fit?.engine).toBe('ninfer');
+    expect((await svc.search('', { format: 'ninfer' })).models.map((m) => m.repo)).toEqual(expect.arrayContaining(['mixed/Coder-GGUF-NInfer', 'neroued/Qwen3.8-27B-nvfp4-NInfer', 'neroued/Qwen3.8-4B-nvfp4-NInfer']));
+    // A .ninfer artifact on the PC: the same estimate, with what the scanner kept from its manifest.
+    const dir = path.join(lib(), 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'qwen3_8_27b_nvfp4.ninfer'), Buffer.alloc(4096));
+    writeFileSync(path.join(dir, 'Q.artifact-manifest.json'), JSON.stringify({ artifact: { name: 'qwen3.8-27b', components: ['text', 'mtp'] } }));
+    const local = (await svc.rescan()).find((m) => m.identity.format === 'ninfer')!;
+    expect(local.identity.facts).toMatchObject({ name: 'qwen3.8-27b', components: ['text', 'mtp'] });
+    const lf = await svc.fit({ localId: local.id, engine: 'llamacpp-native' });
+    expect(lf.notes).toContain('ninfer.estimate');
+    // Without manifest facts or a known size it still answers.
+    writeFileSync(path.join(lib(), 'bare.ninfer'), 'x');
+    const bare = (await svc.rescan()).find((m) => m.identity.displayName === 'bare')!;
+    expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
   });
 
   it('serves the repo info of one hub repo, with the hub errors mapped', async () => {

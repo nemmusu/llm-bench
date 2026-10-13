@@ -2,11 +2,12 @@
  * "Contesto per gradi": which context depths to measure and how to run them on one loaded engine.
  * Shared by the context-sweep step of normal runs and by the tuner, so their numbers compare.
  */
+import { CONTEXT_200K } from '../../contract/recipes';
 import type { LatencyPoint } from '../../contract/results';
 
 /** Tokens kept free in the context besides prompt + output (BOS, server-side extras). */
 export const CONTEXT_MARGIN = 16;
-/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K…), or ×4 (16K, 64K, 256K…) for long contexts. */
+/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K…), or ×4 (16K, 64K, 256K…) for long contexts; 200K on both. */
 export const FIRST_DEPTHS = [1024, 4096] as const;
 /** Share of the context used for the optional 25/50/75/100 % points. */
 export const DEPTH_FRACTIONS = [0.25, 0.5, 0.75, 1] as const;
@@ -19,12 +20,16 @@ export function maxDepth(ctx: number, outputTokens: number): number {
   return ctx - outputTokens - CONTEXT_MARGIN;
 }
 
-/** 1K, 4K, then ×`step` (8K, 16K… or 16K, 64K…) up to `limit` (inclusive). */
+/**
+ * 1K, 4K, then ×`step` (8K, 16K… or 16K, 64K…) up to `limit` (inclusive), and 200K (a context people
+ * use, between 128K and 256K) when the limit reaches it, on either grid.
+ */
 export function depthGrid(limit: number, step: GridStep = 2): number[] {
   const out: number[] = [];
   for (const d of FIRST_DEPTHS) if (d <= limit) out.push(d);
   for (let d = 4096 * step; d <= limit; d *= step) out.push(d);
-  return out;
+  if (limit >= CONTEXT_200K) out.push(CONTEXT_200K);
+  return out.sort((a, b) => a - b);
 }
 
 /**

@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { RunPlan, StartRunRequest } from '../../../contract/api';
+import { defaultYarnTarget } from '../../../contract/recipes';
 import { TUNE_MAX_USERS, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal } from '../../../contract/results';
+import { YarnChoice } from '../recipes/yarn-choice';
 import { useI18n } from '../../i18n';
 import { Field, Input } from '../ui/input';
 import { HelpTip } from '../ui/help-tip';
@@ -19,7 +21,8 @@ export function recheckOffered(previous: RunPlan['previousTune']): previous is N
 
 /**
  * The tune part of a request: the budget ("Ricontrollo rapido" only when offered, else back to
- * "Veloce"), the fidelity check (experts), the goal with its users and context per user.
+ * "Veloce"), the fidelity check and the YaRN extension (experts, one user), the goal with its users and
+ * context per user.
  */
 export function tuneRequestOf(v: TuneRequest, o: { expert: boolean; previous: RunPlan['previousTune'] }): TuneRequest {
   const budget: TuneBudget = v.budget === 'recheck' && !recheckOffered(o.previous) ? 'fast' : v.budget;
@@ -27,6 +30,7 @@ export function tuneRequestOf(v: TuneRequest, o: { expert: boolean; previous: Ru
     budget,
     // The fidelity check compares one-user caches; a recheck measures nothing new to compare.
     fidelity: o.expert && v.fidelity && v.goal !== 'multi' && budget !== 'recheck',
+    ...(o.expert && v.yarnTarget !== undefined && v.goal !== 'multi' && budget !== 'recheck' ? { yarnTarget: v.yarnTarget } : {}),
     ...(v.goal === 'multi'
       ? { goal: 'multi' as const, users: v.users ?? TUNE_MULTI_DEFAULTS.users, perUserContext: v.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext }
       : {}),
@@ -51,6 +55,8 @@ export interface TuneOptionsProps {
   recheckTime?: number | undefined;
   /** More choices shown first, in the same box. */
   children?: ReactNode;
+  /** The model's trained context: "Cerca anche oltre il limite del modello (YaRN)" (experts). */
+  trainedContext?: number | undefined;
 }
 
 /**
@@ -59,7 +65,7 @@ export interface TuneOptionsProps {
  * ("Ricontrollo rapido" when the engine changed since the last search) and (experts only) the fidelity
  * check, which is an indication and not a quality test.
  */
-export function TuneOptions({ value, onChange, expert, previous, times, recheckTime, children }: TuneOptionsProps) {
+export function TuneOptions({ value, onChange, expert, previous, times, recheckTime, children, trainedContext }: TuneOptionsProps) {
   const f = useI18n();
   const { t } = f;
   // "~20 min": the search's own forecast for this model, once the plan says (and a line says so).
@@ -68,6 +74,8 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
   const users = value.users ?? TUNE_MULTI_DEFAULTS.users;
   const perUser = value.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext;
   const [usersText, setUsersText] = useState(String(users));
+  // The YaRN context as typed: the request keeps the last whole number.
+  const [yarnText, setYarnText] = useState(value.yarnTarget === undefined ? '' : String(value.yarnTarget));
   const usersInvalid = parseUsers(usersText) === undefined;
   const offered = recheckOffered(previous);
   const budget: TuneBudget = value.budget === 'recheck' && !offered ? 'fast' : value.budget;
@@ -166,6 +174,44 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
               {t('tune.options.fidelityHint')}
             </span>
           </div>
+        </div>
+      )}
+      {expert && budget !== 'recheck' && goal !== 'multi' && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-2.5">
+            <Switch
+              id="tune-yarn"
+              checked={value.yarnTarget !== undefined}
+              disabled={trainedContext === undefined}
+              onCheckedChange={(on) => {
+                const { yarnTarget: _off, ...rest } = value;
+                const first = defaultYarnTarget(trainedContext as number);
+                setYarnText(on ? String(first) : '');
+                onChange(on ? { ...value, yarnTarget: first } : rest);
+              }}
+              aria-describedby="tune-yarn-hint"
+              className="mt-0.5"
+            />
+            <div className="flex flex-col">
+              <label htmlFor="tune-yarn" className="cursor-pointer text-sm font-medium text-fg">
+                {t('context.yarn.tune')}
+              </label>
+              <span id="tune-yarn-hint" className="text-xs text-fg-3">
+                {trainedContext === undefined ? t('context.yarn.tuneUnknown') : t('context.yarn.tuneHint', { trained: f.integer(trainedContext) })}
+              </span>
+            </div>
+          </div>
+          {value.yarnTarget !== undefined && (
+            <YarnChoice
+              value={yarnText}
+              onChange={(v) => {
+                setYarnText(v);
+                const n = Number(v);
+                if (Number.isInteger(n) && n > 0) onChange({ ...value, yarnTarget: n });
+              }}
+              trained={trainedContext}
+            />
+          )}
         </div>
       )}
     </div>

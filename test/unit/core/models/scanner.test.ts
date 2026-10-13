@@ -37,7 +37,12 @@ describe('pure helpers', () => {
     expect(auxKindOf('mmproj-F16.gguf')).toBe('mmproj');
     expect(auxKindOf('Qwopus3.8-27B.mmproj-f16.gguf')).toBe('mmproj');
     expect(auxKindOf('mtp-gemma-4-31B-it.gguf')).toBe('mtp');
-    expect(auxKindOf('model.mtp.gguf')).toBe('mtp');
+    expect(auxKindOf('model.mtp-head.gguf')).toBe('mtp');
+    // A bare MTP word may name a whole model with fused MTP layers: the header decides, not the name.
+    expect(auxKindOf('model.mtp.gguf')).toBeUndefined();
+    expect(auxKindOf('Qwen3.8-27B-MTP_(Q4_K_M).gguf')).toBeUndefined();
+    expect(auxKindOf('Cyber-Tiel-Coder-35B-A3B-MTP-UD-Q4_K_XL.gguf')).toBeUndefined();
+    expect(auxKindOf('Qwen3.8-27B-MTP_mmproj_(F32).gguf')).toBe('mmproj');
     expect(auxKindOf('Qwen3-0.6B-draft-Q8_0.gguf')).toBe('draft');
     expect(auxKindOf('eagle3-gpt-oss-20b.gguf')).toBe('draft');
     expect(auxKindOf('gemma-4-31B-it-UD-Q4_K_XL.gguf')).toBeUndefined();
@@ -157,7 +162,7 @@ describe('ModelScanner', () => {
     expect(await readSidecar(path.join(library, 'nope'))).toBeUndefined();
   });
 
-  it('groups complete split sets, skips partial ones, attaches mmproj / mtp / draft files', async () => {
+  it('groups complete split sets, lists partial ones as incomplete, attaches mmproj / mtp / draft files', async () => {
     const dir = path.join(t.dir, 'custom', 'gemma');
     gguf(path.join(dir, 'gemma-4-x-UD-Q4_K_XL-00001-of-00002.gguf'), { arch: 'gemma4', layers: 2 });
     writeGguf(path.join(dir, 'gemma-4-x-UD-Q4_K_XL-00002-of-00002.gguf'), { metadata: { 'split.count': 2 }, totalSize: 4096 });
@@ -170,7 +175,11 @@ describe('ModelScanner', () => {
     writeGguf(path.join(dir, 'other-model-draft-Q4_0.gguf'), { metadata: {} });
     writeFileSync(path.join(dir, 'notes.txt'), 'hi');
     const models = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
-    expect(models.map((m) => m.identity.displayName).sort()).toEqual(['gemma-4-x-UD-Q4_K_XL', 'other-model-Q8_0']);
+    expect(models.map((m) => m.identity.displayName).sort()).toEqual(['gap-Q8_0', 'gemma-4-x-UD-Q4_K_XL', 'other-model-Q8_0', 'partial-Q8_0']);
+    // A split set with parts missing is listed, marked: "incompleto (1 di 3 file)".
+    expect(byName(models, 'partial-Q8_0')).toMatchObject({ incomplete: { have: 1, total: 3 }, auxiliary: [], identity: { quant: 'Q8_0', format: 'gguf' } });
+    expect(byName(models, 'gap-Q8_0')?.incomplete).toEqual({ have: 1, total: 2 });
+    expect(byName(models, 'gemma-4-x-UD-Q4_K_XL')?.incomplete).toBeUndefined();
     const gemma = byName(models, 'gemma-4-x-UD-Q4_K_XL') as LocalModel;
     expect(gemma.identity.files).toEqual(['gemma-4-x-UD-Q4_K_XL-00001-of-00002.gguf', 'gemma-4-x-UD-Q4_K_XL-00002-of-00002.gguf']);
     expect(gemma.identity.sizeBytes).toBe(8192 + 4096);
@@ -183,7 +192,6 @@ describe('ModelScanner', () => {
     expect(gemma.paths.slice(0, 2).map((p) => path.basename(p))).toEqual(gemma.identity.files);
     const other = byName(models, 'other-model-Q8_0') as LocalModel;
     expect(other.auxiliary.map((a) => a.kind).sort()).toEqual(['draft', 'mmproj']);
-    expect(log.entries.some((e) => e.msg === 'incomplete split GGUF skipped')).toBe(true);
   });
 
   it('demotes clip models without "mmproj" in the name and attaches orphan auxiliaries from sub-folders', async () => {
@@ -245,10 +253,12 @@ describe('ModelScanner', () => {
     expect(a.identity).toMatchObject({ source: 'local', quant: 'AWQ-4bit' });
     expect(a.identity.facts?.paramsB).toBeUndefined();
     expect(models.some((m) => m.identity.displayName === 'broken')).toBe(false);
-    expect(models.some((m) => m.identity.displayName === 'complete')).toBe(true);
-    expect(models.some((m) => m.identity.displayName === 'partial')).toBe(false);
+    expect(byName(models, 'complete')?.incomplete).toBeUndefined();
+    // A shard still downloading: listed as incomplete, without facts (they would be wrong).
+    expect(byName(models, 'partial')).toMatchObject({ incomplete: { have: 1, total: 2 } });
+    expect(byName(models, 'partial')?.identity.facts).toBeUndefined();
     expect(models.some((m) => m.identity.displayName === 'bad-index')).toBe(false);
-    expect(log.entries.filter((e) => e.msg === 'incomplete safetensors model skipped')).toHaveLength(2);
+    expect(log.entries.filter((e) => e.msg === 'safetensors folder without a usable index skipped')).toHaveLength(1);
     expect(log.entries.some((e) => e.msg === 'cannot read safetensors model')).toBe(true);
     // Unquantized + unknown dtype: no quant label.
     const plain = path.join(t.dir, 'custom', 'plain');
@@ -256,6 +266,157 @@ describe('ModelScanner', () => {
     writeSafetensors(path.join(plain, 'model.safetensors'));
     const again = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
     expect(again.find((m) => m.identity.displayName === 'plain')?.identity.quant).toBeUndefined();
+  });
+
+  /** A whole model with MTP layers fused in: many tensors per block (llamaLikeGguf), nextn declared. */
+  function fusedMtp(file: string, opts: Parameters<typeof llamaLikeGguf>[0] = {}): string {
+    const arch = opts.arch ?? 'qwen35';
+    return gguf(file, { arch, layers: 4, ...opts, extra: { [`${arch}.nextn_predict_layers`]: 1, ...opts.extra } });
+  }
+  /** An MTP head saved alone: the model's metadata, only a few tensors (fewer than its blocks). */
+  function mtpHead(file: string): string {
+    const spec = llamaLikeGguf({ arch: 'qwen35', layers: 8, embd: 16, vocab: 8, extra: { 'qwen35.nextn_predict_layers': 1 } });
+    return writeGguf(file, { ...spec, tensors: spec.tensors.slice(0, 3), totalSize: 4096 });
+  }
+  const sidecar = (dir: string, repo: string, files: Record<string, object>, planned?: string[]) =>
+    writeFileSync(path.join(mkdirAll(dir), DOWNLOAD_SIDECAR), JSON.stringify({ repo, revision: 'f'.repeat(40), files, ...(planned ? { planned } : {}) }));
+
+  it("the user's Linux library: GGUF in a sub-folder, fused MTP models, MTP heads, ternary quants, a stopped download", async () => {
+    // nerkyor/…-GGUF-NInfer: the GGUF files live in GGUF/, with an mmproj and an MTP head.
+    const nerkyor = path.join(library, 'nerkyor', 'Qwen3.8-27B-Coder390-GGUF-NInfer');
+    const coder = fusedMtp(path.join(nerkyor, 'GGUF', 'Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-Q8MTP.gguf'));
+    writeGguf(path.join(nerkyor, 'GGUF', 'mmproj-Qwen3.8-27B-Q8_0.gguf'), { metadata: { 'general.architecture': 'clip' } });
+    mtpHead(path.join(nerkyor, 'GGUF', 'mtp-Qwen3.8-27B-Coder390-EfficientThink-Q8_0.gguf'));
+    const coderSha = createHash('sha256').update(readFileSync(coder)).digest('hex');
+    sidecar(nerkyor, 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', { 'GGUF/Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-Q8MTP.gguf': { sha256: coderSha, sizeBytes: 8192 } });
+    // peculiar-ragdoll: "-MTP-" in a whole model's name.
+    const tiel = path.join(library, 'peculiar-ragdoll', 'Cyber-Tiel-Coder-35B-A3B-GGUF-MTP');
+    fusedMtp(path.join(tiel, 'Cyber-Tiel-Coder-35B-A3B-MTP-UD-Q4_K_XL.gguf'), { arch: 'qwen35moe' });
+    writeGguf(path.join(tiel, 'mmproj-BF16.gguf'), { metadata: { 'general.architecture': 'clip' } });
+    // prism-ml: a ternary PQ2_0 quant (only the PrismML fork reads it).
+    const bonsai = path.join(library, 'prism-ml', 'Ternary-Bonsai-2-27B-gguf');
+    gguf(path.join(bonsai, 'Ternary-Bonsai-2-27B-PQ2_0.gguf'), { arch: 'qwen35', fileType: 141 });
+    writeGguf(path.join(bonsai, 'Ternary-Bonsai-2-27B-mmproj-BF16.gguf'), { metadata: { 'general.architecture': 'clip' } });
+    // orcarouter/OrcaSAQ-2-27B: 1 of 4 shards, no index yet, an old sidecar without the planned list.
+    const orca = path.join(library, 'orcarouter', 'OrcaSAQ-2-27B');
+    writeFileSync(path.join(mkdirAll(orca), 'config.json'), '{"num_hidden_layers": 2, "torch_dtype": "bfloat16"}');
+    writeSafetensors(path.join(orca, 'model-00001-of-00004.safetensors'));
+    writeFileSync(path.join(mkdirAll(path.join(orca, 'assets')), 'liberty.mp4'), 'video');
+    writeFileSync(path.join(orca, 'README.md'), '# Orca');
+    sidecar(orca, 'orcarouter/OrcaSAQ-2-27B', { 'config.json': {}, 'model-00001-of-00004.safetensors': {} });
+    // ~/models/qwen3.8-27b: odd names with "MTP_" and the quant in brackets.
+    const loose = path.join(t.dir, 'home-models', 'qwen3.8-27b');
+    fusedMtp(path.join(loose, 'Qwen3.8-27B-MTP_(Q4_K_M).gguf'));
+    writeGguf(path.join(loose, 'Qwen3.8-27B-MTP_mmproj_(F32).gguf'), { metadata: { 'general.architecture': 'clip' } });
+    // An MTP head named like a model: its header gives it away.
+    const head = path.join(t.dir, 'home-models', 'demo');
+    gguf(path.join(head, 'Demo-27B-Q8_0.gguf'), { arch: 'qwen35' });
+    mtpHead(path.join(head, 'Demo-27B-MTP.gguf'));
+
+    const models = await scanner({ extraModelDirs: [path.join(t.dir, 'home-models')] }).scan();
+    expect(models.map((m) => m.identity.displayName).sort()).toEqual([
+      'Cyber-Tiel-Coder-35B-A3B-MTP-UD-Q4_K_XL',
+      'Demo-27B-Q8_0',
+      'Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-Q8MTP',
+      'Qwen3.8-27B-MTP_(Q4_K_M)',
+      'Ternary-Bonsai-2-27B-PQ2_0',
+      'orcarouter/OrcaSAQ-2-27B',
+    ]);
+    const c = byName(models, 'Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-Q8MTP') as LocalModel;
+    expect(c.identity).toMatchObject({ repo: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', sha256: coderSha, quant: 'Q4LynnStyle', source: 'hf' });
+    expect(c.dir).toBe(path.join(nerkyor, 'GGUF'));
+    expect(c.auxiliary.map((a) => [a.kind, path.basename(a.path)]).sort()).toEqual([
+      ['mmproj', 'mmproj-Qwen3.8-27B-Q8_0.gguf'],
+      ['mtp', 'mtp-Qwen3.8-27B-Coder390-EfficientThink-Q8_0.gguf'],
+    ]);
+    expect(byName(models, 'Cyber-Tiel-Coder-35B-A3B-MTP-UD-Q4_K_XL')).toMatchObject({ identity: { quant: 'UD-Q4_K_XL' }, auxiliary: [{ kind: 'mmproj' }] });
+    expect(byName(models, 'Ternary-Bonsai-2-27B-PQ2_0')).toMatchObject({ identity: { quant: 'PQ2_0' }, auxiliary: [{ kind: 'mmproj' }] });
+    expect(byName(models, 'Qwen3.8-27B-MTP_(Q4_K_M)')).toMatchObject({ origin: 'custom', identity: { quant: 'Q4_K_M' }, auxiliary: [{ kind: 'mmproj' }] });
+    expect(byName(models, 'Demo-27B-Q8_0')?.auxiliary.map((a) => [a.kind, path.basename(a.path)])).toEqual([['mtp', 'Demo-27B-MTP.gguf']]);
+    const o = byName(models, 'orcarouter/OrcaSAQ-2-27B') as LocalModel;
+    expect(o).toMatchObject({ incomplete: { have: 1, total: 4 }, identity: { format: 'safetensors', repo: 'orcarouter/OrcaSAQ-2-27B', file: 'model-00001-of-00004.safetensors' } });
+    expect(o.identity.facts).toBeUndefined();
+  });
+
+  it('a folder with both formats gives two models; safetensors variants are named by their folder', async () => {
+    const dir = path.join(library, 'mixed', 'Both-4B');
+    gguf(path.join(dir, 'Both-4B-Q4_K_M.gguf'));
+    writeFileSync(path.join(dir, 'config.json'), '{"num_hidden_layers": 2, "torch_dtype": "bfloat16"}');
+    writeSafetensors(path.join(dir, 'model.safetensors'));
+    writeFileSync(path.join(mkdirAll(path.join(dir, 'FP8')), 'config.json'), '{"num_hidden_layers": 2, "quantization_config": {"quant_method": "fp8"}}');
+    writeSafetensors(path.join(dir, 'FP8', 'model.safetensors'));
+    const loose = path.join(t.dir, 'custom', 'qwen', 'W4A16');
+    writeFileSync(path.join(mkdirAll(loose), 'config.json'), '{"num_hidden_layers": 2}');
+    writeSafetensors(path.join(loose, 'model.safetensors'));
+    const models = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
+    const mine = models.filter((m) => m.identity.repo === 'mixed/Both-4B');
+    expect(mine.map((m) => [m.identity.format, m.identity.displayName]).sort()).toEqual([
+      ['gguf', 'Both-4B-Q4_K_M'],
+      ['safetensors', 'mixed/Both-4B'],
+      ['safetensors', 'mixed/Both-4B · FP8'],
+    ]);
+    expect(byName(models, 'qwen / W4A16')?.identity.source).toBe('local');
+  });
+
+  it('knows what a download set out to fetch (sidecar "planned"), and a sidecar above any scanned folder', async () => {
+    const repo = path.join(library, 'o', 'r');
+    writeFileSync(path.join(mkdirAll(path.join(repo, 'FP8')), 'config.json'), '{"num_hidden_layers": 1}');
+    writeSafetensors(path.join(repo, 'FP8', 'weights-a.safetensors'));
+    sidecar(repo, 'o/r', { 'FP8/weights-a.safetensors': {} }, ['FP8/config.json', 'FP8/weights-a.safetensors', 'FP8/weights-b.safetensors', 'other.gguf']);
+    let models = await scanner().scan();
+    expect(byName(models, 'o/r · FP8')?.incomplete).toEqual({ have: 1, total: 2 });
+    writeSafetensors(path.join(repo, 'FP8', 'weights-b.safetensors'));
+    models = await scanner().scan();
+    expect(byName(models, 'o/r · FP8')?.incomplete).toBeUndefined();
+    // Another install's library added as a folder: the sidecar still gives the repo and the hash.
+    const old = path.join(t.dir, 'old-library');
+    const file = gguf(path.join(old, 'unsloth', 'Tiny-GGUF', 'Tiny-Q4_K_M.gguf'));
+    const sha = createHash('sha256').update(readFileSync(file)).digest('hex');
+    sidecar(path.join(old, 'unsloth', 'Tiny-GGUF'), 'unsloth/Tiny-GGUF', { 'Tiny-Q4_K_M.gguf': { sha256: sha } });
+    // A sidecar naming no valid repo is ignored.
+    gguf(path.join(old, 'junk', 'Junk-Q8_0.gguf'));
+    sidecar(path.join(old, 'junk'), 'not a repo', {});
+    models = await scanner({ extraModelDirs: [old] }).scan();
+    expect(byName(models, 'Tiny-Q4_K_M')).toMatchObject({ origin: 'custom', identity: { repo: 'unsloth/Tiny-GGUF', sha256: sha, revision: 'f'.repeat(40) } });
+    expect(byName(models, 'Junk-Q8_0')?.identity.repo).toBeUndefined();
+    // A malformed planned list is dropped, the rest of the sidecar kept.
+    writeFileSync(path.join(repo, DOWNLOAD_SIDECAR), JSON.stringify({ repo: 'o/r', files: {}, planned: 'nope' }));
+    expect(await readSidecar(repo)).toEqual({ repo: 'o/r', files: {} });
+  });
+
+  it('NInfer artifacts: facts and sha256 from the manifest, the sums file or the sidecar', async () => {
+    const repo = path.join(library, 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
+    const art = path.join(mkdirAll(repo), 'qwen3_8_27b_nvfp4.ninfer');
+    writeFileSync(art, Buffer.alloc(2048, 7));
+    const sha = createHash('sha256').update(readFileSync(art)).digest('hex');
+    const manifest = { artifact: { filename: 'qwen3_8_27b_nvfp4.ninfer', bytes: 2048, sha256: sha, container_version: 3, architecture: 'qwen3_8', name: 'Qwen3.8 27B', components: ['text'] } };
+    writeFileSync(path.join(repo, 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(path.join(repo, 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS'), `${'c'.repeat(64)}  other.ninfer\n`);
+    // A second artifact the manifest does not describe: its sha256 from the sums file.
+    const other = path.join(repo, 'other.ninfer');
+    writeFileSync(other, Buffer.alloc(512, 1));
+    sidecar(repo, 'neroued/Qwen3.8-27B-nvfp4-NInfer', {});
+    // Loose, without manifest or repo.
+    const loose = path.join(t.dir, 'custom', 'mine.ninfer');
+    writeFileSync(path.join(mkdirAll(path.dirname(loose)), 'mine.ninfer'), 'x');
+    const models = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
+    const q = byName(models, 'qwen3_8_27b_nvfp4') as LocalModel;
+    expect(q).toMatchObject({
+      origin: 'library',
+      identity: { format: 'ninfer', repo: 'neroued/Qwen3.8-27B-nvfp4-NInfer', sha256: sha, quant: 'NVFP4', sizeBytes: 2048, facts: { architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 } },
+    });
+    expect(q.paths.map((p) => path.basename(p))).toEqual(['qwen3_8_27b_nvfp4.ninfer', 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS']);
+    expect(byName(models, 'other')?.identity).toMatchObject({ sha256: 'c'.repeat(64), facts: { paramsB: 27 } });
+    expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: {} });
+    expect(byName(models, 'mine')?.identity.sha256).toBeUndefined();
+  });
+
+  it('a safetensors header that cannot be read costs the parameter count, not the model', async () => {
+    const dir = path.join(t.dir, 'custom', 'odd');
+    writeFileSync(path.join(mkdirAll(dir), 'config.json'), '{"num_hidden_layers": 1}');
+    writeFileSync(path.join(dir, 'model.safetensors'), Buffer.alloc(16));
+    const models = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
+    expect(byName(models, 'odd')?.identity.facts?.paramsB).toBeUndefined();
   });
 
   it('reads the HF cache layout (repo, revision, blob sha256 through symlinks)', async () => {

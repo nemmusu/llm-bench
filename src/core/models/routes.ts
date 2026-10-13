@@ -17,7 +17,7 @@ const paramsB = z.coerce.number().min(0).max(100_000).optional();
 
 const searchQuerySchema = z.object({
   q: z.string().max(200).default(''),
-  format: z.enum(['gguf', 'safetensors', 'any']).default('any'),
+  format: z.enum(['gguf', 'safetensors', 'ninfer', 'any']).default('any'),
   sort: z.enum(['downloads', 'likes', 'lastModified', 'createdAt', 'trendingScore']).default('downloads'),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   author: z
@@ -41,6 +41,8 @@ const hubFitBodySchema = z.object({
   engine: engineKindSchema,
   revision: revisionSchema,
   params: launchParamsSchema.optional(),
+  /** 'ninfer': the repo's NInfer artifacts (judged with llama.cpp's KV math until NInfer has its own). */
+  format: z.literal('ninfer').optional(),
 });
 
 /** "owner/name" from the route params, validated so it cannot address other hub paths. */
@@ -55,6 +57,7 @@ function repoParam(c: Context): string {
  *   POST   /api/models/rescan                         -> LocalModel[]
  *   GET    /api/models/search?q=&format=&sort=&limit=&author=&minParamsB=&maxParamsB=&onlyFits=&cursor= -> HubSearchPage
  *   GET    /api/models/curated?vramGB=                -> CuratedResponse
+ *   GET    /api/models/vram                           -> VramNow | null (what other programs hold now)
  *   GET    /api/models/hub/:owner/:name?revision=     -> HubRepoInfo (HubModel + sha, private)
  *   GET    /api/models/hub/:owner/:name/files?revision= -> HubFile[]
  *   GET    /api/models/hub/:owner/:name/readme        -> { text, truncated }
@@ -72,6 +75,7 @@ export function createModelsRoutes(svc: ModelsService): RouteModule {
       const q = searchQuerySchema.parse(c.req.query());
       return c.json(await svc.search(q.q, q));
     });
+    app.get('/api/models/vram', async (c) => c.json(await svc.vramNow()));
     app.get('/api/models/curated', async (c) => {
       const vram = z.coerce.number().positive().max(4096).optional().parse(c.req.query('vramGB'));
       return c.json(await svc.curated(vram));
@@ -94,7 +98,9 @@ export function createModelsRoutes(svc: ModelsService): RouteModule {
     app.post('/api/models/hub/:owner/:name/fit', async (c) => {
       const repo = repoParam(c);
       const body = await parseBody(c, hubFitBodySchema);
-      return c.json(await svc.hubFit(repo, body.engine, { ...(body.revision ? { revision: body.revision } : {}), ...(body.params ? { params: body.params } : {}) }));
+      return c.json(
+        await svc.hubFit(repo, body.engine, { ...(body.revision ? { revision: body.revision } : {}), ...(body.params ? { params: body.params } : {}), ...(body.format ? { format: body.format } : {}) }),
+      );
     });
     app.post('/api/models/fit', async (c) => c.json(await svc.fit(await parseBody(c, fitRequestSchema))));
     app.delete('/api/models/local/:id', async (c) => {

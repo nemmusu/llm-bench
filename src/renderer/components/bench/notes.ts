@@ -25,6 +25,9 @@ export const NOTE_CODES = [
   'sessions_depth_reduced',
   'sessions_depth_unknown',
   'sessions_budget',
+  'context_beyond_trained',
+  'recipe_engine_missing',
+  'recipe_file_missing',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -48,6 +51,9 @@ const TONES: Record<NoteCode, NoteTone> = {
   sessions_depth_reduced: 'info',
   sessions_depth_unknown: 'info',
   sessions_budget: 'info',
+  context_beyond_trained: 'warning',
+  recipe_engine_missing: 'warning',
+  recipe_file_missing: 'info',
 };
 
 export interface NoteText {
@@ -73,6 +79,8 @@ function paramsFor(note: NoteLike, f: Pick<Formatters, 'integer' | 'number' | 'p
     if (n === undefined) out[k] = str(v);
     else if (k.endsWith('MiB')) out[k.slice(0, -3)] = `${f.number(n / MIB_PER_GB, 1)} GB`;
     else if (k === 'utilization') out.pct = f.percent(n, 0);
+    // A RoPE factor keeps its decimals (×9,38).
+    else if (k === 'factor') out[k] = f.number(n, 2);
     else out[k] = f.integer(n);
   }
   return out;
@@ -91,7 +99,9 @@ export function noteText(note: NoteLike, f: Pick<Formatters, 't' | 'integer' | '
       ? 'VRAM_BUSY_MEMORY'
       : note.code === 'context_sweep_skipped' && params.reason === 'context_too_small'
         ? 'context_sweep_skipped_small'
-        : note.code;
+        : note.code === 'recipe_file_missing' && params.part === 'mmproj'
+          ? 'recipe_file_missing_mmproj'
+          : note.code;
   return {
     code: note.code,
     tone: TONES[note.code],

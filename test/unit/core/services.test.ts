@@ -359,6 +359,15 @@ describe('modelsLookup', () => {
     expect(await missing.getLocal('x')).toBeUndefined();
   });
 
+  it('never runs a model whose download stopped halfway, and never picks it for a repo', async () => {
+    const partial: LocalModel = { ...local, identity: { ...local.identity, format: 'safetensors', repo: 'o/r' }, incomplete: { have: 1, total: 4 } };
+    const whole: LocalModel = { ...partial, id: 'whole' };
+    delete whole.incomplete;
+    const lookup = modelsLookup({ models: { get: async () => partial, hashes: { enqueue: async () => 'x' }, list: async () => [partial, whole] } as never });
+    await expect(lookup.getLocal('abc')).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND', params: { reason: 'incomplete', have: 1, total: 4 } });
+    expect((await lookup.findByRepo!('o/r'))?.id).toBe('whole');
+  });
+
   it('finds hub GGUFs in the library (hashed like local picks) and plans their downloads', async () => {
     const m = gguf();
     const asked: unknown[][] = [];
@@ -392,7 +401,9 @@ describe('createServices with the models module', () => {
   afterEach(() => t.cleanup());
 
   it('feeds GPU memory to the fit estimator and estimates local models for the plan', async () => {
+    let now = 0;
     const deps = testDeps(t.dir, {
+      clock: { ...systemClock, now: () => now },
       proc: {
         run: () => Promise.resolve({ code: 1, stdout: '', stderr: '', timedOut: false }),
         spawn: () => {
@@ -412,6 +423,30 @@ describe('createServices with the models module', () => {
     expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 31007 });
     ctx.telemetry.snapshot = () => Promise.resolve([{ memTotalMiB: 8192, memUsedMiB: null } as never]);
     expect(await gpuInfo()).toEqual({ totalMiB: 8192, freeMiB: 8192 });
+    // A server GPU Bench started holds memory too: in use, but not "other programs".
+    s.ownership.list = () => Promise.resolve([{ kind: 'process', pid: 42 } as never, { kind: 'container', pid: 0 } as never]);
+    let reads = 0;
+    ctx.telemetry.otherGpuUsers = (own) => {
+      reads++;
+      expect(own).toEqual([]);
+      return Promise.resolve([
+        { pid: 42, name: 'llama-server', knownLlm: true, memMiB: 9000 },
+        { pid: 7, name: 'game', knownLlm: false, memMiB: 3000 },
+        { pid: 42, name: 'llama-server', knownLlm: true },
+      ]);
+    };
+    ctx.telemetry.snapshot = () => Promise.resolve([{ memTotalMiB: 32607, memUsedMiB: 12600 } as never]);
+    now = 10_000;
+    expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 20007, ownMiB: 9000 });
+    // Read at most every 2 s.
+    await gpuInfo();
+    expect(reads).toBe(1);
+    now = 13_000;
+    ctx.telemetry.otherGpuUsers = () => Promise.reject(new Error('no counters'));
+    expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 20007 });
+    now = 16_000;
+    s.ownership.list = () => Promise.reject(new Error('no registry'));
+    expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 20007 });
 
     const fit = (s.bench as unknown as { deps: { fit: (r: StartRunRequest, m: unknown, p: unknown) => Promise<unknown> } }).deps.fit;
     const req = { ...base, engine: { kind: 'llamacpp-native' as const }, model: { localId: 'abc' } };

@@ -30,7 +30,7 @@
  *  5. Full context sweep of each type's best combination (and of any screened variant that was the
  *     fastest at one of its depths): what its screening measured is reused, so each deep prompt of a
  *     combination is measured once. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the
- *     exact maximum; "Accurata" doubles.
+ *     exact maximum; "Accurata" doubles; both measure 200K when the context reaches it.
  *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
  *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
  *     the only way to a larger context.
@@ -73,6 +73,7 @@ import {
   type TuneTag,
   type Tuning,
 } from '../../contract/results';
+import { availableNowMiB } from '../models/fit';
 import { launchSpilled, SPILL_RATIO } from './spill';
 import { anchorOf, depthGrid, maxDepth, requestMsAt, sweepDepths, type GridStep, type SpeedAnchor } from './sweep';
 import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt, recommendedCombination, screenBetter } from './tune-rank';
@@ -338,8 +339,10 @@ export interface TunerInput {
   budget: TuneBudget;
   /** Sweep shape (from the profile's context-sweep step): also the answer length of goal 'multi'. */
   sweep: { outputTokens: number; reps: number };
-  /** Trained context of the model (the search never goes above it). */
+  /** Trained context of the model, or with YaRN the extended one (the search never goes above it). */
   modelContext?: number;
+  /** Contexts the capacity search also tries when the estimate allows them (the YaRN targets, 300K / 500K). */
+  contextCandidates?: readonly number[];
   /** VRAM estimate on the free VRAM measured before the search; undefined = no estimate (nothing pruned). */
   predict?: (params: LaunchParams) => FitEstimate | undefined;
   /** A model that does not fit can spill to shared memory (Windows / WDDM) instead of failing. */
@@ -724,7 +727,8 @@ export class Tuner {
   /** True / false when the estimate says this launch fits (with slack) / does not; undefined = no estimate. */
   protected predictFits(params: LaunchParams): boolean | undefined {
     const est = this.input.predict?.(params);
-    return est === undefined ? undefined : est.needMiB <= est.availableMiB * PREDICT_SLACK;
+    // The search launches now, with whatever else is open: what is free now counts, not the card's total.
+    return est === undefined ? undefined : est.needMiB <= availableNowMiB(est) * PREDICT_SLACK;
   }
 
   /** Largest context the estimate allows for this KV type (with slack): 0 = not even the smallest, undefined = no estimate. */
@@ -754,6 +758,7 @@ export class Tuner {
     const near = Math.floor(limit / CAPACITY_STEP) * CAPACITY_STEP;
     if (predicted !== undefined && near > this.min && !candidates.includes(near)) candidates.push(near);
     if (this.cap <= limit && !candidates.includes(this.cap)) candidates.push(this.cap);
+    for (const c of this.input.contextCandidates ?? []) if (c > this.min && c <= Math.min(limit, this.cap) && !candidates.includes(c)) candidates.push(c);
     candidates.sort((a, b) => a - b);
     return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }
@@ -1105,7 +1110,7 @@ export class Tuner {
     const before = predict?.(space.params(from.variant, from.ctx));
     const measured = (this.attempts[from.attempt] as TuneAttempt).vramPeakMiB;
     const need = before && measured !== undefined ? measured + est.needMiB - before.needMiB : est.needMiB;
-    return need <= est.availableMiB * PREDICT_SLACK;
+    return need <= availableNowMiB(est) * PREDICT_SLACK;
   }
 
   /** One dimension at a time at the type's largest context; returns the best screened settings. */

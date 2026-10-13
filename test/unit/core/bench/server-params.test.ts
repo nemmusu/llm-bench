@@ -106,6 +106,23 @@ describe('recommended server context', () => {
     expect(big.warnings.map((w) => w.code)).toContain('spill_risk');
   });
 
+  it('a busy card: the context follows what a launch gets right now, the verdict stays on the card', async () => {
+    // Fits the card perfectly at any size, but with other programs open only 8K fits right now.
+    const s = serviceSetup(tmp, {
+      adapter: { parallel: null },
+      deps: {
+        resolveModel: async () => modelTarget(),
+        fit: async (_req, _model, plan) => {
+          const ctx = asked(plan.params) as number;
+          return fit('perfect', { contextSize: ctx, levelNow: ctx > 8192 ? 'partial' : 'good', freeNowMiB: 9000, needMiB: 9500 });
+        },
+      },
+    });
+    const plan = await new BenchService(s.deps).planServer(llama());
+    expect(plan.contextSize).toBe(8192);
+    expect(plan.fit?.level).toBe('perfect');
+  });
+
   it('never more than the model was trained for', async () => {
     const short = withFit(() => 'perfect', { model: withContext(8192) });
     expect((await short.svc.planServer(llama())).contextSize).toBe(8192);

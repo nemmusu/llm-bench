@@ -9,15 +9,19 @@
  *  - the KV cache is summed per layer group from the real metadata: per-layer KV heads and head
  *    sizes, sliding-window layers capped at the window, recurrent (SSM) layers with a fixed state;
  *  - overhead = CUDA context + a compute-buffer approximation that grows with ubatch and ctx;
- *  - availability starts from the FREE VRAM, not the total;
- *  - vLLM follows its own rule (gpu_memory_utilization × total must be free; the KV budget must
- *    hold at least one sequence of max_model_len) and reports the concurrency it allows;
+ *  - two verdicts: `level` on the card's TOTAL memory minus a fixed reserve (VRAM_RESERVE_MIB, the
+ *    driver and the desktop), the same whatever else is open; `levelNow` on what a launch right now
+ *    gets, min(free VRAM, total − reserve), which the spill warnings, fixes, tuner and server follow;
+ *  - vLLM follows its own rule (the KV budget inside gpu_memory_utilization × total must hold at
+ *    least one sequence of max_model_len; right now that share must also be free) and reports the
+ *    concurrency it allows;
  *  - llama.cpp partial offload reports the largest -ngl that fits;
  *  - llama.cpp estimates can be calibrated with the VRAM peaks measured on this GPU (calibration.ts):
  *    the KV cache + compute buffer part is scaled (and, for the very same model, offset) to match.
  */
 import type { LaunchParams, EngineKind } from '../../contract/engines';
-import type { FitEstimate, FitFixes, FitLevel, HubFile } from '../../contract/models';
+import type { NinferManifest } from '../../contract/formats';
+import { VRAM_RESERVE_MIB, type FitEstimate, type FitFixes, type FitLevel, type HubFile } from '../../contract/models';
 import { bytesPerParam } from './quant';
 import type { GpuMem, KvLayout, ModelFactsEx } from './types';
 
@@ -53,6 +57,8 @@ export const FIT_NOTES = {
   slidingWindow: 'kv.sliding-window',
   recurrent: 'kv.recurrent-state',
   contextOverModel: 'context.exceeds-model',
+  /** Beyond the trained context on purpose, within what the RoPE scaling (YaRN / linear) extends it to. */
+  contextExtended: 'context.rope-extended',
   partialOffload: 'llamacpp.partial-offload',
   budgetOverFree: 'vllm.budget-exceeds-free',
   kvTooSmall: 'vllm.kv-too-small',
@@ -74,6 +80,8 @@ export interface FitParams {
   flashAttention?: 'auto' | 'on' | 'off';
   gpuMemoryUtilization?: number;
   maxModelLen?: number;
+  /** YaRN / linear RoPE scaling: a context up to originalContext × factor is extended on purpose. */
+  ropeScaling?: Pick<NonNullable<LaunchParams['ropeScaling']>, 'factor' | 'originalContext'>;
 }
 
 /**
@@ -116,11 +124,18 @@ export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
   if (p.flashAttention !== undefined) out.flashAttention = p.flashAttention;
   if (p.gpuMemoryUtilization !== undefined) out.gpuMemoryUtilization = p.gpuMemoryUtilization;
   if (p.maxModelLen !== undefined) out.maxModelLen = p.maxModelLen;
+  if (p.ropeScaling !== undefined) out.ropeScaling = { factor: p.ropeScaling.factor, originalContext: p.ropeScaling.originalContext };
   return out;
 }
 
+/** vLLM and SGLang reserve a share of the card up front (gpu_memory_utilization / mem-fraction-static); the rest grow as llama.cpp does. */
 function family(engine: EngineKind): 'llamacpp' | 'vllm' {
-  return engine === 'vllm-docker' || engine === 'vllm-native' ? 'vllm' : 'llamacpp';
+  return engine === 'vllm-docker' || engine === 'vllm-native' || engine === 'sglang-docker' || engine === 'sglang-native' ? 'vllm' : 'llamacpp';
+}
+
+/** Engines that run safetensors folders: vLLM and SGLang. */
+export function runsSafetensors(engine: EngineKind): boolean {
+  return family(engine) === 'vllm';
 }
 
 /** KV cache bytes per element. vLLM has no q8_0/q4_0: both map to its fp8 cache (1 byte). */
@@ -223,7 +238,11 @@ export function estimateFit(input: FitInput): FitEstimate {
   const modelMax = facts.contextLength;
   const defaultCtx = Math.min(modelMax ?? DEFAULT_FIT_CONTEXT, DEFAULT_FIT_CONTEXT);
   const ctx = Math.max(1, Math.floor((fam === 'vllm' ? (p.maxModelLen ?? p.contextSize) : p.contextSize) ?? defaultCtx));
-  if (modelMax !== undefined && ctx > modelMax) notes.push(FIT_NOTES.contextOverModel);
+  if (modelMax !== undefined && ctx > modelMax) {
+    // With RoPE scaling a longer context is the point: the estimate (linear KV) still holds.
+    const extended = p.ropeScaling ? p.ropeScaling.originalContext * p.ropeScaling.factor : 0;
+    notes.push(ctx <= extended ? FIT_NOTES.contextExtended : FIT_NOTES.contextOverModel);
+  }
   const { layout, assumed } = kvLayoutOf(facts);
   if (assumed) notes.push(FIT_NOTES.kvAssumed);
   if (layout.groups.some((g) => g.window)) notes.push(FIT_NOTES.slidingWindow);
@@ -243,15 +262,15 @@ export function estimateFit(input: FitInput): FitEstimate {
     const kvBudgetMiB = budgetMiB - weightsMiB - overheadMiB;
     const utilization = needMiB / budgetMiB;
     let level: FitLevel;
-    if (budgetMiB > gpu.freeMiB) {
-      level = 'no';
-      notes.push(FIT_NOTES.budgetOverFree);
-    } else if (kvBudgetMiB < kvPerSeqMiB || kvBudgetMiB <= 0) {
+    if (kvBudgetMiB < kvPerSeqMiB || kvBudgetMiB <= 0) {
       level = 'no';
       notes.push(FIT_NOTES.kvTooSmall);
     } else {
       level = levelFor(utilization, false) as FitLevel;
     }
+    // vLLM reserves its whole share up front and refuses to start when that much is not free now.
+    const overFree = budgetMiB > gpu.freeMiB;
+    if (overFree) notes.push(FIT_NOTES.budgetOverFree);
     const est: FitEstimate = {
       level,
       needMiB,
@@ -263,6 +282,8 @@ export function estimateFit(input: FitInput): FitEstimate {
       contextSize: ctx,
       basis: fromFile ? 'file-size' : 'params-heuristic',
       notes,
+      ...nowOf(gpu),
+      levelNow: overFree ? 'no' : level,
     };
     if (kvPerSeqMiB > 0) est.maxConcurrency = Math.max(0, Math.floor(kvBudgetMiB / kvPerSeqMiB));
     return est;
@@ -282,10 +303,27 @@ export function estimateFit(input: FitInput): FitEstimate {
   const kvMiB = cal ? Math.round(cal.scale * rawKvMiB) : rawKvMiB;
   const overheadMiB = cal ? Math.max(0, Math.round(CUDA_CONTEXT_MIB + cal.offsetMiB + cal.scale * computeMiB)) : CUDA_CONTEXT_MIB + computeMiB;
   const needMiB = weightsMiB + kvMiB + overheadMiB;
-  const availableMiB = Math.max(1, gpu.freeMiB);
+  const availableMiB = usableMiB(gpu);
   const utilization = needMiB / availableMiB;
-  const est: FitEstimate = {
-    level: 'no',
+  // Partial offload: -ngl N puts N repeating layers (weights + their KV) on the GPU; the output
+  // layer stays on the CPU unless every layer fits, but we reserve it to stay conservative.
+  const layers = facts.blockCount ?? FALLBACK.layers;
+  const embd = facts.embeddingLength ?? FALLBACK.embd;
+  const vocab = facts.vocabSize ?? FALLBACK.vocab;
+  const bytesPerWeight = facts.bitsPerWeight ? facts.bitsPerWeight / 8 : bytesPerParam(facts.quant);
+  const outputMiB = (vocab * embd * bytesPerWeight) / MIB;
+  const perLayerMiB = Math.max(weightsMiB - outputMiB, weightsMiB / 4) / layers + kvMiB / layers;
+  const judge = (room: number): { level: FitLevel; maxGpuLayers?: number } => {
+    const full = levelFor(needMiB / room, true);
+    if (full) return { level: full };
+    const maxLayers = Math.min(layers, Math.floor((room - overheadMiB - outputMiB) / perLayerMiB));
+    return maxLayers >= 1 ? { level: 'partial', maxGpuLayers: maxLayers } : { level: 'no' };
+  };
+  const total = judge(availableMiB);
+  const now = judge(Math.max(1, Math.min(gpu.freeMiB, availableMiB)));
+  if (now.level === 'partial') notes.push(FIT_NOTES.partialOffload);
+  return {
+    level: total.level,
     needMiB,
     weightsMiB,
     kvMiB,
@@ -296,29 +334,25 @@ export function estimateFit(input: FitInput): FitEstimate {
     basis: fromFile ? 'file-size' : 'params-heuristic',
     notes,
     ...(cal ? { calibration: { samples: cal.samples, errorPct: cal.errorPct, scope: cal.scope, rawNeedMiB } } : {}),
+    ...nowOf(gpu),
+    levelNow: now.level,
+    ...(now.maxGpuLayers !== undefined ? { maxGpuLayers: now.maxGpuLayers } : {}),
   };
-  const level = levelFor(utilization, true);
-  if (level) {
-    est.level = level;
-    return est;
-  }
-  // Partial offload: -ngl N puts N repeating layers (weights + their KV) on the GPU; the output
-  // layer stays on the CPU unless every layer fits, but we reserve it to stay conservative.
-  const layers = facts.blockCount ?? FALLBACK.layers;
-  const embd = facts.embeddingLength ?? FALLBACK.embd;
-  const vocab = facts.vocabSize ?? FALLBACK.vocab;
-  const bytesPerWeight = facts.bitsPerWeight ? facts.bitsPerWeight / 8 : bytesPerParam(facts.quant);
-  const outputMiB = (vocab * embd * bytesPerWeight) / MIB;
-  const perLayerWeightMiB = Math.max(weightsMiB - outputMiB, weightsMiB / 4) / layers;
-  const perLayerMiB = perLayerWeightMiB + kvMiB / layers;
-  const room = availableMiB - overheadMiB - outputMiB;
-  const maxLayers = Math.min(layers, Math.floor(room / perLayerMiB));
-  if (maxLayers >= 1) {
-    est.level = 'partial';
-    est.maxGpuLayers = maxLayers;
-    notes.push(FIT_NOTES.partialOffload);
-  }
-  return est;
+}
+
+/** VRAM a verdict counts on: the card's total minus the fixed reserve for the driver and the desktop. */
+export function usableMiB(gpu: Pick<GpuMem, 'totalMiB'>): number {
+  return Math.max(1, gpu.totalMiB - VRAM_RESERVE_MIB);
+}
+
+/** What the card holds right now: total, free, and what other programs (not GPU Bench's engines) use. */
+function nowOf(gpu: GpuMem): Pick<FitEstimate, 'totalMiB' | 'freeNowMiB' | 'busyMiB'> {
+  return { totalMiB: gpu.totalMiB, freeNowMiB: gpu.freeMiB, busyMiB: Math.max(0, gpu.totalMiB - gpu.freeMiB - (gpu.ownMiB ?? 0)) };
+}
+
+/** VRAM a launch right now gets (what the tuner predicts with): min(free now, total − reserve). */
+export function availableNowMiB(est: Pick<FitEstimate, 'availableMiB' | 'freeNowMiB'>): number {
+  return est.freeNowMiB === undefined ? est.availableMiB : Math.max(1, Math.min(est.freeNowMiB, est.availableMiB));
 }
 
 /** Everything in VRAM: perfect, good or tight (not 'partial', not 'no'). */
@@ -326,22 +360,38 @@ export function fitsFully(est: Pick<FitEstimate, 'level'>): boolean {
   return levelRank(est.level) <= levelRank('tight');
 }
 
+/** The verdict of a launch right now (`levelNow`, else `level` when the free VRAM is unknown). */
+export function levelNowOf(est: Pick<FitEstimate, 'level' | 'levelNow'>): FitLevel {
+  return est.levelNow ?? est.level;
+}
+
+/** A launch right now has everything in VRAM. */
+export function fitsNow(est: Pick<FitEstimate, 'level' | 'levelNow'>): boolean {
+  return fitsFully({ level: levelNowOf(est) });
+}
+
 /** Contexts of the "largest context that fits" search are multiples of this. */
 export const FIX_CONTEXT_STEP = 1024;
 
 /**
- * llama.cpp settings that would make `params` fit entirely in VRAM (`estimate` = the same estimator
- * with other launch params): a q4_0 KV cache with flash attention at the same context, and the
- * largest context (multiple of 1024) with the same settings. Undefined when the launch already fits,
- * for vLLM and external endpoints, and when neither change helps (the weights alone do not fit).
+ * llama.cpp settings that would make `params` fit entirely in VRAM at a launch right now (`levelNow`;
+ * `estimate` = the same estimator with other launch params): a q4_0 KV cache with flash attention at
+ * the same context, and the largest context (multiple of 1024) with the same settings. Undefined when
+ * the launch already fits, for vLLM and external endpoints, and when neither change helps (the weights
+ * alone do not fit).
  */
-export function fitFixes(engine: EngineKind, params: LaunchParams, current: Pick<FitEstimate, 'level' | 'contextSize'>, estimate: (p: LaunchParams) => Pick<FitEstimate, 'level'>): FitFixes | undefined {
-  if (engine === 'external' || family(engine) !== 'llamacpp' || fitsFully(current)) return undefined;
+export function fitFixes(
+  engine: EngineKind,
+  params: LaunchParams,
+  current: Pick<FitEstimate, 'level' | 'levelNow' | 'contextSize'>,
+  estimate: (p: LaunchParams) => Pick<FitEstimate, 'level' | 'levelNow'>,
+): FitFixes | undefined {
+  if (engine === 'external' || family(engine) !== 'llamacpp' || fitsNow(current)) return undefined;
   const out: FitFixes = {};
-  if (params.kvCacheType !== 'q4_0' && fitsFully(estimate({ ...params, kvCacheType: 'q4_0', flashAttention: 'on' }))) out.kvCacheType = 'q4_0';
+  if (params.kvCacheType !== 'q4_0' && fitsNow(estimate({ ...params, kvCacheType: 'q4_0', flashAttention: 'on' }))) out.kvCacheType = 'q4_0';
   // The launch's whole -c (several slots share it); without one, the context the estimate assumed.
   const ctx = params.contextSize ?? current.contextSize;
-  const fits = (c: number) => fitsFully(estimate({ ...params, contextSize: c }));
+  const fits = (c: number) => fitsNow(estimate({ ...params, contextSize: c }));
   let lo = 0;
   let hi = Math.ceil(ctx / FIX_CONTEXT_STEP);
   // Invariant: lo × step fits (or lo = 0), hi × step does not.
@@ -360,6 +410,10 @@ export interface QuantChoice {
   files: HubFile[];
   sizeBytes: number;
   fit: FitEstimate;
+  /** Safetensors and NInfer: the folder in the repo ('' = the root); `files` is then all it downloads. */
+  dir?: string;
+  /** NInfer: what the artifact's manifest says (container version, parts). */
+  manifest?: NinferManifest;
 }
 
 /**
@@ -384,11 +438,32 @@ export function quantChoices(files: HubFile[], facts: ModelFactsEx, gpu: GpuMem,
     const fit = estimateFit({ facts: { ...facts, quant, bitsPerWeight: undefined }, fileBytes: sizeBytes, gpu, engine, ...(params ? { params } : {}) });
     out.push({ groupKey, files: groupFiles, sizeBytes, fit, ...(quant ? { quant } : {}) });
   }
+  disambiguate(out);
   return out.sort((a, b) => b.sizeBytes - a.sizeBytes);
+}
+
+/**
+ * The same quant label on several GGUF files ("…-Q4LynnStyle-MTP" and "…-Q4LynnStyle-Q8MTP"): what
+ * follows the label in the file name tells them apart ("Q4LynnStyle · Q8MTP").
+ */
+function disambiguate(choices: QuantChoice[]): void {
+  const counts = new Map<string, number>();
+  for (const c of choices) if (c.quant) counts.set(c.quant, (counts.get(c.quant) ?? 0) + 1);
+  for (const c of choices) {
+    if (!c.quant || (counts.get(c.quant) as number) < 2 || !(c.files[0] as HubFile).path.toLowerCase().endsWith('.gguf')) continue;
+    const name = ((c.files[0] as HubFile).path.split('/').pop() as string).replace(/(-\d{5}-of-\d{5})?\.gguf$/i, '');
+    const at = name.toLowerCase().lastIndexOf(c.quant.toLowerCase());
+    const tail = at >= 0 ? name.slice(at + c.quant.length).replace(/^[-_.]+/, '') : name;
+    if (tail) c.quant = `${c.quant} · ${tail}`;
+  }
+}
+
+/** The highest-quality choice (choices come largest first) that fits at least "good", else "tight". */
+export function pickBest<C extends Pick<QuantChoice, 'fit'>>(choices: readonly C[]): C | undefined {
+  return choices.find((c) => levelRank(c.fit.level) <= levelRank('good')) ?? choices.find((c) => c.fit.level === 'tight');
 }
 
 /** The highest-quality option that fits at least "good", else at least "tight"; undefined if none. */
 export function bestQuant(files: HubFile[], facts: ModelFactsEx, gpu: GpuMem, engine: EngineKind, params?: FitParams): QuantChoice | undefined {
-  const choices = quantChoices(files, facts, gpu, engine, params);
-  return choices.find((c) => levelRank(c.fit.level) <= levelRank('good')) ?? choices.find((c) => c.fit.level === 'tight');
+  return pickBest(quantChoices(files, facts, gpu, engine, params));
 }

@@ -4,6 +4,7 @@ import { AppError, isAppError, toAppErrorData, type AppErrorData } from '../../c
 import type { CurrentStep, LivePoint, LiveSpill, RunPhase, ServerEvent } from '../../contract/events';
 import type { GpuSample, HardwareFingerprint } from '../../contract/hardware';
 import type { FitFixes } from '../../contract/models';
+import type { AppliedRecipe } from '../../contract/recipes';
 import {
   METRICS_FORMULA_VERSION,
   RESULT_SCHEMA_VERSION,
@@ -140,6 +141,8 @@ export interface RunInput {
   normalDecode?: NormalDecode;
   /** What would fit, from the VRAM estimate made at the start (kept with a spill: "Riprova con…"). */
   fitFixes?: FitFixes;
+  /** "Comandi per questo modello": the recipe applied to this launch (saved with the result). */
+  recipe?: AppliedRecipe;
 }
 
 /** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
@@ -1366,6 +1369,7 @@ export class BenchRunner {
       logExcerpt: buildLogExcerpt(s.logBlocks, s.notes),
       ...(input.note ? { note: input.note } : {}),
       ...(s.tuning ? { tuning: s.tuning } : {}),
+      ...(input.recipe ? { recipe: input.recipe } : {}),
     };
   }
 }

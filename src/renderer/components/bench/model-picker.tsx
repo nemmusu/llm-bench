@@ -1,4 +1,4 @@
-import { Download, HardDrive, Sparkles } from 'lucide-react';
+import { Download, HardDrive, Info, Sparkles } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import type { ReactNode } from 'react';
 import type { EngineKind } from '../../../contract/engines';
@@ -6,13 +6,16 @@ import type { RunSummary } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useLocalFit } from '../../lib/queries-runs';
+import { targetOfOption } from '../recipes/recipe-model';
+import { useModelRecipe } from '../recipes/use-model-recipe';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog';
 import { EmptyState } from '../ui/empty-state';
 import { FitBadge } from '../ui/fit-badge';
 import { TriedHereBadge } from '../ui/tried-badge';
-import { triedHere, triedOn, type ModelOption } from './model-options';
+import { ForkBadge } from '../library/formats';
+import { formatNoteOf, triedHere, triedOn, type ModelOption } from './model-options';
 
 export interface BenchModelPickerProps {
   open: boolean;
@@ -45,6 +48,7 @@ function RowFit({ option, engine }: { option: ModelOption; engine: EngineKind })
 function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind; runs: readonly RunSummary[]; gpuName: string | undefined }) {
   const { t, bytes, number } = useI18n();
   const tried = triedOn(o, runs, gpuName);
+  const recipe = useModelRecipe(targetOfOption(o)).recipe;
   return (
     <RadioGroup.Item
       value={o.key}
@@ -66,9 +70,20 @@ function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind;
             {[o.quant, o.paramsB ? t('benchmark.pickModel.params', { n: number(o.paramsB, 1) }) : undefined].filter(Boolean).join(' · ')}
           </span>
         </span>
+        {o.source === 'local' && o.sub && (
+          <span className="truncate font-mono text-xs text-fg-3" title={o.sub}>
+            {o.sub}
+          </span>
+        )}
         <span className="flex flex-wrap items-center gap-1.5">
           <RowFit option={o} engine={engine} />
           {tried && <TriedHereBadge tried={triedHere(tried)} short size="sm" />}
+          {o.source === 'local' && o.local.identity.format === 'gguf' && <ForkBadge model={o.local.identity} weakKey={o.local.identity.weakKey} label={o.name} />}
+          {recipe && (
+            <Badge tone="accent" size="sm">
+              {t('recipes.badge', { name: recipe.name })}
+            </Badge>
+          )}
         </span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-0.5 text-sm tabular-nums">
@@ -108,6 +123,7 @@ export function BenchModelPicker({ open, onOpenChange, options, value, onChange,
   const { t } = useI18n();
   const local = options.filter((o) => o.source === 'local');
   const remote = options.filter((o) => o.source === 'curated');
+  const note = formatNoteOf(engine);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -125,6 +141,13 @@ export function BenchModelPicker({ open, onOpenChange, options, value, onChange,
           </>
         }
       >
+        {/* Why this engine lists other models than another one: each reads its own format. */}
+        {note && (
+          <p className="mb-4 flex items-start gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-fg-2">
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-fg-3" />
+            {t(`models.picker.formatNote.${note}`)}
+          </p>
+        )}
         {options.length === 0 ? (
           <EmptyState headingLevel={3} illustration="search" title={t('benchmark.pickModel.emptyTitle')} description={t('benchmark.pickModel.emptyBody')} />
         ) : (

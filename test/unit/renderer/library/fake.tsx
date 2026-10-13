@@ -167,7 +167,7 @@ export function fit(level: FitEstimate['level'] = 'perfect'): FitEstimate {
 
 export function hubModel(repo: string, over: Partial<HubModel> = {}): HubModel {
   const [author, name] = repo.split('/') as [string, string];
-  return { repo, author, name, downloads: 1200, likes: 30, gated: false, formats: ['gguf'], tags: [], paramsB: 8, updatedAt: '2026-09-01T00:00:00.000Z', ...over };
+  return { repo, author, name, downloads: 1200, likes: 30, gated: false, formats: ['gguf'], otherFormats: [], tags: [], paramsB: 8, updatedAt: '2026-09-01T00:00:00.000Z', ...over };
 }
 
 export const HUB_FILES: HubFile[] = [
@@ -391,6 +391,11 @@ export function libApi(w: World = world()): LibApi {
       return { ok: true };
     },
     'GET /api/models/curated': () => w.curated,
+    // What the card holds now, from the telemetry sample (no engine of ours running).
+    'GET /api/models/vram': () => {
+      const s = w.snapshot[0];
+      return s?.memTotalMiB ? { totalMiB: s.memTotalMiB, freeMiB: s.memTotalMiB - (s.memUsedMiB ?? 0), busyMiB: s.memUsedMiB ?? 0, reserveMiB: 1024 } : null;
+    },
     'POST /api/models/fit': () => fit(),
     'GET /api/runs/tried': () => w.tried,
     'GET /api/runs': () => w.runs,
