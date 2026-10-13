@@ -2178,6 +2178,7 @@ export const it = {
       upToDate: 'Nessun aggiornamento: i tuoi modelli sono uguali a quelli su Hugging Face',
       found: 'Ho trovato novità per {n} modelli',
       found1: 'Ho trovato novità per 1 modello',
+      helpTerm: 'Come controllo gli aggiornamenti',
       help: 'Guardo su Hugging Face se i file che hai scaricato sono cambiati e se il repository ha parti che non hai (visione, MTP). Lo faccio quando me lo chiedi e, da solo, al massimo una volta al giorno.',
       onPc: 'Sul tuo PC',
       onPcHint: 'Le copie di questo modello che hai già scaricato.',

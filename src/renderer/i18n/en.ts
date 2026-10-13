@@ -2177,6 +2177,7 @@ export const en: Messages = {
       upToDate: 'No updates: your models are the same as on Hugging Face',
       found: 'Found news for {n} models',
       found1: 'Found news for 1 model',
+      helpTerm: 'How I check for updates',
       help: 'I look on Hugging Face for changes to the files you downloaded and for parts of the repository you do not have (vision, MTP). I do it when you ask and, on my own, at most once a day.',
       onPc: 'On your PC',
       onPcHint: 'The copies of this model you already downloaded.',

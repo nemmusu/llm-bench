@@ -94,7 +94,7 @@ export function CheckUpdates({ repo, className }: { repo?: string; className?: s
   return (
     <div className={cn('flex flex-wrap items-center gap-2 text-sm text-fg-3', className)}>
       <span>{when ? t('models.updates.lastCheck', { when: relative(when) }) : t('models.updates.never')}</span>
-      <HelpTip term={t('models.updates.check')}>{t('models.updates.help')}</HelpTip>
+      <HelpTip term={t('models.updates.helpTerm')}>{t('models.updates.help')}</HelpTip>
       <Button size="sm" onClick={run} disabled={check.isPending}>
         <RefreshCw aria-hidden className={check.isPending ? 'animate-spin' : undefined} />
         {check.isPending ? t('models.updates.checking') : t('models.updates.check')}
