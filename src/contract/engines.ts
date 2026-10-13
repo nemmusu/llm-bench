@@ -19,8 +19,11 @@ export const ENGINE_KINDS = [
 export const engineKindSchema = z.enum(ENGINE_KINDS);
 export type EngineKind = z.infer<typeof engineKindSchema>;
 
-/** API flavour spoken by the server under test. */
-export const apiFlavorSchema = z.enum(['llamacpp', 'vllm', 'sglang', 'openai']);
+/**
+ * API flavour spoken by the server under test. 'openai' = OpenAI `/v1/completions`; 'openai-chat' =
+ * OpenAI `/v1/chat/completions` only (NInfer, chat-only servers): text prompts, sent as a user message.
+ */
+export const apiFlavorSchema = z.enum(['llamacpp', 'vllm', 'sglang', 'openai', 'openai-chat']);
 export type ApiFlavor = z.infer<typeof apiFlavorSchema>;
 
 /**

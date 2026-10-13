@@ -14,7 +14,8 @@ export interface ClientOptions {
 const tokenizeSchema = z.object({ tokens: z.array(z.number()) });
 export const modelsSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
 
-const timingsSchema = z.object({
+/** llama.cpp `timings` (also sent by OpenAI-compatible servers that copy it, e.g. NInfer's chat endpoint). */
+export const timingsSchema = z.object({
   cache_n: z.number().optional(),
   prompt_n: z.number().optional(),
   prompt_ms: z.number().optional(),
@@ -42,7 +43,7 @@ function finishReason(stopType: string | undefined): string | undefined {
   return stopType;
 }
 
-function toTimings(t: LlamaChunk['timings']): EngineTimings | undefined {
+export function toTimings(t: z.infer<typeof timingsSchema> | undefined): EngineTimings | undefined {
   if (!t) return undefined;
   const out: EngineTimings = {};
   if (t.cache_n !== undefined) out.cacheN = t.cache_n;
