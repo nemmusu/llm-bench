@@ -575,7 +575,7 @@ export class ModelScanner {
   }
 
   /**
-   * Repo / revision implied by where a folder lives: a LLM Bench download sidecar in it or above it
+   * Repo / revision implied by where a folder lives: an LLM Bench download sidecar in it or above it
    * (any folder: the library, or another install's library added as a folder), the HF cache layout,
    * or the library and LM Studio owner/name convention.
    */

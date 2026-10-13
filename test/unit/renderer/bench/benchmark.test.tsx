@@ -247,7 +247,7 @@ describe('benchmark home', () => {
     expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).allowSharedGpu).toBe(true);
   });
 
-  it('GPU busy when starting: other programs, or a LLM Bench server to stop first', async () => {
+  it('GPU busy when starting: other programs, or an LLM Bench server to stop first', async () => {
     const api = benchApi();
     let answer: 'memory' | 'own' | 'progress' | 'internal' | 'ok' = 'memory';
     api.world.routes['POST /api/runs'] = () => {

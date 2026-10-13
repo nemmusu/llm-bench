@@ -16,7 +16,7 @@ export function customEngineWhere(e: Pick<CustomEngine, 'run'>): string {
   return r.mode === 'native' ? r.path : r.mode === 'docker' ? r.image : r.template;
 }
 
-/** A LLM Bench setting in words ("l’ubatch"); an unknown key as it is. */
+/** An LLM Bench setting in words ("l’ubatch"); an unknown key as it is. */
 export function settingText(t: Formatters['t'], setting: string): string {
   const key = `engines.custom.settings.${setting}` as MessageKey;
   const text = t(key);

@@ -78,7 +78,7 @@ export interface BenchServiceDeps {
   shutdown?: AbortSignal;
   /** Last-minute engine tweaks the user never has to think about (e.g. use the model's Docker volume copy). */
   adjustEngine?: (req: StartServerRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
-  /** Reason a run cannot start right now (e.g. a LLM Bench server holds the GPU), or undefined. */
+  /** Reason a run cannot start right now (e.g. an LLM Bench server holds the GPU), or undefined. */
   blockedBy?: () => AppError | undefined;
   /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
   calibration?: TuneSetupDeps['calibration'];

@@ -24,13 +24,16 @@ test('GPU Bench’s data at the first start of LLM Bench: moved, results and set
     const first = await launchApp({ userData, legacyUserData: legacy, stateDir });
     try {
       const { page } = first;
-      await expect(page.getByText('I tuoi dati di GPU Bench sono stati spostati in LLM Bench')).toBeVisible({ timeout: 20_000 });
+      const notice = page.getByRole('listitem').filter({ hasText: 'I tuoi dati di GPU Bench sono stati spostati in LLM Bench' });
+      await expect(notice).toBeVisible({ timeout: 20_000 });
       expect(existsSync(legacy)).toBe(false);
       expect(JSON.parse(readFileSync(path.join(userData, 'settings.json'), 'utf8'))).toMatchObject({ onboardingDone: true, density: 'compact' });
       await page.getByRole('navigation', { name: 'Navigazione principale' }).getByRole('link', { name: 'Risultati' }).click();
       await expect(h1(page, 'Risultati')).toBeVisible();
       await expect(page.getByText('9 risultati')).toBeVisible();
-      // Shown, so dismissed in the core: never again.
+      // It stays until it is closed; closed, it is never shown again.
+      await notice.getByRole('button', { name: 'Chiudi' }).click();
+      await expect(notice).toHaveCount(0);
       await expect.poll(() => JSON.parse(readFileSync(path.join(userData, 'app-notices.json'), 'utf8')) as unknown[]).toEqual([]);
     } finally {
       await first.close();

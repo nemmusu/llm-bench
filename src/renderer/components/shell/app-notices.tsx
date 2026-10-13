@@ -9,8 +9,9 @@ import { useSettings } from '../../lib/settings';
 
 /**
  * The app's one-time notices (contract/app-notices.ts: the data of GPU Bench taken over, a secret
- * that could not be read after the rename): each one a toast that stays until closed, dismissed in
- * the core as soon as it is shown. Mounted once by the shell; renders nothing.
+ * that could not be read after the rename): each one a toast that stays until it is closed (or its
+ * action used), and only then dismissed in the core, so a window reloaded before anyone read it shows
+ * it again. Mounted once by the shell; renders nothing.
  */
 export function AppNotices() {
   const { t } = useI18n();
@@ -24,7 +25,8 @@ export function AppNotices() {
     for (const n of notices.data ?? []) {
       if (shown.current.has(n.id)) continue;
       shown.current.add(n.id);
-      const sticky = { duration: Infinity, closeButton: true };
+      const dismiss = () => void api.del(`/api/app/notices/${encodeURIComponent(n.id)}`).catch(() => undefined);
+      const sticky = { id: n.id, duration: Infinity, closeButton: true, onDismiss: dismiss };
       if (n.kind === 'data-moved') {
         const body =
           n.mode === 'moved'
@@ -36,12 +38,17 @@ export function AppNotices() {
         update({ hasHfToken: false });
         toast.warning(t(n.renamed ? 'app.notices.hfTokenRenamed' : 'app.notices.hfTokenUnreadable'), {
           ...sticky,
-          action: { label: t('app.notices.hfTokenAction'), onClick: () => void navigate({ to: '/settings' }) },
+          action: {
+            label: t('app.notices.hfTokenAction'),
+            onClick: () => {
+              dismiss();
+              void navigate({ to: '/settings' });
+            },
+          },
         });
       } else {
         toast.warning(t(n.renamed ? 'app.notices.serverKeyRenamed' : 'app.notices.serverKeyUnreadable'), sticky);
       }
-      void api.del(`/api/app/notices/${encodeURIComponent(n.id)}`).catch(() => undefined);
     }
   }, [notices.data, api, t, navigate, update]);
 

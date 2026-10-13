@@ -557,7 +557,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     telemetryIntervalMs: async () => (await ctx.settings.get()).telemetryIntervalMs,
     shutdown: ctx.shutdown,
     blockedBy: () =>
-      serve.busy() ? new AppError('VRAM_BUSY', 'A LLM Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
+      serve.busy() ? new AppError('VRAM_BUSY', 'An LLM Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
     calibration: (model, kind) => {
       const id = model.identity;
       return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);

@@ -95,7 +95,7 @@ export interface PlanOptions {
  */
 export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string> };
 
-/** The model name a LLM Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
+/** The model name an LLM Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
 export function serverApiName(kind: EngineKind, model: ModelTarget): string {
   const base = engineBaseOf(kind);
   const repoNamed = base === 'vllm' || base === 'sglang';

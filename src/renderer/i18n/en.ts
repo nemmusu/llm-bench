@@ -612,7 +612,7 @@ export const en: Messages = {
         hint: 'Always the same, so other programs find it again. Empty: the first free one from 8080.',
         invalid: 'Choose a port from 1024 to 65535.',
         taken: 'Port {port} is already used by another program: choose another one.',
-        ours: 'Port {port} is already used by a LLM Bench server: choose another one or stop it.',
+        ours: 'Port {port} is already used by an LLM Bench server: choose another one or stop it.',
       },
       summary: {
         title: 'What will start',
@@ -1658,7 +1658,7 @@ export const en: Messages = {
     exportedOne: 'Exported 1 result to {file}',
     imported: 'Imported {n} results ({skipped} already present)',
     importedOne: 'Imported 1 result ({skipped} already present)',
-    importInvalid: 'This file is not a LLM Bench export.',
+    importInvalid: 'This file is not an LLM Bench export.',
     importTooNew: 'The file comes from a newer LLM Bench: update the app to open it.',
     delete: 'Delete',
     deleteSelected: 'Delete ({n})',

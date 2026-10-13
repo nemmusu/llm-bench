@@ -290,7 +290,7 @@ export function templateForModel(model: MatchableModel): CustomEngineTemplate | 
 
 // ---- checks --------------------------------------------------------------------------------------
 
-/** A LLM Bench setting whose flag the engine does not list in its --help. */
+/** An LLM Bench setting whose flag the engine does not list in its --help. */
 export const missingFlagSchema = z.object({
   /** The flag LLM Bench would pass ("-ub", "--chunked-prefill-size"). */
   flag: z.string(),

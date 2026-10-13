@@ -342,7 +342,7 @@ export class RunsRepo {
   /** Writes the bundle's runs that are not already present (by id); invalid or newer runs are skipped. */
   async importBundle(json: unknown): Promise<{ imported: number; skipped: number }> {
     const parsed = bundleSchema.safeParse(json);
-    if (!parsed.success) throw new AppError('VALIDATION', 'Not a LLM Bench export file', { params: { reason: 'not_export' } });
+    if (!parsed.success) throw new AppError('VALIDATION', 'Not an LLM Bench export file', { params: { reason: 'not_export' } });
     if (parsed.data.version > EXPORT_VERSION) {
       throw new AppError('VALIDATION', 'Export file from a newer LLM Bench', {
         params: { reason: 'export_too_new', version: parsed.data.version },
