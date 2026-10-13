@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Boxes, Copy, FlaskConical, GitBranch, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -6,6 +7,7 @@ import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, type CustomEngine, type 
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
 import { useSettings } from '../../lib/settings';
+import { saveDraft } from '../bench/run-context';
 import { ErrorCallout } from '../library/error-callout';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -102,7 +104,8 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
 function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: () => void }) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { update } = useSettings();
+  const qc = useQueryClient();
+  const { settings, update } = useSettings();
   const duplicate = useDuplicateCustomEngine();
   const remove = useDeleteCustomEngine();
   const [confirm, setConfirm] = useState(false);
@@ -137,7 +140,10 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
             variant="primary"
             disabled={!status.available || required}
             onClick={() => {
-              update({ lastEngine: customEngineConfigOf(e) });
+              // Remembered, and handed to the Benchmark page as its draft: it opens with this engine chosen.
+              const engine = customEngineConfigOf(e);
+              update({ lastEngine: engine });
+              saveDraft(qc, { engine, profile: settings.lastProfile });
               void navigate({ to: '/' });
             }}
           >

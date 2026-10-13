@@ -1,7 +1,7 @@
 /**
  * The fake world of the setup & library journeys: a Hugging Face with the curated reference model
  * (so "Configurazione consigliata" can really download it), throttling knobs for pause/resume,
- * a Docker Hub tag list for vLLM, and stubs for the native dialogs and the system browser.
+ * Docker Hub tag lists for vLLM and SGLang, and stubs for the native dialogs and the system browser.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
@@ -42,9 +42,10 @@ export async function startLibraryWorld(): Promise<LibraryWorld> {
     ],
   });
   const tags = readFileSync(path.join(ROOT, 'test', 'fixtures', 'docker', 'hub-tags-vllm.json'));
-  const dockerHub = http.createServer((_req, res) => {
+  const sglangTags = readFileSync(path.join(ROOT, 'test', 'fixtures', 'docker', 'hub-tags-sglang.json'));
+  const dockerHub = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(tags);
+    res.end((req.url ?? '').includes('lmsysorg') ? sglangTags : tags);
   });
   await new Promise<void>((resolve) => dockerHub.listen(0, '127.0.0.1', resolve));
   const { port } = dockerHub.address() as { port: number };

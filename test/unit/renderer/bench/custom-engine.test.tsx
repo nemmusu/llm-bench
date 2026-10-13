@@ -71,6 +71,13 @@ describe('Benchmark with custom engines', () => {
     await waitFor(() => expect((posted(api, '/api/runs/plan').at(-1)!.body as StartRunRequest).engine).toEqual({ kind: 'llamacpp-docker' }));
   });
 
+  it('starts from the saved custom engine', async () => {
+    const api = benchApi({}, { onboardingDone: true, customEngines: [prism], lastEngine: { kind: 'llamacpp-native', customEngineId: 'prismml' } });
+    renderApp('/', api);
+    await screen.findByRole('heading', { name: 'Pronto a misurare la tua RTX 5090' });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Cambia motore' }).textContent).toBe('llama.cpp · PrismML'));
+  });
+
   it('suggests the template a Bonsai model needs, and a saved engine once there is one', async () => {
     const api = benchApi({ local: [bonsai] }, { onboardingDone: true, lastModelId: 'bonsai' });
     const { router } = renderApp('/', api);

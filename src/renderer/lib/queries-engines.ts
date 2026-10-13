@@ -4,6 +4,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CustomEngine, CustomEngineCheck, CustomEngineDraft, CustomEngineInfo } from '../../contract/custom-engines';
+import type { Settings } from '../../contract/settings';
 import { useApi } from './api-context';
 import type { VllmTag } from './queries-library';
 import { SETTINGS_QUERY_KEY } from './settings';
@@ -26,7 +27,7 @@ export function useSaveCustomEngine() {
   return useMutation({
     mutationFn: ({ id, draft }: { id?: string | undefined; draft: CustomEngineDraft }) =>
       id === undefined ? api.post<CustomEngine>('/api/engines/custom', draft) : api.put<CustomEngine>(`/api/engines/custom/${encodeURIComponent(id)}`, draft),
-    onSuccess: () => refresh(qc),
+    onSuccess: (saved) => refresh(qc, (list) => (list.some((e) => e.id === saved.id) ? list.map((e) => (e.id === saved.id ? saved : e)) : [...list, saved])),
   });
 }
 
@@ -35,7 +36,7 @@ export function useDuplicateCustomEngine() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => api.post<CustomEngine>(`/api/engines/custom/${encodeURIComponent(id)}/duplicate`, { name }),
-    onSuccess: () => refresh(qc),
+    onSuccess: (copy) => refresh(qc, (list) => [...list, copy]),
   });
 }
 
@@ -44,7 +45,7 @@ export function useDeleteCustomEngine() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<{ ok: true }>(`/api/engines/custom/${encodeURIComponent(id)}`),
-    onSuccess: () => refresh(qc),
+    onSuccess: (_ok, id) => refresh(qc, (list) => list.filter((e) => e.id !== id)),
   });
 }
 
@@ -60,7 +61,12 @@ export function useSglangTags(enabled: boolean) {
   return useQuery({ queryKey: engineKeys.sglangTags, queryFn: () => api.get<VllmTag[]>('/api/engines/sglang/tags'), enabled, staleTime: 10 * 60_000, retry: false });
 }
 
-function refresh(qc: ReturnType<typeof useQueryClient>): void {
+/**
+ * The cached settings get the same change at once (the Benchmark's engine choice reads them), and the
+ * list with its checks is read again. The settings are not re-read: a re-read still in flight would
+ * bring back the values from before a settings save made right now ("Usa nel Benchmark").
+ */
+function refresh(qc: ReturnType<typeof useQueryClient>, change: (list: CustomEngine[]) => CustomEngine[]): void {
+  qc.setQueryData<Settings>(SETTINGS_QUERY_KEY, (old) => (old ? { ...old, customEngines: change(old.customEngines) } : old));
   void qc.invalidateQueries({ queryKey: engineKeys.custom });
-  void qc.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
 }

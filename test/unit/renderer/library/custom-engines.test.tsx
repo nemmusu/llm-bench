@@ -136,6 +136,8 @@ describe('Motori personalizzati', () => {
     await userEvent.click(within(await card('PrismML 2')).getByRole('button', { name: 'Usa nel Benchmark' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native', customEngineId: 'prismml' });
+    // The Benchmark opens with it chosen.
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Cambia motore' }).textContent).toBe('llama.cpp · PrismML 2'));
   });
 
   it('opens from a deep link with the PrismML template, for the model that asked', async () => {
