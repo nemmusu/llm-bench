@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { customEnginesSettingSchema } from './custom-engines';
 import { engineConfigSchema, launchParamsSchema } from './engines';
+import { modelRecipesSettingSchema } from './recipes';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -31,6 +32,9 @@ export const settingsSchema = z.object({
   // ---- engines: custom engines and forks (contract/custom-engines.ts) ----
   /** "Motori personalizzati": forks and other OpenAI servers; invalid entries are dropped on read, never the whole file. */
   customEngines: customEnginesSettingSchema,
+  // ---- recipes: "Comandi per questo modello" (contract/recipes.ts) ----
+  /** Per-model command recipes; invalid entries are dropped on read, never the whole file. */
+  modelRecipes: modelRecipesSettingSchema,
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

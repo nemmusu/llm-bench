@@ -90,6 +90,12 @@ export const configParamsSchema = z.object({
   cudaGraphSizes: z.array(z.number().int().positive()).optional(),
   dtype: z.string().optional(),
   quantization: z.string().optional(),
+  /**
+   * RoPE context extension (recipes: "Contesto oltre il limite del modello"): llama.cpp --rope-scaling /
+   * --rope-scale / --yarn-orig-ctx, vLLM --hf-overrides or --rope-scaling, SGLang
+   * --json-model-override-args (their rope_scaling), or LaunchParams.ropeScaling. Factor to 4 decimals.
+   */
+  ropeScaling: z.object({ type: z.string(), factor: z.number().optional(), originalContext: z.number().int().optional() }).optional(),
   /** Any other engine flag, "flag value" with paths as bare file names, sorted. */
   other: z.array(z.string()).default([]),
 });
@@ -110,8 +116,10 @@ export interface LaunchInput {
   modelContext?: number | undefined;
 }
 
-type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' | 'kvLayout'> & {
+type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' | 'kvLayout' | 'ropeScaling'> & {
   contextSize?: number;
+  /** RoPE scaling read so far (each flag sets its part). */
+  rope?: { type?: string; factor?: number; originalContext?: number };
   /** --kv-unified (true) / --no-kv-unified (false); undefined = not said. */
   kvUnified?: boolean;
   gpuLayers?: number | 'all';
@@ -121,7 +129,7 @@ type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' |
   other: Set<string>;
 };
 
-type Setter = (raw: Raw, values: readonly string[]) => void;
+type Setter = (raw: Raw, values: readonly string[], flag: string) => void;
 
 const int = (v: string | undefined): number | undefined => {
   if (v === undefined || !/^-?\d+$/.test(v.trim())) return undefined;
@@ -248,6 +256,53 @@ add(['--compilation-config', '-O'], (r, v) => {
 add(['--dtype'], (r, v) => {
   if (v[0]) r.dtype = v[0];
 });
+// RoPE scaling: llama.cpp spells each part; vLLM (older --rope-scaling, newer --hf-overrides) and SGLang
+// (--json-model-override-args) take a JSON whose rope_scaling says the same.
+add(['--rope-scaling'], (r, v) => {
+  const text = v.join(' ').trim();
+  if (!text) return;
+  if (text.startsWith('{')) {
+    readOverrides(r, `{"rope_scaling":${text}}`, '--rope-scaling');
+    return;
+  }
+  r.rope = { ...r.rope, type: text.toLowerCase() };
+});
+add(['--rope-scale'], (r, v) => {
+  const n = num(v[0]);
+  if (n !== undefined && n > 0) r.rope = { ...r.rope, factor: n };
+});
+add(['--yarn-orig-ctx'], (r, v) => {
+  const n = int(v[0]);
+  if (n !== undefined && n > 0) r.rope = { ...r.rope, originalContext: n };
+});
+add(['--hf-overrides', '--json-model-override-args'], (r, v, flag) => {
+  if (v.length) readOverrides(r, v.join(' '), flag);
+});
+
+/** A model-config override JSON: its rope_scaling is the RoPE setting, anything else stays a flag of its own. */
+function readOverrides(r: Raw, text: string, flag: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    r.other.add(`${flag} ${text.trim()}`);
+    return;
+  }
+  const { rope_scaling: rope, ...rest } = parsed as Record<string, unknown>;
+  if (rope && typeof rope === 'object' && !Array.isArray(rope)) {
+    const o = rope as Record<string, unknown>;
+    const type = o.rope_type ?? o.type;
+    r.rope = {
+      ...(typeof type === 'string' ? { type: type.toLowerCase() } : {}),
+      ...(typeof o.factor === 'number' && o.factor > 0 ? { factor: o.factor } : {}),
+      ...(typeof o.original_max_position_embeddings === 'number' && o.original_max_position_embeddings > 0 ? { originalContext: o.original_max_position_embeddings } : {}),
+    };
+  } else if (rope !== undefined) rest.rope_scaling = rope;
+  if (Object.keys(rest).length) r.other.add(`${flag} ${stableStringify(rest)}`);
+}
 add(['--quantization'], (r, v) => {
   if (v[0]) r.quantization = v[0];
 });
@@ -381,7 +436,7 @@ function parseArgs(args: readonly string[], raw: Raw, docker = false): void {
     if (IGNORED_SWITCH.has(flag) || (docker && DOCKER_SWITCH.has(flag))) continue;
     takeValues();
     const set = VALUE_FLAGS.get(flag);
-    if (set) set(raw, values);
+    if (set) set(raw, values, flag);
     else if (!IGNORED_VALUE.has(flag) && !(docker && DOCKER_VALUE.has(flag))) {
       raw.other.add([flag, ...values.map((v) => (isPath(v) ? bareName(v) : v))].join(' '));
     }
@@ -391,6 +446,7 @@ function parseArgs(args: readonly string[], raw: Raw, docker = false): void {
 /** The settings of the launch params themselves (what each engine family reads), then their extra arguments. */
 function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
   if (family === 'external') return;
+  if (p.ropeScaling) raw.rope = { ...p.ropeScaling };
   if (family === 'vllm') {
     const ctx = p.maxModelLen ?? p.contextSize;
     if (ctx !== undefined) raw.contextSize = ctx;
@@ -471,6 +527,15 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   if (raw.cudaGraphSizes !== undefined) out.cudaGraphSizes = [...new Set(raw.cudaGraphSizes)].sort((a, b) => a - b);
   if (raw.dtype !== undefined && raw.dtype !== 'auto') out.dtype = raw.dtype;
   if (raw.quantization !== undefined) out.quantization = raw.quantization;
+  const rope = raw.rope;
+  // "none", or a factor of 1, changes nothing: the same configuration as without it.
+  if (rope && rope.type !== 'none' && rope.factor !== 1 && (rope.type !== undefined || rope.factor !== undefined)) {
+    out.ropeScaling = {
+      type: rope.type ?? 'linear',
+      ...(rope.factor !== undefined ? { factor: Math.round(rope.factor * 1e4) / 1e4 } : {}),
+      ...(rope.originalContext !== undefined ? { originalContext: rope.originalContext } : {}),
+    };
+  }
   return out;
 }
 
