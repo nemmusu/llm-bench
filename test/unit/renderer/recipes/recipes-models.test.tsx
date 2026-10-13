@@ -199,7 +199,7 @@ describe('a library model’s commands', () => {
       link: 'https://huggingface.co/m',
     });
     expect(within(dialog).getByText('Per i modelli «model m» in Q4_K_M')).toBeTruthy();
-    expect(within(dialog).getByText('Il mio fork')).toBeTruthy();
+    expect(within(dialog).getByText('llama.cpp · Il mio fork')).toBeTruthy();
   });
 
   it('the MTP file and the projector next to the model; a draft file chosen by hand without the desktop bridge', async () => {

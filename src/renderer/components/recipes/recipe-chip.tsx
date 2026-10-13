@@ -3,8 +3,7 @@
  * started (Benchmark, the Server page's slot), with a switch to start without it and "Apri" to see or
  * change it; and what a plan or a run actually applied (AppliedRecipeLine).
  */
-import { useRouter } from '@tanstack/react-router';
-import { SquareTerminal, TriangleAlert } from 'lucide-react';
+import { SquareTerminal } from 'lucide-react';
 import { useId } from 'react';
 import type { AppliedRecipe } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
@@ -13,7 +12,8 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { HelpTip } from '../ui/help-tip';
 import { Switch } from '../ui/switch';
-import { appliedLines, templateEngineLink, type RecipeTarget } from './recipe-model';
+import { useSettings } from '../../lib/settings';
+import { appliedLines, recipeParts, type RecipeTarget } from './recipe-model';
 import { useRecipeDialogs } from './recipe-section';
 import { useModelRecipe } from './use-model-recipe';
 
@@ -25,14 +25,20 @@ export interface RecipeChipProps {
   className?: string;
 }
 
-/** Nothing when the model has no recipe. Made for narrow places (the Benchmark model card). */
+/**
+ * Nothing when the model has no recipe, or when its only command is the engine: on the Benchmark page the
+ * engine choice and its suggestion ("Usa PrismML", "Questo modello richiede il fork PrismML") already say
+ * it, so the chip never repeats them. Made for narrow places (the Benchmark model card).
+ */
 export function RecipeChip({ target, use, onUseChange, className }: RecipeChipProps) {
-  const { t } = useI18n();
-  const router = useRouter();
+  const f = useI18n();
+  const { t } = f;
+  const { settings } = useSettings();
   const info = useModelRecipe(target);
   const dialogs = useRecipeDialogs(target);
   const id = useId();
-  if (!info.recipe) return null;
+  const parts = info.recipe ? recipeParts(info.recipe, f, { customEngines: settings.customEngines, aux: target.aux, ref: target.ref, engine: false }) : [];
+  if (!info.recipe || parts.length === 0) return null;
   return (
     <div
       className={cn('flex flex-col gap-2 rounded-lg border px-3 py-2.5 transition-colors', use ? 'border-accent/30 bg-accent-soft/50' : 'border-border bg-surface-2/60', className)}
@@ -46,7 +52,7 @@ export function RecipeChip({ target, use, onUseChange, className }: RecipeChipPr
       </div>
       {use ? (
         <ul className="flex flex-wrap gap-1" aria-label={info.recipe.name}>
-          {(info.parts.length ? info.parts : [info.recipe.name]).map((p) => (
+          {parts.map((p) => (
             <li key={p}>
               <Badge tone="accent" size="sm">
                 {p}
@@ -56,17 +62,6 @@ export function RecipeChip({ target, use, onUseChange, className }: RecipeChipPr
         </ul>
       ) : (
         <p className="text-xs text-fg-3">{t('recipes.chip.off')}</p>
-      )}
-      {use && info.missingTemplate && (
-        <p className="flex items-start gap-1.5 text-xs text-warning-text">
-          <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
-          <span>
-            {t('recipes.engineMissing.title')}.{' '}
-            <Button variant="link" size="sm" className="h-auto text-xs" onClick={() => void router.history.push(templateEngineLink(info.missingTemplate as string, target))}>
-              {t('recipes.engineMissing.action')}
-            </Button>
-          </span>
-        </p>
       )}
       <span className="flex items-center gap-1.5 text-xs text-fg-3">
         <SquareTerminal aria-hidden className="size-3.5" />

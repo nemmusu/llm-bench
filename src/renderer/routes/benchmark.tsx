@@ -1,10 +1,14 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { Check, ChevronsUpDown, Download, HardDrive, Play, Server, Timer, TriangleAlert } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { RunPlan, StartRunRequest } from '../../contract/api';
 import type { Settings } from '../../contract/settings';
+import { customEngineConfigOf, customEngineKindOf } from '../../contract/custom-engines';
 import type { EngineKind } from '../../contract/engines';
+import { customEngineLabel, customEngineWhere } from '../components/engines/custom-engine-check';
+import { EngineSuggestion } from '../components/engines/engine-suggestion';
+import { useCustomEngines } from '../lib/queries-engines';
 import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
 import { ENGINE_ORDER, engineConfigOf, engineFormOf, savableEngine, type EngineForm } from '../components/bench/engine-form';
@@ -181,6 +185,9 @@ function BenchmarkScreen() {
 
   const savedEngine = draft?.engine ?? settings.lastEngine;
   const [engine, setEngine] = useState<EngineKind>(savedEngine?.kind ?? 'llamacpp-native');
+  // A custom engine ("Motori personalizzati"): its base kind is `engine`, its id here.
+  const [customId, setCustomId] = useState<string | undefined>(savedEngine?.customEngineId);
+  const customInfo = useCustomEngines();
   const [engineForm, setEngineForm] = useState<EngineForm>(() => ({ ...engineFormOf(savedEngine), modelName: draft?.modelName ?? '' }));
   const [profile, setProfile] = useState<Profile>(draft?.profile ?? settings.lastProfile);
   const [paramsForm, setParamsForm] = useState<ParamsForm>(() => formFromParams(draft?.params ?? settings.lastParams));
@@ -192,21 +199,32 @@ function BenchmarkScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const statusOf = (k: EngineKind) => engines.data?.find((e) => e.kind === k);
+  // A saved custom engine whose kind runs here (vLLM / SGLang native only on Linux).
+  const savedCustom = customId === undefined ? undefined : settings.customEngines.find((e) => e.id === customId);
+  const effCustom = savedCustom && statusOf(customEngineKindOf(savedCustom))?.supported !== false ? savedCustom : undefined;
   // External endpoints and custom plans are expert features; unsupported engines fall back to llama.cpp.
-  const effEngine: EngineKind = (engine === 'external' && !expert) || statusOf(engine)?.supported === false ? 'llamacpp-native' : engine;
-  const effProfile: Profile = profile === 'custom' && !expert ? 'quick' : profile;
+  const effEngine: EngineKind = effCustom
+    ? customEngineKindOf(effCustom)
+    : (engine === 'external' && !expert) || engine === 'command' || statusOf(engine)?.supported === false
+      ? 'llamacpp-native'
+      : engine;
+  const effProfile: Profile = (profile === 'custom' && !expert) || (profile === 'tune' && effEngine === 'command') ? 'quick' : profile;
   const custom = effProfile === 'custom';
-  const status = statusOf(effEngine);
+  const status = effCustom ? customInfo.data?.find((i) => i.engine.id === effCustom.id)?.check.status : statusOf(effEngine);
 
   const { withModel } = preset;
-  const options = useMemo(() => withModel(modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), effEngine), [withModel, effEngine, local.data, curated.data]);
+  // Memoized by the React Compiler (it follows the custom engine chosen too).
+  const options = withModel(modelOptions(effEngine, local.data ?? [], curated.data?.models ?? []), effEngine);
   const modelKey =
     picked !== undefined && options.some((o) => o.key === picked)
       ? picked
       : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
 
-  const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
+  const plainEngine = engineConfigOf(effEngine, engineForm, expert);
+  // A custom engine brings its own executable, image or command: the request only names it.
+  const config = effCustom ? customEngineConfigOf(effCustom) : plainEngine.config;
+  const engineInvalid = effCustom ? [] : plainEngine.invalid;
   // "Comandi per questo modello": the core applies the model's recipe unless the chip turns it off.
   const recipeTarget = effEngine !== 'external' && option ? targetOfOption(option) : undefined;
   const recipe = useModelRecipe(recipeTarget);
@@ -254,7 +272,7 @@ function BenchmarkScreen() {
   const modelNeed = needs.find((n) => n.kind === 'model');
 
   const gpuShort = gpu ? shortGpuName(gpu.name) : 'GPU';
-  const engineLabel = t(`benchmark.engines.${effEngine}`);
+  const engineLabel = effCustom ? customEngineLabel(t, effCustom) : t(`benchmark.engines.${effEngine}`);
   const profileTime = planData ? `≈ ${duration(planData.estimatedSeconds * 1000)}` : t(`benchmark.profileTime.${effProfile}`);
   const list = new Intl.ListFormat(f.locale, { type: 'conjunction' });
 
@@ -421,22 +439,33 @@ function BenchmarkScreen() {
               badge={effEngine === 'llamacpp-native' ? <Badge tone="accent" size="sm">{t('common.recommended')}</Badge> : undefined}
               footer={engineFooter}
             >
-              <Select<EngineKind>
+              <Select<string>
                 aria-label={t('benchmark.changeEngine')}
-                value={effEngine}
-                onValueChange={(k) => {
-                  setEngine(k);
+                value={effCustom ? `custom:${effCustom.id}` : effEngine}
+                onValueChange={(v) => {
+                  const chosen = v.startsWith('custom:') ? settings.customEngines.find((e) => `custom:${e.id}` === v) : undefined;
+                  setCustomId(chosen?.id);
+                  setEngine(chosen ? customEngineKindOf(chosen) : (v as EngineKind));
                   setPicked(undefined);
                 }}
                 className="h-11 text-md font-semibold"
-                options={ENGINE_ORDER.filter((k) => expert || k !== 'external').map((k) => ({
-                  value: k,
-                  label: t(`benchmark.engines.${k}`),
-                  description: t(`benchmark.engineDesc.${k}`),
-                  disabled: statusOf(k)?.supported === false,
-                }))}
+                // Custom engines right under the engine they are built on ("llama.cpp · PrismML fork"); programs of the user's own last.
+                options={[...ENGINE_ORDER.filter((k) => expert || k !== 'external'), 'command' as const].flatMap((k) => [
+                  ...(k === 'command' ? [] : [{ value: k as string, label: t(`benchmark.engines.${k}`), description: t(`benchmark.engineDesc.${k}`), disabled: statusOf(k)?.supported === false }]),
+                  ...settings.customEngines
+                    .filter((e) => customEngineKindOf(e) === k)
+                    .map((e) => ({ value: `custom:${e.id}`, label: customEngineLabel(t, e), description: t(`engines.custom.bases.${e.base}`), disabled: statusOf(k)?.supported === false })),
+                ])}
               />
-              <p className="text-sm text-fg-2">{t(`benchmark.engineDesc.${effEngine}`)}</p>
+              <p className="text-sm text-fg-2">
+                {effCustom ? (
+                  <>
+                    {t(`engines.custom.bases.${effCustom.base}`)} · <span className="font-mono text-xs break-all">{customEngineWhere(effCustom)}</span>
+                  </>
+                ) : (
+                  t(`benchmark.engineDesc.${effEngine}`)
+                )}
+              </p>
             </ChoiceCard>
 
             <ChoiceCard step={2} title={t('benchmark.choice.model')} help={t('benchmark.choice.modelHelp')} footer={modelFooter}>
@@ -465,7 +494,8 @@ function BenchmarkScreen() {
                 value={effProfile}
                 onValueChange={setProfile}
                 layout="list"
-                options={[...PROFILES, ...(expert ? (['custom'] as const) : [])].map((p) => ({
+                // A program of the user's own has no settings to search.
+                options={[...PROFILES.filter((p) => p !== 'tune' || effEngine !== 'command'), ...(expert ? (['custom'] as const) : [])].map((p) => ({
                   value: p,
                   label: t(`benchmark.profiles.${p}`),
                   sublabel: t(`benchmark.profileTime.${p}`),
@@ -475,6 +505,23 @@ function BenchmarkScreen() {
               {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
             </ChoiceCard>
           </div>
+
+          <EngineSuggestion
+            model={
+              option && !external
+                ? option.source === 'local'
+                  ? { displayName: option.local.identity.displayName, repo: option.local.identity.repo, file: option.local.identity.file, quant: option.local.identity.quant, weakKey: option.local.identity.weakKey }
+                  : { displayName: option.name, repo: option.curated.repo, file: option.curated.file, quant: option.quant }
+                : undefined
+            }
+            current={config}
+            engines={settings.customEngines}
+            onUse={(c) => {
+              setCustomId(c.customEngineId);
+              setEngine(c.kind);
+              setPicked(undefined);
+            }}
+          />
 
           <div className="flex items-center gap-3 self-start px-1 py-1">
             <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
@@ -504,6 +551,7 @@ function BenchmarkScreen() {
               defaultImage={status?.location}
               trainedContext={trainedContext}
               {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
+              customEngine={effCustom?.name}
             />
           )}
 

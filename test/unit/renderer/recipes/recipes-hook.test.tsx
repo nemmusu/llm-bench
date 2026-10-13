@@ -28,7 +28,7 @@ describe('useModelRecipe', () => {
 
   it('any identity: the recipe, its words, its engine as a config, the request part and what it adds', async () => {
     renderUi(<Probe model={{ displayName: 'alpha 8B' }} />, { withSettings: true, api: fakeApi({ modelRecipes: recipes, customEngines: [fork] }) });
-    await waitFor(() => expect(read()).toEqual({ name: 'Fork', label: 'Il fork · Contesto 64K', engine: { kind: 'llamacpp-docker', customEngineId: 'f' }, off: { recipe: { use: false } }, on: {}, patch: { maxModelLen: 65_536 } }));
+    await waitFor(() => expect(read()).toEqual({ name: 'Fork', label: 'llama.cpp (Docker) · Il fork · Contesto 64K', engine: { kind: 'llamacpp-docker', customEngineId: 'f' }, off: { recipe: { use: false } }, on: {}, patch: { maxModelLen: 65_536 } }));
   });
 
   it('a built-in engine; a template not set up yet; no recipe at all', async () => {

@@ -8,7 +8,7 @@ import type { RunResult, Scenario } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import { engineLabelOf, modelLabelOf } from './format';
 
-const DOCKER: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker']);
+const DOCKER: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker', 'sglang-docker']);
 
 export interface ConfigPartsOptions {
   /** Say the context even when it is the engine's default ("contesto predefinito"); otherwise only a known one. */

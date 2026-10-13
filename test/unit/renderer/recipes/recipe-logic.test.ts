@@ -103,7 +103,8 @@ describe('a recipe in words', () => {
 
   it('the engine: a built-in, a saved custom engine, one still to set up', () => {
     expect(recipeParts(recipe({ engine: { type: 'builtin', kind: 'ninfer-wsl' } }), f, ctx)).toEqual(['NInfer (WSL)']);
-    expect(recipeParts(recipe({ engine: { type: 'template', template: 'prismml-bonsai' } }), f, ctx)).toEqual(['Fork PrismML']);
+    expect(recipeParts(recipe({ engine: { type: 'template', template: 'prismml-bonsai' } }), f, ctx)).toEqual(['llama.cpp · Fork PrismML']);
+    expect(recipeParts(recipe({ engine: { type: 'template', template: 'prismml-bonsai' }, mmproj: true }), f, { ...ctx, engine: false })).toEqual(['Immagini']);
     expect(recipeParts(recipe({ engine: { type: 'template', template: 'prismml-bonsai' } }), f, { customEngines: [] })).toEqual(['Fork PrismML (da indicare)']);
     expect(recipeParts(recipe({ engine: { type: 'custom', id: 'gone' } }), f, ctx)).toEqual(['gone (da indicare)']);
     expect(templateEngineName('other', f)).toBe('other');

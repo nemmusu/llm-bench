@@ -32,8 +32,9 @@ export type ModelOption =
 
 const LLAMA: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
 
+/** SGLang reads models like vLLM; a command engine takes no launch settings, like an external server. */
 export function engineFamily(kind: EngineKind): 'llamacpp' | 'vllm' | 'external' {
-  return kind === 'external' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
+  return kind === 'external' || kind === 'command' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
 }
 
 /** What the picker's note says about the formats an engine reads ("llama.cpp usa i modelli GGUF…"). */
@@ -87,6 +88,8 @@ function isLocal(c: CuratedModel, local: readonly LocalModel[]): boolean {
 export function modelOptions(kind: EngineKind, local: readonly LocalModel[], curated: readonly CuratedModel[]): ModelOption[] {
   if (kind === 'external') return [];
   const mine = local.filter((m) => !m.incomplete && engineRunsFormat(kind, m.identity.format));
+  // A program of the user's own: the models on the PC it can be given (reading them is its job), no downloads.
+  if (kind === 'command') return mine.map((m) => localOption(m, curated));
   const family = engineRunsFormat(kind, 'gguf') ? 'llamacpp' : engineRunsFormat(kind, 'safetensors') ? 'vllm' : undefined;
   return [...mine.map((m) => localOption(m, curated)), ...curated.filter((c) => c.engine === family && !isLocal(c, mine)).map(curatedOption)];
 }

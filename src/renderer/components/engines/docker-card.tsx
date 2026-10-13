@@ -28,7 +28,7 @@ const TONES: Record<string, StatusDotProps['tone']> = {
  * Installs a Docker engine by pulling its image (POST /api/engines/:engine/install), with the
  * progress of its 'engine.install' events (keyed by image, see installKey).
  */
-export function PullButton({ engine, image, label, disabled }: { engine: 'llamacpp-docker' | 'vllm-docker'; image: string; label: string; disabled?: boolean }) {
+export function PullButton({ engine, image, label, disabled }: { engine: 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker'; image: string; label: string; disabled?: boolean }) {
   const { t } = useI18n();
   const key = `pull:${image}`;
   const event = useInstallEvent(key);

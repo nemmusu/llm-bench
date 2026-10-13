@@ -19,6 +19,7 @@ import {
 } from '../../../contract/recipes';
 import type { Formatters } from '../../i18n';
 import type { ModelOption } from '../bench/model-options';
+import { customEngineLabel } from '../engines/custom-engine-check';
 import { depthLabel } from '../tune/tune-format';
 
 /** What a recipe screen needs to know about one model. */
@@ -123,6 +124,8 @@ export interface PartsContext {
   /** The model's auxiliary files: "MTP" when its draft file is an MTP one. */
   aux?: LocalModel['auxiliary'];
   ref?: RecipeModelRef | undefined;
+  /** false = leave the engine out (where the Engines feature already speaks about it: the Benchmark page). */
+  engine?: boolean;
 }
 
 /** The name of a built-in template's engine ("Fork PrismML"). */
@@ -134,11 +137,13 @@ export function templateEngineName(template: string, f: Pick<Formatters, 't'>): 
 export function recipeParts(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling' | 'draft' | 'mmproj' | 'engine' | 'args' | 'env'>, f: F, o: PartsContext): string[] {
   const { t } = f;
   const parts: string[] = [];
-  if (r.engine?.type === 'builtin') parts.push(t('recipes.parts.engine', { name: t(`benchmark.engines.${r.engine.kind}`) }));
-  else if (r.engine) {
-    const custom = recipeCustomEngine(r.engine, o.customEngines, o.ref);
-    const name = custom?.name ?? (r.engine.type === 'template' ? templateEngineName(r.engine.template, f) : r.engine.id);
-    parts.push(t(custom ? 'recipes.parts.engine' : 'recipes.parts.engineMissing', { name }));
+  const engine = o.engine === false ? undefined : r.engine;
+  if (engine?.type === 'builtin') parts.push(t('recipes.parts.engine', { name: t(`benchmark.engines.${engine.kind}`) }));
+  else if (engine) {
+    const custom = recipeCustomEngine(engine, o.customEngines, o.ref);
+    // "llama.cpp · PrismML": the same words as the engine choice.
+    if (custom) parts.push(t('recipes.parts.engine', { name: customEngineLabel(t, custom) }));
+    else parts.push(t('recipes.parts.engineMissing', { name: engine.type === 'template' ? templateEngineName(engine.template, f) : engine.id }));
   }
   const rope = r.ropeScaling;
   if (rope && r.contextSize !== undefined) parts.push(t(rope.type === 'yarn' ? 'recipes.parts.yarn' : 'recipes.parts.linear', { ctx: depthLabel(r.contextSize, f), factor: f.number(rope.factor, 2) }));

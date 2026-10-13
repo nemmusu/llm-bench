@@ -1,6 +1,6 @@
 import { FolderOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { ApiFlavor, EngineKind } from '../../../contract/engines';
+import { isDockerKind, type ApiFlavor, type EngineKind } from '../../../contract/engines';
 import { argGroups, mergeRecipeParams, type RecipePatch } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
@@ -32,6 +32,8 @@ export interface ExpertPanelProps {
   trainedContext?: number | undefined;
   /** The model's recipe in use: its values are shown, marked, where the user's would go. */
   recipe?: { name: string; patch: RecipePatch | undefined } | undefined;
+  /** A custom engine is chosen: its executable / image / command are set on the Engines page. */
+  customEngine?: string | undefined;
 }
 
 interface TextProps {
@@ -287,7 +289,8 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 {t('recipes.expert.fromRecipe', { name: recipe.name })}: {recipeCtx !== undefined ? t('recipes.parts.yarn', { ctx: depthLabel(recipeCtx, f) }) : t('recipes.parts.ropeOnly', { factor: f.number(recipe.patch.params.ropeScaling.factor, 2) })}
               </p>
             )}
-            {p.engine === 'llamacpp-native' && (
+            {p.customEngine !== undefined && <p className="text-sm text-fg-2">{t('engines.custom.expertNote', { name: p.customEngine })}</p>}
+            {p.customEngine === undefined && p.engine === 'llamacpp-native' && (
               <Field label={t('benchmark.expert.executable')} hint={t('benchmark.expert.executableHint')}>
                 {({ id, describedBy }) => (
                   <div className="flex gap-2">
@@ -316,7 +319,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 )}
               </Field>
             )}
-            {(p.engine === 'llamacpp-docker' || p.engine === 'vllm-docker') && (
+            {p.customEngine === undefined && isDockerKind(p.engine) && (
               <Text
                 label={t('benchmark.expert.dockerImage')}
                 value={p.engineForm.image}
@@ -326,13 +329,23 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 mono
               />
             )}
-            {p.engine === 'vllm-native' && (
+            {p.customEngine === undefined && p.engine === 'vllm-native' && (
               <Text
                 label={t('benchmark.expert.vllmPath')}
                 value={p.engineForm.vllmPath}
                 onChange={(v) => p.onEngine({ vllmPath: v })}
                 placeholder="vllm"
                 hint={t('benchmark.expert.vllmPathHint')}
+                mono
+              />
+            )}
+            {p.customEngine === undefined && p.engine === 'sglang-native' && (
+              <Text
+                label={t('benchmark.expert.sglangPath')}
+                value={p.engineForm.sglangPath}
+                onChange={(v) => p.onEngine({ sglangPath: v })}
+                placeholder="python"
+                hint={t('benchmark.expert.sglangPathHint')}
                 mono
               />
             )}

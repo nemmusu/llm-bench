@@ -70,27 +70,37 @@ describe('the Benchmark chip', () => {
     expect(within(picker).getByText('Comandi: Qwen YaRN')).toBeTruthy();
   });
 
-  it('a fork still to set up: the chip says so and leads to the Engines page', async () => {
-    const api = benchApi({ local: [QWEN] }, { onboardingDone: true, modelRecipes: [recipe({ contextSize: undefined, ropeScaling: undefined, args: {}, env: {}, engine: { type: 'template', template: 'prismml-bonsai' } })] });
-    const { router } = renderApp('/', api);
-    expect(await screen.findByText('Fork PrismML (da indicare)')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Indica dove si trova il fork' }));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/engines'));
-    expect(router.state.location.search).toMatchObject({ customTemplate: 'prismml-bonsai', model: QWEN.identity.weakKey });
+  it('a Bonsai model: one prompt only, the engine suggestion\u2019s; the chip keeps to the other commands', async () => {
+    const bonsai = localModel('bonsai', { displayName: 'Ternary-Bonsai-8B-PQ2_0', file: 'Ternary-Bonsai-8B-PQ2_0.gguf', quant: 'PQ2_0', weakKey: 'local/bonsai' });
+    const only = recipe({ match: { name: 'bonsai' }, contextSize: undefined, ropeScaling: undefined, args: {}, env: {}, engine: { type: 'template', template: 'prismml-bonsai' } });
+    const api = benchApi({ local: [bonsai] }, { onboardingDone: true, modelRecipes: [only] });
+    renderApp('/', api);
+    expect(await screen.findByText('Questo modello richiede il fork PrismML di llama.cpp')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Indica dove si trova/ })).toHaveLength(1);
+    expect(screen.queryByText('Usa i comandi di questo modello')).toBeNull();
+    // With other commands too: the chip says those, never the fork.
+    cleanup();
+    renderApp('/', benchApi({ local: [bonsai] }, { onboardingDone: true, modelRecipes: [{ ...only, args: { llamacpp: ['--jinja'] } }] }));
+    const chip = (await screen.findByText('Usa i comandi di questo modello')).closest('div.rounded-lg') as HTMLElement;
+    expect(within(chip).getByText('1 argomento')).toBeTruthy();
+    expect(within(chip).queryByText(/PrismML/)).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Indica dove si trova/ })).toHaveLength(1);
   });
 
-  it('a recipe with nothing to show still names itself; applied lines without a recipe are nothing', async () => {
+  it('a recipe with nothing to apply here: no chip', async () => {
     const api = benchApi({ local: [QWEN] }, { onboardingDone: true, modelRecipes: [recipe({ contextSize: undefined, ropeScaling: undefined, args: {}, env: {}, notes: 'solo note' })] });
     renderApp('/', api);
-    const chip = (await screen.findByText('Usa i comandi di questo modello')).closest('div.rounded-lg') as HTMLElement;
-    expect(within(chip).getAllByText('Qwen YaRN')).toHaveLength(2);
+    await waitFor(() => expect(posted(api, '/api/runs/plan').length).toBeGreaterThan(0));
+    expect(screen.queryByText('Usa i comandi di questo modello')).toBeNull();
   });
 
   it('a saved fork or a built-in engine: said by name; no recipe, no chip', async () => {
     const fork = customEngineSchema.parse({ id: 'f', name: 'Il fork', base: 'llamacpp', run: { mode: 'native', path: '/f' } });
     const api = benchApi({ local: [QWEN] }, { onboardingDone: true, customEngines: [fork], modelRecipes: [recipe({ engine: { type: 'custom', id: 'f' } })] });
     renderApp('/', api);
-    expect(await screen.findByText('Il fork')).toBeTruthy();
+    const chip = (await screen.findByText('Usa i comandi di questo modello')).closest('div.rounded-lg') as HTMLElement;
+    expect(within(chip).getByText('YaRN 300K')).toBeTruthy();
+    expect(within(chip).queryByText(/Il fork/)).toBeNull();
     const plain = benchApi({ local: [QWEN] }, { onboardingDone: true, modelRecipes: [recipe({ match: { name: 'llama' } })] });
     renderApp('/', plain);
     await waitFor(() => expect(posted(plain, '/api/runs/plan').length).toBeGreaterThan(0));
