@@ -124,6 +124,35 @@ export function groupFiles(files: readonly HubFile[]): FileGroup[] {
   return [...groups.values()].sort((a, b) => Number(a.kind !== 'weights') - Number(b.kind !== 'weights') || b.sizeBytes - a.sizeBytes);
 }
 
+/** A top folder of a repo with how many files it holds and their size (the files card of the model page). */
+export interface RepoFolder {
+  dir: string;
+  count: number;
+  sizeBytes: number;
+}
+
+/**
+ * The model page's files card: the root's files grouped as people think of them (groupFiles), each
+ * sub-folder in one line ("GGUF/ · 5 file · 70 GB"), biggest first.
+ */
+export function repoFiles(files: readonly HubFile[]): { root: FileGroup[]; folders: RepoFolder[] } {
+  const folders = new Map<string, RepoFolder>();
+  const root: HubFile[] = [];
+  for (const f of files) {
+    const slash = f.path.indexOf('/');
+    if (slash < 0) {
+      root.push(f);
+      continue;
+    }
+    const dir = f.path.slice(0, slash);
+    const g = folders.get(dir) ?? { dir, count: 0, sizeBytes: 0 };
+    g.count++;
+    g.sizeBytes += f.sizeBytes;
+    folders.set(dir, g);
+  }
+  return { root: groupFiles(root), folders: [...folders.values()].sort((a, b) => b.sizeBytes - a.sizeBytes) };
+}
+
 /** "Q4_K_M/Demo-Q4_K_M-00001-of-00002.gguf" → "Demo-Q4_K_M-00001-of-00002.gguf". */
 export function fileName(p: string): string {
   return p.split(/[\\/]/).pop() as string;

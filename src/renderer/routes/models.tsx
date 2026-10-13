@@ -1,8 +1,9 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Download, FolderPlus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
-import { ModelCatalog, type CatalogView } from '../components/library/catalog';
-import { type EngineFormat } from '../components/library/curated-list';
+import { useCallback, useEffect } from 'react';
+import { useAddModelFolder } from '../components/library/add-folder';
+import { ModelCatalog } from '../components/library/catalog';
+import { catalogState, rememberCatalog, searchOf, type CatalogState, type ModelsSearch } from '../components/library/catalog-search';
 import { ErrorCallout } from '../components/library/error-callout';
 import { LocalModels } from '../components/library/local-models';
 import { Page } from '../components/shell/page';
@@ -11,7 +12,6 @@ import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useI18n } from '../i18n';
 import { isDownloadActive, useDownloadJobs, useDownloadsPanel, useLibraryModels, useRescan, useSaveFoldersAndRescan } from '../lib/queries-library';
-import { useSettings } from '../lib/settings';
 
 export type ModelsTab = 'local' | 'download';
 
@@ -20,23 +20,24 @@ export function ModelsPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const search = useSearch({ from: '/models' });
-  const { settings } = useSettings();
   const local = useLibraryModels();
   const rescan = useRescan();
   const saveFolders = useSaveFoldersAndRescan();
+  const addFolder = useAddModelFolder(saveFolders, rescan);
   const jobs = useDownloadJobs();
   const [, setPanel] = useDownloadsPanel();
-  const [format, setFormat] = useState<EngineFormat>('gguf');
   const tab: ModelsTab = search.tab ?? 'local';
-  const setTab = (v: string) => void navigate({ to: '/models', search: v === 'download' ? { tab: 'download' } : {}, replace: true });
-  const view: CatalogView = search.view ?? 'hub';
-  const setView = (v: CatalogView) => void navigate({ to: '/models', search: { tab: 'download', ...(v === 'hub' ? {} : { view: v }) }, replace: true });
+  const state = catalogState(search);
+  // The catalog's choices stay in the URL when switching tabs.
+  const setTab = (v: string) => void navigate({ to: '/models', search: (prev: ModelsSearch) => ({ ...prev, tab: v === 'download' ? ('download' as const) : undefined }), replace: true });
+  const update = useCallback(
+    (patch: Partial<CatalogState>) => void navigate({ to: '/models', search: (prev: ModelsSearch) => searchOf({ ...catalogState(prev), ...patch }), replace: true }),
+    [navigate],
+  );
+  useEffect(() => {
+    if (tab === 'download') rememberCatalog(search);
+  }, [tab, search]);
   const active = (jobs.data ?? []).filter(isDownloadActive).length;
-
-  const addFolder = async () => {
-    const dir = await window.gpubench?.pickFolder({ title: t('models.addFolder') });
-    if (dir && !settings.extraModelDirs.includes(dir)) saveFolders.mutate({ extraModelDirs: [...settings.extraModelDirs, dir] });
-  };
 
   return (
     <Page
@@ -54,7 +55,7 @@ export function ModelsPage() {
               </Badge>
             )}
           </Button>
-          <Button onClick={() => void addFolder()}>
+          <Button onClick={() => void addFolder(t('models.addFolder'))}>
             <FolderPlus aria-hidden />
             {t('models.addFolder')}
           </Button>
@@ -76,10 +77,10 @@ export function ModelsPage() {
         </TabsList>
         <TabsContent value="local">
           {/* Nothing on the PC yet: the verified suggestions are the easy first pick. */}
-          <LocalModels onDownload={() => setView('curated')} />
+          <LocalModels onDownload={() => update({ view: 'curated' })} />
         </TabsContent>
         <TabsContent value="download">
-          <ModelCatalog format={format} onFormatChange={setFormat} view={view} onViewChange={setView} />
+          <ModelCatalog state={state} onChange={update} />
         </TabsContent>
       </Tabs>
     </Page>

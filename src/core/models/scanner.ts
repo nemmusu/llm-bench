@@ -499,7 +499,12 @@ export class ModelScanner {
       const fromManifest = mine?.sha256 && SHA_RE.test(mine.sha256) && mine.bytes === f.size ? mine.sha256 : undefined;
       const sha256 = known.sha ?? fromManifest ?? sums.get(f.name);
       const paramsB = paramsFromLabel(mine?.name ?? f.name) ?? paramsFromLabel(src.repo ?? '');
-      const facts: ModelFactsEx = { ...(mine?.architecture ? { architecture: mine.architecture } : {}), ...(mine?.name ? { name: mine.name } : {}), ...(paramsB ? { paramsB } : {}) };
+      const facts: ModelFactsEx = {
+        ...(mine?.architecture ? { architecture: mine.architecture } : {}),
+        ...(mine?.name ? { name: mine.name } : {}),
+        ...(mine?.components.length ? { components: mine.components } : {}),
+        ...(paramsB ? { paramsB } : {}),
+      };
       const quant = precisionFromText(f.name);
       const identity: LocalModel['identity'] = {
         displayName: f.name.replace(NINFER_FILE, ''),

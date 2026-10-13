@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { AppError } from '../../contract/errors';
-import { NINFER_FILE, namesNinfer, otherFormatsOf, precisionFromConfig, precisionFromDtypes, precisionFromText, refineGgufKinds, type Precision } from '../../contract/formats';
+import { NINFER_FILE, namesNinfer, otherFormatOf, otherFormatsOf, precisionFromConfig, precisionFromDtypes, precisionFromText, refineGgufKinds, type Precision } from '../../contract/formats';
 import type { HubFile, HubModel } from '../../contract/models';
 import { errorMessage, factsFromGguf, parseGgufHeader } from './gguf';
 import { factsFromHfConfig } from './hf-config';
@@ -155,12 +155,16 @@ export function toHubModel(raw: Record<string, unknown>): HubModel {
   const tags = strs(raw.tags);
   const card = obj(raw.cardData) ?? {};
   const name = repo.slice(slash + 1);
-  const otherFormats = otherFormatsOf(name, tags);
   const siblings = (Array.isArray(raw.siblings) ? raw.siblings : []).map((x) => obj(x)?.rfilename).filter((x): x is string => typeof x === 'string');
+  // Other formats by tag and name, and by the files themselves ("mlx/…", "*.onnx"); PyTorch originals are no news.
+  const fromFiles = siblings.map(otherFormatOf).filter((x): x is string => x !== undefined && x !== 'PyTorch');
+  const announced = otherFormatsOf(name, tags);
+  const otherFormats = [...new Set([...announced, ...fromFiles])].sort();
   const formats: HubModel['formats'] = [];
   if (tags.includes('gguf') || obj(raw.gguf) || siblings.some((f) => /\.gguf$/i.test(f))) formats.push('gguf');
   // MLX repos ship safetensors too, in a layout only MLX reads: not a model for vLLM / SGLang.
-  if ((tags.includes('safetensors') || obj(raw.safetensors)) && !otherFormats.includes('MLX')) formats.push('safetensors');
+  // (an MLX folder inside a mixed repo leaves its other safetensors alone).
+  if ((tags.includes('safetensors') || obj(raw.safetensors)) && !announced.includes('MLX')) formats.push('safetensors');
   if (tags.includes('ninfer') || namesNinfer(name) || siblings.some((f) => NINFER_FILE.test(f))) formats.push('ninfer');
   if (otherFormats.length > 0) formats.push('other');
   // safetensors metadata counts every tensor; a GGUF repo's count comes from one of its files

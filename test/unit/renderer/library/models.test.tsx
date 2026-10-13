@@ -30,7 +30,7 @@ describe('models: on your PC', () => {
     const api = libApi(world({ tried: [run('r', { decodeTps: 88 })] }));
     renderLib('/models', api);
     expect(await h1('Modelli')).toBeTruthy();
-    const list = await screen.findByRole('list', { name: 'Sul tuo PC' });
+    const list = await screen.findByRole('list', { name: 'Per llama.cpp (GGUF)' });
     expect(within(list).getByText('Model m1')).toBeTruthy();
     expect(within(list).getAllByText('Q4_K_M · 8,2B parametri · 4,0 GB')).toHaveLength(2);
     expect(within(list).getByText('· LM Studio')).toBeTruthy();
@@ -90,15 +90,40 @@ describe('models: on your PC', () => {
     const put = api.calls.findIndex((c) => c.method === 'PUT');
     const rescan = api.calls.findIndex((c) => c.path === '/api/models/rescan');
     expect(rescan).toBeGreaterThan(put);
-    // The same folder twice, or a cancelled dialog, change nothing.
+    expect(await screen.findByText('Cartella aggiunta: cerco i modelli che contiene')).toBeTruthy();
+    // The same folder again: scanned again (the user just put models there), and said so; a cancelled dialog changes nothing.
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
+    expect(await screen.findByText('La cartella è già nell’elenco: l’ho ricontrollata')).toBeTruthy();
+    expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(2);
+    expect(api.calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
     b.pickFolder.mockResolvedValueOnce(null);
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
-    expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(1);
+    expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(2);
     api.on('PUT /api/settings', () => fail('VALIDATION'));
     b.pickFolder.mockResolvedValueOnce('F:\\Other');
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
     expect(await screen.findByText('Alcuni valori non sono validi')).toBeTruthy();
+  });
+
+  it('groups the library by format; a download stopped halfway is listed as incomplete, without run actions', async () => {
+    const st = localModel('st', { identity: { displayName: 'Qwen/Qwen3-8B-FP8', format: 'safetensors', quant: 'FP8', repo: 'Qwen/Qwen3-8B-FP8' } });
+    const partial = localModel('orca', { identity: { displayName: 'orcarouter/OrcaSAQ-2-27B', format: 'safetensors', facts: undefined }, incomplete: { have: 1, total: 4 }, origin: 'library' });
+    const nf = localModel('nf', { identity: { displayName: 'qwen3_8_27b_nvfp4', format: 'ninfer', quant: 'NVFP4' } });
+    const bonsai = localModel('bonsai', { identity: { displayName: 'Ternary-Bonsai-2-27B-PQ2_0', file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf', quant: 'PQ2_0' } });
+    const api = libApi(world({ local: [bonsai, st, partial, nf] }));
+    renderLib('/models', api);
+    const sections = await screen.findAllByRole('heading', { level: 2 });
+    expect(sections.map((h) => h.textContent)).toEqual(expect.arrayContaining(['Per llama.cpp (GGUF)', 'Per vLLM / SGLang (safetensors)', 'Per NInfer (RTX 5090)']));
+    const vllm = screen.getByRole('list', { name: 'Per vLLM / SGLang (safetensors)' });
+    expect(within(vllm).getByText('Incompleto · 1 di 4 file')).toBeTruthy();
+    expect(within(vllm).queryByRole('button', { name: 'Fai il benchmark: orcarouter/OrcaSAQ-2-27B' })).toBeNull();
+    expect(within(vllm).queryByRole('button', { name: 'Avvia server: orcarouter/OrcaSAQ-2-27B' })).toBeNull();
+    expect(within(vllm).getByRole('button', { name: 'Elimina: orcarouter/OrcaSAQ-2-27B' })).toBeTruthy();
+    expect(within(vllm).getByRole('button', { name: 'Fai il benchmark: Qwen/Qwen3-8B-FP8' })).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: 'Per NInfer (RTX 5090)' })).getByText('qwen3_8_27b_nvfp4')).toBeTruthy();
+    // A Bonsai quant only the PrismML fork reads: one click to set that engine up.
+    const fork = within(screen.getByRole('list', { name: 'Per llama.cpp (GGUF)' })).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ });
+    expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');
   });
 
   it('copies GGUF models into Docker storage on Windows (and removes the copy)', async () => {
@@ -308,8 +333,11 @@ describe('models: download', () => {
     expect(within(list).getByText('0,6B')).toBeTruthy();
     expect(within(list).getByText('1,5 Mln')).toBeTruthy();
     expect(within(list).getByText('7,3K')).toBeTruthy();
-    // One engine at a time: the format is not repeated on every row.
-    expect(within(list).queryByText('GGUF')).toBeNull();
+    // Each row says its formats with the engine that runs them; the one the filter asks for is drawn stronger.
+    expect(within(list).getAllByText('GGUF')).toHaveLength(2);
+    expect(list.querySelector('[data-format="gguf"]')?.className).toContain('bg-accent-soft');
+    expect(within(list).getByText('Safetensors')).toBeTruthy();
+    expect(within(list).getByText('Altro formato')).toBeTruthy();
     expect(screen.getByText('3 modelli')).toBeTruthy();
     expect(screen.getByText('Hai visto tutti i risultati.')).toBeTruthy();
     const last = () => api.calls.filter((c) => c.path.startsWith('/api/models/search')).at(-1)?.path ?? '';
@@ -367,18 +395,24 @@ describe('models: download', () => {
     await waitFor(() => expect(last()).toContain('format=safetensors&sort=trendingScore&limit=30&onlyFits=false&author=bartowski'));
     // The filter column has its own "clear" too.
     await userEvent.click(within(screen.getByRole('complementary', { name: 'Filtri' })).getByRole('button', { name: 'Togli i filtri' }));
-    // Both engines: each row says its format.
+    // SGLang reads the same safetensors as vLLM; NInfer searches its own artifacts.
+    await userEvent.click(screen.getByRole('radio', { name: 'SGLang (safetensors)' }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ engine: 'sglang' }));
+    await waitFor(() => expect(last()).toContain('format=safetensors'));
+    await userEvent.click(screen.getByRole('radio', { name: 'NInfer (.ninfer)' }));
+    await waitFor(() => expect(last()).toContain('format=ninfer'));
+    // Every engine: every format, none drawn stronger.
     await userEvent.click(screen.getByRole('radio', { name: 'Tutti' }));
     await waitFor(() => expect(last()).toContain('format=any'));
     expect(await within(screen.getByRole('list', { name: 'Modelli trovati' })).findAllByText('GGUF')).toHaveLength(2);
-    expect(within(screen.getByRole('list', { name: 'Modelli trovati' })).getByText('safetensors')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Modelli trovati' }).querySelector('.bg-accent-soft[data-format]')).toBeNull();
     await userEvent.click(screen.getByRole('radio', { name: 'openai' }));
     await waitFor(() => expect(last()).toContain('author=openai'));
-    // The views are in the address (a link can open the suggestions directly).
+    // Views and filters are in the address (a link opens them directly, "back" finds them again).
     await userEvent.click(screen.getByRole('radio', { name: /^Consigliati/ }));
-    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download', view: 'curated' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download', view: 'curated', engine: 'any', author: 'openai' }));
     await userEvent.click(screen.getByRole('radio', { name: 'Tutti i modelli' }));
-    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download', engine: 'any', author: 'openai' }));
   });
 
   it('catalog: models already tried on this GPU, without asking Hugging Face', async () => {
@@ -408,8 +442,8 @@ describe('models: download', () => {
     const api = libApi(world({ runs: [], search: [], snapshot: [sample(1000, { memUsedMiB: 17_000 })] }));
     renderLib('/models?tab=download', api);
     expect(await screen.findByRole('heading', { name: 'Nessun modello trovato' })).toBeTruthy();
-    expect(await screen.findByText(/^Altri programmi stanno usando .+ della scheda video$/)).toBeTruthy();
-    expect(screen.getByText(/^Entra \/ non entra si riferisce ai .+ liberi adesso/)).toBeTruthy();
+    expect(await screen.findByText('Ora altri programmi usano 16,6 GB della scheda.')).toBeTruthy();
+    expect(screen.getByText(/Entra \/ non entra guarda la memoria totale della scheda/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Togli i filtri' })).toBeNull();
     await userEvent.click(screen.getByRole('radio', { name: /^Già provati/ }));
     expect(await screen.findByRole('heading', { name: 'Non hai ancora provato modelli di Hugging Face' })).toBeTruthy();

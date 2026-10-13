@@ -57,6 +57,7 @@ function repoParam(c: Context): string {
  *   POST   /api/models/rescan                         -> LocalModel[]
  *   GET    /api/models/search?q=&format=&sort=&limit=&author=&minParamsB=&maxParamsB=&onlyFits=&cursor= -> HubSearchPage
  *   GET    /api/models/curated?vramGB=                -> CuratedResponse
+ *   GET    /api/models/vram                           -> VramNow | null (what other programs hold now)
  *   GET    /api/models/hub/:owner/:name?revision=     -> HubRepoInfo (HubModel + sha, private)
  *   GET    /api/models/hub/:owner/:name/files?revision= -> HubFile[]
  *   GET    /api/models/hub/:owner/:name/readme        -> { text, truncated }
@@ -74,6 +75,7 @@ export function createModelsRoutes(svc: ModelsService): RouteModule {
       const q = searchQuerySchema.parse(c.req.query());
       return c.json(await svc.search(q.q, q));
     });
+    app.get('/api/models/vram', async (c) => c.json(await svc.vramNow()));
     app.get('/api/models/curated', async (c) => {
       const vram = z.coerce.number().positive().max(4096).optional().parse(c.req.query('vramGB'));
       return c.json(await svc.curated(vram));

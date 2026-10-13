@@ -1,11 +1,17 @@
-import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Download, ExternalLink, Heart, Lock, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
-import type { HubModel } from '../../contract/models';
+import { Link, useLocation, useParams, useRouter } from '@tanstack/react-router';
+import { ArrowLeft, Download, ExternalLink, FileBox, FolderTree, Heart, Lock, RotateCcw } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { repoLayout, type RepoLayout } from '../../contract/formats';
+import type { HubFile, HubModel } from '../../contract/models';
+import { ninferGpuSupported } from '../../contract/ninfer';
+import type { HubFitResult } from '../../contract/views';
+import { lastCatalogSearch } from '../components/library/catalog-search';
 import { DownloadDialog, type DownloadChoice } from '../components/library/download-dialog';
 import { ErrorCallout } from '../components/library/error-callout';
-import { groupFiles, HF_BASE, fileName, repoUrl } from '../components/library/helpers';
+import { FormatBadge, FormatBadges, OtherFormatBadge, type ModelFormat } from '../components/library/formats';
+import { HF_BASE, fileName, repoFiles, repoUrl } from '../components/library/helpers';
 import { HfTokenForm } from '../components/library/hf-token';
+import { ModelDetailSlots } from '../components/library/model-detail-slots';
 import { QuantChooser } from '../components/library/quant-chooser';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
@@ -15,7 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Skeleton } from '../components/ui/skeleton';
 import { useI18n } from '../i18n';
 import { Markdown } from '../lib/markdown/render';
-import { errorData, useHubFiles, useHubFit, useHubModel, useReadme, useRelated } from '../lib/queries-library';
+import { errorData, useHubFiles, useHubFit, useHubModel, useMainGpu, useReadme, useRelated } from '../lib/queries-library';
 import { useSettings } from '../lib/settings';
 
 const openHf = (repo: string) => void window.gpubench?.openExternal(repoUrl(repo));
@@ -98,22 +104,96 @@ function Related({ info, repo }: { info: HubModel | null | undefined; repo: stri
   );
 }
 
-/** One Hugging Face repo: pick the quant (best preselected), see the files, read the model card. */
+/** A download section of one format: its badge, what it means, and its choices (or why there are none). */
+function FormatSection({ format, hint, fit, children }: { format: ModelFormat; hint: string; fit: ReturnType<typeof useHubFit>; children: (data: HubFitResult) => ReactNode }) {
+  const { t } = useI18n();
+  return (
+    <Card data-format-section={format}>
+      <CardHeader>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            {t(`models.detail.sections.${format}`)}
+            <FormatBadge format={format} />
+          </CardTitle>
+          <CardDescription>{hint}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {fit.data ? (
+          fit.data.choices.length > 0 ? (
+            children(fit.data)
+          ) : (
+            <p className="text-sm text-fg-2">{t('models.detail.sections.empty')}</p>
+          )
+        ) : fit.isError ? (
+          <p className="text-sm text-fg-3">{t('models.detail.fitUnavailable')}</p>
+        ) : (
+          <div className="flex flex-col gap-2" aria-label={t('common.loading')}>
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Files of formats GPU Bench cannot run: listed by format and folder, never downloaded as a model. */
+function OtherFormats({ groups }: { groups: RepoLayout<HubFile>['other'] }) {
+  const { t, bytes } = useI18n();
+  return (
+    <Card data-format-section="other">
+      <CardHeader>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <CardTitle>{t('models.detail.sections.other')}</CardTitle>
+          <CardDescription>{t('models.detail.sections.otherHint')}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-2 text-sm">
+          {groups.map((g) => (
+            <li key={`${g.format}|${g.dir}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border px-3 py-2">
+              <FileBox aria-hidden className="size-4 text-fg-3" />
+              <OtherFormatBadge name={g.format === 'safetensors' ? undefined : g.format === 'MTP' ? t('models.aux.mtp') : g.format === 'draft' ? t('models.aux.draft') : g.format} module={g.format === 'MTP' || g.format === 'draft'} />
+              <span className="font-mono text-xs text-fg-2">{g.dir ? t('models.detail.folder', { dir: g.dir }) : t('models.detail.rootFolder')}</span>
+              <span className="text-xs text-fg-3">{t(g.files.length === 1 ? 'models.detail.fileCount1' : 'models.detail.fileCount', { n: g.files.length })}</span>
+              <span className="ml-auto text-fg-2 tabular-nums">{bytes(g.sizeBytes)}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * One Hugging Face repo, split by format: "Per llama.cpp (GGUF)" (each quant, its extras), "Per vLLM /
+ * SGLang (safetensors)" (each model folder, one download), "Per NInfer" (each .ninfer artifact with its
+ * checks) and "Altri formati" (shown, never downloaded); then sections other features add, and the card.
+ */
 export function ModelDetailPage() {
   const { t, bytes, integer, number, relative } = useI18n();
   const { owner, name } = useParams({ from: '/models/hub/$owner/$name' });
+  const router = useRouter();
+  const fromCatalog = useLocation({ select: (l) => l.state.fromCatalog === true });
   const repo = `${owner}/${name}`;
   const info = useHubModel(repo);
   const files = useHubFiles(repo);
   const readme = useReadme(repo);
-  const gguf = files.data?.some((f) => f.kind === 'weights' && f.path.toLowerCase().endsWith('.gguf'));
-  const fit = useHubFit(repo, files.data ? (gguf ? 'llamacpp-native' : 'vllm-docker') : undefined);
+  const gpu = useMainGpu();
+  const layout = files.data ? repoLayout(files.data, { name, tags: info.data?.tags ?? [] }) : undefined;
+  const ggufFit = useHubFit(repo, layout && layout.gguf.weights.length > 0 ? 'llamacpp-native' : undefined);
+  const stFit = useHubFit(repo, layout && layout.safetensors.length > 0 ? 'vllm-docker' : undefined);
+  const ninferFit = useHubFit(repo, layout && layout.ninfer.length > 0 ? 'llamacpp-native' : undefined, 'ninfer');
+  const fits = [ggufFit, stFit, ninferFit];
   const [choice, setChoice] = useState<DownloadChoice>();
   const m = info.data;
-  const fitCode = fit.isError ? errorData(fit.error).code : undefined;
+  const failed = fits.find((f) => f.isError);
+  const fitCode = failed ? errorData(failed.error).code : undefined;
   const gated = fitCode === 'HF_GATED' || fitCode === 'HF_AUTH_REQUIRED';
-  const extras = (files.data ?? []).filter((f) => f.kind === 'mmproj' || f.kind === 'mtp' || f.kind === 'draft');
-  const facts = fit.data?.facts;
+  const retry = () => fits.forEach((f) => f.isError && void f.refetch());
+  const facts = ggufFit.data?.facts ?? stFit.data?.facts ?? ninferFit.data?.facts;
+  const nothing = layout !== undefined && layout.gguf.weights.length + layout.safetensors.length + layout.ninfer.length === 0;
 
   return (
     <Page
@@ -137,7 +217,17 @@ export function ModelDetailPage() {
         </span>
       }
       eyebrow={
-        <Link to="/models" search={{ tab: 'download' }} className="inline-flex items-center gap-1 self-start rounded-xs text-sm text-fg-2 hover:text-fg focus-ring">
+        <Link
+          to="/models"
+          search={lastCatalogSearch()}
+          // Opened from the catalog: back to it as it was (same list, same pages, same scroll).
+          onClick={(e) => {
+            if (!fromCatalog) return;
+            e.preventDefault();
+            router.history.back();
+          }}
+          className="inline-flex items-center gap-1 self-start rounded-xs text-sm text-fg-2 hover:text-fg focus-ring"
+        >
           <ArrowLeft aria-hidden className="size-3.5" />
           {t('models.title')}
         </Link>
@@ -152,32 +242,45 @@ export function ModelDetailPage() {
       <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-section">
           {files.isError && <ErrorCallout error={files.error} action={{ label: t('common.retry'), onClick: () => void files.refetch() }} />}
-          {gated && <LicenseHelp repo={repo} onRetry={() => void fit.refetch()} />}
-          {fit.isError && !gated && <ErrorCallout error={fit.error} action={{ label: t('common.retry'), onClick: () => void fit.refetch() }} />}
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>{t('models.detail.chooseTitle')}</CardTitle>
-                <CardDescription>{t('models.detail.chooseHint')}</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {fit.data ? (
-                fit.data.choices.length > 0 ? (
-                  <QuantChooser repo={repo} fit={fit.data} extras={extras} onDownload={setChoice} />
-                ) : (
-                  <p className="text-sm text-fg-2">{t('models.detail.noWeights')}</p>
-                )
-              ) : fit.isError || files.isError ? (
-                <p className="text-sm text-fg-3">{t('models.detail.fitUnavailable')}</p>
-              ) : (
-                <div className="flex flex-col gap-2" aria-label={t('common.loading')}>
-                  <Skeleton className="h-12" />
-                  <Skeleton className="h-12" />
-                </div>
+          {gated && <LicenseHelp repo={repo} onRetry={retry} />}
+          {failed && !gated && <ErrorCallout error={failed.error} action={{ label: t('common.retry'), onClick: retry }} />}
+          {!layout && !files.isError && (
+            <div className="flex flex-col gap-2" aria-label={t('common.loading')}>
+              <Skeleton className="h-28 rounded-xl" />
+            </div>
+          )}
+          {nothing && (
+            <Card>
+              <CardContent>
+                <p className="text-sm text-fg-2">{t('models.detail.noWeights')}</p>
+              </CardContent>
+            </Card>
+          )}
+          {layout && layout.gguf.weights.length > 0 && (
+            <FormatSection format="gguf" hint={t('models.detail.sections.ggufHint')} fit={ggufFit}>
+              {(data) => <QuantChooser repo={repo} fit={data} format="gguf" extras={layout.gguf.extras} onDownload={setChoice} />}
+            </FormatSection>
+          )}
+          {layout && layout.safetensors.length > 0 && (
+            <FormatSection format="safetensors" hint={t('models.detail.sections.safetensorsHint')} fit={stFit}>
+              {(data) => <QuantChooser repo={repo} fit={data} format="safetensors" onDownload={setChoice} />}
+            </FormatSection>
+          )}
+          {layout && layout.ninfer.length > 0 && (
+            <FormatSection format="ninfer" hint={t('models.detail.sections.ninferHint')} fit={ninferFit}>
+              {(data) => (
+                <QuantChooser
+                  repo={repo}
+                  fit={data}
+                  format="ninfer"
+                  unsupported={gpu !== undefined && !ninferGpuSupported({ name: gpu.name, computeCapability: gpu.computeCapability, memTotalMiB: gpu.memoryTotalMiB })}
+                  onDownload={setChoice}
+                />
               )}
-            </CardContent>
-          </Card>
+            </FormatSection>
+          )}
+          {layout && layout.other.length > 0 && <OtherFormats groups={layout.other} />}
+          <ModelDetailSlots repo={repo} info={m} files={files.data} layout={layout} />
           <Card>
             <CardHeader>
               <CardTitle>{t('models.detail.card')}</CardTitle>
@@ -228,6 +331,12 @@ export function ModelDetailPage() {
                   </>
                 )}
               </dl>
+              {m && (m.formats.length > 0 || m.otherFormats.length > 0) && (
+                <div className="mt-3 flex flex-col gap-1.5">
+                  <span className="text-xs text-fg-3">{t('models.formats.label')}</span>
+                  <FormatBadges m={m} className="flex-col items-start" />
+                </div>
+              )}
               {m && m.gated !== false && (
                 <Badge tone="warning" className="mt-3">
                   <Lock aria-hidden />
@@ -243,17 +352,31 @@ export function ModelDetailPage() {
               </CardHeader>
               <CardContent className="pt-3">
                 <ul className="flex flex-col gap-2 text-sm">
-                  {groupFiles(files.data).map((g) => (
-                    <li key={`${g.kind}-${g.label}`} className="flex flex-col">
+                  {repoFiles(files.data).root.map((g) => (
+                    <li key={`${g.kind}-${g.label}`} className="flex min-w-0 flex-col">
                       <span className="flex justify-between gap-3">
-                        <span className="font-medium text-fg">{g.kind === 'weights' ? g.label : t(`models.fileKinds.${g.kind}`)}</span>
-                        <span className="text-fg-3 tabular-nums">{bytes(g.sizeBytes)}</span>
+                        <span className="min-w-0 truncate font-medium text-fg" title={g.label}>
+                          {g.kind === 'weights' ? g.label : t(`models.fileKinds.${g.kind}`)}
+                        </span>
+                        <span className="shrink-0 text-fg-3 tabular-nums">{bytes(g.sizeBytes)}</span>
                       </span>
                       {g.files.map((f) => (
                         <span key={f.path} className="truncate font-mono text-2xs text-fg-3" title={f.path}>
                           {fileName(f.path)}
                         </span>
                       ))}
+                    </li>
+                  ))}
+                  {repoFiles(files.data).folders.map((d) => (
+                    <li key={d.dir} className="flex min-w-0 justify-between gap-3">
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <FolderTree aria-hidden className="size-3.5 shrink-0 text-fg-3" />
+                        <span className="truncate font-mono text-xs text-fg" title={d.dir}>
+                          {d.dir}/
+                        </span>
+                        <span className="shrink-0 text-xs text-fg-3">{t(d.count === 1 ? 'models.detail.fileCount1' : 'models.detail.fileCount', { n: d.count })}</span>
+                      </span>
+                      <span className="shrink-0 text-fg-3 tabular-nums">{bytes(d.sizeBytes)}</span>
                     </li>
                   ))}
                 </ul>

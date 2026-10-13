@@ -2,11 +2,22 @@
 import type { StartRunRequest } from '../../../contract/api';
 import type { EngineKind } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
+import { engineRunsFormat } from '../../../contract/ninfer';
 import { spilledRun, type RunSummary } from '../../../contract/results';
 import type { CuratedModel } from '../../../contract/views';
 
 export type ModelOption =
-  | { key: string; source: 'local'; name: string; quant?: string; sizeBytes?: number; paramsB?: number; local: LocalModel }
+  | {
+      key: string;
+      source: 'local';
+      name: string;
+      quant?: string;
+      sizeBytes?: number;
+      paramsB?: number;
+      local: LocalModel;
+      /** Where it comes from, in small text under the name ("repo · file", or the file). */
+      sub?: string;
+    }
   | {
       key: string;
       source: 'curated';
@@ -25,14 +36,23 @@ export function engineFamily(kind: EngineKind): 'llamacpp' | 'vllm' | 'external'
   return kind === 'external' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
 }
 
+/** What the picker's note says about the formats an engine reads ("llama.cpp usa i modelli GGUF…"). */
+export function formatNoteOf(kind: EngineKind): 'llamacpp' | 'vllm' | 'ninfer' | undefined {
+  if (engineRunsFormat(kind, 'ninfer')) return 'ninfer';
+  if (engineRunsFormat(kind, 'gguf') && !engineRunsFormat(kind, 'safetensors')) return 'llamacpp';
+  return engineRunsFormat(kind, 'safetensors') && !engineRunsFormat(kind, 'gguf') ? 'vllm' : undefined;
+}
+
 function localOption(m: LocalModel, curated: readonly CuratedModel[]): ModelOption {
   const id = m.identity;
   // A downloaded suggestion keeps its curated name: GGUF metadata names can be odd ("Qwen3 4B Instruct Awq").
   const known = curated.find((c) => sameModel(c, m));
+  const sub = [id.repo, id.file && id.file !== id.displayName ? id.file : undefined].filter(Boolean).join(' · ');
   return {
     key: `local:${m.id}`,
     source: 'local',
     name: known ? curatedName(known) : (id.facts?.name ?? id.displayName),
+    ...(sub ? { sub } : {}),
     ...(id.quant ? { quant: id.quant } : {}),
     ...(id.sizeBytes !== undefined ? { sizeBytes: id.sizeBytes } : {}),
     ...(id.facts?.paramsB ? { paramsB: id.facts.paramsB } : {}),
@@ -59,11 +79,15 @@ function isLocal(c: CuratedModel, local: readonly LocalModel[]): boolean {
   return local.some((m) => sameModel(c, m));
 }
 
+/**
+ * The models an engine can run: those on the PC in its format (contract/ninfer.ts engineRunsFormat: GGUF
+ * for llama.cpp, safetensors for vLLM and SGLang, .ninfer for NInfer), never a download stopped halfway,
+ * then the suggestions for it.
+ */
 export function modelOptions(kind: EngineKind, local: readonly LocalModel[], curated: readonly CuratedModel[]): ModelOption[] {
-  const family = engineFamily(kind);
-  if (family === 'external') return [];
-  const format = family === 'llamacpp' ? 'gguf' : 'safetensors';
-  const mine = local.filter((m) => m.identity.format === format);
+  if (kind === 'external') return [];
+  const mine = local.filter((m) => !m.incomplete && engineRunsFormat(kind, m.identity.format));
+  const family = engineRunsFormat(kind, 'gguf') ? 'llamacpp' : engineRunsFormat(kind, 'safetensors') ? 'vllm' : undefined;
   return [...mine.map((m) => localOption(m, curated)), ...curated.filter((c) => c.engine === family && !isLocal(c, mine)).map(curatedOption)];
 }
 

@@ -29,6 +29,8 @@ function prepareFile(spec, index) {
     path: spec.path,
     bytes: buf,
     size: buf.length,
+    // Mockups: the listing shows a real-looking size while the bytes stay small (never downloaded).
+    listedSize: spec.reportedSize ?? buf.length,
     sha256: createHash('sha256').update(buf).digest('hex'),
     gitOid: createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex'),
     lfs,
@@ -61,6 +63,7 @@ function prepareRepo(spec) {
     license: spec.license,
     baseModel: spec.baseModel,
     safetensorsTotal: spec.safetensorsTotal,
+    safetensorsParameters: spec.safetensorsParameters,
     tags,
     files,
   };
@@ -205,6 +208,110 @@ export function demoRepos() {
   ];
 }
 
+const GB = 1e9;
+
+/**
+ * Repos of every format the catalog tells apart (mockups, format E2E): a "kitchen sink" with GGUF in a
+ * sub-folder, safetensors model folders and an NInfer artifact; an NInfer-only repo; a safetensors repo
+ * with a README, pictures and a video; an MLX repo. Sizes are the real ones (reportedSize), the bytes tiny.
+ */
+export function formatRepos() {
+  const config = (q) => JSON.stringify({ architectures: ['Qwen3ForCausalLM'], model_type: 'qwen3', hidden_size: 5120, num_hidden_layers: 64, num_attention_heads: 40, num_key_value_heads: 8, head_dim: 128, max_position_embeddings: 262144, intermediate_size: 17408, vocab_size: 151936, torch_dtype: 'bfloat16', ...(q ? { quantization_config: q } : {}) });
+  const big = (path, gb) => ({ path, size: 1024, reportedSize: Math.round(gb * GB), lfs: true });
+  const coder = (seed) => ({ ...llamaLikeGguf({ arch: 'qwen35', name: 'Qwen3.8 27B Coder', sizeLabel: '27B', layers: 64, ctx: 262144, extra: { 'qwen35.nextn_predict_layers': 1 } }), seed, totalSize: 96 * 1024 });
+  const manifest = { artifact: { filename: 'qwen3_8_27b_nvfp4.ninfer', bytes: 23_700_000_000, container_version: 3, architecture: 'qwen3_8', name: 'qwen3.8-27b', components: ['text', 'vision', 'mtp', 'dflash2'] } };
+  return [
+    {
+      id: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer',
+      downloads: 18_400,
+      likes: 210,
+      trendingScore: 300,
+      lastModified: '2026-10-02T10:00:00.000Z',
+      license: 'apache-2.0',
+      pipelineTag: 'text-generation',
+      numParameters: 27_300_000_000,
+      safetensorsTotal: 27_300_000_000,
+      safetensorsParameters: { BF16: 27_300_000_000 },
+      tags: ['gguf', 'safetensors', 'text-generation'],
+      readme: '# Qwen3.8 27B Coder390\n\nGGUF for llama.cpp, safetensors for vLLM and SGLang, and an NInfer artifact.\n',
+      files: [
+        { path: 'assets/benchmark.png', size: 2048, reportedSize: 310_000 },
+        { path: 'GGUF/Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-MTP.gguf', gguf: coder(21), reportedSize: 19_620_000_000 },
+        { path: 'GGUF/Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-Q8MTP.gguf', gguf: coder(22), reportedSize: 19_832_743_232 },
+        { path: 'GGUF/Qwen3.8-27B-Coder390-EfficientThink-Q8_0-MTP.gguf', gguf: coder(23), reportedSize: 29_069_000_000 },
+        big('GGUF/mmproj-Qwen3.8-27B-Q8_0.gguf', 0.629),
+        big('GGUF/mtp-Qwen3.8-27B-Coder390-EfficientThink-Q8_0.gguf', 3.164),
+        { path: 'BF16/config.json', content: config() },
+        { path: 'BF16/tokenizer.json', content: '{}' },
+        { path: 'BF16/model.safetensors.index.json', content: '{"weight_map":{"a":"model-00001-of-00002.safetensors","b":"model-00002-of-00002.safetensors"}}' },
+        big('BF16/model-00001-of-00002.safetensors', 49.825),
+        big('BF16/model-00002-of-00002.safetensors', 4.888),
+        { path: 'FP8/config.json', content: config({ quant_method: 'fp8' }) },
+        { path: 'FP8/tokenizer.json', content: '{}' },
+        big('FP8/model.safetensors', 28.1),
+        { path: 'INT4/W4A16/config.json', content: config({ quant_method: 'compressed-tensors', config_groups: { g: { weights: { num_bits: 4, type: 'int' } } } }) },
+        big('INT4/W4A16/model.safetensors', 17.647),
+        big('INT4/W4A16/model_visual.safetensors', 0.921),
+        big('INT8/W8A16/MTP-BF16/mtp-bf16.safetensors', 0.849),
+        big('NInfer/qwen3_8_27b_coder_nvfp4.ninfer', 23.7),
+        big('mlx/model.safetensors', 15.2),
+      ],
+    },
+    {
+      id: 'neroued/Qwen3.8-27B-nvfp4-NInfer',
+      downloads: 9_300,
+      likes: 160,
+      trendingScore: 280,
+      lastModified: '2026-09-28T10:00:00.000Z',
+      license: 'apache-2.0',
+      pipelineTag: 'text-generation',
+      numParameters: 27_000_000_000,
+      tags: ['text-generation'],
+      readme: '# Qwen3.8 27B NVFP4 for NInfer\n\nOne artifact, tuned for a single RTX 5090.\n',
+      files: [
+        big('qwen3_8_27b_nvfp4.ninfer', 23.7),
+        { path: 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', content: JSON.stringify(manifest) },
+        { path: 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS', content: `${'0'.repeat(64)}  qwen3_8_27b_nvfp4.ninfer\n` },
+      ],
+    },
+    {
+      id: 'orcarouter/OrcaSAQ-2-27B',
+      downloads: 4_100,
+      likes: 75,
+      trendingScore: 250,
+      lastModified: '2026-09-20T10:00:00.000Z',
+      license: 'apache-2.0',
+      pipelineTag: 'text-generation',
+      safetensorsTotal: 27_000_000_000,
+      safetensorsParameters: { BF16: 27_000_000_000 },
+      tags: ['safetensors', 'text-generation'],
+      readme: '# OrcaSAQ 2 27B\n',
+      files: [
+        { path: 'config.json', content: config() },
+        { path: 'generation_config.json', content: '{}' },
+        { path: 'chat_template.jinja', content: '{{ messages }}' },
+        { path: 'tokenizer.json', content: '{}' },
+        { path: 'merges.txt', content: 'a b\n' },
+        { path: 'model.safetensors.index.json', content: '{"weight_map":{"a":"model-00001-of-00004.safetensors"}}' },
+        ...[1, 2, 3, 4].map((i) => big(`model-0000${i}-of-00004.safetensors`, i === 4 ? 2 : 3.992)),
+        { path: 'assets/liberty.mp4', size: 4096, reportedSize: 29_179_566 },
+        { path: 'assets/pelican-bicycle.svg', content: '<svg/>' },
+      ],
+    },
+    {
+      id: 'mlx-community/Qwen3.8-27B-4bit',
+      downloads: 2_200,
+      likes: 40,
+      trendingScore: 200,
+      lastModified: '2026-09-18T10:00:00.000Z',
+      pipelineTag: 'text-generation',
+      numParameters: 27_000_000_000,
+      tags: ['mlx', 'safetensors', 'text-generation'],
+      files: [{ path: 'config.json', content: config() }, big('model.safetensors', 15.2)],
+    },
+  ];
+}
+
 function sendJson(res, status, body, headers = {}) {
   const data = Buffer.from(JSON.stringify(body));
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': data.length, ...headers });
@@ -298,7 +405,9 @@ export async function startFakeHub(opts = {}) {
     if (repo.pipelineTag) out.pipeline_tag = repo.pipelineTag;
     if (repo.license) out.cardData.license = repo.license;
     if (repo.baseModel) out.cardData.base_model = repo.baseModel;
-    if (repo.safetensorsTotal) out.safetensors = { parameters: { BF16: repo.safetensorsTotal }, total: repo.safetensorsTotal };
+    if (repo.safetensorsTotal) out.safetensors = { parameters: repo.safetensorsParameters ?? { BF16: repo.safetensorsTotal }, total: repo.safetensorsTotal };
+    // expand[]=siblings: the file names (HF sends them when asked).
+    out.siblings = [...repo.files.keys()].map((rfilename) => ({ rfilename }));
     return out;
   }
 
@@ -431,8 +540,8 @@ export async function startFakeHub(opts = {}) {
             continue;
           }
           for (let i = 1; i < segs.length; i++) dirs.add(segs.slice(0, i).join('/'));
-          const e = { type: 'file', oid: f.gitOid, size: f.lfs ? f.size : f.size, path: f.path };
-          if (f.lfs) e.lfs = { oid: f.sha256, size: f.size, pointerSize: 135 };
+          const e = { type: 'file', oid: f.gitOid, size: f.listedSize, path: f.path };
+          if (f.lfs) e.lfs = { oid: f.sha256, size: f.listedSize, pointerSize: 135 };
           entries.push(e);
         }
         const all = [...[...dirs].map((d) => ({ type: 'directory', oid: sha1(d), size: 0, path: d })), ...entries];
