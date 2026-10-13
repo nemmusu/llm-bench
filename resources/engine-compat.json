@@ -36,6 +36,16 @@
       "ghcr.io gives no anonymous size API: the download size is shown as unknown."
     ]
   },
+  "sglang": {
+    "image": "lmsysorg/sglang",
+    "recommendedTag": "v0.5.21",
+    "notes": [
+      "Release tags on Docker Hub: vX.Y.Z (CUDA build of the release), vX.Y.Z-cu130 (CUDA 13.0), '-runtime' variants without the build tools (about 1.4 GB smaller). rocm/xpu/cann tags are for other GPUs.",
+      "The image has no server entrypoint: the command is 'python3 -m sglang.launch_server --model-path … --host 0.0.0.0 --port 30000'.",
+      "On Windows SGLang runs only in Docker Desktop with the WSL2 GPU; native only on Linux.",
+      "v0.5.21 was the newest stable release (2026-10-01, about 15.2 GB) when this file was updated; not yet run on the RTX 5090 here."
+    ]
+  },
   "minDriverByCuda": {
     "12.8": { "linux": "570.26", "windows": "570.65" },
     "12.9": { "linux": "575.51.03", "windows": "576.02" },

@@ -12,6 +12,7 @@ import { LOOPBACK } from '../../process/ports';
 import { createProcessInstance, type ClientFactory } from '../instance';
 import {
   weightFiles,
+  type CoreEngineConfig,
   type EngineAdapter,
   type EngineInstance,
   type InstallPlan,
@@ -21,7 +22,8 @@ import {
   type PlanOptions,
   type ProgressSink,
 } from '../types';
-import { aliasArg, CapsProbe, currentLlamaCaps, guessVariant, type LlamaCaps } from './caps';
+import { DEFAULT_CONTEXT, llamaArgs } from './args';
+import { CapsProbe, currentLlamaCaps, guessVariant, type LlamaCaps } from './caps';
 import {
   buildEnv,
   installLlamaBuild,
@@ -34,10 +36,10 @@ import {
 } from './install';
 import { diagnoseExit, llamaPhaseOf } from './logs';
 import { LlamaReleasesClient, selectAssets, type AssetSelection } from './releases';
-import { llamaFlashAttention, llamaKvArgs, llamaKvLayoutArgs } from '../shared/kv-flags';
+import { FlagGate, trustedFlags } from '../shared/standard-flags';
 import { ignore, timeoutSignal } from '../util';
 
-export const DEFAULT_CONTEXT = 4096;
+export { DEFAULT_CONTEXT };
 
 export type LlamaDeps = Pick<CoreDeps, 'clock' | 'proc' | 'fetch' | 'platform' | 'arch' | 'paths' | 'endpoints' | 'env' | 'log' | 'appVersion'>;
 
@@ -102,14 +104,14 @@ export class LlamaNativeAdapter implements EngineAdapter {
     this.prefix = o.launcherPrefix ?? [];
   }
 
-  async detect(cfg?: EngineConfig): Promise<EngineStatus> {
+  async detect(cfg?: CoreEngineConfig): Promise<EngineStatus> {
     let exe: ResolvedExecutable;
     try {
       exe = await this.resolveExecutable(cfg ?? { kind: this.kind });
     } catch (e) {
       return { kind: this.kind, available: false, installed: false, problems: [toAppErrorData(e).code], supported: true };
     }
-    const v = await this.caps.version(this.argvFor(exe), this.exeEnv(exe));
+    const v = await this.caps.version(this.argvFor(exe), this.exeEnv(exe, cfg));
     const lib = v.ok ? undefined : missingLibrary(v.output);
     const status: EngineStatus = {
       kind: this.kind,
@@ -145,13 +147,13 @@ export class LlamaNativeAdapter implements EngineAdapter {
     return { path: b.serverPath, variant: b.variant, managed: b };
   }
 
-  async capabilities(cfg: EngineConfig): Promise<LlamaCaps> {
+  async capabilities(cfg: CoreEngineConfig): Promise<LlamaCaps> {
     const exe = await this.resolveExecutable(cfg);
-    const caps = await this.caps.probe(this.argvFor(exe), this.exeEnv(exe));
+    const caps = await this.caps.probe(this.argvFor(exe), this.exeEnv(exe, cfg));
     return { ...caps, variant: exe.variant };
   }
 
-  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
+  async plan(cfg: CoreEngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
     const pending: PendingPart[] = [];
     let exe: ResolvedExecutable;
     try {
@@ -164,7 +166,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
       pending.push('engine');
     }
     const env = this.exeEnv(exe);
-    const caps = exe.planned ? currentLlamaCaps() : await this.caps.probe(this.argvFor(exe), env);
+    const caps = exe.planned ? currentLlamaCaps() : await this.caps.probe(this.argvFor(exe), this.exeEnv(exe, cfg));
     const weights = weightFiles(model, opts.preview);
     if (weights.pending) pending.push('model');
     const files = weights.files;
@@ -177,24 +179,9 @@ export class LlamaNativeAdapter implements EngineAdapter {
     const sizes = await Promise.all(files.map((f) => fs.stat(f).then((s) => s.size, () => 0)));
     const statBytes = sizes.reduce((a, b) => a + b, 0);
 
-    const args = ['-m', main, '--host', LOOPBACK, '--port', String(opts.port), '--alias', aliasArg(caps, opts.marker, opts.apiName)];
-    args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
-    args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
-    const fa = llamaFlashAttention(params);
-    if (caps.flashAttn === 'value') args.push('-fa', fa);
-    else if (caps.flashAttn === 'toggle' && fa === 'on') args.push('-fa');
-    args.push(...llamaKvArgs(params));
-    if (params.batchSize !== undefined) args.push('-b', String(params.batchSize));
-    if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
-    if (params.threads !== undefined) args.push('-t', String(params.threads));
-    if (params.parallel !== undefined) args.push('-np', String(params.parallel));
-    // One KV pool shared by all slots: a single long prompt can use the whole context, and the
-    // behaviour no longer depends on the build's default.
-    args.push(...llamaKvLayoutArgs(params, caps.flags));
-    // Auto-fit would silently change ctx/ngl to fit memory: the measured config must be the requested one.
-    if (caps.fitFlag) args.push('--fit', 'off');
-    if (caps.flags.has('--no-webui')) args.push('--no-webui');
-    args.push(...params.extraArgs);
+    // A build whose --help lists our flags (forks too) gets only the ones it knows; the rest is reported.
+    const gate = new FlagGate('llamacpp', exe.planned ? undefined : trustedFlags('llamacpp', caps.flags));
+    const args = llamaArgs(params, caps, { modelPath: main, host: LOOPBACK, port: opts.port, marker: opts.marker, apiName: opts.apiName }, gate);
 
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', variant: exe.variant, executable: exe.path };
     if (caps.version !== undefined) engine.version = caps.version;
@@ -213,6 +200,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
       modelBytes: statBytes > 0 ? statBytes : (model.identity.sizeBytes ?? 0),
       marker: opts.marker,
       ...(pending.length > 0 ? { pending } : {}),
+      ...(gate.missing.length > 0 ? { unsupported: gate.missing } : {}),
     };
   }
 
@@ -355,9 +343,13 @@ export class LlamaNativeAdapter implements EngineAdapter {
     return [...this.prefix, exe.path];
   }
 
-  /** Managed Linux builds (installed or planned) load the bundled CUDA runtime through LD_LIBRARY_PATH. */
-  private exeEnv(exe: ResolvedExecutable): Record<string, string> {
-    if (!exe.managed && !exe.planned) return {};
-    return buildEnv(this.o.deps.platform, path.dirname(exe.path), this.o.deps.env.LD_LIBRARY_PATH);
+  /**
+   * Managed Linux builds (installed or planned) load the bundled CUDA runtime through LD_LIBRARY_PATH;
+   * a custom engine's own environment applies to its probes too (`cfg.probeEnv`).
+   */
+  private exeEnv(exe: ResolvedExecutable, cfg?: CoreEngineConfig): Record<string, string> {
+    const own = cfg?.probeEnv ?? {};
+    if (!exe.managed && !exe.planned) return own;
+    return { ...buildEnv(this.o.deps.platform, path.dirname(exe.path), this.o.deps.env.LD_LIBRARY_PATH), ...own };
   }
 }

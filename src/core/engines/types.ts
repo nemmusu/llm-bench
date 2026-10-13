@@ -1,4 +1,5 @@
-import type { EngineConfig, EngineKind, EngineStatus, LaunchParams } from '../../contract/engines';
+import type { MissingFlag } from '../../contract/custom-engines';
+import { engineBaseOf, type EngineConfig, type EngineKind, type EngineStatus, type LaunchParams } from '../../contract/engines';
 import type { EngineIdentity, LaunchRecord } from '../../contract/results';
 import type { LocalModel, ModelIdentity } from '../../contract/models';
 import type { ExitInfo, LogLine } from '../deps';
@@ -79,12 +80,25 @@ export interface PlanOptions {
    * it unset (the API then only knows the marker).
    */
   apiName?: string;
+  /**
+   * Options the engine's --help lists, when the caller knows them (a fork's check): GPU Bench's own
+   * flags the build lacks are left out and listed in LaunchPlan.unsupported. llama.cpp adapters read
+   * them from their own probe; undefined elsewhere = pass everything.
+   */
+  knownFlags?: ReadonlySet<string>;
 }
 
-/** The model name a GPU Bench server shows to other programs: the HF repo for vLLM, else the model's own name. */
+/**
+ * EngineConfig as the core passes it to adapters: a custom engine also brings the environment its
+ * --version / --help probes need (a fork's LD_LIBRARY_PATH…).
+ */
+export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string> };
+
+/** The model name a GPU Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
 export function serverApiName(kind: EngineKind, model: ModelTarget): string {
-  const vllm = kind === 'vllm-docker' || kind === 'vllm-native';
-  const name = (vllm ? (model.repo ?? model.identity.repo) : undefined) ?? model.identity.displayName;
+  const base = engineBaseOf(kind);
+  const repoNamed = base === 'vllm' || base === 'sglang';
+  const name = (repoNamed ? (model.repo ?? model.identity.repo) : undefined) ?? model.identity.displayName;
   // llama.cpp splits --alias at commas; spaces are awkward in client settings.
   return name.replace(/[,\s]+/g, '-');
 }
@@ -120,6 +134,8 @@ export interface LaunchPlan {
   marker: string;
   /** Preview only: parts of argv that are placeholders until an install/download (see PlanOptions.preview). */
   pending?: PendingPart[];
+  /** GPU Bench flags the build does not know: left out of argv (the engine's default applies). */
+  unsupported?: MissingFlag[];
   /**
    * The API key the engine was started with (a server shared on the local network, servers/lan.ts):
    * readiness probes send it. A secret: never stored, displayed or logged (commands are redacted).

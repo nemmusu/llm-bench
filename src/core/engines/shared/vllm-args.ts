@@ -1,8 +1,9 @@
 import path from 'node:path';
-import type { LaunchParams } from '../../../contract/engines';
+import type { LaunchParams, RopeScaling } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 import type { ModelTarget } from '../types';
 import { vllmKvDtype } from './kv-flags';
+import { FlagGate } from './standard-flags';
 
 export const VLLM_DEFAULT_MAX_MODEL_LEN = 4096;
 /** vLLM's own default, passed explicitly so the stored command says what was used. */
@@ -65,22 +66,39 @@ export interface VllmServeOptions {
   revision?: string;
 }
 
-/** Server arguments shared by vLLM Docker and native: everything explicit, so the record is exact. */
-export function vllmServeArgs(params: LaunchParams, o: VllmServeOptions): string[] {
+/** The rope_scaling entry of a model config (vLLM --hf-overrides, SGLang --json-model-override-args). */
+export function ropeScalingConfig(r: RopeScaling): { rope_type: string; factor: number; original_max_position_embeddings: number } {
+  return { rope_type: r.type, factor: r.factor, original_max_position_embeddings: r.originalContext };
+}
+
+/**
+ * Server arguments shared by vLLM Docker and native: everything explicit, so the record is exact.
+ * `gate` leaves out the flags a build (a fork) does not list; by default everything is passed.
+ */
+export function vllmServeArgs(params: LaunchParams, o: VllmServeOptions, gate = new FlagGate('vllm', undefined)): string[] {
   const args = o.positional ? [o.model] : ['--model', o.model];
   // Several names are all accepted; the first one is what responses report.
-  args.push('--served-model-name', ...(o.apiName !== undefined ? [o.apiName] : []), o.servedName, '--host', o.host, '--port', String(o.port));
+  gate.push(args, '--served-model-name', ...(o.apiName !== undefined ? [o.apiName] : []), o.servedName);
+  gate.push(args, '--host', o.host);
+  gate.push(args, '--port', String(o.port));
   if (o.revision !== undefined) args.push('--revision', o.revision);
-  args.push('--max-model-len', String(params.maxModelLen ?? params.contextSize ?? VLLM_DEFAULT_MAX_MODEL_LEN));
-  args.push('--gpu-memory-utilization', String(params.gpuMemoryUtilization ?? VLLM_DEFAULT_GPU_MEMORY_UTILIZATION));
-  if (params.parallel !== undefined) args.push('--max-num-seqs', String(params.parallel));
+  gate.push(args, '--max-model-len', String(params.maxModelLen ?? params.contextSize ?? VLLM_DEFAULT_MAX_MODEL_LEN));
+  gate.push(args, '--gpu-memory-utilization', String(params.gpuMemoryUtilization ?? VLLM_DEFAULT_GPU_MEMORY_UTILIZATION));
+  if (params.parallel !== undefined) gate.push(args, '--max-num-seqs', String(params.parallel));
   const kv = vllmKvDtype(params);
-  if (kv !== undefined) args.push('--kv-cache-dtype', kv);
+  if (kv !== undefined) gate.push(args, '--kv-cache-dtype', kv);
   // Chunked-prefill size: prompt tokens processed per engine step (llama.cpp's batch).
-  if (params.batchSize !== undefined) args.push('--max-num-batched-tokens', String(params.batchSize));
-  args.push('--seed', String(VLLM_SEED));
-  if (params.dtype !== undefined) args.push('--dtype', params.dtype);
-  if (params.quantization !== undefined) args.push('--quantization', params.quantization);
+  if (params.batchSize !== undefined) gate.push(args, '--max-num-batched-tokens', String(params.batchSize));
+  gate.push(args, '--seed', String(VLLM_SEED));
+  if (params.dtype !== undefined) gate.push(args, '--dtype', params.dtype);
+  if (params.quantization !== undefined) gate.push(args, '--quantization', params.quantization);
+  if (params.ropeScaling) {
+    const rope = ropeScalingConfig(params.ropeScaling);
+    // Current vLLM overrides the model config with --hf-overrides; older builds had --rope-scaling.
+    if (gate.lists('--hf-overrides')) args.push('--hf-overrides', JSON.stringify({ rope_scaling: rope }));
+    else if (gate.lists('--rope-scaling')) args.push('--rope-scaling', JSON.stringify(rope));
+    else gate.note('--hf-overrides');
+  }
   args.push(...params.extraArgs);
   return args;
 }
