@@ -8,6 +8,7 @@ import { configParamsOf } from '../../../contract/configs';
 import type { ApiFlavor, EngineConfig, LaunchParams } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import { nominalDepth, type LatencyPoint, type Profile, type RunResult } from '../../../contract/results';
+import { serverNinfer } from '../engines/ninfer-format';
 import { hasCustomParams } from './expert-form';
 import { headlinePoint, isManagedExecutable, modelLabelOf } from './format';
 import type { BenchDraft, DraftHubModel, PresetProvenance } from './run-context';
@@ -134,7 +135,7 @@ export function presetOf(run: RunResult, local: readonly LocalModel[], enginesDi
       model = { name };
       draft.modelName = name;
     }
-  } else if (run.model.source === 'hf' && run.model.repo && run.model.format !== 'gguf') {
+  } else if (run.model.source === 'hf' && run.model.repo && run.model.format === 'safetensors') {
     // vLLM: the repo (the core serves the library copy when there is one, else it downloads it).
     const repo = run.model.repo;
     model = { repo, ...(run.model.revision ? { revision: run.model.revision } : {}) };
@@ -175,7 +176,8 @@ export function presetOf(run: RunResult, local: readonly LocalModel[], enginesDi
     draft,
     modelMissing: where === 'missing',
     needsExpert,
-    serve: { engine, model, params },
+    // A server keeps NInfer's own defaults for what only the benchmark set.
+    serve: { engine, model, params: serverNinfer(params) },
     params,
     model: where,
     provenance: draft.provenance,

@@ -42,8 +42,9 @@ export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
     const ac = new AbortController();
     const onShutdown = () => ac.abort();
     d.shutdown?.addEventListener('abort', onShutdown, { once: true });
+    // Build progress is steps (ninja's "[12/345]", git's percent), not bytes.
     const emit = (p: { stage: string; bytesDone: number; bytesTotal?: number }, extra: Partial<InstallEvent> = {}) =>
-      d.publish({ type: 'engine.install', kind: req.kind, stage: p.stage, bytesDone: p.bytesDone, ...(p.bytesTotal !== undefined ? { bytesTotal: p.bytesTotal } : {}), ...extra });
+      d.publish({ type: 'engine.install', kind: req.kind, stage: p.stage, bytesDone: p.bytesDone, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}), ...extra });
     try {
       emit({ stage: 'resolve', bytesDone: 0 });
       const serve = await d.builder(req.kind).build(req, emit, ac.signal);

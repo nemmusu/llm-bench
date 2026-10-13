@@ -1,6 +1,7 @@
 /** The models offered for an engine: what is on the PC first, then curated downloads. */
 import type { StartRunRequest } from '../../../contract/api';
 import type { EngineKind } from '../../../contract/engines';
+import { isNinferKind } from '../../../contract/ninfer';
 import type { LocalModel } from '../../../contract/models';
 import { spilledRun, type RunSummary } from '../../../contract/results';
 import type { CuratedModel } from '../../../contract/views';
@@ -60,6 +61,8 @@ function isLocal(c: CuratedModel, local: readonly LocalModel[]): boolean {
 }
 
 export function modelOptions(kind: EngineKind, local: readonly LocalModel[], curated: readonly CuratedModel[]): ModelOption[] {
+  // NInfer reads its own .ninfer artifacts only (downloaded from the Models page).
+  if (isNinferKind(kind)) return local.filter((m) => m.identity.format === 'ninfer' && m.incomplete === undefined).map((m) => localOption(m, curated));
   const family = engineFamily(kind);
   if (family === 'external') return [];
   const format = family === 'llamacpp' ? 'gguf' : 'safetensors';

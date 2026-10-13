@@ -19,6 +19,9 @@ import { ServersPanel } from '../components/bench/servers';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
+import { withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
+import { NinferPresetPicker } from '../components/engines/ninfer-presets';
+import { isNinferKind, ninferPresetsFor } from '../../contract/ninfer';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
 import { DEFAULT_TUNE, TuneOptions, tuneRequestOf, type TuneRequest } from '../components/tune/tune-options';
@@ -187,6 +190,9 @@ function BenchmarkScreen() {
   const [previousTune, setPreviousTune] = useState<RunPlan['previousTune']>(undefined);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // NInfer: a result's own settings when its preset brought them, else NInfer's recommended ones.
+  const draftNinfer = draft?.params?.ninfer;
+  const [ninferChoice, setNinferChoice] = useState<NinferChoice>(draftNinfer ? 'run' : 'ninfer-recommended');
 
   const statusOf = (k: EngineKind) => engines.data?.find((e) => e.kind === k);
   // External endpoints and custom plans are expert features; unsupported engines fall back to llama.cpp.
@@ -202,11 +208,16 @@ function BenchmarkScreen() {
       ? picked
       : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
+  // NInfer: the built-in settings of a .ninfer model (NInfer's README quick start, one tested on an RTX 5090).
+  const ninferPresets = isNinferKind(effEngine) && option?.source === 'local' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.local.identity.displayName }) : [];
+  const ninferRun = ninferChoice === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
+  const ninferPreset = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChoice)?.params ?? ninferRun) : undefined;
 
   const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
   const parsedParams = paramsFromForm(paramsForm);
   const parsedScenario = scenarioFromForm(scenarioForm);
   const sendParams = expert && effEngine !== 'external' && hasCustomParams(parsedParams.params);
+  const runParams = withNinferPreset(sendParams ? parsedParams.params : undefined, ninferPreset);
   const external = effEngine === 'external';
   const model: StartRunRequest['model'] | undefined = external ? (engineForm.modelName.trim() ? { name: engineForm.modelName.trim() } : {}) : option ? requestModel(option) : undefined;
   const valid =
@@ -219,7 +230,7 @@ function BenchmarkScreen() {
     model: model ?? {},
     profile: effProfile,
     ...(custom ? { scenario: parsedScenario.scenario } : {}),
-    ...(sendParams ? { params: parsedParams.params } : {}),
+    ...(runParams ? { params: runParams } : {}),
     allowSharedGpu: false,
     // "Ricontrollo rapido" only while the plan says the last tune of this question ran with another build.
     ...(effProfile === 'tune' ? { tune: tuneRequestOf(tune, { expert, previous: previousTune }) } : {}),
@@ -310,7 +321,7 @@ function BenchmarkScreen() {
     return (
       <span className="flex w-full items-center justify-between gap-2">
         <Note icon={<TriangleAlert />} tone="warning">
-          {problem ? t(`errors.${problem as 'INTERNAL'}.title`) : t('common.notInstalled')}
+          {problem ? t(`errors.${problem as 'INTERNAL'}.title`, status.problemParams) : t('common.notInstalled')}
         </Note>
         <Button size="sm" variant="link" onClick={() => void navigate({ to: '/engines' })}>
           {t('benchmark.openEngines')}
@@ -420,7 +431,8 @@ function BenchmarkScreen() {
                   setPicked(undefined);
                 }}
                 className="h-11 text-md font-semibold"
-                options={ENGINE_ORDER.filter((k) => expert || k !== 'external').map((k) => ({
+                // NInfer is listed only as the kind this system runs (Linux natively, Windows in WSL).
+                options={ENGINE_ORDER.filter((k) => (expert || k !== 'external') && !(isNinferKind(k) && statusOf(k)?.supported === false)).map((k) => ({
                   value: k,
                   label: t(`benchmark.engines.${k}`),
                   description: t(`benchmark.engineDesc.${k}`),
@@ -463,6 +475,8 @@ function BenchmarkScreen() {
               {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} />}
             </ChoiceCard>
           </div>
+
+          {ninferPresets.length > 0 && <NinferPresetPicker presets={ninferPresets} run={draftNinfer} value={ninferChoice} onChange={setNinferChoice} />}
 
           <div className="flex items-center gap-3 self-start px-1 py-1">
             <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />

@@ -16,7 +16,7 @@ export type EngineField = keyof EngineForm;
 
 export const EMPTY_ENGINE_FORM: EngineForm = { executable: '', image: '', vllmPath: '', baseUrl: '', apiKey: '', flavor: 'openai', modelName: '' };
 
-export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'external'];
+export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'ninfer-native', 'ninfer-wsl', 'external'];
 
 export function isHttpUrl(text: string): boolean {
   try {

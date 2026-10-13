@@ -3,6 +3,7 @@ import { Globe } from 'lucide-react';
 import { DockerCard } from '../components/engines/docker-card';
 import { EngineCard } from '../components/engines/engine-card';
 import { LlamaCard } from '../components/engines/llama-card';
+import { NinferCard } from '../components/engines/ninfer-card';
 import { VllmDockerCard, VllmNativeCard } from '../components/engines/vllm-card';
 import { SystemCheckPanel } from '../components/setup/system-check';
 import { Page } from '../components/shell/page';
@@ -30,6 +31,7 @@ export function EnginesPage() {
           <DockerCard />
           <VllmDockerCard />
           <VllmNativeCard />
+          <NinferCard />
           <EngineCard
             icon={<Globe />}
             title={t('engines.kinds.external')}
