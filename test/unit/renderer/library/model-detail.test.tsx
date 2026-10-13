@@ -242,6 +242,7 @@ describe('model page', () => {
       const body = b as { engine: string; format?: string };
       return body.format === 'ninfer' ? nf : body.engine === 'vllm-docker' ? st : gguf;
     });
+    const registered = [...MODEL_DETAIL_SECTIONS];
     MODEL_DETAIL_SECTIONS.push(
       { id: 'test-later', order: 9, Component: () => <p>Dopo</p> },
       { id: 'test-recipes', order: 1, Component: ({ repo, layout }) => <p>{`Comandi per ${repo}: ${layout?.safetensors.length ?? 0} cartelle`}</p> },
@@ -267,7 +268,8 @@ describe('model page', () => {
       // The page's open slot, its sections in their order.
       expect(screen.getByText('Comandi per org/Model-GGUF: 1 cartelle')).toBeTruthy();
       const slots = [...document.querySelectorAll('[data-section]')].map((e) => e.getAttribute('data-section'));
-      expect(slots).toEqual(['test-recipes', 'test-later']);
+      // Ordered by `order`, around the sections the app registers itself ("Comandi per questo modello" is 10).
+      expect(slots).toEqual(['test-recipes', 'test-later', ...registered.map((x) => x.id)]);
       // The facts card lists every format too, MLX marked as not supported.
       expect(screen.getAllByText('non supportato').length).toBe(3);
       // The safetensors folder downloads its own files and nothing else.
@@ -278,7 +280,7 @@ describe('model page', () => {
         expect.arrayContaining([{ engine: 'llamacpp-native' }, { engine: 'vllm-docker' }, { engine: 'llamacpp-native', format: 'ninfer' }]),
       );
     } finally {
-      MODEL_DETAIL_SECTIONS.splice(0);
+      MODEL_DETAIL_SECTIONS.splice(0, MODEL_DETAIL_SECTIONS.length, ...registered);
     }
   });
 });
