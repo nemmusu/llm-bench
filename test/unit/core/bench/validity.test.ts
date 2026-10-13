@@ -131,6 +131,16 @@ describe('vramBusy', () => {
     expect(vramBusy([vm], [gpu(null), gpu(1, null)], 9000)).toBeUndefined();
     expect(vramBusy([vm], base, undefined)).toBeUndefined();
   });
+
+  it('small desktop apps are ordinary use, never the reason (a model a little too big is not a busy GPU)', () => {
+    // The real case: 1,7 GB in use (desktop, a browser, Telegram), the model needs a bit more than is free.
+    const telegram: GpuUser = { pid: 4242, name: 'Telegram.exe', knownLlm: false, kind: 'app', memMiB: 210 };
+    const firefox: GpuUser = { pid: 32972, name: 'firefox.exe', knownLlm: false, kind: 'app', memMiB: 413 };
+    const base = [gpu(1698)]; // 30.909 free
+    expect(vramBusy([sys, telegram, firefox], base, 31_200)).toBeUndefined();
+    // A program that really holds memory is still named.
+    expect(vramBusy([sys, telegram, { ...app, memMiB: 1024 }], base, 31_500)).toEqual({ reason: 'memory', users: [{ ...app, memMiB: 1024 }], freeMiB: 30_909, needMiB: 31_500 });
+  });
 });
 
 describe('isVramApproximate', () => {

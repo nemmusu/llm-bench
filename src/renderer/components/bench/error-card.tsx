@@ -5,6 +5,7 @@ import type { AppErrorData, ErrorCode } from '../../../contract/errors';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/button';
+import { noteText } from './notes';
 
 /** The "cosa fare" button each error code leads to. */
 export type FixKind = 'engines' | 'models' | 'pickModel' | 'settings' | 'system' | 'continueAnyway' | 'openLog' | 'results' | 'activeRun' | 'retry';
@@ -56,9 +57,13 @@ export interface ErrorCardProps {
 
 /** A failure explained: what happened, what to do, one button that does it, technical details folded. */
 export function ErrorCard({ error, handlers = {}, extra, className, headingLevel = 2 }: ErrorCardProps) {
-  const { t } = useI18n();
+  const f = useI18n();
+  const { t } = f;
   const navigate = useNavigate();
   const kind = fixFor(error.code);
+  // A busy GPU says who holds it (and how much is free) in the user's language: the core's English message
+  // is for the log only.
+  const busy = error.code === 'VRAM_BUSY' && error.params?.names !== undefined ? noteText({ code: error.code, params: error.params }, f) : undefined;
   const routes: Partial<Record<FixKind, () => void>> = {
     engines: () => void navigate({ to: '/engines' }),
     models: () => void navigate({ to: '/models' }),
@@ -76,6 +81,7 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
         <CircleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-danger-text" />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <Heading className="text-md font-semibold text-fg">{t(`errors.${error.code}.title`, error.params)}</Heading>
+          {busy && <p className="text-sm text-fg-2">{busy.body}</p>}
           <p className="text-sm text-fg-2">
             <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {t(`errors.${error.code}.what`, error.params)}
           </p>
@@ -93,7 +99,7 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
             <details className="text-xs text-fg-3">
               <summary className="cursor-pointer rounded-xs select-none hover:text-fg focus-ring">{t('fixes.technical')}</summary>
               <p className="mt-1 font-mono break-all">
-                {error.code}: {error.message}
+                {busy ? error.code : `${error.code}: ${error.message}`}
                 {error.detail ? ` — ${error.detail}` : ''}
               </p>
             </details>

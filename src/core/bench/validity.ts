@@ -45,8 +45,8 @@ export type VramBusy = { reason: 'llm'; users: GpuUser[] } | { reason: 'memory';
 /**
  * Why a run should not start on this GPU (VRAM_BUSY), or undefined:
  *  1. another known LLM server is running (it skews every number, whatever its size);
- *  2. the model would not fit in the free VRAM (estimate > free) but would if some VMs/apps were
- *     closed: their memory covers the shortfall. They are named largest first, only as many as needed.
+ *  2. the model would not fit in the free VRAM (estimate > free) but would if some VMs/apps holding
+ *     at least 1 GiB each were closed: their memory covers the shortfall. They are named largest first, only as many as needed.
  *     When closing them would not be enough (desktop usage, model too big) it is not a "busy GPU"
  *     problem: the run proceeds and the engine reports what happens (MODEL_TOO_LARGE is a plan warning).
  * Anything else holding memory only flags the run gpu_shared.
@@ -58,8 +58,10 @@ export function vramBusy(users: readonly GpuUser[], baseline: readonly GpuSample
   if (needMiB === undefined || gpus.length === 0) return undefined;
   const freeMiB = gpus.reduce((sum, x) => sum + (x.memTotalMiB as number) - (x.memUsedMiB as number), 0);
   if (needMiB <= freeMiB) return undefined;
+  // Only programs that hold real memory (≥ 1 GiB, as for gpu_shared): a chat app or a browser tab is the
+  // desktop's ordinary use, and naming it ("chiudi Telegram") would blame the wrong thing.
   const blockers = users
-    .filter((u) => (u.kind === 'vm' || u.kind === 'app') && (u.memMiB ?? 0) > 0)
+    .filter((u) => (u.kind === 'vm' || u.kind === 'app') && (u.memMiB ?? 0) >= SHARED_PROCESS_MIB)
     .sort((a, b) => (b.memMiB as number) - (a.memMiB as number));
   const named: GpuUser[] = [];
   let held = 0;

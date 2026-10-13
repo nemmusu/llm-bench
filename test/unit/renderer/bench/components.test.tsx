@@ -68,6 +68,20 @@ describe('ErrorCard', () => {
     expect(fixFor('ENGINE_MISSING_LIBRARY')).toBe('retry');
   });
 
+  it('a busy GPU says who holds it and how much is free, in Italian (the English message stays out)', async () => {
+    const memory = { names: 'vmmem', pids: '7777', freeMiB: 20_480, needMiB: 26_624 };
+    inRouter(
+      <>
+        <ErrorCard error={{ code: 'VRAM_BUSY', message: 'Other processes hold the VRAM this model needs', params: memory }} />
+        <ErrorCard error={{ code: 'VRAM_BUSY', message: 'Other LLM servers are using the GPU', params: { names: 'llama-server.exe', pids: '4242' } }} />
+      </>,
+    );
+    expect(await screen.findByText('Liberi 20,0 GB, ne servono 26,0 GB: la usano vmmem (PID 7777).')).toBeTruthy();
+    expect(screen.getByText(/In questo momento la usano: llama-server.exe \(PID 4242\)/)).toBeTruthy();
+    expect(screen.getAllByText('VRAM_BUSY')).toHaveLength(2);
+    expect(screen.queryByText(/Other/)).toBeNull();
+  });
+
   it('without handlers some errors have no button', async () => {
     const errs: AppErrorData[] = [
       { code: 'RUN_IN_PROGRESS', message: 'x' },
