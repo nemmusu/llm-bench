@@ -43,7 +43,7 @@ function kvName(type: string): string {
  * Normalized settings (contract/configs.ts) as parts: context, KV cache, GPU layers and CPU offload,
  * flash attention, ub, b, slots, then the rest. Engine defaults are left out unless asked for.
  */
-export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatters, 't' | 'integer' | 'percent'>, opts: ConfigPartsOptions = {}): string[] {
+export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>, opts: ConfigPartsOptions = {}): string[] {
   const { t, integer } = f;
   const family = engineFamilyOf(kind);
   const parts: string[] = [];
@@ -82,6 +82,12 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   const spec = speculativeName(p);
   if (spec) parts.push(t('result.launch.speculativeWith', { name: spec }));
   else if (p.speculative !== undefined || p.draftMax !== undefined) parts.push(t('result.launch.speculative'));
+  const rope = p.ropeScaling;
+  if (rope?.factor !== undefined) {
+    const factor = f.number(rope.factor, 2);
+    if (rope.type !== 'yarn') parts.push(t('result.launch.ropeLinear', { factor }));
+    else parts.push(rope.originalContext !== undefined ? t('result.launch.yarn', { factor, orig: integer(rope.originalContext) }) : t('result.launch.yarnBare', { factor }));
+  }
   if (p.dtype) parts.push(p.dtype);
   if (p.quantization) parts.push(p.quantization);
   if (p.other.length) parts.push(t('result.launch.extraArgs', { args: p.other.join(' ') }));
@@ -99,7 +105,7 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
  * Parameter parts of the result page sentence: the settings in configuration words, then the extra
  * arguments exactly as typed and the environment (how it was started, not only what it changes).
  */
-export function paramParts(kind: EngineKind, p: LaunchParams, blockCount: number | undefined, f: Pick<Formatters, 't' | 'integer' | 'percent'>): string[] {
+export function paramParts(kind: EngineKind, p: LaunchParams, blockCount: number | undefined, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>): string[] {
   const { t } = f;
   // The extra arguments are shown as typed below; only the KV layout depends on them (GPU Bench adds --kv-unified unless they say otherwise).
   const layout = configParamsOf({ engineKind: kind, params: p, blockCount }).kvLayout;
@@ -112,7 +118,7 @@ export function paramParts(kind: EngineKind, p: LaunchParams, blockCount: number
 }
 
 /** The whole sentence as parts, e.g. ["llama.cpp b11438 (CUDA 13.4)", "Qwen3 8B · Q4_K_M", "contesto 8.192", "tutto in GPU"]. */
-export function launchSummaryParts(run: Pick<RunResult, 'engine' | 'model' | 'launch'>, f: Pick<Formatters, 't' | 'integer' | 'percent'>): string[] {
+export function launchSummaryParts(run: Pick<RunResult, 'engine' | 'model' | 'launch'>, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>): string[] {
   const engine = engineLabelOf(run.engine) + (DOCKER.has(run.engine.kind) ? ' · Docker' : '');
   return [engine, modelLabelOf(run.model), ...paramParts(run.engine.kind, run.launch.params, run.model.facts?.blockCount, f)];
 }

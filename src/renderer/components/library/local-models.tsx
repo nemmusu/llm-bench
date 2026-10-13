@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { FolderOpen, Gauge, HardDrive, Server, Trash2 } from 'lucide-react';
+import { FolderOpen, Gauge, HardDrive, Server, SquareTerminal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { EngineConfig, EngineStatus } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
@@ -7,6 +7,9 @@ import { useI18n } from '../../i18n';
 import { useDeleteModel, useEngineStatuses, useLibraryModels } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { useStartFlow } from '../bench/start-flow';
+import { targetOfLocal, type RecipeTarget } from '../recipes/recipe-model';
+import { ModelRecipeDialog } from '../recipes/recipe-section';
+import { useModelRecipe } from '../recipes/use-model-recipe';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
@@ -33,15 +36,19 @@ function LocalRow({
   onDelete,
   onServe,
   inDocker,
+  onRecipe,
 }: {
   m: LocalModel;
   onDelete: (m: LocalModel) => void;
   onServe: (m: LocalModel) => void;
   inDocker: boolean | undefined;
+  /** "Comandi": the model's command recipe. */
+  onRecipe: (m: LocalModel) => void;
 }) {
   const { t, bytes, number } = useI18n();
   const navigate = useNavigate();
   const { update } = useSettings();
+  const recipe = useModelRecipe(m);
   const id = m.identity;
   const bench = () => {
     update({ lastModelId: m.id });
@@ -65,6 +72,12 @@ function LocalRow({
         <div className="mt-0.5 flex flex-wrap gap-1.5">
           <FitFor req={{ localId: m.id, engine: id.format === 'safetensors' ? 'vllm-docker' : 'llamacpp-native' }} />
           <TriedFor weakKey={id.weakKey} sha256={id.sha256} />
+          {recipe.recipe && (
+            <Badge size="sm" tone="accent">
+              <SquareTerminal aria-hidden />
+              {t('recipes.badge', { name: recipe.recipe.name })}
+            </Badge>
+          )}
           {m.auxiliary.map((a) => (
             <Badge key={a.path} size="sm" tone="outline">
               {t(`models.aux.${a.kind}`)}
@@ -81,6 +94,10 @@ function LocalRow({
         <Button variant="ghost" onClick={() => onServe(m)} aria-label={`${t('models.serve')}: ${id.displayName}`}>
           <Server aria-hidden />
           {t('models.serve')}
+        </Button>
+        <Button variant="ghost" onClick={() => onRecipe(m)} aria-label={t('recipes.rowButtonLabel', { model: id.displayName })}>
+          <SquareTerminal aria-hidden />
+          {t('recipes.rowButton')}
         </Button>
         <IconButton label={`${t('models.reveal')}: ${id.displayName}`} icon={<FolderOpen />} onClick={() => void window.gpubench?.revealPath(m.paths[0] as string)} />
         {m.origin === 'library' && <IconButton label={`${t('models.delete')}: ${id.displayName}`} icon={<Trash2 />} onClick={() => onDelete(m)} />}
@@ -99,6 +116,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   const { settings } = useSettings();
   const flow = useStartFlow();
   const [target, setTarget] = useState<LocalModel>();
+  const [recipeFor, setRecipeFor] = useState<RecipeTarget>();
   /** "Avvia server": this model with the recommended settings for this card (the core picks them). */
   const serve = (m: LocalModel) => {
     const engine = serveEngineFor(m, settings.lastEngine, engines.data);
@@ -129,6 +147,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
                 m={m}
                 onDelete={setTarget}
                 onServe={serve}
+                onRecipe={(x) => setRecipeFor(targetOfLocal(x))}
                 inDocker={volumes.enabled && m.identity.format === 'gguf' ? volumes.copied.has(m.id) : undefined}
               />
             ))}
@@ -144,6 +163,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         cancelLabel={t('common.cancel')}
         onConfirm={() => del.mutate((target as LocalModel).id)}
       />
+      <ModelRecipeDialog target={recipeFor} onOpenChange={(o) => !o && setRecipeFor(undefined)} />
       {flow.ui}
     </>
   );

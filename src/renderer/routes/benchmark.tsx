@@ -15,6 +15,9 @@ import { BenchModelPicker } from '../components/bench/model-picker';
 import { initialModelKey, modelOptions, newestTried, requestModel, savedModelId, triedHere, type ModelOption } from '../components/bench/model-options';
 import { PlanCard, type FitPatch } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
+import { RecipeChip } from '../components/recipes/recipe-chip';
+import { targetOfOption } from '../components/recipes/recipe-model';
+import { useModelRecipe } from '../components/recipes/use-model-recipe';
 import { ServersPanel } from '../components/bench/servers';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
@@ -204,7 +207,12 @@ function BenchmarkScreen() {
   const option = options.find((o) => o.key === modelKey);
 
   const { config, invalid: engineInvalid } = engineConfigOf(effEngine, engineForm, expert);
-  const parsedParams = paramsFromForm(paramsForm);
+  // "Comandi per questo modello": the core applies the model's recipe unless the chip turns it off.
+  const recipeTarget = effEngine !== 'external' && option ? targetOfOption(option) : undefined;
+  const recipe = useModelRecipe(recipeTarget);
+  const [recipeOn, setRecipeOn] = useState(true);
+  const trainedContext = option?.source === 'local' ? option.local.identity.facts?.contextLength : undefined;
+  const parsedParams = paramsFromForm(paramsForm, { trainedContext });
   const parsedScenario = scenarioFromForm(scenarioForm);
   const sendParams = expert && effEngine !== 'external' && hasCustomParams(parsedParams.params);
   const external = effEngine === 'external';
@@ -220,6 +228,7 @@ function BenchmarkScreen() {
     profile: effProfile,
     ...(custom ? { scenario: parsedScenario.scenario } : {}),
     ...(sendParams ? { params: parsedParams.params } : {}),
+    ...recipe.requestPart(recipeOn),
     allowSharedGpu: false,
     // "Ricontrollo rapido" only while the plan says the last tune of this question ran with another build.
     ...(effProfile === 'tune' ? { tune: tuneRequestOf(tune, { expert, previous: previousTune }) } : {}),
@@ -284,7 +293,7 @@ function BenchmarkScreen() {
 
   /** The same engine, model and expert parameters, without a test: the core fills in the rest for this card. */
   const serve = () => {
-    flow.serve({ engine: base.engine, model: base.model, params: base.params }, { modelLabel, engineLabel, onStarted: () => remember() });
+    flow.serve({ engine: base.engine, model: base.model, params: base.params, ...recipe.requestPart(recipeOn) }, { modelLabel, engineLabel, onStarted: () => remember() });
   };
 
   const engineFooter = (() => {
@@ -436,7 +445,10 @@ function BenchmarkScreen() {
               ) : modelsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : option ? (
-                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
+                <>
+                  <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
+                  {recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
+                </>
               ) : (
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
@@ -460,7 +472,7 @@ function BenchmarkScreen() {
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
-              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} />}
+              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
             </ChoiceCard>
           </div>
 
@@ -490,6 +502,8 @@ function BenchmarkScreen() {
               scenarioInvalid={parsedScenario.invalid}
               onScenario={(p) => setScenarioForm((cur) => ({ ...cur, ...p }))}
               defaultImage={status?.location}
+              trainedContext={trainedContext}
+              {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
             />
           )}
 

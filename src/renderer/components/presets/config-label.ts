@@ -35,14 +35,14 @@ export interface ConfigLabelOptions {
 const capitalize = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice(1);
 
 /** The label of normalized settings (what GET /api/configs returns). */
-export function configLabelOf(kind: EngineKind, p: ConfigParams, f: Pick<Formatters, 't' | 'integer' | 'percent'>, opts: ConfigLabelOptions = {}): ConfigLabel {
+export function configLabelOf(kind: EngineKind, p: ConfigParams, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>, opts: ConfigLabelOptions = {}): ConfigLabel {
   const parts = configParts(kind, p, f, { context: opts.context === false ? 'never' : 'always', kv: opts.kv ?? 'always', ...(opts.tags ? { tags: opts.tags } : {}) });
   if (parts.length && opts.capitalize !== false) parts[0] = capitalize(parts[0]!);
   return { parts, text: parts.join(' · ') };
 }
 
 /** The label of launch params (a run's, a tune combination's, the Benchmark form's). */
-export function launchLabelOf(params: LaunchParams, engineKind: EngineKind, f: Pick<Formatters, 't' | 'integer' | 'percent'>, opts: ConfigLabelOptions = {}): ConfigLabel {
+export function launchLabelOf(params: LaunchParams, engineKind: EngineKind, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>, opts: ConfigLabelOptions = {}): ConfigLabel {
   return configLabelOf(engineKind, configParamsOf({ engineKind, params, blockCount: opts.blockCount }), f, opts);
 }
 

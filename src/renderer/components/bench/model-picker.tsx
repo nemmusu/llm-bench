@@ -6,6 +6,8 @@ import type { RunSummary } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useLocalFit } from '../../lib/queries-runs';
+import { targetOfOption } from '../recipes/recipe-model';
+import { useModelRecipe } from '../recipes/use-model-recipe';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog';
@@ -45,6 +47,7 @@ function RowFit({ option, engine }: { option: ModelOption; engine: EngineKind })
 function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind; runs: readonly RunSummary[]; gpuName: string | undefined }) {
   const { t, bytes, number } = useI18n();
   const tried = triedOn(o, runs, gpuName);
+  const recipe = useModelRecipe(targetOfOption(o)).recipe;
   return (
     <RadioGroup.Item
       value={o.key}
@@ -69,6 +72,11 @@ function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind;
         <span className="flex flex-wrap items-center gap-1.5">
           <RowFit option={o} engine={engine} />
           {tried && <TriedHereBadge tried={triedHere(tried)} short size="sm" />}
+          {recipe && (
+            <Badge tone="accent" size="sm">
+              {t('recipes.badge', { name: recipe.name })}
+            </Badge>
+          )}
         </span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-0.5 text-sm tabular-nums">

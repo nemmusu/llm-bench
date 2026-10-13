@@ -3,6 +3,7 @@
  * an empty field means "let GPU Bench decide" (undefined), an invalid one is reported and ignored.
  */
 import type { LaunchParams } from '../../../contract/engines';
+import { yarnScaling } from '../../../contract/recipes';
 import type { Scenario, Step } from '../../../contract/results';
 
 export interface ParamsForm {
@@ -20,6 +21,12 @@ export interface ParamsForm {
   quantization: string;
   extraArgs: string;
   env: string;
+  /**
+   * "Contesto oltre il limite del modello (YaRN)": the context to reach, tokens ('' = no), and the
+   * trained context it starts from ('' = the model's own).
+   */
+  yarnTarget: string;
+  yarnOriginal: string;
 }
 
 export const EMPTY_PARAMS_FORM: ParamsForm = {
@@ -37,6 +44,8 @@ export const EMPTY_PARAMS_FORM: ParamsForm = {
   quantization: '',
   extraArgs: '',
   env: '',
+  yarnTarget: '',
+  yarnOriginal: '',
 };
 
 export type ParamsField = keyof ParamsForm;
@@ -86,7 +95,11 @@ export interface ParsedParams {
   invalid: ParamsField[];
 }
 
-export function paramsFromForm(form: ParamsForm): ParsedParams {
+/**
+ * The launch params of the form. YaRN sets the context (llama.cpp ctx-size and vLLM max-model-len) to
+ * its target, and RoPE scaling at factor target / trained context (`trainedContext` = the model's).
+ */
+export function paramsFromForm(form: ParamsForm, opts: { trainedContext?: number | undefined } = {}): ParsedParams {
   const params: LaunchParams = { extraArgs: parseArgs(form.extraArgs), env: {} };
   const invalid: ParamsField[] = [];
   const int = (field: 'contextSize' | 'batchSize' | 'ubatchSize' | 'threads' | 'parallel' | 'maxModelLen', min = 1) => {
@@ -121,6 +134,17 @@ export function paramsFromForm(form: ParamsForm): ParsedParams {
   const env = parseEnv(form.env);
   params.env = env.env;
   if (env.invalid.length) invalid.push('env');
+  if (form.yarnTarget.trim()) {
+    const target = parseInteger(form.yarnTarget);
+    const original = form.yarnOriginal.trim() ? parseInteger(form.yarnOriginal) : (opts.trainedContext ?? null);
+    const rope = target !== null && original !== null ? yarnScaling(target, original) : undefined;
+    if (!rope) invalid.push('yarnTarget');
+    else {
+      params.ropeScaling = rope;
+      params.contextSize = target as number;
+      params.maxModelLen = target as number;
+    }
+  }
   return { params, invalid };
 }
 
@@ -130,8 +154,10 @@ const showArg = (a: string) => (/\s/.test(a) ? `"${a}"` : a);
 export function formFromParams(p: LaunchParams | undefined): ParamsForm {
   if (!p) return { ...EMPTY_PARAMS_FORM };
   const s = (n: number | undefined) => (n === undefined ? '' : String(n));
+  // YaRN carries its own context: the context fields stay empty.
+  const yarn = p.ropeScaling?.type === 'yarn' ? (p.contextSize ?? p.maxModelLen ?? Math.round(p.ropeScaling.factor * p.ropeScaling.originalContext)) : undefined;
   return {
-    contextSize: s(p.contextSize),
+    contextSize: yarn === undefined ? s(p.contextSize) : '',
     gpuLayers: s(p.gpuLayers),
     flashAttention: p.flashAttention ?? 'default',
     kvCacheType: p.kvCacheType ?? 'default',
@@ -140,13 +166,15 @@ export function formFromParams(p: LaunchParams | undefined): ParamsForm {
     threads: s(p.threads),
     parallel: s(p.parallel),
     gpuMemoryUtilization: s(p.gpuMemoryUtilization),
-    maxModelLen: s(p.maxModelLen),
+    maxModelLen: yarn === undefined ? s(p.maxModelLen) : '',
     dtype: p.dtype ?? '',
     quantization: p.quantization ?? '',
     extraArgs: p.extraArgs.map(showArg).join('\n'),
     env: Object.entries(p.env)
       .map(([k, v]) => `${k}=${v}`)
       .join('\n'),
+    yarnTarget: s(yarn),
+    yarnOriginal: yarn === undefined ? '' : s(p.ropeScaling?.originalContext),
   };
 }
 
