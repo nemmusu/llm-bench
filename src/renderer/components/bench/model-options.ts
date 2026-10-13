@@ -21,8 +21,9 @@ export type ModelOption =
 
 const LLAMA: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
 
+/** SGLang reads models like vLLM; a command engine takes no launch settings, like an external server. */
 export function engineFamily(kind: EngineKind): 'llamacpp' | 'vllm' | 'external' {
-  return kind === 'external' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
+  return kind === 'external' || kind === 'command' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
 }
 
 function localOption(m: LocalModel, curated: readonly CuratedModel[]): ModelOption {
@@ -60,6 +61,8 @@ function isLocal(c: CuratedModel, local: readonly LocalModel[]): boolean {
 }
 
 export function modelOptions(kind: EngineKind, local: readonly LocalModel[], curated: readonly CuratedModel[]): ModelOption[] {
+  // A program of the user's own: any model on the PC (it is its job to read it).
+  if (kind === 'command') return local.filter((m) => m.identity.format !== 'remote').map((m) => localOption(m, curated));
   const family = engineFamily(kind);
   if (family === 'external') return [];
   const format = family === 'llamacpp' ? 'gguf' : 'safetensors';

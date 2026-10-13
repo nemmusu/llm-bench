@@ -1,6 +1,6 @@
 import { FolderOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { ApiFlavor, EngineKind } from '../../../contract/engines';
+import { isDockerKind, type ApiFlavor, type EngineKind } from '../../../contract/engines';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
@@ -25,6 +25,8 @@ export interface ExpertPanelProps {
   onScenario: (patch: Partial<ScenarioForm>) => void;
   /** Image used when the field is empty (from the engine status). */
   defaultImage: string | undefined;
+  /** A custom engine is chosen: its executable / image / command are set on the Engines page. */
+  customEngine?: string | undefined;
 }
 
 interface TextProps {
@@ -207,7 +209,8 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 </>
               )}
             </div>
-            {p.engine === 'llamacpp-native' && (
+            {p.customEngine !== undefined && <p className="text-sm text-fg-2">{t('engines.custom.expertNote', { name: p.customEngine })}</p>}
+            {p.customEngine === undefined && p.engine === 'llamacpp-native' && (
               <Field label={t('benchmark.expert.executable')} hint={t('benchmark.expert.executableHint')}>
                 {({ id, describedBy }) => (
                   <div className="flex gap-2">
@@ -236,7 +239,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 )}
               </Field>
             )}
-            {(p.engine === 'llamacpp-docker' || p.engine === 'vllm-docker') && (
+            {p.customEngine === undefined && isDockerKind(p.engine) && (
               <Text
                 label={t('benchmark.expert.dockerImage')}
                 value={p.engineForm.image}
@@ -246,13 +249,23 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 mono
               />
             )}
-            {p.engine === 'vllm-native' && (
+            {p.customEngine === undefined && p.engine === 'vllm-native' && (
               <Text
                 label={t('benchmark.expert.vllmPath')}
                 value={p.engineForm.vllmPath}
                 onChange={(v) => p.onEngine({ vllmPath: v })}
                 placeholder="vllm"
                 hint={t('benchmark.expert.vllmPathHint')}
+                mono
+              />
+            )}
+            {p.customEngine === undefined && p.engine === 'sglang-native' && (
+              <Text
+                label={t('benchmark.expert.sglangPath')}
+                value={p.engineForm.sglangPath}
+                onChange={(v) => p.onEngine({ sglangPath: v })}
+                placeholder="python"
+                hint={t('benchmark.expert.sglangPathHint')}
                 mono
               />
             )}

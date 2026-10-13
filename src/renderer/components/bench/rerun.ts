@@ -5,7 +5,7 @@
  */
 import type { StartRunRequest, StartServerRequest } from '../../../contract/api';
 import { configParamsOf } from '../../../contract/configs';
-import type { ApiFlavor, EngineConfig, LaunchParams } from '../../../contract/engines';
+import { isDockerKind, type ApiFlavor, type EngineConfig, type LaunchParams } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import { nominalDepth, type LatencyPoint, type Profile, type RunResult } from '../../../contract/results';
 import { hasCustomParams } from './expert-form';
@@ -116,8 +116,14 @@ export function presetOf(run: RunResult, local: readonly LocalModel[], enginesDi
   const params = combination?.params ?? run.launch.params;
   const engine: EngineConfig = { kind: e.kind };
   if (e.kind === 'llamacpp-native' && e.executable && !managedBuild(e.executable, enginesDir)) engine.executable = e.executable;
-  if ((e.kind === 'llamacpp-docker' || e.kind === 'vllm-docker') && e.image) engine.image = e.image;
-  if (e.kind === 'vllm-native' && e.executable) engine.vllmPath = e.executable;
+  if (e.customEngine) {
+    // A custom engine (a fork) is used again as it is saved now: its own executable, image and arguments.
+    engine.customEngineId = e.customEngine.id;
+  } else {
+    if (isDockerKind(e.kind) && e.image) engine.image = e.image;
+    if (e.kind === 'vllm-native' && e.executable) engine.vllmPath = e.executable;
+    if (e.kind === 'sglang-native' && e.executable) engine.sglangPath = e.executable;
+  }
   if (e.kind === 'external') {
     engine.baseUrl = `http://${run.launch.host}:${run.launch.port}`;
     engine.flavor = (e.variant ?? 'openai') as ApiFlavor;
@@ -169,7 +175,7 @@ export function presetOf(run: RunResult, local: readonly LocalModel[], enginesDi
     ...(hasCustomParams(run.launch.params) ? { params: run.launch.params } : {}),
     allowSharedGpu: false,
   };
-  const needsExpert = hasCustomParams(params) || custom || e.kind === 'external' || Object.keys(engine).length > 1;
+  const needsExpert = hasCustomParams(params) || custom || e.kind === 'external' || Object.keys(engine).filter((k) => k !== 'customEngineId').length > 1;
   return {
     request,
     draft,

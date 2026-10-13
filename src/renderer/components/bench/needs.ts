@@ -7,7 +7,7 @@ import type { RunPlan, StartServerRequest } from '../../../contract/api';
 import type { EngineConfig, EngineStatus } from '../../../contract/engines';
 import type { ModelOption } from './model-options';
 
-export type DockerEngineKind = 'llamacpp-docker' | 'vllm-docker';
+export type DockerEngineKind = 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker';
 
 /**
  * Something to fetch first. A model with `file` is one GGUF; without it the whole repo is fetched
@@ -18,7 +18,7 @@ export type Need =
   | { kind: 'image'; engine: DockerEngineKind; label: string; bytes?: number }
   | { kind: 'model'; label: string; bytes?: number; repo: string; revision: string; file?: string };
 
-const isDocker = (kind: string): kind is DockerEngineKind => kind === 'llamacpp-docker' || kind === 'vllm-docker';
+const isDocker = (kind: string): kind is DockerEngineKind => kind === 'llamacpp-docker' || kind === 'vllm-docker' || kind === 'sglang-docker';
 const sized = (bytes: number | undefined) => (bytes === undefined ? {} : { bytes });
 /** The engine first: if it cannot be installed, nobody waited for a model download in vain. */
 const ORDER: Record<Need['kind'], number> = { engine: 0, image: 1, model: 2 };
@@ -51,9 +51,11 @@ export interface GuessInput {
 /** Best guess before the plan: a missing llama.cpp or Docker image, a suggested model not on the PC. */
 export function guessNeeds({ engine, status, option, modelLabel }: GuessInput): Need[] {
   const out: Need[] = [];
-  if (engine.kind === 'llamacpp-native' && !engine.executable && status?.installed === false) out.push({ kind: 'engine', label: 'llama.cpp' });
+  // A custom engine (a fork) names its own program or image: the plan will tell.
+  const custom = engine.customEngineId !== undefined;
+  if (engine.kind === 'llamacpp-native' && !engine.executable && !custom && status?.installed === false) out.push({ kind: 'engine', label: 'llama.cpp' });
   // A custom image may be another one than the status talks about: the plan will tell.
-  if (isDocker(engine.kind) && !engine.image && status?.location && status.problems.includes('ENGINE_NOT_INSTALLED')) {
+  if (isDocker(engine.kind) && !engine.image && !custom && status?.location && status.problems.includes('ENGINE_NOT_INSTALLED')) {
     out.push({ kind: 'image', engine: engine.kind, label: status.location });
   }
   if (option?.source === 'curated') {
