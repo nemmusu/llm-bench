@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { EngineKind } from '../../../../src/contract/engines';
+import type { LocalModel } from '../../../../src/contract/models';
 import type { Settings } from '../../../../src/contract/settings';
 import { DownloadService } from '../../../../src/core/downloads/service';
 import { ModelsService } from '../../../../src/core/models/service';
@@ -195,6 +197,33 @@ describe('ModelsService', () => {
     expect(a).not.toHaveProperty('fixes');
     gpu = undefined;
     await expect(svc.fit({ localId: local, engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
+  });
+
+  it('a launch that loads a draft / MTP model or the image projector: both in the estimate (llama.cpp only)', async () => {
+    const dir = path.join(lib(), 'o', 'eye');
+    gguf(path.join(dir, 'eye-Q4_K_M.gguf'));
+    writeGguf(path.join(dir, 'mmproj-eye-F16.gguf'), { metadata: { 'general.architecture': 'clip' }, totalSize: 2 * 1024 ** 2 });
+    // A small draft model next to it, and a draft file whose header cannot be read.
+    const draft = path.join(t.dir, 'drafts', 'tiny-Q8_0.gguf');
+    writeGguf(draft, { ...llamaLikeGguf({ embd: 16, vocab: 8 }), totalSize: 3 * 1024 ** 2 });
+    writeFileSync(path.join(t.dir, 'drafts', 'broken.gguf'), Buffer.alloc(1024 ** 2));
+    const svc = service();
+    const m = (await svc.list()).find((x) => x.identity.displayName === 'eye-Q4_K_M') as LocalModel;
+    const fit = (extraArgs: string[], engine: EngineKind = 'llamacpp-native') => svc.fit({ localId: m.id, engine, params: { contextSize: 4096, extraArgs, env: {} } });
+    const plain = await fit([]);
+    expect(plain).not.toHaveProperty('draftMiB');
+    // The projector named by its path in a container (/models/…): the model's own file of that name.
+    const both = await fit(['-md', draft, '--mmproj', '/models/o/eye/mmproj-eye-F16.gguf']);
+    expect(both.mmprojMiB).toBe(2);
+    expect(both.draftMiB).toBeGreaterThanOrEqual(3);
+    expect(both.needMiB).toBe(plain.needMiB + (both.draftMiB as number) + 2);
+    expect((await fit(['-md', path.join(t.dir, 'drafts', 'broken.gguf')])).draftMiB).toBeGreaterThanOrEqual(1);
+    const vision = await fit(['--mmproj=/models/o/eye/mmproj-eye-F16.gguf']);
+    expect(vision).toMatchObject({ mmprojMiB: 2, needMiB: plain.needMiB + 2 });
+    expect(vision).not.toHaveProperty('draftMiB');
+    // A file that is nowhere, or an engine that loads no such files: nothing added.
+    expect(await fit(['-md', '/nowhere/x.gguf'])).not.toHaveProperty('draftMiB');
+    expect(await fit(['--mmproj', '/models/o/eye/mmproj-eye-F16.gguf'], 'vllm-docker')).not.toHaveProperty('mmprojMiB');
   });
 
   it('corrects the estimate with the peaks measured here when there are enough ("stima tarata su N misure")', async () => {

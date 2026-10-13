@@ -1,4 +1,4 @@
-import { readdir, realpath, rm } from 'node:fs/promises';
+import { readdir, realpath, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineKind } from '../../contract/engines';
@@ -10,7 +10,23 @@ import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
 import { ninferFit, trainedContextOf } from '../../contract/ninfer';
-import { estimateFit, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
+import {
+  DRAFT_FLAGS,
+  estimateFit,
+  fitFixes,
+  fitParamsFrom,
+  flagValue,
+  MMPROJ_FLAGS,
+  pickBest,
+  quantChoices,
+  runsSafetensors,
+  type FitCalibration,
+  type FitExtras,
+  type FitInput,
+  type FitParams,
+  type QuantChoice,
+} from './fit';
+import { readLocalGgufFacts } from './gguf';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
@@ -66,6 +82,31 @@ export interface CuratedResponse {
 }
 
 const MIB_PER_GB = 1024;
+
+/**
+ * llama.cpp: the draft / MTP model (-md) and the image projector (--mmproj) a launch's arguments load
+ * (a recipe's or the user's), with their sizes and the draft's facts. A path the core cannot see (a
+ * container path) is matched to the model's own extra file of that name.
+ */
+async function launchExtras(args: readonly string[], m: LocalModel): Promise<FitExtras | undefined> {
+  const nameOf = (p: string) => path.posix.basename(p.replace(/\\/g, '/'));
+  const file = async (p: string | undefined): Promise<{ at: string; bytes: number } | undefined> => {
+    if (p === undefined) return undefined;
+    const own = m.auxiliary.find((a) => nameOf(a.path) === nameOf(p))?.path;
+    for (const at of [p, own]) {
+      const st = at === undefined ? undefined : await stat(at).catch(() => undefined);
+      if (st?.isFile()) return { at: at as string, bytes: st.size };
+    }
+    return undefined;
+  };
+  const draft = await file(flagValue(args, DRAFT_FLAGS));
+  const mmproj = await file(flagValue(args, MMPROJ_FLAGS));
+  if (!draft && !mmproj) return undefined;
+  return {
+    ...(draft ? { draft: { bytes: draft.bytes, facts: await readLocalGgufFacts([draft.at]).catch(() => undefined) } } : {}),
+    ...(mmproj ? { mmprojBytes: mmproj.bytes } : {}),
+  };
+}
 
 /** Local library, HF search, VRAM fit and the curated list behind /api/models. */
 export class ModelsService {
@@ -284,7 +325,8 @@ export class ModelsService {
         return ninferFit({ artifactBytes: m.identity.sizeBytes as number, manifest, label: m.identity.displayName, params: req.params, gpu });
       }
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
-      return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(await calibrated(id, facts)) });
+      const extras = runsSafetensors(req.engine) ? undefined : await launchExtras(req.params?.extraArgs ?? [], m);
+      return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(extras ? { extras } : {}), ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {
       const files = await this.hub.files(req.repo);

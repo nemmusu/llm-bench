@@ -16,6 +16,7 @@ import { CodeBlock } from '../ui/code-block';
 import { FitBadge } from '../ui/fit-badge';
 import { HelpTip } from '../ui/help-tip';
 import { Skeleton } from '../ui/skeleton';
+import { Tooltip } from '../ui/tooltip';
 import { BusyVramNote, FitTotalHelp } from '../library/busy-note';
 import { ErrorCard } from './error-card';
 import { MIB_PER_GB } from './format';
@@ -52,6 +53,21 @@ export function FitSummary({ fit }: { fit: FitEstimate }) {
         {t('fit.estimate', { need: `${number(fit.needMiB / MIB_PER_GB, 1)} GB`, available: `${number(fit.availableMiB / MIB_PER_GB, 1)} GB` })}
         <FitTotalHelp totalMiB={fit.totalMiB} />
       </span>
+      {/* What the launch loads next to the model, already in the estimate. */}
+      {fit.draftMiB !== undefined && (
+        <Tooltip content={t('fit.plusDraftHelp')}>
+          <span tabIndex={0} className="rounded-xs text-xs text-fg-3 tabular-nums focus-ring">
+            {t('fit.plusDraft', { size: `${number(fit.draftMiB / MIB_PER_GB, 1)} GB` })}
+          </span>
+        </Tooltip>
+      )}
+      {fit.mmprojMiB !== undefined && (
+        <Tooltip content={t('fit.plusVisionHelp')}>
+          <span tabIndex={0} className="rounded-xs text-xs text-fg-3 tabular-nums focus-ring">
+            {t('fit.plusVision', { size: `${number(fit.mmprojMiB / MIB_PER_GB, 1)} GB` })}
+          </span>
+        </Tooltip>
+      )}
       {fit.notes.includes('context.rope-extended') && <span className="basis-full text-xs text-fg-3">{t('fit.ropeExtended')}</span>}
       {fit.notes.includes('ninfer.estimate') && <span className="basis-full text-xs text-fg-3">{t('fit.approximate')}</span>}
       {cal && (

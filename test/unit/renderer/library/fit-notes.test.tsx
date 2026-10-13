@@ -31,6 +31,13 @@ describe('the VRAM verdict and its notes', () => {
     expect((await screen.findAllByText(/memoria totale della scheda \(31,8 GB\) meno 1,0 GB/)).length).toBeGreaterThan(0);
   });
 
+  it('what the launch loads next to the model: "+ MTP 3,2 GB", "+ visione 0,9 GB"', async () => {
+    renderUi(<FitSummary fit={fit({ draftMiB: 3277, mmprojMiB: 922 })} />);
+    expect(screen.getByText('+ MTP 3,2 GB')).toBeTruthy();
+    await userEvent.hover(screen.getByText('+ visione 0,9 GB'));
+    expect((await screen.findAllByText(/caricata insieme per leggere le immagini/)).length).toBeGreaterThan(0);
+  });
+
   it('"Ora altri programmi usano…": only when it matters, worded for a test or a server', () => {
     const { rerender } = renderUi(<BusyVramNote fit={fit({ busyMiB: 22_000, freeNowMiB: 10_607, levelNow: 'perfect' })} kind="run" />);
     expect(screen.getByText('Ora altri programmi usano 21,5 GB della scheda.')).toBeTruthy();

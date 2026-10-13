@@ -175,6 +175,13 @@ export const fitEstimateSchema = z.object({
    * fixes, the tuner and the server's context follow this one. Absent when the free VRAM is unknown.
    */
   levelNow: fitLevelSchema.optional(),
+  /**
+   * llama.cpp: the speculative-decoding model the launch loads with it (-md: a draft GGUF or an MTP head):
+   * its weights and its KV cache at the same context, MiB (part of needMiB): "+ MTP 3,2 GB".
+   */
+  draftMiB: z.number().optional(),
+  /** llama.cpp: the image projector the launch loads with it (--mmproj), MiB (part of needMiB): "+ visione 0,9 GB". */
+  mmprojMiB: z.number().optional(),
   /** llama.cpp partial offload: max layers on the GPU at a launch right now, when not everything fits. */
   maxGpuLayers: z.number().int().optional(),
   /** vLLM: concurrent sequences of contextSize the KV budget allows. */
