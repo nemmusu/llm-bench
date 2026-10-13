@@ -257,16 +257,18 @@ export class DockerControl {
     return s;
   }
 
-  /** The watchdog: every activeEveryMs while Docker is in use or changing, else every idleEveryMs, until shutdown. */
+  /**
+   * The watchdog: a look at once (the tray knows Docker's state even with no window open), then every
+   * activeEveryMs while Docker is in use or changing, else every idleEveryMs, until shutdown.
+   */
   watch(): void {
     const { clock, shutdown } = this.o;
     void (async () => {
       while (!shutdown.aborted) {
+        await this.tick().catch((e: unknown) => this.o.log.warn('docker watchdog failed', { error: String(e) }));
         const state = this.o.env.peek()?.state;
         const busy = this.inUse() || state === 'starting' || state === 'not-responding' || this.restartJob !== undefined;
         await clock.sleep(busy ? (this.o.activeEveryMs ?? 20_000) : (this.o.idleEveryMs ?? 60_000), shutdown).catch(() => undefined);
-        if (shutdown.aborted) return;
-        await this.tick().catch((e: unknown) => this.o.log.warn('docker watchdog failed', { error: String(e) }));
       }
     })();
   }

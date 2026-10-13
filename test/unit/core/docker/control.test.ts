@@ -341,7 +341,8 @@ describe('the watchdog', () => {
     t.c.watch();
     await tick();
     expect(asked).toEqual([50, 50, 50, 50]);
-    expect(t.log.entries.filter((x) => x.msg === 'docker watchdog failed')).toHaveLength(3);
+    // A look at once, then one after each wait.
+    expect(t.log.entries.filter((x) => x.msg === 'docker watchdog failed')).toHaveLength(4);
 
     const busy = new AbortController();
     const seen: number[] = [];
@@ -387,6 +388,6 @@ describe('the watchdog', () => {
     });
     m.c.watch();
     await tick();
-    expect(m.fe.calls).toEqual([]);
+    expect(m.fe.calls).toEqual(['status']);
   });
 });
