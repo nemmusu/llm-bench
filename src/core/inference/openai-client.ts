@@ -8,7 +8,8 @@ import type { GenerateRequest, InferenceClient, StreamEvent, Usage } from './typ
 
 const tokenizeSchema = z.object({ tokens: z.array(z.number()) });
 
-const usageSchema = z.object({
+/** OpenAI `usage` (completions and chat completions alike). */
+export const usageSchema = z.object({
   prompt_tokens: z.number().optional(),
   completion_tokens: z.number().optional(),
   /** vLLM with --enable-prompt-tokens-details: how much of the prompt came from the prefix cache. */
@@ -19,7 +20,7 @@ const chunkSchema = z.object({
   usage: usageSchema.nullable().optional(),
 });
 
-function toUsage(u: z.infer<typeof usageSchema>): Usage {
+export function toUsage(u: z.infer<typeof usageSchema>): Usage {
   return {
     ...(u.prompt_tokens !== undefined ? { promptTokens: u.prompt_tokens } : {}),
     ...(u.completion_tokens !== undefined ? { completionTokens: u.completion_tokens } : {}),

@@ -20,7 +20,13 @@ export interface EndpointProbe {
   models: string[];
 }
 
-const FLAVOR_NAMES: Record<ApiFlavor, string> = { llamacpp: 'llama.cpp', vllm: 'vLLM', sglang: 'SGLang', openai: 'OpenAI-compatible' };
+const FLAVOR_NAMES: Record<ApiFlavor, string> = {
+  llamacpp: 'llama.cpp',
+  vllm: 'vLLM',
+  sglang: 'SGLang',
+  openai: 'OpenAI-compatible',
+  'openai-chat': 'OpenAI-compatible (chat)',
+};
 
 interface Endpoint {
   baseUrl: string;
@@ -106,7 +112,7 @@ export class ExternalAdapter implements EngineAdapter {
     const p = await this.probe(cfg);
     const caps: EngineCaps = {
       flags: new Set(),
-      tokenIdsInPrompt: p.flavor !== 'openai',
+      tokenIdsInPrompt: p.flavor !== 'openai' && p.flavor !== 'openai-chat',
       timings: p.flavor === 'llamacpp',
       minTokens: p.flavor === 'vllm',
       fitFlag: false,

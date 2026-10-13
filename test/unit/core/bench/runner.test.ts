@@ -127,6 +127,13 @@ describe('exampleBody / buildLogExcerpt', () => {
     expect((exampleBody({ prompt: 'x'.repeat(300) }).prompt as string).length).toBe(201);
     expect(exampleBody({ prompt: 'short' })).toEqual({ prompt: 'short' });
   });
+  it('shortens chat message texts and leaves other bodies alone', () => {
+    const body = exampleBody({ messages: [{ role: 'user', content: 'y'.repeat(300) }, { role: 'user', content: 'ok' }, null, 'raw', { role: 'user', content: [] }] });
+    const messages = body.messages as unknown[];
+    expect(((messages[0] as { content: string }).content).length).toBe(201);
+    expect(messages.slice(1)).toEqual([{ role: 'user', content: 'ok' }, null, 'raw', { role: 'user', content: [] }]);
+    expect(exampleBody({ max_tokens: 1 })).toEqual({ max_tokens: 1 });
+  });
   it('keeps the last lines within the line and byte budgets', () => {
     const many = buildLogExcerpt([{ label: 'warm-load 1', lines: Array.from({ length: 1000 }, (_, i) => `line ${i}`) }], ['note']);
     const lines = many.split('\n');

@@ -112,6 +112,8 @@ describe('ExternalAdapter.detect / probe', () => {
     const o = await adapter().capabilities({ kind: 'external', baseUrl: openai.url });
     expect(o).toMatchObject({ tokenIdsInPrompt: false, variant: 'openai', fitFlag: false });
     expect(o.version).toBeUndefined();
+    const chat = await adapter().capabilities({ kind: 'external', baseUrl: openai.url, flavor: 'openai-chat' });
+    expect(chat).toMatchObject({ tokenIdsInPrompt: false, variant: 'openai-chat' });
   });
 });
 
