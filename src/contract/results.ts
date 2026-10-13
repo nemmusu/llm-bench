@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { appErrorSchema } from './errors';
 import { hardwareFingerprintSchema } from './hardware';
 import { engineKindSchema, launchParamsSchema } from './engines';
+import { customEngineBaseSchema } from './custom-engines';
 import { fitFixesSchema, modelIdentitySchema } from './models';
 
 export const RESULT_SCHEMA_VERSION = 1;
@@ -377,6 +378,11 @@ export const engineIdentitySchema = z.object({
   executable: z.string().optional(),
   image: z.string().optional(),
   imageDigest: z.string().optional(),
+  /**
+   * The custom engine (settings.customEngines) the run used: `name` is then also the identity's name,
+   * so labels, Configurazioni and config keys tell "PrismML fork" from "llama.cpp b11460".
+   */
+  customEngine: z.object({ id: z.string(), name: z.string(), base: customEngineBaseSchema }).optional(),
 });
 export type EngineIdentity = z.infer<typeof engineIdentitySchema>;
 

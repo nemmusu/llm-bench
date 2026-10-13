@@ -56,6 +56,7 @@ const PARAM_LABELS: Record<Exclude<keyof LaunchParams, never>, MessageKey> = {
   maxModelLen: 'benchmark.expert.maxModelLen',
   dtype: 'benchmark.expert.dtype',
   quantization: 'benchmark.expert.quantization',
+  ropeScaling: 'benchmark.expert.ropeScaling',
   extraArgs: 'benchmark.expert.extraArgs',
   env: 'benchmark.expert.env',
 };
@@ -63,6 +64,7 @@ const PARAM_LABELS: Record<Exclude<keyof LaunchParams, never>, MessageKey> = {
 function paramText(key: keyof LaunchParams, p: LaunchParams, auto: string): string {
   const v = p[key];
   if (key === 'extraArgs') return p.extraArgs.length ? p.extraArgs.join(' ') : auto;
+  if (key === 'ropeScaling') return p.ropeScaling ? `${p.ropeScaling.type} ×${p.ropeScaling.factor} (${p.ropeScaling.originalContext})` : auto;
   if (key === 'env') {
     const e = Object.entries(p.env);
     return e.length ? e.map(([k, x]) => `${k}=${x}`).join(' ') : auto;

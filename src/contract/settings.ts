@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { customEnginesSettingSchema } from './custom-engines';
 import { engineConfigSchema, launchParamsSchema } from './engines';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
@@ -27,6 +28,9 @@ export const settingsSchema = z.object({
   /** HF token is never stored here (main process keeps it encrypted with safeStorage). */
   hasHfToken: z.boolean().default(false),
   telemetryIntervalMs: z.number().int().min(100).max(5000).default(250),
+  // ---- engines: custom engines and forks (contract/custom-engines.ts) ----
+  /** "Motori personalizzati": forks and other OpenAI servers; invalid entries are dropped on read, never the whole file. */
+  customEngines: customEnginesSettingSchema,
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

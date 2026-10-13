@@ -20,7 +20,7 @@ export interface EndpointProbe {
   models: string[];
 }
 
-const FLAVOR_NAMES: Record<ApiFlavor, string> = { llamacpp: 'llama.cpp', vllm: 'vLLM', openai: 'OpenAI-compatible' };
+const FLAVOR_NAMES: Record<ApiFlavor, string> = { llamacpp: 'llama.cpp', vllm: 'vLLM', sglang: 'SGLang', openai: 'OpenAI-compatible' };
 
 interface Endpoint {
   baseUrl: string;

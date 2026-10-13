@@ -27,19 +27,24 @@ function toUsage(u: z.infer<typeof usageSchema>): Usage {
   };
 }
 
+/** Flavors served by this client: vLLM, SGLang and any other OpenAI-compatible server. */
+export type OpenAiFlavor = 'vllm' | 'sglang' | 'openai';
+
 /**
- * Client for OpenAI-compatible `/v1/completions` servers: vLLM (flavor "vllm") and any other
- * compatible endpoint (flavor "openai"). vLLM gets `min_tokens`/`ignore_eos` (exact output length)
- * and `continuous_usage_stats` (exact tokens per chunk); a generic server only gets the standard
- * fields, because strict implementations reject unknown ones.
+ * Client for OpenAI-compatible `/v1/completions` servers: vLLM (flavor "vllm"), SGLang ("sglang")
+ * and any other compatible endpoint ("openai"). vLLM and SGLang get `min_tokens`/`ignore_eos`
+ * (exact output length) and `continuous_usage_stats` (exact tokens per chunk), and take token-id
+ * prompts; a generic server only gets the standard fields, because strict implementations reject
+ * unknown ones. SGLang reports prefix-cache reuse in usage.prompt_tokens_details.cached_tokens
+ * (--enable-cache-report).
  */
 export class OpenAiClient implements InferenceClient {
-  readonly flavor: 'vllm' | 'openai';
+  readonly flavor: OpenAiFlavor;
   readonly baseUrl: string;
   private readonly deps: HttpDeps;
   private readonly opts: ClientOptions;
 
-  constructor(flavor: 'vllm' | 'openai', baseUrl: string, deps: HttpDeps, opts: ClientOptions = {}) {
+  constructor(flavor: OpenAiFlavor, baseUrl: string, deps: HttpDeps, opts: ClientOptions = {}) {
     this.flavor = flavor;
     this.baseUrl = baseUrl;
     this.deps = deps;
@@ -55,13 +60,18 @@ export class OpenAiClient implements InferenceClient {
     };
   }
 
+  /** vLLM and SGLang: the engine extensions (exact lengths, token ids, /health, /tokenize). */
+  private get engine(): boolean {
+    return this.flavor !== 'openai';
+  }
+
   /**
-   * vLLM: /health 200 AND the model is listed in /v1/models (the API answers before weights are
-   * loaded on some versions). Generic: /v1/models answers 2xx. Only cancellation throws.
+   * vLLM / SGLang: /health 200 AND the model is listed in /v1/models (the API answers before weights
+   * are loaded on some versions). Generic: /v1/models answers 2xx. Only cancellation throws.
    */
   async ready(signal?: AbortSignal): Promise<boolean> {
     try {
-      if (this.flavor === 'vllm') {
+      if (this.engine) {
         const health = await send(this.deps, joinUrl(this.baseUrl, '/health'), this.init('GET', undefined, signal));
         await discard(health);
         if (health.status !== 200) return false;
@@ -77,13 +87,19 @@ export class OpenAiClient implements InferenceClient {
     }
   }
 
-  /** vLLM /tokenize. Generic OpenAI servers have no tokenizer endpoint: the runner falls back to text prompts. */
+  /**
+   * vLLM / SGLang /tokenize (same request and `tokens` answer). Generic OpenAI servers, and SGLang
+   * builds without the endpoint (404/405), have no tokenizer: the runner falls back to text prompts.
+   */
   async tokenize(text: string, opts: { addSpecial?: boolean; signal?: AbortSignal } = {}): Promise<number[]> {
-    if (this.flavor !== 'vllm') {
-      throw new AppError('ENDPOINT_INVALID', 'tokenize unsupported', { params: { reason: 'tokenize_unsupported' } });
-    }
+    const unsupported = () => new AppError('ENDPOINT_INVALID', 'tokenize unsupported', { params: { reason: 'tokenize_unsupported' } });
+    if (!this.engine) throw unsupported();
     const body = { model: this.opts.model, prompt: text, add_special_tokens: opts.addSpecial ?? false };
     const res = await send(this.deps, joinUrl(this.baseUrl, '/tokenize'), this.init('POST', body, opts.signal));
+    if (this.flavor === 'sglang' && (res.status === 404 || res.status === 405)) {
+      await discard(res);
+      throw unsupported();
+    }
     if (!res.ok) throw await responseError(res, '/tokenize');
     return (await readJson(res, tokenizeSchema, '/tokenize')).tokens;
   }
@@ -114,7 +130,7 @@ export class OpenAiClient implements InferenceClient {
   }
 
   requestBody(req: GenerateRequest): Record<string, unknown> {
-    const vllm = this.flavor === 'vllm';
+    const vllm = this.engine;
     const model = req.model ?? this.opts.model;
     return {
       ...(model !== undefined ? { model } : {}),

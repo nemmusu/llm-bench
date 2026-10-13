@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
-import type { EngineStatus } from '../../../../src/contract/engines';
+import { ENGINE_KINDS, type EngineStatus } from '../../../../src/contract/engines';
 import { AppError } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { CoreContext } from '../../../../src/core/context';
@@ -48,7 +48,10 @@ describe('EngineRegistry', () => {
       ['llamacpp-docker', false, []],
       ['vllm-docker', false, []],
       ['vllm-native', false, []],
+      ['sglang-docker', false, []],
+      ['sglang-native', false, []],
       ['external', true, ['ENDPOINT_UNREACHABLE']],
+      ['command', false, []],
     ]);
     expect(all[0]?.location).toBe('C:\\x.exe');
     expect((await new EngineRegistry().detectAll()).every((s) => !s.supported)).toBe(true);
@@ -106,7 +109,7 @@ describe('engines routes', () => {
     const { app } = setup();
     const res = await app.request('/api/engines');
     expect(res.status).toBe(200);
-    expect(((await res.json()) as EngineStatus[]).map((s) => s.kind)).toHaveLength(5);
+    expect(((await res.json()) as EngineStatus[]).map((s) => s.kind)).toHaveLength(ENGINE_KINDS.length);
     const configs = vi.fn(async () => ({ external: { kind: 'external' as const, baseUrl: 'http://x' } }));
     const withCfg = setup({}, { configs });
     await withCfg.app.request('/api/engines');

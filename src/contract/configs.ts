@@ -20,7 +20,8 @@ export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
 
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
-  return kind === 'external' ? 'external' : 'vllm';
+  // A command template is the user's own program: no flags GPU Bench knows, like an external endpoint.
+  return kind === 'external' || kind === 'command' ? 'external' : 'vllm';
 }
 
 /** llama.cpp's own defaults: a setting equal to one of these is the same configuration as leaving it unset. */
