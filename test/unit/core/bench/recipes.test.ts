@@ -272,6 +272,13 @@ describe('BenchService with a recipe', () => {
     // The fingerprint fixture is a Windows PC: NInfer runs in WSL there.
     await new BenchService(s.deps).plan(request());
     expect(kinds).toContain('ninfer-wsl');
+    // This PC unknown (the fingerprint failed): the engine as the recipe names it, never an error.
+    const unknown = serviceSetup(tmp, { deps: { resolveModel: async () => artifact, recipes: async () => sources([ninfer]), fingerprint: async () => Promise.reject(new Error('wmi')) } });
+    const asked: string[] = [];
+    unknown.deps.getAdapter = (kind) => (asked.push(kind), unknown.adapter as unknown as EngineAdapter);
+    await new BenchService(unknown.deps).plan(request());
+    expect(asked).toContain('ninfer-native');
+    expect(asked).not.toContain('ninfer-wsl');
   });
 
   it('a recipe’s custom engine changes the adapter and the request every step uses', async () => {

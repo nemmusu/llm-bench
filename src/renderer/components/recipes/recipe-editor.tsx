@@ -105,9 +105,9 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
     toast.success(t('recipes.toast.saved'));
     onOpenChange(false);
   };
-  const remove = () => {
-    if (!editing) return;
-    store.remove(editing.id);
+  // Only offered while editing a saved recipe.
+  const remove = (saved: ModelRecipe) => {
+    store.remove(saved.id);
     toast.success(t('recipes.toast.removed'));
     onOpenChange(false);
   };
@@ -133,7 +133,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
           {editing && (
-            <Button variant="danger-outline" onClick={remove}>
+            <Button variant="danger-outline" onClick={() => remove(editing)}>
               <Trash2 aria-hidden />
               {t('recipes.actions.remove')}
             </Button>
@@ -183,7 +183,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
           <SegmentedControl<ContextMode>
             label={t('recipes.editor.context')}
             value={form.context}
-            onValueChange={(context) => set({ context, ...(context === 'yarn' && !form.yarnOriginal && trainedKnown ? { yarnOriginal: String(trainedKnown) } : {}) })}
+            onValueChange={(context) => set({ context })}
             options={[
               { value: 'auto', label: t('recipes.editor.contextAuto') },
               { value: 'yarn', label: t('recipes.editor.contextYarn') },

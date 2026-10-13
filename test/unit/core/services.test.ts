@@ -280,8 +280,13 @@ describe('createServices', () => {
     expect(await d.vramUsedMiB!()).toBe(4096);
     ctx.telemetry.snapshot = () => Promise.resolve([]);
     expect(await d.vramUsedMiB!()).toBeUndefined();
+    // A start that failed while nobody looked is dated with the core's clock.
+    const at = Date.now();
+    const notice = s.notices.add('autostart-failed', { id: 'p1', name: 'Chat' }, new Error('no model'));
+    expect(Date.parse(notice.at)).toBeGreaterThanOrEqual(at - 1000);
+    expect(s.notices.list()).toEqual([notice]);
     // This PC's own cards when none are given.
-    const real = (((await createServices(testContext(testDeps(t.dir, { proc: quietProc })))).serve as unknown as { deps: ServeServiceDeps }).deps).lanUrls(8080);
+    const real =(((await createServices(testContext(testDeps(t.dir, { proc: quietProc })))).serve as unknown as { deps: ServeServiceDeps }).deps).lanUrls(8080);
     expect(Array.isArray(real)).toBe(true);
   });
 

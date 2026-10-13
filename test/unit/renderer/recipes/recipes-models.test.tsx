@@ -234,6 +234,52 @@ describe('a library model’s commands', () => {
     expect(saved(api)).toHaveLength(1);
   });
 
+  it('a draft next to the model (not only MTP) or none, a cancelled picker, next to other recipes', async () => {
+    const b = bridge({ pickFile: vi.fn(async () => null) });
+    const other = recipe({ id: 'other', name: 'Other', match: { models: [{ label: 'Model zz', weakKey: 'local/zz' }] } });
+    const withDraft = localModel('m4', { identity: { facts: { contextLength: 40_960 } }, auxiliary: [{ kind: 'mmproj', path: 'C:\\Models\\mmproj.gguf' }, { kind: 'draft', path: 'C:\\Models\\draft-m4.gguf' }] });
+    const api = libApi(world({ local: [withDraft, localModel('m5')], settings: { ...world().settings, modelRecipes: [other] } }));
+    withPlans(api);
+    renderLib('/models', api);
+    let dialog = await openCommands('Model m4');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scrivi i comandi' }));
+    let editor = await screen.findByRole('dialog', { name: 'Scrivi i comandi per Model m4' });
+    // A draft model next to it counts like an MTP file.
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Il file MTP o draft accanto al modello' }));
+    expect(within(editor).getByText('Trovato: draft-m4.gguf')).toBeTruthy();
+    // "Sfoglia…" closed without a file: the field stays as it was.
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Un file che scelgo io' }));
+    await userEvent.click(within(editor).getByRole('button', { name: 'Sfoglia…' }));
+    expect(b.pickFile).toHaveBeenCalledTimes(1);
+    expect((within(editor).getByLabelText('File del modello draft o MTP (.gguf)') as HTMLInputElement).value).toBe('');
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Il file MTP o draft accanto al modello' }));
+    // YaRN on a model that says its training context: no field to ask it.
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Oltre il limite (YaRN)' }));
+    expect(within(editor).queryByLabelText('Contesto di addestramento (token)')).toBeNull();
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Automatico' }));
+    // Saved next to another model's recipe: its own id, first.
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(saved(api)).toHaveLength(2));
+    expect(saved(api)[0]).toMatchObject({ id: 'model-m4', draft: 'auto' });
+    expect(saved(api)[1]).toEqual(other);
+    // Changed later: the other recipe stays as it is.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
+    editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
+    await userEvent.click(within(editor).getByRole('radio', { name: 'No' }));
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Un valore preciso' }));
+    await userEvent.type(within(editor).getByLabelText('Contesto (token)'), '8192');
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(saved(api)[0]).toMatchObject({ id: 'model-m4', contextSize: 8192 }));
+    expect(saved(api)[1]).toEqual(other);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Chiudi' }));
+    // Nothing next to this one: "the file next to the model" says it is missing.
+    dialog = await openCommands('Model m5');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scrivi i comandi' }));
+    editor = await screen.findByRole('dialog', { name: 'Scrivi i comandi per Model m5' });
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Il file MTP o draft accanto al modello' }));
+    expect(within(editor).getByText('Accanto al modello non c’è un file MTP o draft: scaricalo dalla pagina del modello.')).toBeTruthy();
+  });
+
   it('YaRN for a model whose trained context is unknown: the user says it', async () => {
     const api = libApi(world({ local: [localModel('m3')] }));
     withPlans(api);
