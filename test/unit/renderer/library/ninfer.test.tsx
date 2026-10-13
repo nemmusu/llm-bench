@@ -2,7 +2,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineStatus } from '../../../../src/contract/engines';
-import type { NinferBuildPlan, NinferUpdateStatus } from '../../../../src/contract/ninfer';
+import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
+import type { NinferBuildPlan } from '../../../../src/contract/ninfer';
 import { bridge, ENGINES, fail, libApi, patchPointer, renderLib, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -17,7 +18,6 @@ afterEach(() => {
 });
 
 const COMMIT = 'e31bc99b13f517c8aae70b997b7c4a49b4dcdc5d';
-const NEXT = '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49';
 const linux = system({ os: { platform: 'linux', release: '6', arch: 'x64', name: 'Ubuntu 24.04', isWsl: false } });
 const card = () => screen.findByRole('region', { name: 'NInfer' });
 
@@ -211,129 +211,103 @@ describe('Compila NInfer', () => {
   });
 });
 
-const update = (over: Partial<NinferUpdateStatus> = {}): NinferUpdateStatus => ({
-  kind: 'ninfer-wsl',
+
+const update = (over: Partial<EngineUpdateCheck> = {}): EngineUpdateCheck => ({
+  target: 'ninfer-wsl',
+  method: 'git',
+  state: 'available',
   distro: 'Ubuntu-24.04',
-  dir: '/home/u/ninfer',
-  updatable: true,
-  fetched: true,
-  current: COMMIT,
-  upstream: 'origin/master',
-  latest: NEXT,
-  behind: 1,
-  ahead: 0,
-  commits: [{ sha: NEXT, title: 'serve: faster MTP verification' }],
-  dirty: [],
-  commands: ['git -C /home/u/ninfer pull --ff-only', 'cmake --build /home/u/ninfer/build -j'],
-  restore: [`git -C /home/u/ninfer reset --hard ${COMMIT}`],
-  containerVersion: 3,
-  artifacts: [],
+  repo: '/home/u/ninfer',
+  buildDir: '/home/u/ninfer/build',
+  branch: 'master',
+  current: 'e31bc99',
+  latest: '4f2a9c1',
+  commits: 1,
+  log: [{ sha: '4f2a9c1', title: 'serve: faster MTP verification' }],
+  commands: [
+    ['git', '-C', '/home/u/ninfer', 'pull', '--ff-only'],
+    ['cmake', '--build', '/home/u/ninfer/build', '-j'],
+  ],
+  restore: [['git', '-C', '/home/u/ninfer', 'reset', '--hard', COMMIT]],
+  checkedAt: '2026-10-13T10:00:00.000Z',
+  ninfer: { containerVersion: 3, artifacts: [] },
   ...over,
 });
 
-describe('NInfer updates', () => {
-  const configured = () => ninferApi({ engines: [ready()], settings: { ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/u/ninfer' } } } });
+describe('NInfer updates (the engines\' own "Aggiorna")', () => {
+  const configured = (check: EngineUpdateCheck) => {
+    const api = ninferApi({ engines: [ready()], settings: { ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/u/ninfer' } } } });
+    api.w.updates['ninfer-wsl'] = check;
+    return api;
+  };
 
-  it('what the check found: up to date, new commits, changes, own commits, an older model, no checkout', async () => {
+  it('new commits with their titles, older models with NInfer\'s upgrade command, then the update with its way back', async () => {
     const b = bridge();
-    const api = configured();
-    const answers: (NinferUpdateStatus | 'fail')[] = [
-      'fail',
-      update({ behind: 0, commits: [], latest: COMMIT }),
+    const api = configured(
       update({
-        behind: 7,
-        fetched: false,
-        commits: Array.from({ length: 7 }, (_, i) => ({ sha: `${i}`.repeat(40), title: `commit ${i}` })),
-        dirty: ['src/a.cpp'],
-        ahead: 2,
-        upstream: undefined,
-        artifacts: [
-          { id: 'a', name: 'qwen3_8_27b_nvfp4', file: 'C:\\m\\a.ninfer', version: 2, needs: 3, command: 'cd /home/u/ninfer && python3 tools/upgrade_ninfer_v2_to_v3.py a b' },
-          { id: 'b', name: 'qwen3_6_27b', file: 'C:\\m\\b.ninfer', version: 1, needs: 3 },
-        ],
+        commits: 7,
+        log: Array.from({ length: 7 }, (_, i) => ({ sha: `${i}`.repeat(7), title: `commit ${i}` })),
+        ninfer: {
+          containerVersion: 3,
+          artifacts: [
+            { id: 'a', name: 'qwen3_8_27b_nvfp4', file: 'C:\\m\\a.ninfer', version: 2, needs: 3, command: 'cd /home/u/ninfer && python3 tools/upgrade_ninfer_v2_to_v3.py a b' },
+            { id: 'b', name: 'qwen3_6_27b', file: 'C:\\m\\b.ninfer', version: 1, needs: 3 },
+          ],
+        },
       }),
-      update({ updatable: false, dir: undefined, commands: [], restore: [], behind: 0, commits: [], artifacts: [{ id: 'b', name: 'qwen3_6_27b', file: 'C:\\m\\b.ninfer', version: 1, needs: 3 }] }),
-    ];
-    api.on('POST /api/engines/ninfer/update-check', () => {
-      const a = answers.shift() as NinferUpdateStatus | 'fail';
-      return a === 'fail' ? fail('INTERNAL', 500, 'offline') : a;
-    });
+    );
     renderLib('/engines', api);
     const c = await card();
-    const check = await within(c).findByRole('button', { name: 'Controlla aggiornamenti' });
-    await userEvent.click(check);
-    await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/update-check')).toHaveLength(1));
-    await userEvent.click(check);
-    expect(await within(c).findByText('NInfer è aggiornato (e31bc99).')).toBeTruthy();
-    await userEvent.click(check);
-    expect(await within(c).findByText('7 commit nuovi (e31bc99 → 4f2a9c1)')).toBeTruthy();
+    expect(await within(c).findByText('7 commit nuovi: e31bc99 → 4f2a9c1')).toBeTruthy();
+    expect(within(c).getByText('commit 4')).toBeTruthy();
+    expect(within(c).queryByText('commit 5')).toBeNull();
     expect(within(c).getByText('e altri 2')).toBeTruthy();
-    expect(within(c).getByText(/Non riesco a raggiungere GitHub/)).toBeTruthy();
-    expect(within(c).getByText('Ci sono modifiche nella cartella di NInfer')).toBeTruthy();
-    expect(within(c).getByText(/Ci sono 2 commit che non sono su GitHub/)).toBeTruthy();
-    expect((within(c).getByRole('button', { name: 'Aggiorna…' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(c).getByText('Modelli da aggiornare')).toBeTruthy();
     expect(within(c).getByText('qwen3_8_27b_nvfp4: formato v2')).toBeTruthy();
+    expect(within(c).getByRole('region', { name: 'Comando da copiare' }).textContent).toContain('upgrade_ninfer_v2_to_v3.py');
     expect(within(c).getByText('Per questo passaggio NInfer non ha uno strumento: segui la sua guida.')).toBeTruthy();
     await userEvent.click(within(c).getByRole('button', { name: 'Come si aggiorna un modello' }));
     expect(b.openExternal).toHaveBeenCalledWith(expect.stringContaining('weight-conversion.md'));
-    await userEvent.click(check);
-    expect(await within(c).findByText(/non è nella cartella in cui è stato compilato/)).toBeTruthy();
-    expect(within(c).getByText('qwen3_6_27b: formato v1')).toBeTruthy();
-  });
 
-  it('Aggiorna: the commands and the way back, the progress, then the new commit', async () => {
-    const api = configured();
-    let latest = update();
-    api.on('POST /api/engines/ninfer/update-check', () => latest);
-    api.on('POST /api/engines/ninfer/update', () => ({ ok: true }));
-    renderLib('/engines', api);
-    const c = await card();
-    await userEvent.click(await within(c).findByRole('button', { name: 'Controlla aggiornamenti' }));
-    expect(await within(c).findByText('1 commit nuovo (e31bc99 → 4f2a9c1)')).toBeTruthy();
-    await userEvent.click(within(c).getByRole('button', { name: 'Aggiorna…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Aggiorna NInfer' });
-    expect(within(dialog).getByRole('region', { name: 'Comandi che eseguirò' }).textContent).toContain('pull --ff-only');
+    await userEvent.click(within(c).getByRole('button', { name: 'Aggiorna' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aggiornare NInfer (WSL)?' });
+    expect(within(dialog).getByText(/Tutto succede dentro Ubuntu-24.04/)).toBeTruthy();
+    expect(within(dialog).getByRole('region', { name: 'Comandi che eseguo' }).textContent).toContain('pull --ff-only');
     expect(within(dialog).getByRole('region', { name: 'Per tornare com’era' }).textContent).toContain('reset --hard');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Aggiorna' }));
-    await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/update')?.body).toEqual({ kind: 'ninfer-wsl', confirm: true }));
-    act(() => api.emit({ type: 'engine.install', kind: 'ninfer-wsl', stage: 'pull', bytesDone: 0 }));
-    expect(await within(dialog).findByText('Download delle novità')).toBeTruthy();
-    latest = update({ behind: 0, commits: [], current: NEXT, latest: NEXT });
-    act(() => api.emit({ type: 'engine.install', kind: 'ninfer-wsl', stage: 'done', bytesDone: 0, result: { ninferPath: '/home/u/ninfer/build/apps/ninfer-serve', commit: NEXT } }));
-    expect(await screen.findByText('NInfer aggiornato: 4f2a9c1')).toBeTruthy();
-    expect(await within(c).findByText('NInfer è aggiornato (4f2a9c1).')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Aggiorna NInfer' })).toBeNull());
+    await waitFor(() => expect(api.calls.some((x) => x.method === 'POST' && x.path === '/api/engines/ninfer-wsl/update')).toBe(true));
+    act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', label: 'NInfer (WSL)', stage: 'git-pull', bytesDone: 0 }));
+    expect(await within(c).findByText('Scarico le modifiche')).toBeTruthy();
+    api.w.updates['ninfer-wsl'] = update({ state: 'current', current: '4f2a9c1', commits: undefined, log: undefined });
+    act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', label: 'NInfer (WSL)', stage: 'done', bytesDone: 0, result: { version: '4f2a9c1' } }));
+    expect(await within(c).findByText('Aggiornato a 4f2a9c1')).toBeTruthy();
+    expect(await within(c).findByText('Hai l’ultima versione (4f2a9c1)')).toBeTruthy();
   });
 
-  it('why an update stopped: local changes, a failed build put back or not, anything else', async () => {
-    const api = configured();
-    api.on('POST /api/engines/ninfer/update-check', () => update({ behind: 2, commits: [] }));
-    let reject = false;
-    api.on('POST /api/engines/ninfer/update', () => (reject ? fail('VALIDATION', 400, 'A build is already running') : { ok: true }));
+  it('a failed rebuild says whether the previous version is back', async () => {
+    const api = configured(update());
     renderLib('/engines', api);
     const c = await card();
-    await userEvent.click(await within(c).findByRole('button', { name: 'Controlla aggiornamenti' }));
-    await userEvent.click(await within(c).findByRole('button', { name: 'Aggiorna…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Aggiorna NInfer' });
-    expect(within(dialog).getByText('2 commit nuovi (e31bc99 → 4f2a9c1)')).toBeTruthy();
-    const attempt = async (error: object | undefined) => {
-      await userEvent.click(within(dialog).getByRole('button', { name: 'Aggiorna' }));
-      await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Aggiorna' }) as HTMLButtonElement).disabled).toBe(true));
-      act(() => api.emit({ type: 'engine.install', kind: 'ninfer-wsl', stage: 'error', bytesDone: 0, ...(error ? { error } : {}) } as never));
-    };
-    await attempt({ code: 'ENGINE_INSTALL_FAILED', message: 'x', params: { reason: 'ninfer_dirty', files: 'src/a.cpp' } });
-    expect(await within(dialog).findByText(/salvale o annullale, poi riprova \(src\/a\.cpp\)/)).toBeTruthy();
-    await attempt({ code: 'ENGINE_INSTALL_FAILED', message: 'x', detail: 'nvcc fatal', params: { reason: 'ninfer_update', restored: true, commit: COMMIT.slice(0, 12) } });
-    expect(await within(dialog).findByText('NInfer è tornato com’era (e31bc99) e funziona come prima.')).toBeTruthy();
-    expect(within(dialog).getByRole('region', { name: 'Ultime righe della compilazione' }).textContent).toBe('nvcc fatal');
-    await attempt({ code: 'ENGINE_INSTALL_FAILED', message: 'x', params: { reason: 'ninfer_update', restored: false } });
-    expect(await within(dialog).findByText(/Non sono riuscito a rimettere la versione di prima/)).toBeTruthy();
-    await attempt({ code: 'ENGINE_INSTALL_FAILED', message: 'x' });
-    expect(await within(dialog).findByText('Installazione del motore non riuscita')).toBeTruthy();
-    // The request itself refused (another build running).
-    reject = true;
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Aggiorna' }));
-    expect(await within(dialog).findByText(/A build is already running|Dati non validi|non valid/)).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+    await within(c).findByText('1 commit nuovo: e31bc99 → 4f2a9c1');
+    act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: true, commit: 'e31bc99' } } }));
+    expect(await within(c).findByText('La compilazione non è riuscita: ho rimesso la versione di prima (e31bc99), funziona come prima.')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: false } } }));
+    expect(await within(c).findByText('Non sono riuscito a rimettere la versione di prima: ricompila il motore.')).toBeTruthy();
+  });
+
+  it('a build outside its checkout: updated with its own tools, the models to upgrade still said', async () => {
+    const api = configured({
+      target: 'ninfer-wsl',
+      method: 'none',
+      state: 'none',
+      reason: 'tools',
+      commands: [],
+      checkedAt: '2026-10-13T10:00:00.000Z',
+      ninfer: { containerVersion: 3, artifacts: [{ id: 'b', name: 'qwen3_6_27b', file: 'C:\\m\\b.ninfer', version: 1, needs: 3 }] },
+    });
+    renderLib('/engines', api);
+    const c = await card();
+    expect(await within(c).findByText('Aggiorna questo motore con i suoi strumenti.')).toBeTruthy();
+    expect(within(c).getByText('qwen3_6_27b: formato v1')).toBeTruthy();
   });
 });

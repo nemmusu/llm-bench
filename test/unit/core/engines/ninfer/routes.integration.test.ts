@@ -1,6 +1,7 @@
 /**
  * NInfer's routes over its composition (createNinferServices) and the fake wsl.exe with real processes:
- * distros, "Indica dove si trova", the guided build and the update, as 'engine.install' events.
+ * distros, "Indica dove si trova", the guided build as 'engine.install' events, and its update through the
+ * engines' own "Aggiorna".
  */
 import { Hono } from 'hono';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -13,6 +14,7 @@ import { createNinferRoutes, withBuild } from '../../../../../src/core/engines/n
 import { createNinferServices } from '../../../../../src/core/engines/ninfer/setup';
 import { systemClock } from '../../../../../src/core/node-deps';
 import { errorResponse } from '../../../../../src/core/server/http-error';
+import { EngineUpdates } from '../../../../../src/core/engines/updates/service';
 import { recordingLog, tempDir } from '../../docker/helpers';
 import { realClients, realProc, WSL_ARGV } from './helpers';
 
@@ -98,14 +100,20 @@ describe('NInfer routes', () => {
     expect((await r.last('error')).error).toMatchObject({ code: 'ENGINE_INSTALL_FAILED' });
   }, 60_000);
 
-  it('checks for updates, updates, and the build shows the new commit at once', async () => {
+  it('updates through the engines\' own "Aggiorna", and the build shows the new commit at once', async () => {
     const r = setup({ config: { incoming: INCOMING }, ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/user/ninfer' } } });
     expect(await (await r.post('/api/engines/ninfer/check', { kind: 'ninfer-wsl' })).json()).toMatchObject({ version: 'e31bc99b13f5' });
-    expect(await (await r.post('/api/engines/ninfer/update-check', { kind: 'ninfer-wsl' })).json()).toMatchObject({ behind: 1, commits: INCOMING });
-    expect((await r.post('/api/engines/ninfer/update', { kind: 'ninfer-wsl' })).status).toBe(400);
-    expect((await r.post('/api/engines/ninfer/update', { kind: 'ninfer-wsl', confirm: true })).status).toBe(200);
-    expect((await r.last('done')).result).toEqual({ ninferPath: '/home/user/ninfer/build/apps/ninfer-serve', commit: INCOMING[0]?.sha });
+    const updates = new EngineUpdates({ ninfer: r.services.updaters, clock: systemClock } as unknown as ConstructorParameters<typeof EngineUpdates>[0]);
+    expect(await updates.check('ninfer-wsl', { fetch: true })).toMatchObject({ state: 'available', commits: 1, log: [{ sha: '4f2a9c1', title: INCOMING[0]?.title }] });
+    expect(await updates.update('ninfer-wsl', () => undefined, new AbortController().signal)).toEqual({ version: '4f2a9c1' });
     expect(await r.services.wsl.detect()).toMatchObject({ version: '4f2a9c1d0e8b' });
+    // While a guided build runs, the update waits.
+    const plan = r.post('/api/engines/ninfer/build', { kind: 'ninfer-wsl', distro: 'Ubuntu-24.04', dir: '~/other', confirm: true });
+    await plan;
+    expect(await updates.check('ninfer-wsl')).toMatchObject({ state: 'blocked', reason: 'busy' });
+    await r.last('done');
+    // Without NInfer's updaters, nothing to do from the app.
+    expect(await new EngineUpdates({ clock: systemClock } as unknown as ConstructorParameters<typeof EngineUpdates>[0]).check('ninfer-native')).toMatchObject({ method: 'none', state: 'none', reason: 'tools' });
   }, 60_000);
 
   it('a shutdown stops a running build', async () => {

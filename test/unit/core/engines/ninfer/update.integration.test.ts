@@ -1,7 +1,7 @@
 /**
- * "Controlla aggiornamenti" / "Aggiorna" of a NInfer build in WSL, with real processes: the fake wsl.exe
- * plays the distro's git (fetch, pull --ff-only, reset) and cmake. Only the checkout is touched; a
- * failed build puts the previous program and commit back.
+ * NInfer's "Aggiorna" (the engines' update contract) of a build in WSL, with real processes: the fake
+ * wsl.exe plays the distro's git (fetch, pull --ff-only, reset) and cmake. Only the checkout is touched;
+ * a failed build puts the previous program and commit back.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -27,7 +27,7 @@ const INCOMING = [
 ];
 const SERVE = '/home/user/ninfer/build/apps/ninfer-serve';
 
-function setup(config: Record<string, unknown> = {}, saved: { distro: string; path: string } | null = { distro: 'Ubuntu-24.04', path: '/home/user/ninfer' }) {
+function setup(config: Record<string, unknown> = {}, saved: { distro: string; path: string } | null = { distro: 'Ubuntu-24.04', path: '/home/user/ninfer' }, o: { building?: boolean } = {}) {
   const t = tempDir('gb-ninfer-update-');
   cleanups.push(t.cleanup);
   const state = path.join(t.dir, 'wsl');
@@ -47,7 +47,18 @@ function setup(config: Record<string, unknown> = {}, saved: { distro: string; pa
   writeFileSync(old.local.paths[1] as string, JSON.stringify({ ...MANIFEST, artifact: { ...MANIFEST.artifact, container_version: 2 } }));
   const current = ninferModel(path.join(t.dir, 'models', 'new'));
   const models = [old.local, { ...current.local, id: 'n2' }];
-  const updater = new NinferUpdater({ kind: 'ninfer-wsl', builder, where: () => adapter.where(), models: async () => models });
+  const updater = new NinferUpdater({
+    kind: 'ninfer-wsl',
+    builder,
+    where: () => adapter.where(),
+    models: async () => models,
+    verify: async () => {
+      adapter.forget();
+      return (await adapter.detect()).installed;
+    },
+    building: () => o.building === true,
+    clock: { wall: () => Date.parse('2026-10-13T12:00:00.000Z') },
+  });
   const stages: string[] = [];
   const progress = (p: { stage: string }) => {
     if (stages[stages.length - 1] !== p.stage) stages.push(p.stage);
@@ -60,88 +71,97 @@ const linux = (p: string) => (process.platform === 'win32' ? `/mnt/${p[0]?.toLow
 const run = (u: NinferUpdater, progress: (p: { stage: string }) => void) => u.update(progress, new AbortController().signal);
 
 describe('NInfer update (fake WSL, real processes)', () => {
-  it('reports an up-to-date checkout, the exact commands, and the artifacts the build cannot read', async () => {
+  it('an up-to-date checkout: the exact commands, the way back, and the models the build cannot read', async () => {
     const { updater, old } = setup();
     const file = old.local.paths[0] as string;
-    expect(await updater.status()).toEqual({
-      kind: 'ninfer-wsl',
+    const { check, run: nothing } = await updater.plan({ fetch: true });
+    expect(nothing).toBeUndefined();
+    expect(check).toEqual({
+      target: 'ninfer-wsl',
+      method: 'git',
+      state: 'current',
       distro: 'Ubuntu-24.04',
-      dir: '/home/user/ninfer',
-      updatable: true,
-      fetched: true,
-      current: OLD,
-      upstream: 'origin/master',
-      latest: OLD,
-      behind: 0,
-      ahead: 0,
-      commits: [],
-      dirty: [],
-      commands: [`cp -p ${SERVE} ${SERVE}.gpubench-previous`, 'git -C /home/user/ninfer pull --ff-only', 'cmake --build /home/user/ninfer/build -j'],
-      restore: [`mv -f ${SERVE}.gpubench-previous ${SERVE}`, `git -C /home/user/ninfer reset --hard ${OLD}`],
-      containerVersion: 3,
-      artifacts: [
-        {
-          id: 'n1',
-          name: 'qwen3_8_27b_nvfp4',
-          file,
-          version: 2,
-          needs: 3,
-          command: `cd /home/user/ninfer && python3 tools/upgrade_ninfer_v2_to_v3.py ${linux(file)} ${linux(file).replace(/\.ninfer$/, '.v3.ninfer')}`,
-        },
+      checkedAt: '2026-10-13T12:00:00.000Z',
+      repo: '/home/user/ninfer',
+      buildDir: '/home/user/ninfer/build',
+      branch: 'master',
+      current: 'e31bc99',
+      latest: 'e31bc99',
+      commands: [
+        ['cp', '-p', SERVE, `${SERVE}.gpubench-previous`],
+        ['git', '-C', '/home/user/ninfer', 'pull', '--ff-only'],
+        ['cmake', '--build', '/home/user/ninfer/build', '-j'],
       ],
+      restore: [
+        ['mv', '-f', `${SERVE}.gpubench-previous`, SERVE],
+        ['git', '-C', '/home/user/ninfer', 'reset', '--hard', OLD],
+      ],
+      ninfer: {
+        containerVersion: 3,
+        artifacts: [
+          {
+            id: 'n1',
+            name: 'qwen3_8_27b_nvfp4',
+            file,
+            version: 2,
+            needs: 3,
+            command: `cd /home/user/ninfer && python3 tools/upgrade_ninfer_v2_to_v3.py ${linux(file)} ${linux(file).replace(/\.ninfer$/, '.v3.ninfer')}`,
+          },
+        ],
+      },
     });
   }, 60_000);
 
-  it('pulls and rebuilds, then the build reports the new commit', async () => {
+  it('pulls and rebuilds with progress, checks the new build, and gives its commit', async () => {
     const { adapter, updater, stages, progress, fakeState } = setup({ incoming: INCOMING });
-    expect(await updater.status()).toMatchObject({ behind: 2, latest: INCOMING[0]?.sha, commits: INCOMING });
+    expect((await updater.plan()).check).toMatchObject({ state: 'available', commits: 2, latest: '4f2a9c1', log: INCOMING.map((c) => ({ sha: c.sha.slice(0, 7), title: c.title })) });
     expect((await adapter.detect()).version).toBe(OLD.slice(0, 12));
-    expect(await run(updater, progress)).toEqual({ serve: SERVE, commit: INCOMING[0]?.sha });
-    expect(stages).toEqual(['resolve', 'pull', 'build']);
-    // The copy kept aside is gone; the probe is cached until forgotten.
+    expect(await run(updater, progress)).toEqual({ version: '4f2a9c1' });
+    expect(stages).toEqual(['git-pull', 'build', 'verify']);
     expect(fakeState()).toMatchObject({ kept: [], commit: INCOMING[0]?.sha, incoming: [] });
-    expect((await adapter.detect()).version).toBe(OLD.slice(0, 12));
-    adapter.forget();
+    // The check of the new build already ran (verify): the card shows the new commit at once.
     expect((await adapter.detect()).version).toBe(INCOMING[0]?.sha.slice(0, 12));
-    expect(await updater.status()).toMatchObject({ behind: 0, current: INCOMING[0]?.sha });
-    // Up to date: nothing runs.
-    stages.length = 0;
-    expect(await run(updater, progress)).toEqual({ serve: SERVE, commit: INCOMING[0]?.sha });
-    expect(stages).toEqual(['resolve']);
+    expect((await updater.plan()).check).toMatchObject({ state: 'current', current: '4f2a9c1' });
+    await expect(run(updater, progress)).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', params: { reason: 'current' } });
   }, 60_000);
 
   it('puts the previous program and commit back when the build fails', async () => {
     const { updater, progress, fakeState } = setup({ incoming: INCOMING, failStage: 'build' });
     const err = (await run(updater, progress).catch((e: unknown) => e)) as AppError;
-    expect(err.code).toBe('ENGINE_INSTALL_FAILED');
-    expect(err.params).toMatchObject({ reason: 'ninfer_update', stage: 'build', restored: true, commit: OLD.slice(0, 12) });
+    expect(err.code).toBe('ENGINE_UPDATE_FAILED');
+    expect(err.params).toMatchObject({ reason: 'cmake', stage: 'build', restored: true, commit: OLD.slice(0, 7) });
     expect(err.detail).toContain('Unsupported gpu architecture');
     expect(fakeState()).toMatchObject({ kept: [], commit: OLD, incoming: INCOMING });
   }, 60_000);
 
   it('drops the kept copy when the pull fails', async () => {
     const { updater, progress, fakeState } = setup({ incoming: INCOMING, failStage: 'pull' });
-    const err = (await run(updater, progress).catch((e: unknown) => e)) as AppError;
-    expect(err.params).toMatchObject({ reason: 'ninfer_build', stage: 'pull' });
+    await expect(run(updater, progress)).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', params: { reason: 'git', stage: 'git-pull' } });
     expect(fakeState()).toMatchObject({ kept: [] });
   }, 60_000);
 
-  it('refuses local changes, local commits, a build outside a checkout, and a build that is not set up', async () => {
-    const dirty = setup({ incoming: INCOMING, dirty: ['src/serve/main.cpp'] });
-    expect((await dirty.updater.status()).dirty).toEqual(['src/serve/main.cpp']);
-    await expect(run(dirty.updater, dirty.progress)).rejects.toMatchObject({ params: { reason: 'ninfer_dirty', files: 'src/serve/main.cpp', dir: '/home/user/ninfer' } });
-    const ahead = setup({ incoming: INCOMING, ahead: 1 });
-    await expect(run(ahead.updater, ahead.progress)).rejects.toMatchObject({ params: { reason: 'ninfer_ahead', n: 1 } });
+  it('blocked as the other engines are: changes, own commits, detached, no upstream, a fetch that fails, no cmake, no git, a build running', async () => {
+    const reason = async (config: Record<string, unknown>, o: { building?: boolean; fetch?: boolean } = {}) => (await setup(config, undefined, o).updater.plan({ fetch: o.fetch === true })).check;
+    expect(await reason({ incoming: INCOMING, dirty: ['src/serve/main.cpp'] })).toMatchObject({ state: 'blocked', reason: 'dirty', changed: 1, commits: 2 });
+    expect(await reason({ incoming: INCOMING, ahead: 1 })).toMatchObject({ state: 'blocked', reason: 'diverged', commits: 2 });
+    expect(await reason({ branch: 'HEAD' })).toMatchObject({ state: 'blocked', reason: 'detached' });
+    expect(await reason({ upstream: null })).toMatchObject({ state: 'blocked', reason: 'no-upstream' });
+    expect(await reason({ offline: true }, { fetch: true })).toMatchObject({ state: 'blocked', reason: 'fetch-failed', detail: expect.stringContaining('unable to access') });
+    expect(await reason({ offline: true })).toMatchObject({ state: 'current' });
+    expect(await reason({ incoming: INCOMING, prereqs: { cmake: '' } })).toMatchObject({ state: 'blocked', reason: 'cmake-missing', commits: 2 });
+    expect(await reason({ prereqs: { git: '' } })).toMatchObject({ state: 'blocked', reason: 'git-missing', commands: [] });
+    expect(await reason({ incoming: INCOMING }, { building: true })).toMatchObject({ state: 'blocked', reason: 'busy' });
+    // Built outside its checkout's build folder: updated with its own tools.
     const elsewhere = setup({ checkouts: [], builds: ['/opt/ninfer-serve'] }, { distro: 'Ubuntu-24.04', path: '/opt/ninfer-serve' });
-    expect(await elsewhere.updater.status()).toMatchObject({ updatable: false, fetched: false, commands: [], restore: [], behind: 0 });
-    await expect(run(elsewhere.updater, elsewhere.progress)).rejects.toMatchObject({ params: { reason: 'ninfer_not_checkout', path: '/opt/ninfer-serve' } });
-    const none = setup({}, null);
-    await expect(none.updater.status()).rejects.toMatchObject({ code: 'ENGINE_NOT_INSTALLED', params: { reason: 'not_configured' } });
-  }, 60_000);
+    expect((await elsewhere.updater.plan()).check).toMatchObject({ method: 'none', state: 'none', reason: 'tools', commands: [] });
+    await expect(run(elsewhere.updater, elsewhere.progress)).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', params: { reason: 'tools' } });
+    const dirty = setup({ incoming: INCOMING, dirty: ['a.cpp', 'b.cpp'] });
+    await expect(run(dirty.updater, dirty.progress)).rejects.toMatchObject({ params: { reason: 'dirty', changed: 2 } });
+    // Not set up: nothing to update.
+    expect((await setup({}, null).updater.plan()).check).toMatchObject({ state: 'blocked', reason: 'not-installed' });
+  }, 120_000);
 
-  it('says when GitHub could not be reached, and when the program cannot be kept aside', async () => {
-    const offline = setup({ offline: true });
-    expect(await offline.updater.status()).toMatchObject({ fetched: false, current: OLD });
+  it('says when the program cannot be kept aside, or the rebuilt one does not answer', async () => {
     // The checkout is there but its build is not (removed by hand): nothing to keep, nothing changes.
     const gone = setup({ incoming: INCOMING, builds: [] });
     await expect(run(gone.updater, gone.progress)).rejects.toMatchObject({ params: { reason: 'ninfer_keep' } });

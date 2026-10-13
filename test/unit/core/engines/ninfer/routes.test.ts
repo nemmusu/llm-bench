@@ -25,8 +25,7 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
     saveBuild: async (kind, where) => {
       saved.push([kind, where]);
     },
-    updater: () => ({ status: async () => ({}) as never, update: async () => ({ serve: '/opt/ninfer/build/apps/ninfer-serve' }) }),
-    updated: () => undefined,
+    jobs: { building: false },
     publish: (e) => events.push(e as InstallEvent),
     ...over,
   };
@@ -42,14 +41,11 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
 }
 
 describe('NInfer routes (stub services)', () => {
-  it('a native build has no distro in its result; an update without a new commit says only where', async () => {
+  it('a native build has no distro in its result', async () => {
     const r = stub();
     await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', confirm: true });
     expect((await r.done()).result).toEqual({ ninferPath: '/opt/ninfer/build/apps/ninfer-serve' });
     expect(r.saved).toEqual([['ninfer-native', { path: '/opt/ninfer/build/apps/ninfer-serve' }]]);
-    await r.post('/api/engines/ninfer/update', { kind: 'ninfer-native', confirm: true });
-    await new Promise((res) => setTimeout(res, 20));
-    expect(r.events.filter((e) => e.stage === 'done').at(-1)?.result).toEqual({ ninferPath: '/opt/ninfer/build/apps/ninfer-serve' });
   });
 });
 
@@ -92,9 +88,9 @@ describe('NInfer services (defaults)', () => {
       expect(clock.t).toBeGreaterThan(1000);
       const deps = services.routes({ publish: () => undefined });
       expect(deps.shutdown).toBeUndefined();
-      // The native builder marks its steps; the updater has no library to read.
+      // The native builder marks its steps; the updater has no library to read (its check script answers nothing here).
       await expect(deps.builder('ninfer-native').build({ kind: 'ninfer-native' }, () => undefined, new AbortController().signal)).rejects.toMatchObject({ code: 'ENGINE_INSTALL_FAILED', message: 'Cannot start cmake' });
-      expect(await deps.updater('ninfer-native').status()).toMatchObject({ updatable: false, artifacts: [] });
+      expect((await services.updaters['ninfer-native'].plan()).check).toMatchObject({ state: 'none', reason: 'tools', ninfer: { artifacts: [] } });
     } finally {
       t.cleanup();
     }

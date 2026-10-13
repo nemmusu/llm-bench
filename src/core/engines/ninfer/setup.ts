@@ -17,6 +17,8 @@ export interface NinferServices {
   native: NinferAdapter;
   wsl: NinferAdapter;
   processes: WslProcesses;
+  /** "Aggiorna" of each kind's saved build (core/engines/updates asks them for 'ninfer-native' / 'ninfer-wsl'). */
+  updaters: Record<NinferKind, NinferUpdater>;
   /** Stops our ninfer-serve left in WSL by a crashed session (no record = WSL is not asked). */
   cleanupOrphans(): Promise<void>;
   routes(o: { publish: (e: ServerEvent) => void; shutdown?: AbortSignal }): NinferRouteDeps;
@@ -44,12 +46,27 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     'ninfer-wsl': new NinferBuilder({ kind: 'ninfer-wsl', proc: deps.proc, wsl: { argv, processes }, newMarker: () => `gpubench-${randomUUID()}` }),
   };
   const adapters: Record<NinferKind, NinferAdapter> = { 'ninfer-native': native, 'ninfer-wsl': wsl };
+  // One compile of NInfer at a time: the guided build and the update share the checkout and the CPU.
+  const jobs = { building: false };
   const updaterOf = (kind: NinferKind) =>
-    new NinferUpdater({ kind, builder: builders[kind], where: () => adapters[kind].where(), models: async () => (o.models ? o.models() : []) });
+    new NinferUpdater({
+      kind,
+      builder: builders[kind],
+      where: () => adapters[kind].where(),
+      models: async () => (o.models ? o.models() : []),
+      // The rebuilt program answers its help (the cached probe of the old one is dropped first).
+      verify: async () => {
+        adapters[kind].forget();
+        return (await adapters[kind].detect()).installed;
+      },
+      building: () => jobs.building,
+      clock: deps.clock,
+    });
   return {
     native,
     wsl,
     processes,
+    updaters: { 'ninfer-native': updaterOf('ninfer-native'), 'ninfer-wsl': updaterOf('ninfer-wsl') },
     cleanupOrphans: async () => {
       if (deps.platform !== 'win32') return;
       const stopped = await processes.cleanupOrphans();
@@ -62,8 +79,7 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
       saveBuild: async (kind, where) => {
         await o.settings.update({ ninfer: withBuild((await o.settings.get()).ninfer, kind, where) });
       },
-      updater: updaterOf,
-      updated: (kind) => adapters[kind].forget(),
+      jobs,
       publish: r.publish,
       ...(r.shutdown ? { shutdown: r.shutdown } : {}),
     }),

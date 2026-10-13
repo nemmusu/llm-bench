@@ -1,7 +1,7 @@
 /** Data hooks of NInfer (contract/ninfer.ts): WSL distros, "Indica dove si trova", the guided build. */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { EngineConfig, EngineStatus } from '../../contract/engines';
-import { ninferKindFor, type NinferBuildPlan, type NinferBuildRequest, type NinferDistros, type NinferKind, type NinferSettings, type NinferUpdateStatus } from '../../contract/ninfer';
+import { ninferKindFor, type NinferBuildPlan, type NinferBuildRequest, type NinferDistros, type NinferKind, type NinferSettings } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
 import { useApi } from './api-context';
 import { libKeys, useSystemInfo } from './queries-library';
@@ -66,10 +66,4 @@ export function useNinferBuildPlan(req: NinferBuildRequest | undefined) {
     staleTime: 0,
     retry: false,
   });
-}
-
-/** POST /api/engines/ninfer/update-check: a git fetch in NInfer's checkout, then where it stands (on request only). */
-export function useNinferUpdateCheck() {
-  const api = useApi();
-  return useMutation({ mutationFn: (kind: NinferKind) => api.post<NinferUpdateStatus>('/api/engines/ninfer/update-check', { kind }) });
 }

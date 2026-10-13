@@ -755,8 +755,8 @@ const NINFER_SIZES = [
  * NInfer on Windows, as a user meets it (fake WSL): the Engines card still to set up (40) and its
  * guided build (41); the card once it found the build (42); the Benchmark page with its built-in
  * settings for the .ninfer model (43) and the server confirmation with them (44); a Rapido with
- * "Consigliata da NInfer", its result (45) and how it was started (46); "Controlla aggiornamenti" with two
- * new commits and an older artifact to upgrade (47), and "Aggiorna NInfer" (48). Light and dark, 1440 and 1024.
+ * "Consigliata da NInfer", its result (45) and how it was started (46); its "Aggiorna" (the engines' own) with
+ * two new commits and an older artifact to upgrade (47), and the confirmation (48). Light and dark, 1440 and 1024.
  */
 async function ninferScenes(browser, info, world, written) {
   const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch', 'ninfer-update', 'ninfer-update-dialog'];
@@ -816,14 +816,13 @@ async function ninferScenes(browser, info, world, written) {
   };
   const checkUpdates = async (page) => {
     await showCard(page);
-    await card(page).getByRole('button', { name: 'Controlla aggiornamenti' }).click();
     await card(page).getByText(/commit nuovi/).first().waitFor({ timeout: 30000 });
     await card(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   };
   const openUpdate = async (page) => {
     await checkUpdates(page);
-    await card(page).getByRole('button', { name: 'Aggiorna…' }).click();
-    await page.getByRole('dialog', { name: 'Aggiorna NInfer' }).getByRole('region', { name: 'Comandi che eseguirò' }).waitFor({ timeout: 30000 });
+    await card(page).getByRole('button', { name: 'Aggiorna', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Aggiornare NInfer (WSL)?' }).getByRole('region', { name: 'Comandi che eseguo' }).waitFor({ timeout: 30000 });
   };
   try {
     await idle(info);

@@ -119,7 +119,7 @@ test('NInfer through WSL: find the build, run a Rapido benchmark with its recomm
   }
 });
 
-test('NInfer update from the button: new commits, the exact commands, then the new build; an older model to upgrade', async () => {
+test('NInfer "Aggiorna" like the other engines: new commits, the exact commands, then the new build; an older model to upgrade', async () => {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-up-'));
   seedNinfer(path.join(userData, 'models', 'local'), 2);
   const gb = await launchApp({
@@ -141,25 +141,26 @@ test('NInfer update from the button: new commits, the exact commands, then the n
     const card = await useBuild(page);
     await expect(card.getByText('e31bc99b13f5')).toBeVisible();
 
-    // "Controlla aggiornamenti": two commits behind, with their titles; the v2 model needs NInfer's upgrade tool.
-    await card.getByRole('button', { name: 'Controlla aggiornamenti' }).click();
-    await expect(card.getByText('2 commit nuovi (e31bc99 → 4f2a9c1)')).toBeVisible({ timeout: 20_000 });
+    // "Aggiorna", as on every engine card: two commits behind with their titles; the v2 model needs
+    // NInfer's upgrade tool.
+    await expect(card.getByText('2 commit nuovi: e31bc99 → 4f2a9c1')).toBeVisible({ timeout: 20_000 });
     await expect(card.getByText('serve: faster MTP verification')).toBeVisible();
     await expect(card.getByText('Modelli da aggiornare')).toBeVisible();
     await expect(card.getByRole('region', { name: 'Comando da copiare' })).toContainText('python3 tools/upgrade_ninfer_v2_to_v3.py');
     await scan(page, 'NInfer update available');
 
-    // "Aggiorna…": the exact commands and the way back, then the update with its progress.
-    await card.getByRole('button', { name: 'Aggiorna…' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Aggiorna NInfer' });
-    await expect(dialog.getByRole('region', { name: 'Comandi che eseguirò' })).toContainText('git -C /home/user/ninfer pull --ff-only');
+    // The exact commands and the way back, inside the distro; then the update with its progress.
+    await card.getByRole('button', { name: 'Aggiorna', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Aggiornare NInfer (WSL)?' });
+    await expect(dialog.getByText(/Tutto succede dentro Ubuntu-24.04/)).toBeVisible();
+    await expect(dialog.getByRole('region', { name: 'Comandi che eseguo' })).toContainText('git -C /home/user/ninfer pull --ff-only');
     await expect(dialog.getByRole('region', { name: 'Per tornare com’era' })).toContainText('git -C /home/user/ninfer reset --hard e31bc99b13f517c8aae70b997b7c4a49b4dcdc5d');
     await scan(page, 'NInfer update dialog');
     await dialog.getByRole('button', { name: 'Aggiorna', exact: true }).click();
-    await expect(page.getByText('NInfer aggiornato: 4f2a9c1')).toBeVisible({ timeout: 30_000 });
     await expect(dialog).toBeHidden();
+    await expect(card.getByText('Aggiornato a 4f2a9c1')).toBeVisible({ timeout: 30_000 });
     await expect(card.getByText('4f2a9c1d0e8b')).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('NInfer è aggiornato (4f2a9c1).')).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText('Hai l’ultima versione (4f2a9c1)')).toBeVisible({ timeout: 20_000 });
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

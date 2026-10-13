@@ -69,7 +69,10 @@ describe('NInfer in the services', () => {
       ctx.telemetry.probe = async () => [{ index: 0, name: 'NVIDIA GeForce RTX 4090', memoryTotalMiB: 24_564 }] as never;
       s.ninfer.wsl.forget();
       expect((await s.ninfer.wsl.check({ kind: 'ninfer-wsl' })).problems).toEqual(['ENGINE_NOT_INSTALLED']);
-      expect(await s.ninfer.routes({ publish: () => undefined }).updater('ninfer-wsl').status()).toMatchObject({ updatable: false, artifacts: [] });
+      // Its "Aggiorna" is the engines' own: the label, the check (nothing answers here: no git).
+      expect(await s.updates.labelOf('ninfer-wsl')).toBe('NInfer (WSL)');
+      expect(await s.updates.labelOf('ninfer-native')).toBe('NInfer');
+      expect(await s.updates.check('ninfer-wsl')).toMatchObject({ target: 'ninfer-wsl', state: 'none', reason: 'tools', ninfer: { artifacts: [] } });
       const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
       const res = await app.request('/api/engines/ninfer/distros', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(await res.json()).toEqual({ wsl: false, distros: [] });
