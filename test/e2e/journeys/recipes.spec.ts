@@ -91,17 +91,20 @@ test('commands written by hand: "Avvia server" starts the model with them', asyn
     await expect(section.getByText('Ricetta «Qwen piccolo · jinja»')).toBeVisible();
     await section.getByRole('button', { name: 'Chiudi' }).click();
 
+    // "Avvia server" opens "Avvia un server": the model's commands are on (the chip) and in the exact command.
     await page.getByRole('button', { name: /^Avvia server: Qwen3/ }).click();
-    const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
-    const command = confirm.getByRole('region', { name: 'Comando esatto' });
+    await expect(h1(page, 'Avvia un server')).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Usa i comandi di questo modello' })).toBeChecked();
+    const command = page.getByRole('region', { name: 'Comando esatto' });
     await expect(command).toContainText('-c 16384', { timeout: 30_000 });
     await expect(command).toContainText('--jinja');
-    await confirm.getByRole('button', { name: 'Avvia server' }).click();
-    const ready = page.getByRole('dialog', { name: 'Il server è pronto' });
-    await expect(ready.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 90_000 });
-    await expect(ready.getByText(/Contesto 16\.384 token/)).toBeVisible();
-    await ready.getByRole('button', { name: 'Ferma' }).click();
-    await expect(ready).toBeHidden();
+    await expect(page.getByText(/^Usa i comandi «Qwen piccolo · jinja»/)).toBeVisible();
+    await page.getByRole('button', { name: /^(Avvia|Scarica e avvia)$/ }).click();
+    const running = page.getByRole('region', { name: /^Server .* sulla porta \d+$/ });
+    await expect(running.getByText('Acceso', { exact: true })).toBeVisible({ timeout: 90_000 });
+    await expect(running.getByText('16.384', { exact: true })).toBeVisible();
+    await running.getByRole('button', { name: /^Ferma il server / }).click();
+    await expect(page.getByText('Nessun server acceso')).toBeVisible();
   } finally {
     await gb.close();
   }
