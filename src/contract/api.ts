@@ -3,6 +3,7 @@ import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsS
 import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
+import { appliedRecipeSchema, MAX_RECIPE_CONTEXT, recipeChoiceSchema } from './recipes';
 import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuningSchema } from './results';
 import { serverNetworkSchema, serverPortSchema } from './servers';
 
@@ -118,8 +119,19 @@ export const startRunRequestSchema = z.object({
        * (reason 'recheck_nothing').
        */
       recheckOf: z.string().optional(),
+      /**
+       * "Contesto oltre il limite del modello (YaRN)": the capacity search may go up to this context
+       * (tokens, above the trained one), every launch beyond the trained context with YaRN at factor
+       * context / trained. Absent = up to the trained context (or a recipe's RoPE scaling).
+       */
+      yarnTarget: z.number().int().min(1024).max(MAX_RECIPE_CONTEXT).optional(),
     })
     .optional(),
+  /**
+   * "Comandi per questo modello" (contract/recipes.ts): absent = the model's recipe, if it has one;
+   * { use: false } = without it; { id } = that recipe; { inline } = an unsaved one (live preview).
+   */
+  recipe: recipeChoiceSchema.optional(),
 });
 export type StartRunRequest = z.infer<typeof startRunRequestSchema>;
 
@@ -167,6 +179,8 @@ export const runPlanSchema = z.object({
       sameBuild: z.boolean(),
     })
     .optional(),
+  /** The model's command recipe this run uses: what it set, what the user's settings replaced, what did not apply. */
+  recipe: appliedRecipeSchema.optional(),
 });
 export type RunPlan = z.infer<typeof runPlanSchema>;
 
@@ -251,7 +265,7 @@ export const apiSchemas = {
  * A server outside a benchmark. `params` are what the user chose: whatever is left unset gets the
  * recommended value for this card (see ServerPlan.params).
  */
-export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true }).extend({
+export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true, recipe: true }).extend({
   /** The port other programs use. Absent = the first free one from 8080 (ServerPlan.port says which). */
   port: serverPortSchema.optional(),
   /**
@@ -298,6 +312,8 @@ export const serverPlanSchema = z.object({
     .optional(),
   fit: fitEstimateSchema.optional(),
   warnings: runPlanSchema.shape.warnings,
+  /** The model's command recipe this server uses (as in RunPlan.recipe). */
+  recipe: appliedRecipeSchema.optional(),
   /** The port it will listen on: the request's, else the first free one from 8080. */
   port: z.number().int(),
   network: serverNetworkSchema,
