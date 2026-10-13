@@ -36,7 +36,9 @@ export const TUNE_PROFILE = {
  *     (--kv-unified) → 'split' wins the layout screening;
  *   - --cache-reuse 256 changes nothing here (conversations re-send a plain prefix) → off is kept;
  *   - -ub 2048 reads the 8K prompts ~1.6× faster → lower TTFT p95 with 4 users waiting → it wins;
- *   - q4_0 generates at half the speed of q8_0 → q8_0, split, ub 2048 is the recommendation.
+ *   - q4_0 generates at 0.7× the speed of q8_0 → q8_0, split, ub 2048 is the recommendation. (Not
+ *     slower: under 0.4× of the reference's 1K probe a Windows launch counts as spilled, and the
+ *     noise of a busy test machine must never get it there.)
  * Users 1…4 then run in this order on it; the conversations (4 × 3 messages) reuse each slot's cache.
  */
 export const MULTI_PROFILE = {
@@ -47,7 +49,7 @@ export const MULTI_PROFILE = {
   decodeTps: 1500,
   tokensPerChunk: 4,
   memory: { totalMiB: 18_000, weightsMiB: 6000, kvMiBPer1k: 600, computeMiBPer512: 300 },
-  speed: { depthSlowdown: 0.3, prefillDepthSlowdown: 0.5, ubatchExponent: 0.35, unifiedDecodeFactor: 0.6, kvDecodeFactor: { q4_0: 0.5 } },
+  speed: { depthSlowdown: 0.3, prefillDepthSlowdown: 0.5, ubatchExponent: 0.35, unifiedDecodeFactor: 0.6, kvDecodeFactor: { q4_0: 0.7 } },
 };
 
 /**
