@@ -27,7 +27,8 @@
     "test:real": "playwright test --config playwright.real.config.ts",
     "coverage": "node scripts/coverage.mjs",
     "validate": "node scripts/validate.mjs",
-    "dist": "node scripts/build.mjs --production && electron-builder"
+    "dist": "node scripts/build.mjs --production && electron-builder",
+    "ci:docker": "node scripts/ci-docker.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
