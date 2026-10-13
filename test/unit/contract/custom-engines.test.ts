@@ -77,7 +77,7 @@ describe('kinds', () => {
     expect(customEngineKindOf({ base: 'vllm', run: { mode: 'docker', image: 'x' } })).toBe('vllm-docker');
     expect(customEngineKindOf({ base: 'sglang', run: { mode: 'native', path: 'x' } })).toBe('sglang-native');
     expect(customEngineKindOf({ base: 'sglang', run: { mode: 'docker', image: 'x' } })).toBe('sglang-docker');
-    expect(customEngineKindOf({ base: 'openai-server', run: { mode: 'command', template: 'x {port}' } })).toBe('command');
+    expect(customEngineKindOf({ base: 'openai-server', run: { mode: 'command', template: 'x {port}', api: 'chat' } })).toBe('command');
     expect(customEngineConfigOf(saved())).toEqual({ kind: 'llamacpp-native', customEngineId: 'prismml-fork' });
   });
 

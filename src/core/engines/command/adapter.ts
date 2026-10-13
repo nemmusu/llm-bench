@@ -129,7 +129,9 @@ export class CommandAdapter implements EngineAdapter {
     const files = weightFiles(model, opts.preview).files;
     const sizes = await Promise.all(files.map((f) => fs.stat(f).then((s) => s.size, () => 0)));
     const bytes = sizes.reduce((a, b) => a + b, 0);
-    const engine: EngineIdentity = { kind: this.kind, name: 'OpenAI server', variant: 'openai', executable: program };
+    // The API it is measured with: /v1/completions, or chat completions for servers without it.
+    const variant = cfg.flavor === 'openai-chat' ? 'openai-chat' : 'openai';
+    const engine: EngineIdentity = { kind: this.kind, name: 'OpenAI server', variant, executable: program };
     return {
       kind: this.kind,
       argv: [program, ...rest, ...params.extraArgs],
@@ -162,7 +164,8 @@ export class CommandAdapter implements EngineAdapter {
     const baseUrl = `http://${plan.host}:${plan.port}`;
     // The name it serves: ours when the template passes {alias}, else whatever it lists first.
     const named = plan.argv.some((a) => a.includes(plan.marker)) ? plan.marker : undefined;
-    let client: InferenceClient = this.o.createClient('openai', baseUrl, named ? { model: named } : {});
+    const flavor = plan.engine.variant === 'openai-chat' ? 'openai-chat' : 'openai';
+    let client: InferenceClient = this.o.createClient(flavor, baseUrl, named ? { model: named } : {});
     const inst = createProcessInstance({
       mp,
       baseUrl,
@@ -190,7 +193,7 @@ export class CommandAdapter implements EngineAdapter {
         const ready = await inst.waitReady(s);
         if (named === undefined) {
           const ids = await client.models(s).catch(() => []);
-          if (ids[0] !== undefined) client = this.o.createClient('openai', baseUrl, { model: ids[0] });
+          if (ids[0] !== undefined) client = this.o.createClient(flavor, baseUrl, { model: ids[0] });
         }
         return ready;
       },
