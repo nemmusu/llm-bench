@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { rm, stat, statfs } from 'node:fs/promises';
+import { readFile, rm, stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { DownloadRequest } from '../../contract/api';
 import { AppError, toAppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
+import { NINFER_SUMS, parseSha256Sums, repoLayout } from '../../contract/formats';
 import { downloadJobSchema, type DownloadJob, type HubFile } from '../../contract/models';
 import type { Clock, Logger } from '../deps';
 import type { HubClient } from '../models/hub';
@@ -65,17 +66,15 @@ interface JobRecord {
   speedBytes?: number;
 }
 
-/** Files of a safetensors repo vLLM needs: everything except other formats and originals. */
+/**
+ * What a "whole model" download of a safetensors repo fetches (files ["*"], for vLLM / SGLang): the
+ * runtime files of its root model folder (contract/formats.ts), or of its only variant folder when the
+ * root has none. Never GGUF files, other variants, other formats, READMEs, images or videos.
+ */
 export function vllmRepoFiles(files: HubFile[]): string[] {
-  const hasSafetensors = files.some((f) => f.path.endsWith('.safetensors'));
-  return files
-    .map((f) => f.path)
-    .filter((p) => {
-      const lower = p.toLowerCase();
-      if (/\.(gguf|pth|pt|onnx|msgpack|h5|ot|tflite|mlmodel)$/.test(lower)) return false;
-      if (/^(original|onnx|openvino|coreml)\//.test(lower)) return false;
-      return !(hasSafetensors && /(^|\/)pytorch_model.*\.bin$/.test(lower));
-    });
+  const variants = repoLayout(files).safetensors;
+  const v = variants.find((x) => x.dir === '') ?? (variants.length === 1 ? variants[0] : undefined);
+  return (v?.files ?? []).map((f) => f.path);
 }
 
 /**
@@ -86,10 +85,11 @@ export function vllmRepoFiles(files: HubFile[]): string[] {
  * Destination layout (one folder per repo, so the scanner can infer the repo id; see models/paths
  * repoDir/libraryPath):
  *   GGUF        → <modelsDir>/<owner>/<repo>/<file path in repo>   (split shards side by side)
- *   safetensors → <modelsDir>/<owner>/<repo>/…  the whole repo minus *.gguf, original/, *.pth
- *                 (vllmRepoFiles); vLLM loads that folder directly.
+ *   safetensors → <modelsDir>/<owner>/<repo>/<variant folder>/…  exactly that folder's runtime files
+ *                 (contract/formats.ts); vLLM / SGLang load that folder directly.
  * A sidecar <repo folder>/.gpubench-download.json records repo, commit and the verified sha256
- * of each file, so the library knows them without re-hashing.
+ * of each file, so the library knows them without re-hashing, and the files a job set out to fetch
+ * (`planned`), so a download stopped halfway shows as "incompleto (1 di 4 file)" instead of a model.
  */
 export class DownloadService {
   private readonly records = new Map<string, JobRecord>();
@@ -197,6 +197,7 @@ export class DownloadService {
     if (rec.running) await this.stop(rec, 'cancel');
     else {
       await this.removeParts(rec);
+      await this.planSidecar(rec, true).catch(() => undefined);
       this.setState(rec, 'cancelled');
     }
     await this.persist();
@@ -253,6 +254,7 @@ export class DownloadService {
     this.setState(rec, 'running');
     try {
       await this.checkDiskSpace(rec);
+      await this.planSidecar(rec);
       for (const f of job.files) {
         if (rec.done.includes(f.path)) continue;
         const dest = path.join(job.dest, ...f.path.split('/'));
@@ -284,6 +286,7 @@ export class DownloadService {
         job.bytesDone = rec.doneBytes;
         await this.persist();
       }
+      await this.verifySums(rec);
       job.bytesDone = job.bytesTotal as number;
       this.setState(rec, 'done');
       await this.persist();
@@ -295,6 +298,7 @@ export class DownloadService {
     } catch (e) {
       if (rec.intent === 'cancel') {
         await this.removeParts(rec);
+        await this.planSidecar(rec, true).catch(() => undefined);
         this.setState(rec, 'cancelled');
       } else if (rec.intent) {
         this.setState(rec, 'paused');
@@ -304,6 +308,29 @@ export class DownloadService {
         this.opts.log.warn('download failed', { id: job.id, repo: job.repo, code: job.error.code });
       }
       await this.persist();
+    }
+  }
+
+  /**
+   * A SHA256SUMS file in the job (NInfer artifacts ship one) is checked against what was downloaded: a
+   * file that does not match is deleted and the job fails with DOWNLOAD_CHECKSUM, like a bad LFS hash.
+   */
+  private async verifySums(rec: JobRecord): Promise<void> {
+    const sumsFile = rec.job.files.find((f) => NINFER_SUMS.test(f.path));
+    if (!sumsFile) return;
+    const at = (p: string) => path.join(rec.job.dest, ...p.split('/'));
+    const sums = parseSha256Sums(await readFile(at(sumsFile.path), 'utf8'));
+    const sidecar = await readSidecar(rec.job.dest);
+    for (const f of rec.job.files) {
+      const expected = sums.get(path.posix.basename(f.path)) ?? sums.get(f.path);
+      const actual = sidecar?.files[f.path]?.sha256;
+      if (!expected || !actual || expected === actual) continue;
+      await rm(at(f.path), { force: true });
+      rec.done = rec.done.filter((p) => p !== f.path);
+      rec.doneBytes = this.doneBytesOf(rec);
+      throw new AppError('DOWNLOAD_CHECKSUM', `Checksum mismatch for ${path.posix.basename(f.path)} (SHA256SUMS)`, {
+        params: { file: path.posix.basename(f.path), expected, actual },
+      });
     }
   }
 
@@ -342,6 +369,26 @@ export class DownloadService {
       repo: rec.job.repo as string,
       revision: rec.commit ?? existing?.revision ?? rec.revision,
       files: { ...(existing?.files ?? {}), [file]: { sha256, sizeBytes: bytes } },
+      ...(existing?.planned ? { planned: existing.planned } : {}),
+    };
+    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
+  }
+
+  /**
+   * Records what this job sets out to fetch (`planned`, merged with earlier jobs into the same folder)
+   * before its first byte, or (`drop`) forgets what a cancelled job never finished.
+   */
+  private async planSidecar(rec: JobRecord, drop = false): Promise<void> {
+    const existing = await readSidecar(rec.job.dest);
+    if (drop && !existing) return;
+    const mine = rec.job.files.map((f) => f.path);
+    const unfinished = new Set(mine.filter((p) => !rec.done.includes(p)));
+    const planned = drop ? (existing?.planned ?? []).filter((p) => !unfinished.has(p)) : [...new Set([...(existing?.planned ?? []), ...mine])].sort();
+    const sidecar: DownloadSidecar = {
+      repo: rec.job.repo as string,
+      revision: existing?.revision ?? rec.revision,
+      files: existing?.files ?? {},
+      ...(planned.length > 0 ? { planned } : {}),
     };
     await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
   }

@@ -10,6 +10,7 @@ import { spilledRun, type Scenario, type TuneBudget } from '../../contract/resul
 import type { Clock } from '../deps';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
+import { availableNowMiB, levelNowOf } from '../models/fit';
 import { serverApiName } from '../engines/types';
 import { newRunId } from '../store/runs-id';
 import { engineBuildOf, engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
@@ -307,10 +308,11 @@ export class BenchService {
   }
 
   /**
-   * The largest of SERVER_CONTEXTS (capped at the model's trained context) whose fit on the FREE VRAM
-   * is perfect or good; else the largest that is tight; else the smallest (the fit then reports the
-   * partial offload). Without a fit estimate (no fit service, a vLLM repo not downloaded yet), the
-   * fallback capped at the model's context.
+   * The largest of SERVER_CONTEXTS (capped at the model's trained context) whose fit for a launch right
+   * now (`levelNow`: the VRAM free now, at most total − reserve) is perfect or good; else the largest
+   * that is tight; else the smallest (the fit then reports the partial offload). The server starts now,
+   * with whatever else is open. Without a fit estimate (no fit service, a vLLM repo not downloaded
+   * yet), the fallback capped at the model's context.
    */
   private async recommendedContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
     const max = extendedContext(model.identity.facts?.contextLength, params.ropeScaling);
@@ -322,8 +324,9 @@ export class BenchService {
       const withCtx: LaunchParams = vllm ? { ...params, maxModelLen: ctx } : { ...params, contextSize: ctx };
       const fit = await this.deps.fit?.(req, model, { params: withCtx }).catch(() => undefined);
       if (!fit) return cap(SERVER_FALLBACK_CONTEXT);
-      if (fit.level === 'perfect' || fit.level === 'good') return ctx;
-      if (fit.level === 'tight') tight ??= ctx;
+      const now = levelNowOf(fit);
+      if (now === 'perfect' || now === 'good') return ctx;
+      if (now === 'tight') tight ??= ctx;
     }
     return tight ?? (candidates.at(-1) as number);
   }
@@ -478,20 +481,23 @@ export class BenchService {
   }
 
   /**
-   * What the VRAM verdict means for this launch. llama.cpp with every layer on the GPU (the default)
-   * that does not fit entirely is not a partial offload: under Windows (and WSL) the rest goes to shared
-   * system memory and everything is ~10–15× slower ('spill_risk'); elsewhere it runs out of memory
-   * ('oom_risk', or MODEL_TOO_LARGE when not even part of it fits). The settings that would fit come
-   * with it (fit.fixes). Fewer layers chosen on purpose: 'partial_offload'.
+   * What the VRAM verdict means for this launch, started right now (`levelNow`: the VRAM free now, at
+   * most total − reserve; the headline `level` judges the card's total and stays as it is). llama.cpp
+   * with every layer on the GPU (the default) that does not fit entirely is not a partial offload: under
+   * Windows (and WSL) the rest goes to shared system memory and everything is ~10–15× slower
+   * ('spill_risk'); elsewhere it runs out of memory ('oom_risk', or MODEL_TOO_LARGE when not even part
+   * of it fits). `availableMiB` in their params is what is free now ("servono X, ne hai Y liberi"); the
+   * settings that would fit come with them (fit.fixes). Fewer layers chosen on purpose: 'partial_offload'.
    */
   private async fitWarnings(p: Launched, fit: FitEstimate): Promise<ScenarioWarning[]> {
     const kind = p.launch.kind;
-    const sizes = { needMiB: fit.needMiB, availableMiB: fit.availableMiB };
+    const now = levelNowOf(fit);
+    const sizes = { needMiB: fit.needMiB, availableMiB: availableNowMiB(fit) };
     const llama = kind === 'llamacpp-native' || kind === 'llamacpp-docker';
-    if (fit.level !== 'partial' && fit.level !== 'no') return [];
+    if (now !== 'partial' && now !== 'no') return [];
     const allOnGpu = llama && !cpuOffloaded(kind, p.launch, p.model.identity.facts?.blockCount);
     if (allOnGpu && spillPossible((await this.deps.fingerprint().catch(() => undefined))?.os)) return [{ code: 'spill_risk', params: { ...sizes, ...fit.fixes } }];
-    if (fit.level === 'no') return [{ code: 'MODEL_TOO_LARGE', params: sizes }];
+    if (now === 'no') return [{ code: 'MODEL_TOO_LARGE', params: sizes }];
     return [allOnGpu ? { code: 'oom_risk', params: { ...sizes, ...fit.fixes } } : { code: 'partial_offload', params: { maxGpuLayers: fit.maxGpuLayers } }];
   }
 

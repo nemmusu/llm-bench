@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PRECISIONS } from './formats';
 
 /** Facts read from a GGUF header (or HF config.json for safetensors models). */
 export const modelFactsSchema = z.object({
@@ -51,7 +52,8 @@ export type ModelFacts = z.infer<typeof modelFactsSchema>;
  */
 export const modelIdentitySchema = z.object({
   displayName: z.string(),
-  format: z.enum(['gguf', 'safetensors', 'remote']),
+  /** gguf: llama.cpp; safetensors: vLLM / SGLang; ninfer: NInfer (a .ninfer artifact, RTX 5090 only); remote: an endpoint. */
+  format: z.enum(['gguf', 'safetensors', 'ninfer', 'remote']),
   source: z.enum(['local', 'hf', 'external']),
   repo: z.string().optional(),
   revision: z.string().optional(),
@@ -76,6 +78,11 @@ export const localModelSchema = z.object({
   dir: z.string(),
   origin: z.enum(['library', 'lmstudio', 'ollama', 'hf-cache', 'custom']),
   modifiedAt: z.string(),
+  /**
+   * Weight files still missing (a download stopped halfway, a split set with a part left out): the
+   * model is listed ("incompleto (1 di 4 file)") but never benchmarked or served until it is whole.
+   */
+  incomplete: z.object({ have: z.number().int().min(0), total: z.number().int().min(1) }).optional(),
 });
 export type LocalModel = z.infer<typeof localModelSchema>;
 
@@ -96,18 +103,45 @@ export const fitFixesSchema = z.object({
 });
 export type FitFixes = z.infer<typeof fitFixesSchema>;
 
+/**
+ * VRAM the verdicts never count on, on any card: the driver's own reservation (nvidia-smi "Reserved":
+ * 420 MiB on an RTX 5090) plus a bare desktop (the Windows compositor, a Linux desktop). It is also
+ * where WDDM starts moving memory to shared RAM (core/bench/spill.ts: a card is full within 1 GiB of its
+ * total). The engine's own CUDA context is part of the estimate, not of this reserve.
+ */
+export const VRAM_RESERVE_MIB = 1024;
+
 export const fitEstimateSchema = z.object({
+  /**
+   * The verdict on the card's TOTAL memory minus VRAM_RESERVE_MIB: a property of model, settings and
+   * card, the same whatever else is open. What is free right now is `levelNow`.
+   */
   level: fitLevelSchema,
   /** Estimated VRAM needed by this engine/config, in MiB. */
   needMiB: z.number(),
   weightsMiB: z.number(),
   kvMiB: z.number(),
   overheadMiB: z.number(),
-  /** VRAM considered available (free now, or total minus reserve). */
+  /**
+   * VRAM the verdict counts on: total minus VRAM_RESERVE_MIB (llama.cpp), the gpu_memory_utilization
+   * share of the total (vLLM).
+   */
   availableMiB: z.number(),
   utilization: z.number(),
   contextSize: z.number().int(),
-  /** llama.cpp partial offload: max layers on GPU when not everything fits. */
+  /** The card's whole memory, MiB. */
+  totalMiB: z.number().optional(),
+  /** VRAM free right now (total minus what every program holds), MiB; absent when unknown. */
+  freeNowMiB: z.number().optional(),
+  /** What other programs hold right now (in use minus GPU Bench's own engines), MiB; absent when unknown. */
+  busyMiB: z.number().min(0).optional(),
+  /**
+   * The verdict for a launch right now: llama.cpp against min(free now, total − reserve), vLLM refusing to
+   * start when its share of the total is not free. Spill and out-of-memory warnings, the "what would fit"
+   * fixes, the tuner and the server's context follow this one. Absent when the free VRAM is unknown.
+   */
+  levelNow: fitLevelSchema.optional(),
+  /** llama.cpp partial offload: max layers on the GPU at a launch right now, when not everything fits. */
   maxGpuLayers: z.number().int().optional(),
   /** vLLM: concurrent sequences of contextSize the KV budget allows. */
   maxConcurrency: z.number().optional(),
@@ -129,7 +163,10 @@ export const fitEstimateSchema = z.object({
       rawNeedMiB: z.number(),
     })
     .optional(),
-  /** llama.cpp, when it does not fit entirely in VRAM: settings that would (absent when nothing simple does). */
+  /**
+   * llama.cpp, when a launch right now does not fit entirely in VRAM (`levelNow`): settings that would
+   * (absent when nothing simple does).
+   */
   fixes: fitFixesSchema.optional(),
 });
 export type FitEstimate = z.infer<typeof fitEstimateSchema>;
@@ -154,7 +191,8 @@ export const quickFitSchema = z.object({
   needMiB: z.number(),
   availableMiB: z.number(),
   quant: z.string(),
-  engine: z.enum(['llamacpp', 'vllm']),
+  /** vllm also stands for SGLang (same safetensors, same memory rule); ninfer = the .ninfer artifact. */
+  engine: z.enum(['llamacpp', 'vllm', 'ninfer']),
 });
 export type QuickFit = z.infer<typeof quickFitSchema>;
 
@@ -167,7 +205,12 @@ export const hubModelSchema = z.object({
   updatedAt: z.string().optional(),
   gated: z.union([z.boolean(), z.string()]).default(false),
   license: z.string().optional(),
-  formats: z.array(z.enum(['gguf', 'safetensors', 'other'])).default([]),
+  /** Formats the repo ships, sub-folders included: GGUF (llama.cpp), safetensors (vLLM / SGLang), NInfer, other. */
+  formats: z.array(z.enum(['gguf', 'safetensors', 'ninfer', 'other'])).default([]),
+  /** Safetensors precision from the name, tags and the hub's dtype counts (contract/formats.ts). */
+  precision: z.enum(PRECISIONS).optional(),
+  /** The formats behind 'other' ("MLX", "ONNX", "NInfer"…): listed, not run by GPU Bench. */
+  otherFormats: z.array(z.string()).default([]),
   paramsB: z.number().optional(),
   pipelineTag: z.string().optional(),
   baseModel: z.string().optional(),

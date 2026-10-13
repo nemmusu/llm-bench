@@ -77,8 +77,9 @@ describe('file classification', () => {
     expect(fileKind('chat_template.jinja')).toBe('tokenizer');
     expect(fileKind('model-00001-of-00004.safetensors')).toBe('weights');
     expect(fileKind('pytorch_model-00001-of-00002.bin')).toBe('weights');
-    expect(fileKind('eagle3-gpt-oss-20b-BF16.gguf')).toBe('other');
-    expect(fileKind('Qwen3-0.6B-draft-Q8_0.gguf')).toBe('other');
+    // Speculative-decoding drafts are extras of a model, offered next to it.
+    expect(fileKind('eagle3-gpt-oss-20b-BF16.gguf')).toBe('draft');
+    expect(fileKind('Qwen3-0.6B-draft-Q8_0.gguf')).toBe('draft');
     expect(fileKind('Model.Q4_K_M.mmproj-f16.gguf')).toBe('mmproj');
     expect(fileKind('LICENSE')).toBe('other');
     expect(groupKeyFor('Q4_K_M/Model-Q4_K_M-00002-of-00003.gguf')).toBe('Q4_K_M/Model-Q4_K_M');
@@ -92,7 +93,52 @@ describe('file classification', () => {
     const m = toHubModel({ id: 'loner', gated: true, gguf: { total: 2e9 }, tags: ['base_model:x/y', 'base_model:quantized:x/z', 'license:mit'], cardData: { base_model: ['a/b'] } });
     expect(m).toMatchObject({ author: '', name: 'loner', gated: true, formats: ['gguf'], paramsB: 2, baseModel: 'a/b', license: 'mit' });
     expect(toHubModel({ modelId: 'o/n', tags: ['base_model:x/y'] }).baseModel).toBe('x/y');
-    expect(toHubModel({ id: 'o/n' })).toEqual({ repo: 'o/n', author: 'o', name: 'n', downloads: 0, likes: 0, gated: false, formats: [], tags: [] });
+    expect(toHubModel({ id: 'o/n' })).toEqual({ repo: 'o/n', author: 'o', name: 'n', downloads: 0, likes: 0, gated: false, formats: [], otherFormats: [], tags: [] });
+  });
+
+  it('tells a whole model with fused MTP layers from an MTP head by its name', () => {
+    // Heads: an "mtp" prefix, a word saying it is a part, or an MTP folder.
+    expect(fileKind('GGUF/mtp-Qwen3.8-27B-Coder390-EfficientThink-Q8_0.gguf')).toBe('mtp');
+    expect(fileKind('Model-mtp-head-Q8_0.gguf')).toBe('mtp');
+    expect(fileKind('Model.MTP_layers.gguf')).toBe('mtp');
+    // Whole models whose name says they carry MTP layers (the user's real files).
+    expect(fileKind('GGUF/Qwen3.8-27B-Coder390-EfficientThink-Q4LynnStyle-MTP.gguf')).toBe('weights');
+    expect(fileKind('Qwen3.8-27B-MTP_(Q4_K_M).gguf')).toBe('weights');
+    expect(fileKind('Cyber-Tiel-Coder-35B-A3B-MTP-UD-Q4_K_XL.gguf')).toBe('weights');
+    expect(fileKind('Qwen3.8-27B-MTP_mmproj_(F32).gguf')).toBe('mmproj');
+  });
+
+  it('keeps MTP heads and drafts of safetensors repos out of the weights (nerkyor kitchen-sink layout)', () => {
+    expect(fileKind('INT8/W8A16/MTP-BF16/mtp-bf16.safetensors')).toBe('mtp');
+    expect(fileKind('INT4/W4A16/model_mtp.safetensors')).toBe('mtp');
+    expect(fileKind('BF16/DFlash2-FP8/model.safetensors')).toBe('draft');
+    expect(fileKind('eagle3/model.safetensors')).toBe('draft');
+    expect(fileKind('FP8/DFlash2-FP8/config.json')).toBe('config');
+    expect(fileKind('INT4/W4A16/model.safetensors')).toBe('weights');
+    expect(fileKind('INT4/W4A16/model_visual.safetensors')).toBe('weights');
+    expect(fileKind('BF16/model-00001-of-00002.safetensors')).toBe('weights');
+  });
+
+  it('maps formats, precision and other formats of search results', () => {
+    // Mixed repos: both formats, the precision from the hub's dtype counts.
+    expect(toHubModel({ id: 'n/Mixed-27B-GGUF', tags: ['gguf', 'safetensors'], safetensors: { parameters: { F8_E4M3: 26e9, BF16: 1e9 }, total: 27e9 } })).toMatchObject({
+      formats: ['gguf', 'safetensors'],
+      precision: 'FP8',
+      otherFormats: [],
+    });
+    // The name or tags say it first.
+    expect(toHubModel({ id: 'Qwen/Qwen3-8B-AWQ', tags: ['safetensors'], safetensors: { parameters: { I32: 1e9, F16: 1e8 } } }).precision).toBe('AWQ');
+    expect(toHubModel({ id: 'o/Big', safetensors: { parameters: { BF16: 8e9 } } }).precision).toBe('BF16');
+    // A GGUF-only repo has no safetensors precision.
+    expect(toHubModel({ id: 'o/Only-GGUF', tags: ['gguf'] }).precision).toBeUndefined();
+    // MLX repos are tagged safetensors too, but vLLM cannot read them.
+    expect(toHubModel({ id: 'mlx-community/Qwen3-8B-4bit', tags: ['mlx', 'safetensors'] })).toMatchObject({ formats: ['other'], otherFormats: ['MLX'] });
+    // NInfer by name, tag or a .ninfer file; GGUF in a sub-folder by its file too.
+    expect(toHubModel({ id: 'nerkyor/Qwen3.8-27B-Coder-GGUF-NInfer', tags: ['gguf'] })).toMatchObject({ formats: ['gguf', 'ninfer'], otherFormats: [] });
+    expect(toHubModel({ id: 'neroued/Qwen3.8-27B-nvfp4', siblings: [{ rfilename: 'qwen3_8_27b_nvfp4.ninfer' }, { rfilename: 'GGUF/q-Q4_K_M.gguf' }, { nope: 1 }] }).formats).toEqual(['gguf', 'ninfer']);
+    expect(toHubModel({ id: 'o/tagged', tags: ['ninfer'] }).formats).toEqual(['ninfer']);
+    expect(fileKind('qwen3_8_27b_nvfp4.ninfer')).toBe('weights');
+    expect(fileKind('Repo.artifact-manifest.json')).toBe('config');
   });
 });
 
@@ -277,11 +323,36 @@ describe('HubClient against the fake hub', () => {
   });
 
   it('reads safetensors facts from config.json + file list + info', async () => {
-    const { facts, fileBytes } = await client.configFacts('Qwen/Qwen3-0.6B');
+    const { facts, fileBytes, precision } = await client.configFacts('Qwen/Qwen3-0.6B');
     expect(fileBytes).toBe(hub.file('Qwen/Qwen3-0.6B', 'model.safetensors').size);
     expect(facts).toMatchObject({ architecture: 'Qwen3ForCausalLM', blockCount: 28, headCountKv: 8, quant: 'BF16', paramsB: 0.752, name: 'Qwen/Qwen3-0.6B' });
+    expect(precision).toBe('BF16');
     hub.addRepo({ id: 'nobody/no-params', files: [{ path: 'config.json', content: '{"num_hidden_layers": 2}' }] });
     expect((await client.configFacts('nobody/no-params')).facts.paramsB).toBeUndefined();
+  });
+
+  it('reads the facts of a variant folder from its own config.json, counting only its weights', async () => {
+    const config = (q?: object) => JSON.stringify({ architectures: ['Qwen3ForCausalLM'], num_hidden_layers: 4, torch_dtype: 'bfloat16', ...(q ? { quantization_config: q } : {}) });
+    hub.addRepo({
+      id: 'variants/two-quant',
+      tags: ['safetensors'],
+      safetensorsTotal: 9_000_000_000,
+      files: [
+        { path: 'FP8/config.json', content: config({ quant_method: 'fp8' }) },
+        { path: 'FP8/model-00001-of-00002.safetensors', size: 64 * 1024 },
+        { path: 'FP8/model-00002-of-00002.safetensors', size: 32 * 1024 },
+        { path: 'w4a16/config.json', content: config({ quant_method: 'compressed-tensors', config_groups: { g: { weights: { num_bits: 4, type: 'int' } } } }) },
+        { path: 'w4a16/model.safetensors', size: 16 * 1024 },
+      ],
+    });
+    const fp8 = await client.configFacts('variants/two-quant', 'main', 'FP8');
+    expect(fp8.fileBytes).toBe(96 * 1024);
+    expect(fp8.precision).toBe('FP8');
+    // The hub's parameter count covers every variant: not this one's.
+    expect(fp8.facts.paramsB).toBeUndefined();
+    const w4 = await client.configFacts('variants/two-quant', 'main', 'w4a16');
+    expect(w4.fileBytes).toBe(16 * 1024);
+    expect(w4.precision).toBe('INT4');
   });
 
   it('maps rate limits, server errors, bad payloads and network failures', async () => {

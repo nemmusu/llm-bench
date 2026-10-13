@@ -73,6 +73,7 @@ import {
   type TuneTag,
   type Tuning,
 } from '../../contract/results';
+import { availableNowMiB } from '../models/fit';
 import { launchSpilled, SPILL_RATIO } from './spill';
 import { anchorOf, depthGrid, maxDepth, requestMsAt, sweepDepths, type GridStep, type SpeedAnchor } from './sweep';
 import { comparePoints, fastestByDepth, kvPrecisionRank, measuredDepths, pointAt, recommendedCombination, screenBetter } from './tune-rank';
@@ -726,7 +727,8 @@ export class Tuner {
   /** True / false when the estimate says this launch fits (with slack) / does not; undefined = no estimate. */
   protected predictFits(params: LaunchParams): boolean | undefined {
     const est = this.input.predict?.(params);
-    return est === undefined ? undefined : est.needMiB <= est.availableMiB * PREDICT_SLACK;
+    // The search launches now, with whatever else is open: what is free now counts, not the card's total.
+    return est === undefined ? undefined : est.needMiB <= availableNowMiB(est) * PREDICT_SLACK;
   }
 
   /** Largest context the estimate allows for this KV type (with slack): 0 = not even the smallest, undefined = no estimate. */
@@ -1108,7 +1110,7 @@ export class Tuner {
     const before = predict?.(space.params(from.variant, from.ctx));
     const measured = (this.attempts[from.attempt] as TuneAttempt).vramPeakMiB;
     const need = before && measured !== undefined ? measured + est.needMiB - before.needMiB : est.needMiB;
-    return need <= est.availableMiB * PREDICT_SLACK;
+    return need <= availableNowMiB(est) * PREDICT_SLACK;
   }
 
   /** One dimension at a time at the type's largest context; returns the best screened settings. */
