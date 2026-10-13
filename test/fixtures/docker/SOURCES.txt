@@ -7,6 +7,11 @@ REAL
   win-version-daemon-down.stderr.txt    its stderr: "failed to connect to the docker API at npipe:… " (Italian
                                         Windows: the OS part of the message is localized)
   win-desktop-status-stopped.txt        docker desktop status (exit 1) "Could not retrieve status…"
+  desktop-backend-stuck.log             %LOCALAPPDATA%\Docker\log\host\com.docker.backend.exe.log, 2026-10-09 (Docker
+                                        Desktop 4.94.0), trimmed to the engine's lines: Resource Saver stops the VM after
+                                        5 idle minutes, the engine stays "stopping" for good (never "-> stopped"), the
+                                        API cache answers _ping and version, the GUI's POST /engine/restart never ends
+  desktop-backend-resource-saver-ok.log the same log, 2026-10-13: a Resource Saver stop that finished in 0.8 s
   wsl-shim.stdout.txt                   `docker version --format json` inside WSL Ubuntu-24.04 without Docker Desktop
                                         WSL integration: the Windows shim script prints this on STDOUT and exits 0
   context-desktop-linux.meta.json       ~/.docker/contexts/meta/<sha256("desktop-linux")>/meta.json

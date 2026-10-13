@@ -13,7 +13,8 @@ import { h1, scan, skipWelcome } from './bench-helpers';
 import { cardUrl, expectTrayLine, hook, modelsStatus, serverCard } from './server-helpers';
 
 test.describe.configure({ timeout: 240_000 });
-test.skip(process.platform !== 'win32', 'Docker Desktop is started and restarted from LLM Bench on Windows only');
+// Docker Desktop is started and restarted from LLM Bench on Windows only (on Linux it is a system service).
+const windows = process.platform === 'win32';
 
 const FAST = { FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, loadMsCold: 300, prefillTps: 15000, decodeTps: 1500, tokensPerChunk: 4 }) };
 /** A stuck Docker found in about a second instead of minutes; a restart polled quickly. */
@@ -28,7 +29,7 @@ function setDocker(userData: string, mode: Record<string, unknown>): void {
   writeFileSync(path.join(dir, 'mode.json'), JSON.stringify(mode));
 }
 
-test('Docker off: "Avvia Docker" in the start dialog, then the server starts; Docker stuck: told, restarted from the tray, the server back on its port', async () => {
+if (windows) test('Docker off: "Avvia Docker" in the start dialog, then the server starts; Docker stuck: told, restarted from the tray, the server back on its port', async () => {
   const gb = await launchApp({ env: { ...FAST, ...TIMINGS } });
   try {
     const { page, app, userData } = gb;
@@ -87,7 +88,7 @@ test('Docker off: "Avvia Docker" in the start dialog, then the server starts; Do
   }
 });
 
-test('Docker that does not answer at all: the banner with why and how to avoid it, the restart in its dialog', async () => {
+if (windows) test('Docker that does not answer at all: the banner with why and how to avoid it, the restart in its dialog', async () => {
   const gb = await launchApp({ env: { ...TIMINGS, GPUBENCH_DOCKER_TIMINGS: JSON.stringify({ versionTimeoutMs: 1500, idleEveryMs: 500, startPollMs: 200, restartWaitMs: 30_000 }) } });
   try {
     const { page, app, userData } = gb;
