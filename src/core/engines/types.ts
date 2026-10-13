@@ -120,6 +120,11 @@ export interface LaunchPlan {
   marker: string;
   /** Preview only: parts of argv that are placeholders until an install/download (see PlanOptions.preview). */
   pending?: PendingPart[];
+  /**
+   * The API key the engine was started with (a server shared on the local network, servers/lan.ts):
+   * readiness probes send it. A secret: never stored, displayed or logged (commands are redacted).
+   */
+  apiKey?: string;
 }
 
 export interface EngineInstance {

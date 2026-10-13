@@ -9,6 +9,8 @@ import { spilledRun, type Scenario, type TuneBudget } from '../../contract/resul
 import type { Clock } from '../deps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { serverApiName } from '../engines/types';
+import { API_KEY_PLACEHOLDER } from '../engines/command-display';
+import { exposeOnLan } from '../servers/lan';
 import { newRunId } from '../store/runs-id';
 import { engineBuildOf, engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
@@ -73,6 +75,8 @@ export interface BenchServiceDeps {
   blockedBy?: () => AppError | undefined;
   /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
   calibration?: TuneSetupDeps['calibration'];
+  /** The API key of servers shared on the local network (servers/api-key.ts), made the first time it is asked for. */
+  serverApiKey?: () => string;
 }
 
 export type { ActiveRun };
@@ -176,9 +180,9 @@ export class BenchService {
     model: ModelTarget,
     adapter: EngineAdapter,
     params: LaunchParams,
-    o: { preview: boolean; marker: () => string; apiName?: string },
+    o: { preview: boolean; marker: () => string; apiName?: string; port?: number | undefined },
   ): Promise<Pick<Launched, 'engine' | 'port' | 'marker' | 'launch'>> {
-    const port = await this.deps.pickPort();
+    const port = o.port ?? (await this.deps.pickPort());
     const marker = o.marker();
     const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
     const launch = await adapter.plan(engine, model, params, { port, marker, preview: o.preview, ...(o.apiName !== undefined ? { apiName: o.apiName } : {}) });
@@ -220,7 +224,9 @@ export class BenchService {
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const contextSize = await this.fillServerContext(req, model, params);
     const apiName = serverApiName(req.engine.kind, model);
-    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
+    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName, port: req.port });
+    // "Rendi raggiungibile dalla rete locale": every card, GPU Bench's API key (the preview shows it redacted).
+    if (req.network === 'lan') c.launch = exposeOnLan(c.launch, opts.preview ? API_KEY_PLACEHOLDER : this.serverApiKey());
     const past = opts.preview ? undefined : (await this.expectedLoad(model, req.engine.kind)).expectedLoadMs;
     const expectedLoadMs = past?.warm ?? past?.cold;
     return {
@@ -234,6 +240,13 @@ export class BenchService {
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
     };
+  }
+
+  /** The API key of network servers (made the first time it is needed). */
+  private serverApiKey(): string {
+    const key = this.deps.serverApiKey?.();
+    if (!key) throw new AppError('VALIDATION', 'No API key for a network server', { params: { reason: 'api_key_missing' } });
+    return key;
   }
 
   private async tunedServer(req: StartServerRequest, model: ModelTarget, adapter: EngineAdapter): ReturnType<typeof tunedServerParams> {
@@ -428,7 +441,14 @@ export class BenchService {
   async planServer(req: StartServerRequest): Promise<ServerPlan> {
     const p = await this.prepareServer(req, { preview: true, marker: `gpubench-${randomUUID()}` });
     const preview = await this.preview(req, p);
-    return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}) };
+    return {
+      ...preview,
+      params: p.launch.params,
+      contextSize: p.contextSize,
+      port: p.port,
+      network: req.network ?? 'local',
+      ...(p.tuned ? { tuned: p.tuned } : {}),
+    };
   }
 
   /**

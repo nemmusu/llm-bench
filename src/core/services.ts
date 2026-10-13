@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import type { RunPlan, StartServerRequest } from '../contract/api';
 import { AppError } from '../contract/errors';
@@ -43,6 +44,11 @@ import { pickFreePort } from './process/ports';
 import type { RouteModule } from './server/app';
 import { ConfigsIndex } from './store/configs-index';
 import { RunsRepo } from './store/runs-repo';
+import { ServerKeys } from './servers/api-key';
+import { lanAddresses, lanUrls } from './servers/lan';
+import { ServerNotices } from './servers/notices';
+import { systemPorts, type ServerPorts } from './servers/ports';
+import { ServerPresets } from './servers/presets';
 import { createServerRoutes } from './servers/routes';
 import { ServeService } from './servers/service';
 import { createSystemRoutes } from './system/routes';
@@ -72,8 +78,14 @@ export interface CoreServices {
   models?: ModelsLookup;
   runs: RunsRepo;
   bench: BenchService;
-  /** Engines started with "Avvia solo il server così". */
+  /** Servers for other programs (the Server page, presets, the tray). */
   serve: ServeService;
+  /** "I tuoi preset" (settings.serverPresets). */
+  presets: ServerPresets;
+  /** The API key of servers shared on the local network. */
+  keys: ServerKeys;
+  /** Unattended starts that failed (start-up, tray). */
+  notices: ServerNotices;
   /** "Controllo sistema" checklist and guided installs (Docker, uv). */
   setup: SetupService;
   systemCheck: SystemCheck;
@@ -102,6 +114,10 @@ export interface ServicesOptions {
   llamaLauncherPrefix?: string[];
   /** Injected in tests; defaults to dataDir/processes.json. */
   ownership?: OwnershipRegistry;
+  /** Server ports (tests); defaults to the real ones from 8080. */
+  serverPorts?: ServerPorts;
+  /** This PC's network cards (tests); defaults to os.networkInterfaces(). */
+  networkInterfaces?: () => ReturnType<typeof os.networkInterfaces>;
 }
 
 export function parseArgvEnv(value: string | undefined): string[] | undefined {
@@ -378,6 +394,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   // Servers are planned like runs (same model resolution, engine tweaks, fit), with their own settings.
+  const serversChanged = () => ctx.hub.publish({ type: 'servers.changed' });
+  const keys = new ServerKeys();
+  const notices = new ServerNotices({ now: () => deps.clock.wall(), onChange: serversChanged });
+  const presets = new ServerPresets({ store: ctx.settings, now: () => deps.clock.wall() });
+  const interfaces = opts.networkInterfaces ?? (() => os.networkInterfaces());
   const serve: ServeService = new ServeService({
     clock: deps.clock,
     prepare: (req, marker) => bench.prepareServer(req, { preview: false, marker }),
@@ -389,7 +410,16 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     displayCommand,
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
     // A native server is one of our engine processes: never reported as "another program on the GPU".
-    onChange: () => void refreshPids(),
+    onChange: () => {
+      void refreshPids();
+      serversChanged();
+    },
+    ports: opts.serverPorts ?? systemPorts(),
+    lanUrls: (port) => lanUrls(lanAddresses(interfaces()), port),
+    secrets: () => keys.secrets(),
+    vramUsedMiB: async () => (await ctx.telemetry.snapshot())[0]?.memUsedMiB ?? undefined,
+    presets,
+    notices,
   });
 
   let lastMarker: string | undefined;
@@ -436,9 +466,13 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const id = model.identity;
       return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);
     },
+    serverApiKey: () => keys.current().key,
   });
 
   return {
+    keys,
+    presets,
+    notices,
     ownership,
     registry,
     llama,
@@ -507,7 +541,8 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         publish: (e) => ctx.hub.publish(e),
         shutdown: ctx.shutdown,
       })(app, ctx),
-    createServerRoutes(s.serve),
+    (app, ctx) =>
+      createServerRoutes({ serve: s.serve, presets: s.presets, keys: s.keys, notices: s.notices, changed: () => ctx.hub.publish({ type: 'servers.changed' }) })(app, ctx),
     createSetupRoutes(s.setup),
     createCacheRoutes(s),
     ...(s.modelServices?.routes ?? []),

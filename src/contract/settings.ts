@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { customEnginesSettingSchema } from './custom-engines';
 import { engineConfigSchema, launchParamsSchema } from './engines';
+import { closeBehaviorSchema, serverPresetsSettingSchema } from './servers';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -31,6 +32,13 @@ export const settingsSchema = z.object({
   // ---- engines: custom engines and forks (contract/custom-engines.ts) ----
   /** "Motori personalizzati": forks and other OpenAI servers; invalid entries are dropped on read, never the whole file. */
   customEngines: customEnginesSettingSchema,
+  // ---- servers and tray (contract/servers.ts) ----
+  /** "I tuoi preset" of the Server page; invalid entries are dropped on read, never the whole file. */
+  serverPresets: serverPresetsSettingSchema,
+  /** Closing the window: hide to the tray while a server runs (default), always hide, or quit. */
+  closeBehavior: closeBehaviorSchema.default('tray-if-servers'),
+  /** "Avvia GPU Bench all'accesso": opt-in (Windows login item, Linux autostart entry). */
+  launchAtLogin: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

@@ -180,7 +180,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
       plan,
       secretEnv,
       client: this.o.createClient('vllm', baseUrl, { model: plan.marker }),
-      probe: modelReadyProbe(deps.fetch, baseUrl, plan.marker),
+      probe: modelReadyProbe(deps.fetch, baseUrl, plan.marker, plan.apiKey),
       phaseOf: vllmPhaseOf,
       diagnose: (lines, exit) => diagnoseVllm(lines, exit, { docker: true, suggestTag, ...(repo !== undefined ? { repo } : {}) }),
       signal,

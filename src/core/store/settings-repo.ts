@@ -6,10 +6,17 @@ import { readJsonFile, writeFileAtomic } from './atomic';
 export class SettingsRepo {
   private cache: Settings | undefined;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly listeners = new Set<(s: Settings) => void>();
   readonly file: string;
 
   constructor(dataDir: string) {
     this.file = path.join(dataDir, 'settings.json');
+  }
+
+  /** Called after every saved update (the tray follows the close behaviour, the language, the presets). */
+  subscribe(fn: (s: Settings) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
   }
 
   async get(): Promise<Settings> {
@@ -32,6 +39,7 @@ export class SettingsRepo {
       const next = settingsSchema.parse({ ...current, ...patch });
       await writeFileAtomic(this.file, JSON.stringify(next, null, 2));
       this.cache = next;
+      for (const fn of this.listeners) fn(next);
       return next;
     });
     this.queue = run.catch(() => undefined);

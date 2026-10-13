@@ -107,6 +107,8 @@ async function main() {
     if (layout !== undefined) o.kvUnified = layout === '--kv-unified' || layout === '-kvu';
     const reuse = get('--cache-reuse');
     if (reuse !== undefined) o.cacheReuse = Number(reuse);
+    const key = get('--api-key');
+    if (key !== undefined) o.apiKey = key;
     o.requireModelFile = env.FAKE_ENGINE_ALLOW_MISSING_MODEL !== '1';
   } else {
     const rest = argv[0] === 'serve' ? argv.slice(1) : argv;
@@ -168,6 +170,11 @@ async function main() {
     // Prefix caching is on by default in vLLM V1; cached tokens are reported only when asked.
     if (val['--no-enable-prefix-caching']) o.prefixCaching = false;
     if (val['--enable-prompt-tokens-details']) o.promptTokensDetails = true;
+    if (val['--api-key'] !== undefined) {
+      o.apiKey = val['--api-key'];
+      // Like vLLM, which prints its non-default arguments (the key included) at start-up.
+      o.log(`(APIServer pid=1) INFO 10-13 12:00:00 [utils.py:233] non-default args: {'model': '${model}', 'api_key': ['${o.apiKey}']}`);
+    }
   }
   if (env.FAKE_NVIDIA_SMI_STATE) o.stateFile = env.FAKE_NVIDIA_SMI_STATE;
   if (env.FAKE_ENGINE_COLD_MARKER) o.coldMarker = env.FAKE_ENGINE_COLD_MARKER;

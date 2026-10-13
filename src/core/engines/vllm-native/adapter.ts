@@ -198,7 +198,7 @@ export class VllmNativeAdapter implements EngineAdapter {
       baseUrl,
       client: this.o.createClient('vllm', baseUrl, { model: plan.marker }),
       clock,
-      probe: modelReadyProbe(fetch, baseUrl, plan.marker),
+      probe: modelReadyProbe(fetch, baseUrl, plan.marker, plan.apiKey),
       phaseOf: vllmPhaseOf,
       diagnose: (lines, exit) => diagnoseVllm(lines, exit, repo !== undefined ? { repo } : {}),
       startSignal: signal,

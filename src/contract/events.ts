@@ -209,5 +209,7 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     result: z.record(z.string(), z.unknown()).optional(),
   }),
   z.object({ type: z.literal('runs.changed') }),
+  /** A server started, became ready, stopped or exited, or a server preset changed: GET /api/servers (and /presets) again. */
+  z.object({ type: z.literal('servers.changed') }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;

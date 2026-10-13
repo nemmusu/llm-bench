@@ -101,21 +101,31 @@ export function serverPlanFor(over: Partial<ServerPlan> = {}): ServerPlan {
     contextSize: 32768,
     fit: FIT,
     warnings: [],
+    port: 8080,
+    network: 'local',
     ...over,
   };
 }
 
 /** A server GPU Bench started (GET/POST /api/servers). */
 export function serverInfo(id: string, over: Partial<ServerInfo> = {}): ServerInfo {
+  const port = over.port ?? 5123;
   return {
     id,
-    baseUrl: 'http://127.0.0.1:5123',
-    openaiUrl: 'http://127.0.0.1:5123/v1',
+    baseUrl: `http://127.0.0.1:${port}`,
+    openaiUrl: `http://127.0.0.1:${port}/v1`,
     modelName: 'Qwen3 8B',
+    modelLabel: 'Qwen3 8B',
     engineLabel: 'llama.cpp b11438',
+    engineKind: 'llamacpp-native',
     startedAt: new Date().toISOString(),
     command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' },
     contextSize: 32768,
+    params: { contextSize: 32768, extraArgs: [], env: {} },
+    port,
+    network: 'local',
+    lanUrls: [],
+    request: { engine: { kind: 'llamacpp-native' }, model: { localId: 'm1' }, port },
     ...over,
   };
 }

@@ -133,19 +133,27 @@ describe('boot', () => {
 
   it('inside Electron: says ready on the parent port, takes the HF token and shuts down on request', async () => {
     const posted: unknown[] = [];
-    let onMessage: ((e: { data: unknown }) => void) | undefined;
-    const parentPort: ParentPort = { postMessage: (m) => posted.push(m), on: (_ev, cb) => (onMessage = cb) };
+    const listeners: ((e: { data: unknown }) => void)[] = [];
+    const onMessage = (e: { data: unknown }) => listeners.forEach((l) => l(e));
+    const parentPort: ParentPort = { postMessage: (m) => posted.push(m), on: (_ev, cb) => void listeners.push(cb) };
     const f = fakeHost(t.dir, { parentPort, env: { GPUBENCH_DATA_DIR: t.dir, GPUBENCH_TOKEN: 'x', GPUBENCH_PORT: '0', NODE_V8_COVERAGE: '/cov' } });
     const core = await boot(f.host);
-    expect(posted).toEqual([{ type: 'ready', port: core.port }]);
+    expect(posted[0]).toEqual({ type: 'ready', port: core.port });
+    // Then the tray's state: no servers, no presets, the default close behaviour.
+    await vi.waitFor(() => expect(posted[1]).toMatchObject({ type: 'shell-state', state: { servers: [], presets: [], closeBehavior: 'tray-if-servers' } }));
     expect(f.out).toEqual([]);
-    onMessage!({ data: { type: 'hf-token', token: 'hf_secret' } });
+    // A new API key goes to the main process to be saved encrypted; its answer is kept.
+    const key = core.services.keys.current().key;
+    expect(posted).toContainEqual({ type: 'server-api-key-save', key });
+    onMessage({ data: { type: 'server-api-key', key, storage: 'encrypted' } });
+    expect(core.services.keys.current().storage).toBe('encrypted');
+    onMessage({ data: { type: 'hf-token', token: 'hf_secret' } });
     expect(core.ctx.secrets.hfToken).toBe('hf_secret');
-    onMessage!({ data: { type: 'hf-token', token: null } });
+    onMessage({ data: { type: 'hf-token', token: null } });
     expect(core.ctx.secrets.hfToken).toBeUndefined();
-    onMessage!({ data: null });
-    onMessage!({ data: { type: 'something-else' } });
-    onMessage!({ data: { type: 'shutdown' } });
+    onMessage({ data: null });
+    onMessage({ data: { type: 'something-else' } });
+    onMessage({ data: { type: 'shutdown' } });
     await vi.waitFor(() => expect(f.exits).toEqual([0]));
     expect(f.coverage()).toBe(1);
   });

@@ -20,13 +20,14 @@ export function listsModel(body: string, name: string): boolean {
  * loaded but must also list the model. The name check makes sure a 200 from somebody else's
  * server that grabbed the port never counts as ours.
  */
-export function modelReadyProbe(fetchFn: typeof globalThis.fetch, baseUrl: string, name: string): ReadyProbe {
+export function modelReadyProbe(fetchFn: typeof globalThis.fetch, baseUrl: string, name: string, apiKey?: string): ReadyProbe {
   return async (signal) => {
     const s = AbortSignal.any([signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]);
     const health = await fetchFn(`${baseUrl}/health`, { signal: s });
     await health.text();
     if (health.status !== 200) return false;
-    const models = await fetchFn(`${baseUrl}/v1/models`, { signal: s });
+    // A server shared on the network answers /v1/models only with its key.
+    const models = await fetchFn(`${baseUrl}/v1/models`, { signal: s, ...(apiKey ? { headers: { authorization: `Bearer ${apiKey}` } } : {}) });
     const body = await models.text();
     return models.ok && listsModel(body, name);
   };

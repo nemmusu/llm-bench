@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { StartRunRequest } from '../../../../src/contract/api';
 import type { DownloadJob } from '../../../../src/contract/models';
 import { renderApp } from '../helpers';
-import { apiError, benchApi, curatedModel, deferred, localModel, planFor, activeRun } from './world';
+import { apiError, benchApi, curatedModel, deferred, localModel, planFor, activeRun, serverInfo } from './world';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -258,7 +258,7 @@ describe('benchmark home', () => {
       api.world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: '01M48PNN41KKD0ABVXTGK97Y6P' };
     };
-    api.world.servers = [{ id: 's1', baseUrl: 'http://127.0.0.1:5000', openaiUrl: 'http://127.0.0.1:5000/v1', modelName: 'Qwen', engineLabel: 'llama.cpp', startedAt: '2026-10-06T10:00:00.000Z', command: { argv: [], powershell: '', bash: '' } }];
+    api.world.servers = [serverInfo('s1', { port: 5000, modelName: 'Qwen', modelLabel: 'Qwen', engineLabel: 'llama.cpp', startedAt: '2026-10-06T10:00:00.000Z' })];
     api.world.routes['DELETE /api/servers/s1'] = () => ({ ok: true });
     renderApp('/', api);
     await screen.findAllByText('≈ 1 min 35 s');

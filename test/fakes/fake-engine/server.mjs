@@ -234,6 +234,8 @@ function sendJson(res, status, body) {
  * @property {number} [cacheReuse] llama.cpp --cache-reuse N (accepted; a plain prefix is reused anyway).
  * @property {string} [kvFormat]   vLLM fp8_e4m3 / fp8_e5m2 (kvType is then 'fp8').
  * @property {number} [blockSize]  vLLM --block-size.
+ * @property {string} [apiKey]     --api-key: requests need `Authorization: Bearer <key>` (llama.cpp keeps /health and the
+ *                                 model list public, vLLM protects everything under /v1), else 401.
  * @property {number[]} [graphSizes] vLLM CUDA graph capture sizes.
  */
 
@@ -687,8 +689,19 @@ export async function startFakeEngine(o = {}) {
     return sendJson(res, 404, { detail: 'Not Found' });
   }
 
+  /** --api-key: what each engine leaves public, and its 401. */
+  const LLAMA_PUBLIC = new Set(['/health', '/v1/health', '/models', '/v1/models', '/api/tags']);
+  const unauthorized = (req, url) => {
+    if (o.apiKey === undefined || req.headers.authorization === `Bearer ${o.apiKey}`) return false;
+    return flavor === 'vllm' ? url.pathname.startsWith('/v1') : !LLAMA_PUBLIC.has(url.pathname);
+  };
+
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://fake');
+    if (unauthorized(req, url)) {
+      sendJson(res, 401, flavor === 'vllm' ? { error: 'Unauthorized' } : errorJson(401, 'Invalid API Key', 'authentication_error'));
+      return;
+    }
     const handler = flavor === 'vllm' ? handleVllm : handleLlama;
     handler(req, res, url).catch((e) => {
       if (!res.headersSent) sendJson(res, 500, errorJson(500, String(e), 'server_error'));

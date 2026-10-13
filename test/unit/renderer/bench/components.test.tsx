@@ -12,7 +12,7 @@ import { ServersPanel } from '../../../../src/renderer/components/bench/servers'
 import { ApiProvider } from '../../../../src/renderer/lib/api-context';
 import { newQueryClient, renderUi } from '../helpers';
 import { IDS, seeded, seededRuns } from './fixtures';
-import { apiError, benchApi, deferred } from './world';
+import { apiError, benchApi, deferred, serverInfo } from './world';
 
 const clipboard = { writeText: vi.fn(async (_t: string) => undefined) };
 beforeEach(() => {
@@ -89,15 +89,7 @@ describe('ErrorCard', () => {
 });
 
 describe('ServersPanel', () => {
-  const server = {
-    id: 's1',
-    baseUrl: 'http://127.0.0.1:5000',
-    openaiUrl: 'http://127.0.0.1:5000/v1',
-    modelName: 'Qwen3 8B',
-    engineLabel: 'llama.cpp b11438',
-    startedAt: new Date(Date.now() - 120_000).toISOString(),
-    command: { argv: [], powershell: '', bash: '' },
-  };
+  const server = serverInfo('s1', { port: 5000, contextSize: undefined, startedAt: new Date(Date.now() - 120_000).toISOString() });
 
   it('lists running servers, copies the address, stops them', async () => {
     const api = benchApi({ servers: [server] });
