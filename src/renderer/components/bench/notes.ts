@@ -24,6 +24,7 @@ export const NOTE_CODES = [
   'sessions_depth_reduced',
   'sessions_depth_unknown',
   'sessions_budget',
+  'text_prompts_calibrated',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -46,6 +47,7 @@ const TONES: Record<NoteCode, NoteTone> = {
   sessions_depth_reduced: 'info',
   sessions_depth_unknown: 'info',
   sessions_budget: 'info',
+  text_prompts_calibrated: 'info',
 };
 
 export interface NoteText {

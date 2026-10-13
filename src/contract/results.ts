@@ -446,8 +446,8 @@ export const tuneDimValueSchema = z.union([z.string(), z.number(), z.boolean()])
 export const tuneVariantSchema = z.record(z.string(), tuneDimValueSchema);
 export type TuneVariant = z.infer<typeof tuneVariantSchema>;
 
-/** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8. */
-export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8'] as const;
+/** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8, NInfer bf16 / int8 / fp8 / k8v4 / nvfp4. */
+export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8', 'bf16', 'int8', 'k8v4', 'nvfp4'] as const;
 export const tuneKvTypeSchema = z.enum(TUNE_KV_TYPES);
 export type TuneKvType = z.infer<typeof tuneKvTypeSchema>;
 

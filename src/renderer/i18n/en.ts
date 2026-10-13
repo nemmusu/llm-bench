@@ -505,6 +505,10 @@ export const en: Messages = {
       title: 'Long conversations stopped early',
       body: 'The time set for this measurement ({seconds} s) ran out: the runs with {sessions} or more sessions at once were skipped.',
     },
+    text_prompts_calibrated: {
+      title: 'Test texts sized for this server',
+      body: 'The engine cannot say how many tokens a text makes: GPU Bench sends it text and sizes it with the tokens the engine really counts.',
+    },
     unknown: {
       title: 'Note about the test',
       body: 'The engine reported: {code}.',

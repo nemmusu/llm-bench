@@ -31,6 +31,8 @@ export interface SessionsDeps {
   bos?: number;
   /** …or, for endpoints that cannot tokenize, its text. */
   corpus: string;
+  /** Text prompts: this server's characters per token and added tokens (bench/text-scale.ts), once calibrated. */
+  textScale?: { charsPerToken: number; overhead: number };
   /** Model name for OpenAI-style APIs. */
   model?: string;
   /** A new request number: every prompt starts at its own corpus offset, so conversations never share a prefix. */
@@ -253,7 +255,7 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
 function firstPrompt(depth: number, d: SessionsDeps): Prompt {
   const rep = d.nextRep();
   if (d.tokens) return { ids: buildPrompt(d.tokens, depth, rep, { seed: d.seed, salt: 'sessions', ...(d.bos !== undefined ? { bos: d.bos } : {}) }) };
-  return { text: buildTextPrompt(d.corpus, depth, rep, { seed: d.seed, salt: 'sessions' }) };
+  return { text: buildTextPrompt(d.corpus, depth, rep, { seed: d.seed, salt: 'sessions', scale: d.textScale }) };
 }
 
 /** The conversation so far (prompt + answer) and `followup` tokens of new text. */
@@ -261,7 +263,7 @@ async function nextPrompt(prev: Prompt, events: readonly StreamEvent[], followup
   const chunks = events.filter((e): e is Chunk => e.kind === 'chunk');
   const text = chunks.map((c) => c.text ?? '').join('');
   const rep = d.nextRep();
-  if ('text' in prev) return { text: prev.text + text + buildTextPrompt(d.corpus, followup, rep, { seed: d.seed, salt: 'sessions-followup' }) };
+  if ('text' in prev) return { text: prev.text + text + buildTextPrompt(d.corpus, followup, rep, { seed: d.seed, salt: 'sessions-followup', ...(d.textScale ? { scale: { charsPerToken: d.textScale.charsPerToken, overhead: 0 } } : {}) }) };
   // llama.cpp returns the answer's token ids; otherwise the answer is tokenized, as a chat client sends it back as text.
   const answer = chunks.every((c) => c.ids !== undefined) ? chunks.flatMap((c) => c.ids as number[]) : await d.client.tokenize(text, { addSpecial: false, signal: d.signal });
   const more = buildPrompt(d.tokens as readonly number[], followup, rep, { seed: d.seed, salt: 'sessions-followup' });

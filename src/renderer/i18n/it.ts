@@ -506,6 +506,10 @@ export const it = {
       title: 'Conversazioni lunghe interrotte prima della fine',
       body: 'Il tempo previsto per questa misura ({seconds} s) è finito: le prove con {sessions} o più sessioni insieme sono state saltate.',
     },
+    text_prompts_calibrated: {
+      title: 'Testi di prova tarati su questo server',
+      body: 'Il motore non sa dire in quanti token si divide un testo: GPU Bench gli manda testo e ne regola la lunghezza con i token che il motore conta davvero.',
+    },
     unknown: {
       title: 'Nota sul test',
       body: 'Il motore ha segnalato: {code}.',

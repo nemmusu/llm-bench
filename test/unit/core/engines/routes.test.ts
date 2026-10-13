@@ -43,16 +43,11 @@ describe('EngineRegistry', () => {
     expect(reg.require('external')).toBe(ext);
     expect(() => reg.require('vllm-native')).toThrow(AppError);
     const all = await reg.detectAll({ 'llamacpp-native': { kind: 'llamacpp-native', executable: 'C:\\x.exe' } });
-    expect(all.map((s) => [s.kind, s.supported, s.problems])).toEqual([
-      ['llamacpp-native', true, []],
-      ['llamacpp-docker', false, []],
-      ['vllm-docker', false, []],
-      ['vllm-native', false, []],
-      ['sglang-docker', false, []],
-      ['sglang-native', false, []],
-      ['external', true, ['ENDPOINT_UNREACHABLE']],
-      ['command', false, []],
-    ]);
+    // Every kind in ENGINE_KINDS order: the two with an adapter answer, the others are unsupported.
+    const expected = ENGINE_KINDS.map((kind) =>
+      kind === 'llamacpp-native' ? [kind, true, []] : kind === 'external' ? [kind, true, ['ENDPOINT_UNREACHABLE']] : [kind, false, []],
+    );
+    expect(all.map((s) => [s.kind, s.supported, s.problems])).toEqual(expected);
     expect(all[0]?.location).toBe('C:\\x.exe');
     expect((await new EngineRegistry().detectAll()).every((s) => !s.supported)).toBe(true);
   });
