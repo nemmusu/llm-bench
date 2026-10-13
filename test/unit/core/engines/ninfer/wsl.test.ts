@@ -120,6 +120,11 @@ describe('our processes in WSL', () => {
       ['-TERM', '77'],
       ['-KILL', '77'],
     ]);
+    // Gone right after the grace: no KILL.
+    const late = distro({ dieOnTerm: true });
+    const ps4 = new WslProcesses({ proc: late.proc, wsl: ['wsl.exe'], file: path.join(tmp(), 'w.json'), sleep: noSleep });
+    expect(await ps4.stop(REC, new Promise(() => undefined))).toBe(true);
+    expect(late.kills).toEqual([['-TERM', '77']]);
   });
 
   it('records processes, and stops the leftovers of a crashed session at start-up', async () => {
@@ -151,5 +156,12 @@ describe('our processes in WSL', () => {
     expect(await ps.list()).toEqual([]);
     writeFileSync(file, 'not json');
     expect(await ps.list()).toEqual([]);
+    // A record whose check fails is only dropped; a write that fails is reported, and the next call works.
+    const failing = new WslProcesses({ proc: scriptedProc(() => Promise.reject(new Error('wsl.exe is gone'))), wsl: ['wsl.exe'], file, sleep: noSleep });
+    writeFileSync(file, JSON.stringify({ schema: 1, records: [{ ...REC, startedAtWall: 1 }] }));
+    expect(await failing.cleanupOrphans()).toEqual([]);
+    const blocked = new WslProcesses({ proc, wsl: ['wsl.exe'], file: dir, sleep: noSleep });
+    await expect(blocked.add({ ...REC, startedAtWall: 1 })).rejects.toThrow();
+    expect(await blocked.list()).toEqual([]);
   });
 });

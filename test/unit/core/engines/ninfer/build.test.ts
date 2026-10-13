@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import path from 'node:path';
 import type { AppError } from '../../../../../src/contract/errors';
-import { buildProgress, buildSteps, NinferBuilder, parsePrereqs, versionAtLeast } from '../../../../../src/core/engines/ninfer/build';
+import { buildProgress, buildSteps, NinferBuilder, parsePrereqs, shellLine, versionAtLeast } from '../../../../../src/core/engines/ninfer/build';
 import { WslProcesses } from '../../../../../src/core/engines/ninfer/wsl';
 import { systemClock } from '../../../../../src/core/node-deps';
 import { fail, manualProcess, ok, scriptedProc, tempDir } from '../../docker/helpers';
@@ -60,6 +60,10 @@ describe('prerequisites and commands', () => {
     ]);
     expect(buildSteps('/n', { existing: true, nvcc: '/usr/bin/nvcc' }).map((s) => s.stage)).toEqual(['configure', 'build']);
     expect(buildSteps('/n', { existing: true }).find((s) => s.stage === 'configure')?.argv).not.toContain('-DCMAKE_CUDA_COMPILER=undefined');
+  });
+
+  it('quotes words for a shell only when needed', () => {
+    expect(shellLine(['cd', '/home/u/my models', "it's", 'a=b,c'])).toBe(String.raw`cd '/home/u/my models' 'it'\''s' a=b,c`);
   });
 
   it('reads progress from ninja and git', () => {
@@ -141,6 +145,26 @@ describe('the guided build in a WSL distro', () => {
   }, 60_000);
 });
 
+describe('a cancelled build in WSL whose process check fails', () => {
+  it('still stops the relay', async () => {
+    const mp = manualProcess();
+    const proc = scriptedProc(
+      () => ok(PREREQS),
+      () => {
+        setTimeout(() => mp.push('gpubench-pid 55'), 5);
+        return mp;
+      },
+    );
+    const processes = { stop: () => Promise.reject(new Error('wsl.exe is gone')) } as unknown as WslProcesses;
+    const b = new NinferBuilder({ kind: 'ninfer-wsl', proc, wsl: { argv: ['wsl.exe'], processes }, newMarker: () => 'gpubench-c-1' });
+    const ac = new AbortController();
+    const run = b.build({ kind: 'ninfer-wsl', distro: 'Ubuntu' }, () => undefined, ac.signal);
+    setTimeout(() => ac.abort(), 30);
+    await expect(run).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(mp.stopped()).toBe(1);
+  });
+});
+
 describe('the guided build on Linux', () => {
   it('runs the steps directly, and says when a program cannot start', async () => {
     const spawned: string[] = [];
@@ -152,6 +176,8 @@ describe('the guided build on Linux', () => {
         const mp = manualProcess();
         setTimeout(() => {
           mp.push('[1/2] Building CUDA object a.cu.o');
+          // A chatty configure: only the last lines are kept for the error.
+          if (spec.args[0] === '-S') for (let i = 0; i < 70; i++) mp.push(`-- line ${i}`);
           mp.exit({ code: 0, signal: null });
         }, 5);
         return mp;
@@ -178,6 +204,20 @@ describe('the guided build on Linux', () => {
     const run = b.build({ kind: 'ninfer-native' }, () => undefined, ac.signal);
     setTimeout(() => ac.abort(), 20);
     await expect(run).rejects.toMatchObject({ code: 'CANCELLED' });
+    // Killed by a signal: the signal is the code.
+    const killed = new NinferBuilder({
+      kind: 'ninfer-native',
+      proc: scriptedProc(
+        () => ok(PREREQS),
+        () => {
+          const mp = manualProcess();
+          setTimeout(() => mp.exit({ code: null, signal: 'SIGKILL' }), 5);
+          return mp;
+        },
+      ),
+      newMarker: () => 'gpubench-native-3',
+    });
+    await expect(killed.build({ kind: 'ninfer-native' }, () => undefined, new AbortController().signal)).rejects.toMatchObject({ params: { stage: 'configure', code: 'SIGKILL' } });
     const failing = new NinferBuilder({ kind: 'ninfer-native', proc: scriptedProc(() => fail(127, 'sh: not found')), newMarker: () => 'x' });
     await expect(failing.plan({ kind: 'ninfer-native' })).rejects.toMatchObject({ params: { reason: 'ninfer_prereqs' } });
   });

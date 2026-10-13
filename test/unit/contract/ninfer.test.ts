@@ -180,6 +180,7 @@ describe('NInfer built-in settings and flags', () => {
     // Without prefix reuse the cache slots are left out (NInfer refuses them together).
     expect(ninferFlags({ spec: 'dflash2', lmHeadDraft: true, prefixReuse: false, deviceStateSlots: 2 })).toEqual(['--spec', 'dflash2', '--draft-tokens', '7', '--lm-head-draft', '--no-prefix-reuse']);
     expect(ninferFlags({ spec: 'off', draftTokens: 4, lmHeadDraft: true })).toEqual([]);
+    expect(ninferFlags({ vision: true })).toEqual(['--vision']);
     expect(ninferParamsText({ kvDtype: 'fp8', spec: 'dflash', draftTokens: 9 })).toBe('--kv-dtype fp8 --spec dflash --draft-tokens 9');
     expect(ninferParamsText(undefined)).toBe('');
   });

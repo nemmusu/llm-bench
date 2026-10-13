@@ -79,9 +79,9 @@ export function parseUpdate(stdout: string): UpdateReport {
     else if (key === 'latest' && SHA.test(value)) report.latest = value;
     else if (key === 'counts') {
       // "ahead<TAB>behind"; nothing when there is no upstream.
-      const [ahead, behind] = value.split(/\s+/).map((n) => Number(n) || 0);
-      report.ahead = ahead ?? 0;
-      report.behind = behind ?? 0;
+      const counts = value.split(/\s+/).map((n) => Number(n) || 0);
+      report.ahead = counts[0] as number;
+      report.behind = counts[1] ?? 0;
     } else if (key === 'commit') {
       const c = /^([0-9a-f]{7,40}) ?(.*)$/.exec(value);
       if (c) report.commits.push({ sha: c[1] as string, title: c[2] as string });

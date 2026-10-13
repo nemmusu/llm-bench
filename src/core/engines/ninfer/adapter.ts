@@ -228,8 +228,9 @@ export class NinferAdapter implements EngineAdapter {
       supported: true,
     };
     if (!probe.ok) {
-      const e = (probe.error as AppError).toJSON();
-      return { ...status, problems: [e.code], ...(e.params ? { problemParams: e.params } : {}) };
+      // A failed probe always says why (notInstalled: a reason and its details).
+      const e = probe.error as AppError;
+      return { ...status, problems: [e.code], problemParams: e.params as Record<string, string | number | boolean> };
     }
     return gpuProblem ? { ...status, ...gpuProblem } : status;
   }
@@ -277,7 +278,8 @@ export class NinferAdapter implements EngineAdapter {
       slow = mapped.slow;
     }
     const args = ninferServeArgs(params, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker });
-    const probe = where ? await this.probe(where).catch(() => undefined) : undefined;
+    // probe() never rejects: a build that does not answer is a probe that says so.
+    const probe = where ? await this.probe(where) : undefined;
     const commit = probe?.commit?.slice(0, 12);
     const engine: EngineIdentity = { kind: this.kind, name: 'NInfer', executable: serve, ...(commit ? { version: commit, build: commit } : {}), ...(distro ? { variant: distro } : {}) };
     const env = { ...params.env };
