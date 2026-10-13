@@ -280,6 +280,18 @@ describe('ServeService', () => {
     expect(svc.busy()).toBe(false);
   });
 
+  it('says which server ended on its own (Docker may have taken it down); one stopped from here is not "ended"', async () => {
+    const { svc, made, deps } = setup();
+    const ended: string[] = [];
+    deps.onEnded = (info) => void ended.push(info.id);
+    const a = await svc.start(req, signal());
+    const b = await svc.start(req, signal());
+    await svc.stop(b.id);
+    made[0]!.crash();
+    await tick();
+    expect(ended).toEqual([a.id]);
+  });
+
   it('stops the engine when it never gets ready, and refuses external endpoints', async () => {
     const { svc, made } = setup({ failReady: true });
     await expect(svc.start(req, signal())).rejects.toThrow('oom');

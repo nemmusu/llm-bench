@@ -157,6 +157,19 @@ describe('docker routes', () => {
     expect(events[0]).toMatchObject({ stage: 'error', error: { code: 'CANCELLED' } });
   });
 
+  it('aborts a running pull on shutdown', async () => {
+    const shutdown = new AbortController();
+    const { post, events } = setup({ shutdown: shutdown.signal }, {}, {
+      pull: (_ref: string, _on: (p: PullProgress) => void, signal?: AbortSignal) =>
+        new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new AppError('CANCELLED', 'stopped')))),
+    });
+    await post('/api/docker/pull', { image: 'a/b' });
+    await tick();
+    shutdown.abort();
+    await tick();
+    expect(events[0]).toMatchObject({ stage: 'error', error: { code: 'CANCELLED' } });
+  });
+
   it('POST /api/docker/gpu-check with the default or a given image', async () => {
     const { post } = setup();
     expect(await (await post('/api/docker/gpu-check')).json()).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', gpus: ['GPU 0: RTX 5090'] });

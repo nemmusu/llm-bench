@@ -43,6 +43,24 @@ function sources(over: Partial<SystemCheckSources> = {}): SystemCheckSources {
 
 const item = (items: CheckItem[], id: CheckItem['id']) => items.find((i) => i.id === id) as CheckItem;
 
+describe('SystemCheck: Docker that does not answer', () => {
+  it('Windows: a warning with "Riavvia Docker"; Linux: the warning only (the UI gives the command)', async () => {
+    const stuck = () => Promise.resolve({ state: 'not-responding' as const, version: '29.8.0' });
+    const win = await new SystemCheck(sources({ dockerStatus: stuck })).check();
+    expect(item(win.items, 'docker')).toEqual({
+      id: 'docker',
+      state: 'warning',
+      required: false,
+      params: { dockerState: 'not-responding', version: '29.8.0' },
+      code: 'DOCKER_NOT_RESPONDING',
+      action: { kind: 'restart-docker' },
+    });
+    const linux = await new SystemCheck(sources({ platform: 'linux', dockerStatus: stuck, osRelease: () => Promise.resolve(undefined) })).check();
+    expect(item(linux.items, 'docker')).toMatchObject({ state: 'warning', code: 'DOCKER_NOT_RESPONDING' });
+    expect(item(linux.items, 'docker').action).toBeUndefined();
+  });
+});
+
 describe('SystemCheck on this PC', () => {
   it('lists every item in order with the right lights', async () => {
     const r = await new SystemCheck(sources()).check();

@@ -80,10 +80,9 @@ export function engineEvents(log: string): EngineEvent[] {
 }
 
 /** "… setting engine linux/wsl state running -> stopping" without its bulky prefixes, for the expert details. */
-function shortLine(line: string): string {
-  const cut = line.replace(/^\[[^\]]*\]\s*(?:\[[^\]]*\]\s*)?(?:\[[^\]]*\]\s*)?/, '');
-  const at = STAMP.exec(line)?.[1]?.replace('T', ' ') ?? '';
-  return `${at} UTC · ${cut}`.slice(0, 200);
+function shortLine(e: EngineEvent): string {
+  const cut = e.line.replace(/^\[[^\]]*\]\s*(?:\[[^\]]*\]\s*)?(?:\[[^\]]*\]\s*)?/, '');
+  return `${new Date(e.at).toISOString().slice(0, 19).replace('T', ' ')} UTC · ${cut}`.slice(0, 200);
 }
 
 /**
@@ -103,7 +102,7 @@ export function causeFrom(events: readonly EngineEvent[], now: number): Pick<Doc
   const after = sorted.slice(last + 1);
   if (after.some((e) => e.kind !== 'idle') || now - stop.at < STOP_STUCK_MS) return undefined;
   const idle = sorted.slice(0, first).reverse().find((e) => e.kind === 'idle' && started.at - e.at <= IDLE_TO_STOP_MS);
-  const evidence = [...(idle ? [idle] : []), started, ...(last !== first ? [stop] : [])].map((e) => shortLine(e.line)).slice(0, EVIDENCE_MAX);
+  const evidence = [...(idle ? [idle] : []), started, ...(last !== first ? [stop] : [])].map(shortLine).slice(0, EVIDENCE_MAX);
   return { cause: idle ? 'resource-saver' : 'stuck-stopping', since: new Date(started.at).toISOString(), evidence };
 }
 
