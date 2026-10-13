@@ -30,7 +30,7 @@ import { createProcessInstance, type ClientFactory } from '../instance';
 import { modelReadyProbe } from '../shared/probes';
 import { trustedFlags } from '../shared/standard-flags';
 import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
-import { droppedCacheFlags, ninferServeArgs } from './args';
+import { ninferServeArgs } from './args';
 import { diagnoseNinfer, ninferMessage, PID_LINE } from './logs';
 import { distroRunner, wslLaunchArgv, wslPathOf, type DistroRun, type WslProcesses } from './wsl';
 
@@ -283,7 +283,6 @@ export class NinferAdapter implements EngineAdapter {
     const mem = ninferMemory({ artifactBytes: size, manifest: await this.manifestOf(manifest), label: model.identity.displayName, params });
     const capacity = params.ninfer?.kvCapacity;
     const kvTokens = typeof capacity === 'number' ? capacity : capacity === undefined ? params.contextSize : undefined;
-    const dropped = droppedCacheFlags(params.ninfer ?? {});
     return {
       kind: this.kind,
       argv,
@@ -300,7 +299,6 @@ export class NinferAdapter implements EngineAdapter {
       ninfer: { ...(distro ? { distro } : {}), ...(kvTokens !== undefined ? { kvTokens } : {}), bytesPerToken: mem.bytesPerToken },
       ...(slow ? { slowSharedFilesystem: true } : {}),
       ...(!where ? { pending: ['engine' as const] } : {}),
-      ...(dropped.length ? { unsupported: dropped.map((flag) => ({ flag, setting: 'ninfer.prefixReuse', effect: 'default' as const })) } : {}),
     };
   }
 

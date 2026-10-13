@@ -12,6 +12,7 @@
  */
 import { z } from 'zod';
 import { engineKindSchema, type EngineKind, type LaunchParams } from './engines';
+import { ninferFlags } from './ninfer';
 import { profileSchema } from './results';
 
 // ---- normalized launch settings ------------------------------------------------------------------
@@ -130,6 +131,9 @@ type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' |
   cpuMoe?: number | 'all';
   speculativeModel?: string;
   speculativeTokens?: number;
+  /** NInfer: --spec (mtp, dflash, dflash2; off = none) and --lm-head-draft; its --draft-tokens is speculativeTokens. */
+  specMethod?: string;
+  lmHeadDraft?: boolean;
   other: Set<string>;
 };
 
@@ -311,6 +315,13 @@ function readOverrides(r: Raw, text: string, flag: string): void {
 add(['--quantization'], (r, v) => {
   if (v[0]) r.quantization = v[0];
 });
+add(['--spec'], (r, v) => {
+  if (v[0]) r.specMethod = v[0];
+});
+add(['--draft-tokens'], (r, v) => {
+  const n = positive(v[0]);
+  if (n !== undefined) r.speculativeTokens = n;
+});
 
 /** Switches without a value. */
 const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
@@ -323,6 +334,7 @@ const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['-no-kvu', (r) => (r.kvUnified = false)],
   ['--cpu-moe', (r) => (r.cpuMoe = 'all')],
   ['-cmoe', (r) => (r.cpuMoe = 'all')],
+  ['--lm-head-draft', (r) => (r.lmHeadDraft = true)],
 ]);
 
 /** Identity, network, paths, seeds and logging: never part of a configuration. Values are skipped. */
@@ -375,6 +387,11 @@ const IGNORED_SWITCH = new Set([
   '--disable-uvicorn-access-log',
   '--enable-log-requests',
   '--no-enable-log-requests',
+  // NInfer: benchmarks always read every prompt in full and answer without thinking (servers keep
+  // both): how a test is run, not a different configuration.
+  '--no-prefix-reuse',
+  '--no-thinking',
+  '--preserve-thinking',
 ]);
 /** `docker run` flags, for a Docker command whose image cannot be found in the argv. */
 const DOCKER_VALUE = new Set(['--name', '--label', '--gpus', '-p', '-v', '-e', '--ipc', '--pull', '--entrypoint', '--network', '--shm-size', '--runtime']);
@@ -483,6 +500,7 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
     if (p.threads !== undefined) raw.threads = p.threads;
   }
   if (p.parallel !== undefined) raw.parallel = p.parallel;
+  if (p.ninfer) parseArgs(ninferFlags(p.ninfer), raw);
   parseArgs(p.extraArgs, raw);
 }
 
@@ -537,7 +555,9 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   if (raw.draftMax !== undefined) out.draftMax = raw.draftMax;
   if (raw.draftMin !== undefined) out.draftMin = raw.draftMin;
   const legacySpec = raw.speculativeModel !== undefined || raw.speculativeTokens !== undefined;
-  const speculative = raw.speculative ?? (legacySpec ? stableStringify({ model: raw.speculativeModel, num_speculative_tokens: raw.speculativeTokens }) : undefined);
+  // NInfer's --spec: its method and draft tokens, as vLLM's speculative config says them.
+  const ninferSpec = raw.specMethod !== undefined && raw.specMethod !== 'off' ? stableStringify({ method: raw.specMethod, num_speculative_tokens: raw.speculativeTokens, lm_head_draft: raw.lmHeadDraft }) : undefined;
+  const speculative = raw.speculative ?? ninferSpec ?? (raw.specMethod === undefined && legacySpec ? stableStringify({ model: raw.speculativeModel, num_speculative_tokens: raw.speculativeTokens }) : undefined);
   if (speculative !== undefined) out.speculative = speculative;
   if (raw.maxNumBatchedTokens !== undefined) out.maxNumBatchedTokens = raw.maxNumBatchedTokens;
   if (raw.gpuMemoryUtilization !== undefined && raw.gpuMemoryUtilization !== VLLM_DEFAULTS.gpuMemoryUtilization) out.gpuMemoryUtilization = raw.gpuMemoryUtilization;

@@ -318,23 +318,42 @@ export function ninferPresetOf(params: Pick<LaunchParams, 'contextSize' | 'paral
 
 const sortKeys = (o: object): [string, unknown][] => Object.entries(o).filter(([, v]) => v !== undefined).sort(([a], [b]) => (a < b ? -1 : 1));
 
-/** NInfer settings as their flags, for labels and comparisons ("--kv-dtype int8 --kv-capacity 131072 --spec mtp …"). */
-export function ninferParamsText(n: NinferParams | undefined): string {
-  if (!n) return '';
+/** Draft tokens when the settings name a speculative backend without a count (NInfer README: MTP 3, DFlash 7). */
+export const NINFER_DEFAULT_DRAFT_TOKENS: Record<Exclude<NinferSpec, 'off'>, number> = { mtp: 3, dflash: 7, dflash2: 7 };
+/** --max-concurrency range (1..8). */
+export const NINFER_MAX_CONCURRENCY = 8;
+
+/**
+ * NInfer's own settings as ninfer-serve flags, in launch order (docs/serving.md "Server options"):
+ * --kv-capacity, --kv-dtype, --spec/--draft-tokens/--lm-head-draft, --vision, then prefix reuse
+ * (--no-prefix-reuse, else the context-cache slots: NInfer refuses them together, so without prefix
+ * reuse they are left out) and thinking. Context and concurrency are LaunchParams of their own.
+ */
+export function ninferFlags(n: NinferParams | undefined): string[] {
+  if (!n) return [];
   const out: string[] = [];
-  if (n.kvCapacity !== undefined) out.push(`--kv-capacity ${n.kvCapacity}`);
-  if (n.kvDtype !== undefined) out.push(`--kv-dtype ${n.kvDtype}`);
-  if (n.spec !== undefined && n.spec !== 'off') out.push(`--spec ${n.spec}`);
-  if (n.draftTokens !== undefined && n.spec !== undefined && n.spec !== 'off') out.push(`--draft-tokens ${n.draftTokens}`);
-  if (n.lmHeadDraft === true) out.push('--lm-head-draft');
+  if (n.kvCapacity !== undefined) out.push('--kv-capacity', String(n.kvCapacity));
+  if (n.kvDtype !== undefined) out.push('--kv-dtype', n.kvDtype);
+  const spec = n.spec ?? 'off';
+  if (spec !== 'off') {
+    out.push('--spec', spec, '--draft-tokens', String(n.draftTokens ?? NINFER_DEFAULT_DRAFT_TOKENS[spec]));
+    if (n.lmHeadDraft === true) out.push('--lm-head-draft');
+  }
   if (n.vision === true) out.push('--vision');
   if (n.prefixReuse === false) out.push('--no-prefix-reuse');
-  if (n.deviceStateSlots !== undefined) out.push(`--device-state-slots ${n.deviceStateSlots}`);
-  if (n.hostStateSlots !== undefined) out.push(`--host-state-slots ${n.hostStateSlots}`);
-  if (n.hostKvMib !== undefined) out.push(`--host-kv-mib ${n.hostKvMib}`);
+  else {
+    if (n.deviceStateSlots !== undefined) out.push('--device-state-slots', String(n.deviceStateSlots));
+    if (n.hostStateSlots !== undefined) out.push('--host-state-slots', String(n.hostStateSlots));
+    if (n.hostKvMib !== undefined) out.push('--host-kv-mib', String(n.hostKvMib));
+  }
   if (n.thinking === false) out.push('--no-thinking');
   if (n.preserveThinking === true) out.push('--preserve-thinking');
-  return out.join(' ');
+  return out;
+}
+
+/** NInfer settings as their flags, for labels and comparisons ("--kv-capacity 131072 --kv-dtype int8 --spec mtp …"). */
+export function ninferParamsText(n: NinferParams | undefined): string {
+  return ninferFlags(n).join(' ');
 }
 
 // ---- routes --------------------------------------------------------------------------------------

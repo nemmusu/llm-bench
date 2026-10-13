@@ -338,7 +338,7 @@ export const en: Messages = {
     },
     slow_shared_filesystem: {
       title: 'The model was on a slow folder',
-      body: 'Docker was reading the model from a Windows folder: loading goes through a slow share. Copy the model into Docker storage from Engines.',
+      body: 'The engine (Docker or WSL) was reading the model from a Windows folder: loading goes through a slow share. Engines shows how to keep it in its own storage.',
       action: 'Open Engines',
     },
     energy_unavailable: {
@@ -463,7 +463,7 @@ export const en: Messages = {
     },
     slow_shared_filesystem: {
       title: 'The model is on a slow folder',
-      body: 'Docker will read the model from a Windows folder: the cold load will be slower than it really is.',
+      body: 'The engine (Docker or WSL) will read the model from a Windows folder: the cold load will be slower than it really is.',
     },
     gpu_memory_reduced: {
       title: 'vLLM will use less memory than usual',
@@ -906,8 +906,8 @@ export const en: Messages = {
       'sglang-native': 'SGLang installed on the system (Linux only).',
       external: 'A server already running, OpenAI compatible.',
       command: 'Your own program with an OpenAI API: GPU Bench starts and stops it.',
-      'ninfer-native': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
-      'ninfer-wsl': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
+      'ninfer-native': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
+      'ninfer-wsl': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
     },
     profiles: {
       quick: 'Quick',
@@ -2332,7 +2332,7 @@ export const en: Messages = {
   ninfer: {
     title: 'NInfer',
     badge: 'RTX 5090 only · Linux / WSL',
-    desc: 'The fastest engine for Qwen 3.6 and 3.8, made for a single RTX 5090. It reads models in the .ninfer format.',
+    desc: 'An engine made for Qwen 3.6 and 3.8 on a single RTX 5090. It reads models in the .ninfer format.',
     status: {
       ready: 'Ready',
       notConfigured: 'To set up',
@@ -2380,7 +2380,7 @@ export const en: Messages = {
       whereWsl: 'inside {distro}',
       whereLinux: 'on this PC',
       folder: 'Folder',
-      folderHint: 'A Linux path. If a copy of NInfer is already there, I build it without downloading it again.',
+      folderHint: 'A Linux path, for example ~/ninfer.',
       check: 'Check',
       prereqs: 'What is needed',
       tools: {
@@ -2397,6 +2397,7 @@ export const en: Messages = {
       needs: 'Needs {version} or newer',
       aptTitle: 'First install what is missing',
       aptBody: 'Open a terminal {where} and run:',
+      aptLabel: 'Command to copy',
       cuda: 'The CUDA toolkit (13.1) comes from NVIDIA’s site: Ubuntu’s own is too old for the RTX 5090.',
       commands: 'Commands I will run',
       confirmNote: 'I run exactly these commands {where}. It takes a few minutes.',

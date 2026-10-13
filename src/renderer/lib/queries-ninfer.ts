@@ -4,7 +4,7 @@ import type { EngineConfig, EngineStatus } from '../../contract/engines';
 import { ninferKindFor, type NinferBuildPlan, type NinferBuildRequest, type NinferDistros, type NinferKind, type NinferSettings } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
 import { useApi } from './api-context';
-import { libKeys } from './queries-library';
+import { libKeys, useSystemInfo } from './queries-library';
 import { ENGINES_KEY } from './queries-runs';
 import { SETTINGS_QUERY_KEY } from './settings';
 
@@ -13,9 +13,14 @@ export const ninferKeys = {
   plan: ['lib', 'ninfer', 'build-plan'] as const,
 };
 
-/** The NInfer kind of this PC (Linux: native, Windows: WSL), undefined elsewhere. */
-export function useNinferKind(): NinferKind | undefined {
-  return ninferKindFor(window.gpubench?.platform ?? 'linux');
+/**
+ * The NInfer kind of the PC the core runs on (Linux: native, Windows: WSL): `null` where NInfer does
+ * not run, undefined while the system is read.
+ */
+export function useNinferKind(): NinferKind | null | undefined {
+  const system = useSystemInfo();
+  const platform = system.data?.os.platform;
+  return platform === undefined ? undefined : (ninferKindFor(platform) ?? null);
 }
 
 /** GET /api/engines/ninfer/distros: only asked when the card needs it (it reads `wsl.exe -l -v`). */

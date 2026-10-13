@@ -51,9 +51,11 @@ export function NinferCard() {
           {t('ninfer.badge')}
         </Badge>
       }
-      status={engines.isPending ? { tone: 'neutral', text: t('common.loading') } : ninferStatus(status, t)}
+      status={engines.isPending || kind === undefined ? { tone: 'neutral', text: t('common.loading') } : ninferStatus(status, t)}
     >
-      {kind === undefined || status?.supported === false ? (
+      {kind === undefined ? (
+        <Skeleton className="h-24" />
+      ) : kind === null || status?.supported === false ? (
         <p className="text-sm text-fg-2">{t('ninfer.unsupportedBody')}</p>
       ) : (
         <NinferSetup kind={kind} status={status} />
@@ -158,16 +160,16 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
               }
             </Field>
           )}
-          <div className="flex items-end gap-2">
-            <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')} className="flex-1">
-              {({ id, describedBy }) => (
-                <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="font-mono" spellCheck={false} />
-              )}
-            </Field>
-            <Button className="mb-5" variant="primary" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
-              {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
-            </Button>
-          </div>
+          <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')}>
+            {({ id, describedBy }) => (
+              <div className="flex gap-2">
+                <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="min-w-0 flex-1 font-mono" spellCheck={false} />
+                <Button variant="primary" className="shrink-0" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
+                  {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
+                </Button>
+              </div>
+            )}
+          </Field>
           {check.data && !check.data.installed && (
             <NinferProblem status={check.data} fallback={path} />
           )}

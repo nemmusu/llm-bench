@@ -1,7 +1,8 @@
 import { engineBaseOf, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { NINFER_DEFAULTS } from '../../contract/ninfer';
 import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
-import { NINFER_MAX_CONCURRENCY, ninferBenchParams } from '../engines/ninfer/args';
+import { NINFER_MAX_CONCURRENCY } from '../../contract/ninfer';
+import { ninferBenchParams } from '../engines/ninfer/args';
 import { CONTEXT_MARGIN, requestMsAt, sweepDepths } from './sweep';
 
 export { CONTEXT_MARGIN };
