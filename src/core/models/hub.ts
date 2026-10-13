@@ -283,8 +283,13 @@ export class HubClient {
     return readJson(await this.request(url, repo));
   }
 
+  /** Cache entries are per auth state: a token can see what an anonymous request cannot. */
+  private cacheKey(key: string): string {
+    return `${this.opts.getToken() ? 'auth' : 'anon'} ${key}`;
+  }
+
   private cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {
-    const fullKey = `${this.opts.getToken() ? 'auth' : 'anon'} ${key}`;
+    const fullKey = this.cacheKey(key);
     const hit = this.cache.get(fullKey);
     if (hit && hit.expires > this.now()) return hit.value as Promise<T>;
     const value = fn();
@@ -351,9 +356,13 @@ export class HubClient {
     });
   }
 
-  /** Every file of a revision with sizes and LFS sha256 (follows `Link: rel="next"` pages). */
-  files(repo: string, revision = 'main'): Promise<HubFile[]> {
+  /**
+   * Every file of a revision with sizes and LFS sha256 (follows `Link: rel="next"` pages). `fresh` asks
+   * the hub again instead of the cache (an update check), and the answer refreshes the cache.
+   */
+  files(repo: string, revision = 'main', fresh = false): Promise<HubFile[]> {
     const first = `${this.baseUrl}/api/models/${repo}/tree/${encodeURIComponent(revision)}?recursive=true`;
+    if (fresh) this.cache.delete(this.cacheKey(first));
     return this.cached(first, this.ttl, async () => {
       const out: HubFile[] = [];
       let url: string | undefined = first;

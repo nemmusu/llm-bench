@@ -14,6 +14,7 @@ import { GPU_32GB, modelDeps, tempDir } from './helpers';
 describe('createModelServices (wiring)', () => {
   let hub: FakeHub;
   let t: ReturnType<typeof tempDir>;
+  const shutdowns: AbortController[] = [];
   beforeAll(async () => {
     hub = await startFakeHub();
   });
@@ -21,11 +22,16 @@ describe('createModelServices (wiring)', () => {
   beforeEach(() => {
     t = tempDir('gb-setup-');
   });
-  afterEach(() => t.cleanup());
+  afterEach(() => {
+    // Ends the daily update check's wait, as the core's shutdown does.
+    for (const c of shutdowns.splice(0)) c.abort();
+    t.cleanup();
+  });
 
   async function context(): Promise<{ ctx: CoreContext; events: ServerEvent[]; shutdown: AbortController }> {
     const deps = modelDeps(t.dir, { endpoints: { githubApi: '', huggingface: hub.url, dockerHub: '' } });
     const shutdown = new AbortController();
+    shutdowns.push(shutdown);
     // Telemetry and sysinfo are not used by the models/downloads services.
     const ctx: CoreContext = { deps, hub: new EventHub(), settings: new SettingsRepo(deps.paths.dataDir), shutdown: shutdown.signal, secrets: {}, telemetry: {} as never, sysinfo: {} as never };
     // Never scan (or hash) the developer's real model folders from unit tests.

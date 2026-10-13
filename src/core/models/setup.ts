@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { CoreContext } from '../context';
 import { createDownloadsRoutes } from '../downloads/routes';
 import { DownloadService, type DownloadServiceOptions } from '../downloads/service';
@@ -5,6 +6,7 @@ import type { RouteModule } from '../server/app';
 import { createModelsRoutes } from './routes';
 import { ModelsService, type ModelsServiceOptions } from './service';
 import type { GpuInfoFn } from './types';
+import { createUpdatesRoutes, ModelUpdatesService } from './updates';
 
 export interface ModelServicesOptions {
   /** Total/free VRAM of the benchmark GPU (telemetry snapshot); undefined without an NVIDIA GPU. */
@@ -19,9 +21,11 @@ export interface ModelServicesOptions {
 export interface ModelServices {
   models: ModelsService;
   downloads: DownloadService;
+  /** "Aggiornamento disponibile": the PC's hub models against their repos (on demand, after downloads, daily). */
+  updates: ModelUpdatesService;
   /** Route modules to append to createApp's modules. */
   routes: RouteModule[];
-  /** Restores the persisted download queue; call once after createCore built the context. */
+  /** Restores the persisted download queue and starts the daily update check; call once after createCore built the context. */
   init(): Promise<void>;
 }
 
@@ -40,6 +44,13 @@ export function createModelServices(ctx: CoreContext, opts: ModelServicesOptions
     ...(opts.autoHash !== undefined ? { autoHash: opts.autoHash } : {}),
     ...(opts.calibration ? { calibration: opts.calibration } : {}),
   });
+  const updates = new ModelUpdatesService({
+    hub: models.hub,
+    list: () => models.list(),
+    clock: ctx.deps.clock,
+    log: ctx.deps.log,
+    file: path.join(ctx.deps.paths.dataDir, 'model-updates.json'),
+  });
   const downloads = new DownloadService({
     fetch: ctx.deps.fetch,
     clock: ctx.deps.clock,
@@ -48,8 +59,10 @@ export function createModelServices(ctx: CoreContext, opts: ModelServicesOptions
     modelsDir: () => models.libraryDir(),
     hub: models.hub,
     publish: (e) => ctx.hub.publish(e),
-    onComplete: async () => {
+    onComplete: async (job) => {
       await models.rescan();
+      // The listing the download just used says what else the repo has (an mmproj not taken) and what changed.
+      await updates.check(job.repo as string, { fresh: false });
     },
     repoFolders: (repo) => models.repoFolders(repo),
     knownSha: (file, sizeBytes, mtimeMs) => models.hashCache.get(file, sizeBytes, mtimeMs),
@@ -59,7 +72,11 @@ export function createModelServices(ctx: CoreContext, opts: ModelServicesOptions
   return {
     models,
     downloads,
-    routes: [createModelsRoutes(models), createDownloadsRoutes(downloads)],
-    init: () => downloads.init(),
+    updates,
+    routes: [createModelsRoutes(models), createDownloadsRoutes(downloads), createUpdatesRoutes(updates)],
+    init: async () => {
+      await downloads.init();
+      void updates.runInBackground(ctx.shutdown);
+    },
   };
 }
