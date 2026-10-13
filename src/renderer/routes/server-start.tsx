@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import type { StartServerRequest } from '../../contract/api';
 import type { EngineConfig } from '../../contract/engines';
 import { ninferPresetOf, ninferPresetsFor } from '../../contract/ninfer';
-import type { ServerNetwork, ServerPresetInput, ServerSettingsSource } from '../../contract/servers';
+import type { ServerNetwork, ServerPresetInput } from '../../contract/servers';
 import { formFromParams, paramsFromForm, type ParamsForm } from '../components/bench/expert-form';
 import { MIB_PER_GB } from '../components/bench/format';
 import { needsFromPlan } from '../components/bench/needs';
@@ -36,7 +36,7 @@ import {
   presetsForModel,
   serverModelOptions,
   serverRequest,
-  sourceOf,
+  presetSource,
   takeServerDraft,
   testedConfigs,
 } from '../components/servers/server-flow';
@@ -82,7 +82,7 @@ export function ServerStartPage() {
   const local = useBenchLocalModels();
   const system = useBenchSystem();
   const engines = useBenchEngines();
-  const customs = useCustomEngines();
+  const customList = useCustomEngines().data ?? [];
   const presets = useServerPresets();
   const configs = useConfigs({});
   const gpu = system.data?.gpus[0];
@@ -104,7 +104,7 @@ export function ServerStartPage() {
 
   // 2. The engine: the user's pick, the one handed over (a test's, a preset's), the recipe's, a suggested one,
   //    else the first usable one for the model's files.
-  const choices = engineChoices(format, engines.data ?? [], customs.data ?? [], system.data?.os.platform ?? 'win32');
+  const choices = engineChoices(format, engines.data ?? [], customList, system.data?.os.platform ?? 'win32');
   const [engineKey, setEngineKey] = useState<string | undefined>(undefined);
   const choiceOf = (config: EngineConfig | undefined) => (config ? choices.find((c) => c.key === engineKeyOf(config) && !c.disabled) : undefined);
   const engineChoice =
@@ -116,7 +116,7 @@ export function ServerStartPage() {
   // A handed-over engine keeps its own executable or image (a test's custom build, the llama.cpp used last).
   const handed = [draft?.engine, draft?.suggestedEngine].find((e) => e !== undefined && engineKeyOf(e) === engineChoice?.key);
   const engine = handed ?? engineChoice?.config;
-  const engineName = engineChoice ? engineNameOf(engineChoice.config, customs.data ?? [], f) : '';
+  const engineName = engineChoice ? engineNameOf(engineChoice.config, customList, f) : '';
 
   // 3. The settings.
   // A preset to change, or NInfer settings handed over (the Benchmark's NInfer preset): "I tuoi preset"; other
@@ -198,7 +198,7 @@ export function ServerStartPage() {
   const own = !(tab === 'best' && best === 'auto');
   // The recipe may run the model on its own engine (a fork): the summary names the one that will run.
   const applied = current?.recipe?.engine;
-  const summaryEngine = applied ? engineNameOf({ kind: applied.kind ?? engine!.kind, ...(applied.customEngineId !== undefined ? { customEngineId: applied.customEngineId } : {}) }, customs.data ?? [], f) : engineName;
+  const summaryEngine = applied ? engineNameOf({ kind: applied.kind ?? engine!.kind, ...(applied.customEngineId !== undefined ? { customEngineId: applied.customEngineId } : {}) }, customList, f) : engineName;
 
   const [saving, setSaving] = useState(false);
 
@@ -219,12 +219,7 @@ export function ServerStartPage() {
 
   /** What the preset remembers: the settings the plan will really use, so it starts the same way every time. */
   const presetInput = (): Omit<ServerPresetInput, 'name' | 'autoStart'> => {
-    const source: ServerSettingsSource =
-      tab === 'best' && best === 'auto' && current!.tuned
-        ? { kind: 'tuned', runId: current!.tuned.runId }
-        : tab === 'best'
-          ? sourceOf({ kind: best === 'auto' ? 'auto' : 'config', ...(best === 'draft' ? { runId: draft!.provenance!.runId } : configSource ? { runId: configSource.runId, ...(configSource.combo !== undefined ? { combo: configSource.combo } : {}) } : {}) })
-          : { kind: 'custom' };
+    const source = presetSource({ tab, best, tunedRunId: current!.tuned?.runId, test: best === 'draft' ? draft!.provenance : configSource });
     return { engine: engine!, model: optionModel(option!), modelLabel, params: current!.params, port: request!.port ?? current!.port, network: effNetwork, source, ...recipe.requestPart(recipeOn) };
   };
 
@@ -285,7 +280,7 @@ export function ServerStartPage() {
               <ModelStep options={options} value={option} onChange={setModelKey} onOpenModels={() => void navigate({ to: '/models' })} />
             </StepCard>
             <StepCard step={2} title={t('servers.flow.step.engine')} help={t('servers.flow.step.engineHelp')}>
-              <EngineStep choices={choices} value={engineChoice} onChange={setEngineKey} customs={customs.data ?? []} />
+              <EngineStep choices={choices} value={engineChoice} onChange={setEngineKey} customs={customList} />
             </StepCard>
           </div>
           <StepCard step={3} title={t('servers.flow.step.settings')} help={t('servers.flow.step.settingsHelp')}>
@@ -352,6 +347,7 @@ export function ServerStartPage() {
             engineName={summaryEngine}
             own={own}
             canStart={current !== undefined && !portProblem}
+            canSave={current !== undefined}
             editing={editing !== undefined}
             onStart={start}
             onSave={save}
@@ -359,7 +355,7 @@ export function ServerStartPage() {
         </div>
       </div>
       {flow.ui}
-      <SavePresetDialog open={saving} onOpenChange={setSaving} port={request?.port ?? current?.port} defaultName={option?.name ?? ''} onSave={onSaveNew} />
+      {saving && current && <SavePresetDialog port={request!.port ?? current.port} defaultName={option!.name} onClose={() => setSaving(false)} onSave={onSaveNew} />}
     </Page>
   );
 }

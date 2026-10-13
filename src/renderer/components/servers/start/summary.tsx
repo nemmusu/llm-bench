@@ -50,6 +50,8 @@ export interface SummaryProps {
   /** The user chose the settings (a test, a preset, custom): the context is theirs. */
   own: boolean;
   canStart: boolean;
+  /** The preview of exactly these choices is here (a preset remembers what it says). */
+  canSave: boolean;
   editing: boolean;
   onStart: () => void;
   onSave: () => void;
@@ -127,7 +129,7 @@ export function Summary(p: SummaryProps) {
         <p className="text-xs text-fg-3">{t('servers.flow.summary.hint')}</p>
       </div>
       <div className="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-border px-card py-3">
-        <Button onClick={p.onSave} disabled={!plan}>
+        <Button onClick={p.onSave} disabled={!p.canSave}>
           <Bookmark aria-hidden />
           {t(p.editing ? 'servers.flow.summary.update' : 'servers.flow.summary.save')}
         </Button>

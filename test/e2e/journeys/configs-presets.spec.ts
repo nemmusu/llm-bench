@@ -80,15 +80,14 @@ test('two settings of one model, compared by configuration; a preset back to the
     await banner.getByRole('button', { name: 'Chiudi il preset' }).click();
     await expect(banner).toBeHidden();
 
-    // "Avvia il server così" from the list: the server confirmation.
+    // "Avvia il server così" from the list: "Avvia un server" with that configuration, its exact command before "Avvia".
     await page.getByRole('link', { name: 'Risultati' }).click();
     await page.getByRole('tab', { name: 'Configurazioni' }).click();
     await configs.getByRole('row', { name: /ub 256/ }).getByRole('button', { name: 'Avvia il server così' }).click();
-    const serve = page.getByRole('dialog', { name: 'Avvia il server' });
-    await expect(serve).toBeVisible({ timeout: 30_000 });
-    await expect(serve.getByRole('region', { name: 'Comando esatto' })).toContainText('-ub 256');
-    await serve.getByRole('button', { name: 'Annulla' }).click();
-    await expect(serve).toBeHidden();
+    await expect(h1(page, 'Avvia un server')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Comando esatto' })).toContainText('-ub 256', { timeout: 30_000 });
+    await page.getByRole('link', { name: 'Torna ai server' }).click();
+    await expect(h1(page, /^Server$/)).toBeVisible();
   } finally {
     await gb.close();
   }

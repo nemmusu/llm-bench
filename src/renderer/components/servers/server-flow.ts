@@ -225,11 +225,13 @@ export function parsePort(text: string): { port: number | undefined; invalid: bo
   return n >= 1024 && n <= 65535 ? { port: n, invalid: false } : { port: undefined, invalid: true };
 }
 
-/** Where the settings of a new preset come from. */
-export function sourceOf(choice: { kind: 'auto' | 'draft' | 'config' | 'preset' | 'custom'; runId?: string; combo?: number }): ServerSettingsSource {
-  if (choice.kind === 'auto') return { kind: 'auto' };
-  if ((choice.kind === 'draft' || choice.kind === 'config') && choice.runId !== undefined) {
-    return { kind: 'config', runId: choice.runId, ...(choice.combo !== undefined ? { combo: choice.combo } : {}) };
-  }
-  return { kind: 'custom' };
+/**
+ * Where the settings of a new preset come from: GPU Bench's choice (the tune it used, if any), a test
+ * (handed over, or one of the model's configurations; a tune's combination too), else the user's own.
+ */
+export function presetSource(c: { tab: 'best' | 'presets' | 'custom'; best: string; tunedRunId: string | undefined; test: { runId: string; combo?: number | undefined } | undefined }): ServerSettingsSource {
+  if (c.tab !== 'best') return { kind: 'custom' };
+  if (c.best === 'auto') return c.tunedRunId !== undefined ? { kind: 'tuned', runId: c.tunedRunId } : { kind: 'auto' };
+  if (!c.test) return { kind: 'custom' };
+  return { kind: 'config', runId: c.test.runId, ...(c.test.combo !== undefined ? { combo: c.test.combo } : {}) };
 }

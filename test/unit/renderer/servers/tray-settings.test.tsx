@@ -37,6 +37,11 @@ describe('tray settings', () => {
     await waitFor(() => expect(api.settings.launchAtLogin).toBe(true));
     await waitFor(() => expect(shellInfo).toHaveBeenCalled());
     expect(screen.queryByText(/Questo desktop non mostra l’area di notifica/)).toBeNull();
+    // A settings save never carries the presets or the custom engines: their own routes keep them.
+    const puts = api.calls.filter((c) => c.method === 'PUT' && c.path === '/api/settings');
+    expect(puts.length).toBeGreaterThan(0);
+    for (const p of puts) expect(Object.keys(p.body as object)).not.toEqual(expect.arrayContaining(['serverPresets']));
+    for (const p of puts) expect(Object.keys(p.body as object)).not.toEqual(expect.arrayContaining(['customEngines']));
   });
 
   it('a desktop without a notification area: the window is minimized instead, and the section says so', async () => {

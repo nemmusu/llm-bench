@@ -67,6 +67,16 @@ describe('SettingsRepo', () => {
     expect(await new SettingsRepo(t.dir).get()).toEqual(defaultSettings());
   });
 
+  it('tells its listeners every saved update, until they unsubscribe', async () => {
+    const repo = new SettingsRepo(t.dir);
+    const seen: string[] = [];
+    const off = repo.subscribe((s) => seen.push(s.closeBehavior));
+    await repo.update({ closeBehavior: 'quit' });
+    off();
+    await repo.update({ closeBehavior: 'tray' });
+    expect(seen).toEqual(['quit']);
+  });
+
   it('serializes concurrent updates', async () => {
     const repo = new SettingsRepo(t.dir);
     await Promise.all([repo.update({ theme: 'dark' }), repo.update({ language: 'en' }), repo.update({ expertMode: true })]);

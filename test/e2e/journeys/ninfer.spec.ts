@@ -86,19 +86,21 @@ test('NInfer through WSL: find the build, run a Rapido benchmark with its recomm
     await expect(page.getByRole('region', { name: 'Comando' })).toContainText('ninfer-serve');
     await scan(page, 'NInfer result');
 
-    // A server with the same settings from the Benchmark page, then stopped.
+    // A server with the same settings from the Benchmark page ("Avvia un server", on NInfer's own preset), then stopped.
     await openPage(page, 'Benchmark');
     await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
-    const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
-    const command = confirm.getByRole('region', { name: 'Comando esatto' });
+    await expect(h1(page, 'Avvia un server')).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Consigliata da NInfer: contesto 240K/ })).toBeChecked();
+    const command = page.getByRole('region', { name: 'Comando esatto' });
     await expect(command).toContainText('--kv-capacity 240000', { timeout: 30_000 });
     await expect(command).not.toContainText('--no-prefix-reuse');
-    await confirm.getByRole('button', { name: 'Avvia server' }).click();
-    const ready = page.getByRole('dialog', { name: 'Il server è pronto' });
-    await expect(ready.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 90_000 });
-    const url = (await ready.getByText(/^http:\/\/127\.0\.0\.1:\d+\/v1$/).textContent())!;
+    await scan(page, 'NInfer server start');
+    await page.getByRole('button', { name: /^(Avvia|Scarica e avvia)$/ }).click();
+    await expect(h1(page, /^Server$/)).toBeVisible({ timeout: 90_000 });
+    const running = page.getByRole('region', { name: /^Server .* sulla porta \d+$/ });
+    const url = (await running.getByText(/^http:\/\/127\.0\.0\.1:\d+\/v1$/).first().textContent())!;
     expect((await fetch(`${url}/models`)).status).toBe(200);
-    await ready.getByRole('button', { name: 'Ferma' }).click();
+    await running.getByRole('button', { name: /^Ferma il server/ }).click();
     await expect(page.getByText(/fermato/)).toBeVisible();
     await expect.poll(() => fetch(`${url}/models`).then((r) => r.status, () => 0), { timeout: 20_000 }).toBe(0);
   } finally {

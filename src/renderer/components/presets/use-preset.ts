@@ -48,7 +48,8 @@ export function usePreset(run: RunResult, opts: PresetOptions = {}): UsePreset {
     openServer({
       engine: p.serve.engine,
       model: p.serve.model,
-      ...(p.serve.params ? { params: p.serve.params } : {}),
+      // presetOf always sets the exact launch params.
+      params: p.serve.params!,
       provenance: p.provenance,
       ...(p.draft.hub ? { hub: p.draft.hub } : {}),
     });

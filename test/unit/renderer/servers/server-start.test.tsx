@@ -9,11 +9,13 @@ import type { CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { LaunchParams } from '../../../../src/contract/engines';
 import type { DownloadJob } from '../../../../src/contract/models';
 import { ninferPresetsFor } from '../../../../src/contract/ninfer';
+import type { ServerPreset } from '../../../../src/contract/servers';
 import { modelRecipeSchema, type ModelRecipe } from '../../../../src/contract/recipes';
 import { App } from '../../../../src/renderer/app';
 import { engineChoices, saveServerDraft } from '../../../../src/renderer/components/servers/server-flow';
 import { createAppRouter } from '../../../../src/renderer/routes/router';
 import { newQueryClient, renderApp } from '../helpers';
+import { seededRuns } from '../bench/fixtures';
 import { apiError, benchApi, curatedModel, deferred, localModel, serverInfo, serverPlanFor, serverPreset } from '../bench/world';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -569,6 +571,58 @@ describe('Avvia un server: the model’s recipe ("Comandi per questo modello")',
   });
 });
 
+describe('Avvia un server: edges', () => {
+  it('a model without quant or size; one no engine here runs (NInfer on macOS): the last preview stays, nothing starts', async () => {
+    const bare = localModel('bare', { format: 'ninfer', displayName: 'Bare', file: 'bare.ninfer', quant: undefined, sizeBytes: undefined, facts: undefined });
+    const api = benchApi({ local: [localModel('qwen3-8b'), bare] });
+    api.world.system.os.platform = 'darwin';
+    await openFlow(api);
+    await userEvent.click(screen.getByRole('button', { name: /Cambia modello/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Scegli un modello' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Bare' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Conferma' }));
+    expect(await screen.findByRole('button', { name: 'Cambia modello: Bare' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Motore' }).textContent).not.toContain('NInfer');
+    expect((avvia() as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Salva come preset' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('the summary: a network server before its addresses are known, a plan without a context', async () => {
+    const api = benchApi();
+    api.world.serverPlan = (body) => serverPlanFor({ network: (body as StartServerRequest).network ?? 'local', port: 8085, contextSize: undefined });
+    await openFlow(api);
+    expect(screen.getByText('Contesto (token)', { selector: 'dt' }).nextElementSibling?.textContent).toBe('–');
+    await userEvent.click(screen.getByRole('switch', { name: 'Rendi raggiungibile dalla rete locale' }));
+    expect(await screen.findByText('http://0.0.0.0:8085/v1')).toBeTruthy();
+  });
+
+  it('a preset saved with a port typed in, from a test’s settings; a failed save is said', async () => {
+    const api = benchApi();
+    const error = vi.spyOn(toast, 'error');
+    let fail = true;
+    api.world.routes['POST /api/servers/presets'] = (body) => {
+      if (fail) throw apiError('VALIDATION');
+      return serverPreset('new', body as Partial<ServerPreset>);
+    };
+    await fromBenchmark(api);
+    await userEvent.type(screen.getByLabelText('Porta'), '8123');
+    await waitFor(() => expect(lastPlan(api).port).toBe(8123));
+    await userEvent.click(screen.getByRole('button', { name: 'Salva come preset' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Salva come preset' });
+    expect(within(dialog).getByText('Ricorda modello, motore, impostazioni, argomenti extra e porta 8123.')).toBeTruthy();
+    // Enter with no name does nothing.
+    await userEvent.clear(within(dialog).getByLabelText('Nome'));
+    fireEvent.submit(within(dialog).getByLabelText('Nome').closest('form')!);
+    expect(posted(api, '/api/servers/presets')).toHaveLength(0);
+    await userEvent.type(within(dialog).getByLabelText('Nome'), 'Porta fissa');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(error).toHaveBeenCalledWith('Alcuni valori non sono validi'));
+    fail = false;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(posted(api, '/api/servers/presets').at(-1)!.body).toMatchObject({ name: 'Porta fissa', port: 8123 }));
+  });
+});
+
 describe('Avvia un server: opened by other pages', () => {
   it('"Modifica" a preset: its settings chosen, "Aggiorna il preset" saves the changes', async () => {
     const api = benchApi();
@@ -582,6 +636,42 @@ describe('Avvia un server: opened by other pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aggiorna il preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/servers'));
     expect(api.calls.find((c) => c.method === 'PUT' && c.path === '/api/servers/presets/p1')?.body).toMatchObject({ port: 8095, network: 'local', model: { localId: 'qwen3-8b' } });
+  });
+
+  it('"Avvia solo il server così" of a result: that test’s settings, saved as a preset that says so', async () => {
+    const api = benchApi();
+    renderApp('/results/01K6Y7Q2ZC4M8N3B5V9R1T0XWE', api);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Come è stato avviato' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /^Dal test del/ }).getAttribute('data-state')).toBe('checked');
+    await screen.findByRole('region', { name: 'Comando esatto' });
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Salva come preset' }) as HTMLButtonElement).disabled).toBe(false));
+    await userEvent.click(screen.getByRole('button', { name: 'Salva come preset' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(posted(api, '/api/servers/presets')[0]!.body).toMatchObject({ source: { kind: 'config', runId: '01K6Y7Q2ZC4M8N3B5V9R1T0XWE' } }));
+  });
+
+  it('a test whose model was deleted: from its preset on the Benchmark page, the server downloads it again first', async () => {
+    const full = seededRuns().find((r) => r.id === '01K6Y7Q2ZC4M8N3B5V9R1T0XWE')!;
+    const gone = { ...full, model: { ...full.model, source: 'hf' as const, repo: 'Qwen/Qwen3-8B-GGUF', file: 'Qwen3-8B-Q4_K_M.gguf', sha256: undefined, weakKey: 'gone', path: undefined } };
+    const api = benchApi({ runs: [gone] });
+    renderApp('/results/01K6Y7Q2ZC4M8N3B5V9R1T0XWE', api);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Come è stato avviato' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Usa questo preset' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Avvia solo il server' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    await waitFor(() => expect(lastPlan(api).model).toMatchObject({ repo: 'Qwen/Qwen3-8B-GGUF', file: 'Qwen3-8B-Q4_K_M.gguf' }));
+    expect(screen.getByText('Da scaricare')).toBeTruthy();
+  });
+
+  it('"Modifica" a preset without a port of its own: the field stays empty (the first free one from 8080)', async () => {
+    const api = benchApi();
+    api.world.presets = [serverPreset('p1', { name: 'Libera', port: undefined })];
+    renderApp('/servers', api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Modifica il preset Libera' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Modifica «Libera»' })).toBeTruthy();
+    expect((screen.getByLabelText('Porta') as HTMLInputElement).value).toBe('');
   });
 
   it('a preset that cannot be updated says why', async () => {

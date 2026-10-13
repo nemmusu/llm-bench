@@ -1,5 +1,6 @@
 /** "Salva come preset": a name and "Avvia all'apertura di GPU Bench"; the rest comes from the server or the flow. */
 import { Bookmark } from 'lucide-react';
+import { toast } from 'sonner';
 import { useState } from 'react';
 import { useI18n } from '../../i18n';
 import { apiErrorData } from '../../lib/queries-runs';
@@ -11,16 +12,15 @@ import { Field, Input } from '../ui/input';
 type Save = (name: string, autoStart: boolean) => Promise<void>;
 
 export interface SavePresetDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   /** The port it will remember (said in the description). */
-  port: number | undefined;
+  port: number;
   defaultName: string;
-  /** Saves; a name in use comes back as VALIDATION 'preset_name_taken' and is said next to the field. */
+  /** Saves; a name in use comes back as VALIDATION 'preset_name_taken' and is said next to the field, other errors in a toast. */
   onSave: Save;
+  onClose: () => void;
 }
 
-function SaveForm({ port, defaultName, onSave, onCancel }: { port: number | undefined; defaultName: string; onSave: Save; onCancel: () => void }) {
+function SaveForm({ port, defaultName, onSave, onCancel }: { port: number; defaultName: string; onSave: Save; onCancel: () => void }) {
   const { t } = useI18n();
   const [name, setName] = useState(defaultName);
   const [autoStart, setAutoStart] = useState(false);
@@ -31,7 +31,9 @@ function SaveForm({ port, defaultName, onSave, onCancel }: { port: number | unde
     try {
       await onSave(name.trim(), autoStart);
     } catch (e) {
-      if (apiErrorData(e).params?.reason === 'preset_name_taken') setTaken(true);
+      const error = apiErrorData(e);
+      if (error.params?.reason === 'preset_name_taken') setTaken(true);
+      else toast.error(t(`errors.${error.code}.title`));
     } finally {
       setBusy(false);
     }
@@ -40,7 +42,7 @@ function SaveForm({ port, defaultName, onSave, onCancel }: { port: number | unde
   return (
     <DialogContent
       title={t('servers.flow.save.title')}
-      description={t('servers.flow.save.description', { port: port ?? '–' })}
+      description={t('servers.flow.save.description', { port })}
       footer={
         <>
           <Button onClick={onCancel}>{t('common.cancel')}</Button>
@@ -86,10 +88,11 @@ function SaveForm({ port, defaultName, onSave, onCancel }: { port: number | unde
   );
 }
 
-export function SavePresetDialog({ open, onOpenChange, port, defaultName, onSave }: SavePresetDialogProps) {
+/** Rendered while it is open (a fresh form every time). */
+export function SavePresetDialog({ port, defaultName, onSave, onClose }: SavePresetDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {open && <SaveForm port={port} defaultName={defaultName} onSave={onSave} onCancel={() => onOpenChange(false)} />}
+    <Dialog open onOpenChange={onClose}>
+      <SaveForm port={port} defaultName={defaultName} onSave={onSave} onCancel={onClose} />
     </Dialog>
   );
 }

@@ -1,9 +1,10 @@
 /** The Server page: running servers (address, snippets, Ferma / Riavvia / Log), presets, notices; the sidebar cards. */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerNotice } from '../../../../src/contract/servers';
+import { useNow } from '../../../../src/renderer/components/servers/server-card';
 import { renderApp } from '../helpers';
 import { activeRun, apiError, benchApi, deferred, serverInfo, serverPreset } from '../bench/world';
 
@@ -196,6 +197,10 @@ describe('Server page', () => {
     api.world.servers = [serverInfo('s2', { port: 8086 })];
     act(() => api.emit({ type: 'servers.changed' }));
     const s2 = await card('Server Qwen3 8B sulla porta 8086');
+    // "Annulla" closes it, nothing saved.
+    await userEvent.click(within(s2).getByRole('button', { name: 'Salva come preset' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await userEvent.click(within(s2).getByRole('button', { name: 'Salva come preset' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Salva' }));
     await waitFor(() => expect(api.calls.filter((c) => c.method === 'POST' && c.path === '/api/servers/presets').at(-1)?.body).not.toHaveProperty('recipe'));
@@ -292,6 +297,13 @@ describe('Server page: presets and notices', () => {
     expect(screen.getAllByText(/Modello non trovato\. Il file potrebbe essere stato spostato/)).toHaveLength(2);
     await userEvent.click(screen.getAllByRole('button', { name: 'Ho capito' })[0]!);
     await waitFor(() => expect(screen.queryByText('«Chat veloce» non è partito all’apertura di GPU Bench')).toBeNull());
+    // The core could not forget it (gone already, core restarting): the list is read again all the same.
+    api.world.routes['DELETE /api/servers/notices/n2'] = () => {
+      throw apiError('INTERNAL');
+    };
+    const reads = api.calls.filter((c) => c.path === '/api/servers/notices').length;
+    await userEvent.click(screen.getByRole('button', { name: 'Ho capito' }));
+    await waitFor(() => expect(api.calls.filter((c) => c.path === '/api/servers/notices').length).toBeGreaterThan(reads));
   });
 
   it('the core says what changed: the page reads servers and presets again', async () => {
@@ -365,5 +377,24 @@ describe('sidebar cards', () => {
     api.world.servers = [serverInfo('s1', { port: 8080, loading: { stage: 'starting', elapsedMs: 10 } })];
     act(() => api.emit({ type: 'servers.changed' }));
     expect(await within(link).findByText('si avvia')).toBeTruthy();
+    // Two, both ready: only how many more.
+    api.world.servers = [serverInfo('s1', { port: 8080 }), serverInfo('s2', { port: 8081 })];
+    act(() => api.emit({ type: 'servers.changed' }));
+    const two = await screen.findByRole('link', { name: 'Server attivi: 2. Qwen3 8B sulla porta 8080' });
+    expect(within(two).getByText('+1 altri')).toBeTruthy();
+  });
+});
+
+describe('useNow', () => {
+  it('ticks every interval (the uptime of the cards)', () => {
+    vi.useFakeTimers({ now: 1_000 });
+    try {
+      const { result } = renderHook(() => useNow(30_000));
+      expect(result.current).toBe(1_000);
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(result.current).toBe(31_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

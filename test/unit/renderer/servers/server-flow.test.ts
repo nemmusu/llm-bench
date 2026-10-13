@@ -8,7 +8,7 @@ import {
   parsePort,
   presetsForModel,
   serverModelOptions,
-  sourceOf,
+  presetSource,
   testedConfigs,
 } from '../../../../src/renderer/components/servers/server-flow';
 import { curatedModel, localModel, serverPreset } from '../bench/world';
@@ -78,10 +78,21 @@ describe('server flow helpers', () => {
     expect(parsePort('8090')).toEqual({ port: 8090, invalid: false });
     expect(parsePort('80')).toEqual({ port: undefined, invalid: true });
     expect(parsePort('8o8o')).toEqual({ port: undefined, invalid: true });
-    expect(sourceOf({ kind: 'auto' })).toEqual({ kind: 'auto' });
-    expect(sourceOf({ kind: 'draft', runId: 'r', combo: 2 })).toEqual({ kind: 'config', runId: 'r', combo: 2 });
-    expect(sourceOf({ kind: 'config', runId: 'r' })).toEqual({ kind: 'config', runId: 'r' });
-    expect(sourceOf({ kind: 'config' })).toEqual({ kind: 'custom' });
-    expect(sourceOf({ kind: 'preset' })).toEqual({ kind: 'custom' });
+    const best = { tab: 'best' as const, tunedRunId: undefined, test: undefined };
+    expect(presetSource({ ...best, best: 'auto' })).toEqual({ kind: 'auto' });
+    expect(presetSource({ ...best, best: 'auto', tunedRunId: 't' })).toEqual({ kind: 'tuned', runId: 't' });
+    expect(presetSource({ ...best, best: 'draft', test: { runId: 'r', combo: 2 } })).toEqual({ kind: 'config', runId: 'r', combo: 2 });
+    expect(presetSource({ ...best, best: 'config:x', test: { runId: 'r' } })).toEqual({ kind: 'config', runId: 'r' });
+    expect(presetSource({ ...best, best: 'config:x' })).toEqual({ kind: 'custom' });
+    expect(presetSource({ ...best, tab: 'presets', best: 'auto' })).toEqual({ kind: 'custom' });
+  });
+
+  it('tests measured without a generation speed come last and have no headline', () => {
+    const quiet = entry('quiet', { model: { key: 'k', name: 'Q', weakKey: 'local/q' }, points: [{ depth: 4096, prefillTps: 900, n: 1 }] });
+    const fast = entry('fast', { model: { key: 'k', name: 'Q', weakKey: 'local/q' } });
+    expect(testedConfigs([quiet, fast], { weakKey: 'local/q' }, 'llamacpp-native').map((c) => [c.entry.id, c.headline?.depth])).toEqual([
+      ['fast', 4096],
+      ['quiet', undefined],
+    ]);
   });
 });

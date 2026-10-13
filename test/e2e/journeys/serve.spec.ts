@@ -1,77 +1,111 @@
+/**
+ * A server of one's own, kept running: "Comandi personalizzati" saved as a preset that starts with
+ * GPU Bench, started from it; closing the window keeps GPU Bench in the tray (the tray through the
+ * main process's test hooks, see server-helpers.ts) and the server answering; "Esci" stops it.
+ */
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, launchApp, test } from '../fixtures';
-import { scan, skipWelcome } from './bench-helpers';
-import { openPage } from './library-helpers';
+import { h1, scan, skipWelcome } from './bench-helpers';
+import { cardUrl, expectTrayLine, hook, modelsStatus, serverCard } from './server-helpers';
 
-test.describe.configure({ timeout: 150_000 });
+test.describe.configure({ timeout: 180_000 });
 
-const FAST_ENGINE = { FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, loadMsCold: 300, prefillTps: 15000, decodeTps: 1500, tokensPerChunk: 4 }) };
+const FAST = { FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, loadMsCold: 300, prefillTps: 15000, decodeTps: 1500, tokensPerChunk: 4 }) };
+/** A port of this test's own, far from 8080 (other journeys may run servers at the same time). */
+const PORT = 18431;
+const URL = `http://127.0.0.1:${PORT}/v1`;
 
-test('start only the server from the Benchmark page: what will run, the address, the running list, Stop', async () => {
-  const gb = await launchApp({ env: FAST_ENGINE });
+test('custom commands saved as a preset and started from it; the window closes to the tray, the server keeps answering; "Esci" stops it; the preset starts with GPU Bench', async () => {
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-serve-'));
+  let gb = await launchApp({ env: FAST, userData });
   try {
     const { page, app } = gb;
     await skipWelcome(page);
-    await expect(page.getByRole('button', { name: /Cambia modello: Qwen3 0\.6B/ })).toBeVisible();
+    const nav = page.getByRole('navigation', { name: 'Navigazione principale' });
+    await nav.getByRole('link', { name: 'Server', exact: true }).click();
+    await page.getByRole('link', { name: 'Avvia un server' }).first().click();
+    await expect(h1(page, 'Avvia un server')).toBeVisible();
 
-    // One click, then one clear confirmation: how much text it takes, whether it fits, what is installed first, the command.
-    await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
-    const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
-    await expect(confirm.getByText('32.768 token')).toBeVisible({ timeout: 30_000 });
-    await expect(confirm.getByText(/L’ho scelto perché entri bene nella tua scheda video/)).toBeVisible();
-    await expect(confirm.getByText('Entra perfettamente')).toBeVisible();
-    await expect(confirm.getByText('Installo llama.cpp')).toBeVisible();
-    const command = confirm.getByRole('region', { name: 'Comando esatto' });
-    await expect(command).toContainText('-c 32768');
-    await expect(command).toContainText('Qwen3-0.6B-Q4_K_M.gguf');
-    await scan(page, 'server confirmation');
-    await confirm.getByRole('button', { name: 'Avvia server' }).click();
+    // "Comandi personalizzati": the context, an extra argument and a port of its own; the exact command follows.
+    await page.getByRole('tab', { name: 'Comandi personalizzati' }).click();
+    await page.getByLabel('Contesto (token)').fill('4096');
+    await page.getByLabel('Argomenti extra').fill('--metrics');
+    await page.getByRole('textbox', { name: 'Porta' }).fill(String(PORT));
+    const command = page.getByRole('region', { name: 'Comando esatto' });
+    await expect(command).toContainText('--metrics', { timeout: 30_000 });
+    await expect(command).toContainText('-c 4096');
+    await expect(command).toContainText(String(PORT));
+    await scan(page, 'custom commands');
 
-    // llama.cpp is installed first, then the server answers at its address.
-    const ready = page.getByRole('dialog', { name: 'Il server è pronto' });
-    await expect(ready.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 90_000 });
-    await expect(ready.getByText(/Contesto 32\.768 token/)).toBeVisible();
-    await scan(page, 'server ready');
-    const url = (await ready.getByText(/^http:\/\/127\.0\.0\.1:\d+\/v1$/).textContent())!;
+    // Saved as a preset that starts with GPU Bench.
+    await page.getByRole('button', { name: 'Salva come preset' }).click();
+    const save = page.getByRole('dialog', { name: 'Salva come preset' });
+    await expect(save.getByText(`porta ${PORT}.`, { exact: false })).toBeVisible();
+    await save.getByLabel('Nome').fill('Chat veloce');
+    await save.getByRole('checkbox', { name: /Avvia all’apertura di GPU Bench/ }).click();
+    await scan(page, 'save as preset');
+    await save.getByRole('button', { name: 'Salva' }).click();
+    await expect(page.getByText('Preset «Chat veloce» salvato')).toBeVisible();
+
+    // Started from here first: llama.cpp is installed, then the server answers on its port; stopped.
+    await page.getByRole('button', { name: 'Scarica e avvia' }).click();
+    await expect(h1(page, /^Server$/)).toBeVisible({ timeout: 90_000 });
+    const first = serverCard(page, /Qwen3 0\.6B.*/);
+    await expect(first.getByText('Acceso', { exact: true })).toBeVisible({ timeout: 60_000 });
+    expect(await cardUrl(first)).toBe(URL);
+    await first.getByRole('button', { name: /^Ferma il server / }).click();
+    await expect.poll(() => modelsStatus(URL), { timeout: 20_000 }).toBe(0);
+
+    // Then from the preset, with one click, on the same port.
+    await page.getByRole('button', { name: 'Avvia il preset Chat veloce' }).click();
+    const card = serverCard(page, 'Chat veloce');
+    await expect(card.getByText('Acceso', { exact: true })).toBeVisible({ timeout: 60_000 });
+    expect(await cardUrl(card)).toBe(URL);
+    expect(await modelsStatus(URL)).toBe(200);
+
+    // The tray lists it, says it in the tooltip and copies its address.
+    await expectTrayLine(app, new RegExp(`^Chat veloce · porta ${PORT}$`));
+    expect(await hook(app, 'trayStatus')).toBe('running');
+    expect(await hook(app, 'trayTooltip')).toContain('1 server attivo');
     await app.evaluate(({ clipboard }) => clipboard.writeText(''));
-    await ready.getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI' }).click();
-    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(url);
-    // Other programs really can talk to it.
-    expect((await fetch(`${url}/models`)).status).toBe(200);
-    await ready.getByRole('button', { name: 'Lascia acceso' }).click();
-    await expect(ready).toBeHidden();
+    expect(await hook(app, 'clickTray', `Chat veloce · porta ${PORT}`, 'Copia indirizzo')).toBe(true);
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(URL);
 
-    // The Benchmark page lists it with its context, and stops it.
-    await expect(page.getByRole('heading', { name: 'Server attivi' })).toBeVisible();
-    await expect(page.getByText('Contesto 32.768 token')).toBeVisible();
-    await scan(page, 'running server with its context');
-    await page.getByRole('button', { name: /Ferma il server di/ }).click();
-    await expect(page.getByText(/fermato/)).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Server attivi' })).toBeHidden();
-    await expect.poll(() => fetch(`${url}/models`).then((r) => r.status, () => 0)).toBe(0);
+    // Closing the window: GPU Bench stays in the tray (said once), the server keeps answering.
+    await hook(app, 'closeWindow');
+    await expect.poll(async () => (await hook(app, 'notifications')).map((n) => n.body)).toContain('GPU Bench resta attivo nell’area di notifica: il server continua a funzionare.');
+    expect(await hook(app, 'windowState')).toMatchObject({ visible: false, destroyed: false });
+    expect(await modelsStatus(URL)).toBe(200);
+
+    // "Avvia GPU Bench all'accesso": the login item follows the switch (a file here, never this PC's real one).
+    await nav.getByRole('link', { name: 'Impostazioni' }).click();
+    await page.getByRole('switch', { name: 'Avvia GPU Bench all’accesso' }).click();
+    const loginFile = path.join(userData, 'login-item.json');
+    await expect.poll(() => (existsSync(loginFile) ? (JSON.parse(readFileSync(loginFile, 'utf8')) as { openAtLogin?: boolean }).openAtLogin : undefined)).toBe(true);
+
+    // "Esci" from the tray, confirmed: GPU Bench stops its server and quits.
+    await hook(app, 'answerQuit', true);
+    const exited = new Promise<void>((resolve) => app.process().once('exit', () => resolve()));
+    expect(await hook(app, 'clickTray', 'Esci')).toBe(true);
+    await exited;
+    await expect.poll(() => modelsStatus(URL), { timeout: 20_000 }).toBe(0);
   } finally {
-    await gb.close();
+    // Already gone after "Esci"; closed here when a step above failed.
+    await gb.close().catch(() => undefined);
   }
-});
 
-test('Models → Sul tuo PC → Avvia server: a model on the PC served with the recommended settings', async () => {
-  const gb = await launchApp({ env: FAST_ENGINE });
+  // Next time GPU Bench opens, the preset marked "Avvia all'apertura" starts by itself.
+  gb = await launchApp({ env: FAST, userData });
   try {
-    const { page } = gb;
-    await skipWelcome(page);
-    await openPage(page, 'Modelli');
-    const list = page.getByRole('list', { name: 'Sul tuo PC' });
-    await list.getByRole('button', { name: /^Avvia server: Qwen3/ }).click();
-    const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
-    await expect(confirm.getByText('32.768 token')).toBeVisible({ timeout: 30_000 });
-    await expect(confirm.getByText(/con llama\.cpp\. Altri programmi potranno usarlo/)).toBeVisible();
-    await scan(page, 'server confirmation from Models');
-    await confirm.getByRole('button', { name: 'Avvia server' }).click();
-    const ready = page.getByRole('dialog', { name: 'Il server è pronto' });
-    await expect(ready.getByText('Indirizzo compatibile OpenAI')).toBeVisible({ timeout: 90_000 });
-    await ready.getByRole('button', { name: 'Ferma' }).click();
-    await expect(page.getByText(/fermato/)).toBeVisible();
-    await expect(ready).toBeHidden();
+    const { page, app } = gb;
+    await expect(h1(page, 'Benchmark')).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Server attivi: 1\. Chat veloce/ })).toBeVisible({ timeout: 60_000 });
+    await expect.poll(() => modelsStatus(URL), { timeout: 60_000 }).toBe(200);
+    await expectTrayLine(app, new RegExp(`^Chat veloce · porta ${PORT}$`));
   } finally {
     await gb.close();
+    rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });

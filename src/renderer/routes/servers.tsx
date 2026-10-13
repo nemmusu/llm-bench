@@ -40,7 +40,7 @@ export function ServersPage() {
   const servers = useServers();
   const presets = useServerPresets();
   const notices = useServerNotices();
-  const customs = useCustomEngines();
+  const customList = useCustomEngines().data ?? [];
   const actions = useServerActions();
   const { create } = usePresetMutations();
   const openFlow = useOpenServerFlow();
@@ -106,7 +106,7 @@ export function ServersPage() {
           ) : list.length ? (
             <div className="grid gap-4 2xl:grid-cols-2">
               {list.map((s) => (
-                <ServerCard key={s.id} server={s} customs={customs.data ?? []} now={now} onStop={(x) => void actions.stop(x)} onRestart={(x) => void actions.restart(x)} onSave={setSaving} />
+                <ServerCard key={s.id} server={s} customs={customList} now={now} onStop={(x) => void actions.stop(x)} onRestart={(x) => void actions.restart(x)} onSave={setSaving} />
               ))}
             </div>
           ) : (
@@ -134,7 +134,7 @@ export function ServersPage() {
             {presets.isPending ? (
               <Skeleton className="m-card h-20" />
             ) : presets.data?.length ? (
-              <PresetsList presets={presets.data} running={running} customs={customs.data ?? []} onStart={(p) => void actions.startPreset(p)} onEdit={edit} />
+              <PresetsList presets={presets.data} running={running} customs={customList} onStart={(p) => void actions.startPreset(p)} onEdit={edit} />
             ) : (
               <div className="flex flex-col gap-1 px-card py-6">
                 <p className="text-sm font-medium text-fg">{t('servers.presets.noneTitle')}</p>
@@ -144,7 +144,7 @@ export function ServersPage() {
           </Card>
         </section>
       </div>
-      <SavePresetDialog open={saving !== undefined} onOpenChange={() => setSaving(undefined)} port={saving?.port} defaultName={saving?.modelLabel ?? ''} onSave={savePreset} />
+      {saving && <SavePresetDialog port={saving.port} defaultName={saving.modelLabel} onClose={() => setSaving(undefined)} onSave={savePreset} />}
     </Page>
   );
 }

@@ -33,13 +33,22 @@ describe('preset of a run saved before the context sweep existed', () => {
 function ServerDraftPage() {
   const qc = useQueryClient();
   const [draft] = useState(() => takeServerDraft(qc));
-  return <p>server draft {draft?.params?.contextSize}</p>;
+  return (
+    <p>
+      server draft {draft?.params?.contextSize}
+      {draft?.hub ? ` from ${draft.hub.repo}` : ''}
+    </p>
+  );
 }
 
 describe('preset actions of a run', () => {
-  it('use the run’s own launch parameters', async () => {
+  it.each([
+    ['on the PC', false],
+    ['deleted since: downloaded again first', true],
+  ])('use the run’s own launch parameters (model %s)', async (_label, gone) => {
     const run = seeded(IDS.full);
     run.launch = { ...run.launch, params: { ...run.launch.params, contextSize: 12288 } };
+    if (gone) run.model = { ...run.model, source: 'hf', repo: 'org/gone-GGUF', file: 'gone.gguf', weakKey: 'hf/gone', sha256: undefined, path: undefined };
     const api = benchApi({ runs: [run] });
     const root = createRootRoute();
     const tree = root.addChildren([
@@ -62,7 +71,7 @@ describe('preset actions of a run', () => {
       </ApiProvider>,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Avvia il server così' }));
-    expect(await screen.findByText('server draft 12288')).toBeTruthy();
+    expect(await screen.findByText(gone ? 'server draft 12288 from org/gone-GGUF' : 'server draft 12288')).toBeTruthy();
     act(() => router.history.back());
     await userEvent.click(await screen.findByRole('button', { name: 'Usa questo preset' }));
     expect(await screen.findByText('home')).toBeTruthy();

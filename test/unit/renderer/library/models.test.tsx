@@ -177,6 +177,12 @@ describe('models: start a server', () => {
     expect(serveEngineFor(st, { kind: 'llamacpp-native' }, engines)).toEqual({ kind: 'vllm-docker' });
     expect(serveEngineFor(st, undefined, undefined)).toEqual({ kind: 'vllm-docker' });
     expect(serveEngineFor(st, undefined, linux)).toEqual({ kind: 'vllm-native' });
+    // A .ninfer artifact: the NInfer that is ready, else the one this OS runs.
+    const nf = localModel('n', { identity: { format: 'ninfer', quant: undefined } });
+    const wsl = [...engines, { ...engines[0]!, kind: 'ninfer-wsl' as const, available: true }];
+    expect(serveEngineFor(nf, undefined, wsl, 'linux')).toEqual({ kind: 'ninfer-wsl' });
+    expect(serveEngineFor(nf, undefined, engines, 'win32')).toEqual({ kind: 'ninfer-wsl' });
+    expect(serveEngineFor(nf, undefined, undefined)).toEqual({ kind: 'ninfer-native' });
   });
 });
 
