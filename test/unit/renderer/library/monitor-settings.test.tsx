@@ -137,13 +137,15 @@ describe('settings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
     const list = await screen.findByRole('list', { name: 'Altre cartelle con modelli' });
     expect(within(list).getByText('F:\\More')).toBeTruthy();
+    // The same folder again: scanned again, and said so.
     b.pickFolder.mockResolvedValueOnce('F:\\More');
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
+    expect(await screen.findByText('La cartella è già nell’elenco: l’ho ricontrollata')).toBeTruthy();
     await userEvent.click(within(list).getByRole('button', { name: 'Togli F:\\More' }));
     await waitFor(() => expect(api.w.settings.extraModelDirs).toEqual([]));
     await userEvent.click(screen.getByRole('switch', { name: 'Cerca anche nelle cartelle note' }));
     await waitFor(() => expect(api.w.settings.scanKnownLocations).toBe(false));
-    expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(4);
+    expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(5);
     b.pickFolder.mockResolvedValue(null);
     for (const name of ['Scegli cartella… Cartella dei risultati', 'Scegli cartella… Cartella dei modelli', 'Aggiungi cartella']) await userEvent.click(screen.getByRole('button', { name }));
     api.on('PUT /api/settings', () => fail('VALIDATION'));

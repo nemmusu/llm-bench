@@ -132,7 +132,7 @@ function HubRow({ m, tried, engine, gpuName }: { m: HubModel; tried: TriedModel 
             <span className="relative z-10">
               <FitBadge short level={m.fit.level} size="sm" detail={t('models.catalog.fitDetail', { quant: m.fit.quant, need: mib(m.fit.needMiB), available: mib(m.fit.availableMiB) })} />
             </span>
-          ) : (
+          ) : m.formats.length > 0 && m.formats.every((f) => f === 'other') ? undefined : (
             <span>{t('models.catalog.sizeUnknown')}</span>
           ),
           m.paramsB !== undefined && (
@@ -289,7 +289,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
           <ChipRadios
             label={t('models.format.label')}
             value={engine}
-            onChange={(e) => onChange({ engine: e, author: '' })}
+            onChange={(e) => onChange({ engine: e })}
             options={ENGINE_FILTERS.map((e) => ({ value: e, label: t(`models.format.${e}`) }))}
           />
         </FilterGroup>

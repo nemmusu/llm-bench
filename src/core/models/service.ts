@@ -9,7 +9,8 @@ import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
-import { estimateFit, FIT_NOTES, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
+import { ninferFit } from '../../contract/ninfer';
+import { estimateFit, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
@@ -261,6 +262,11 @@ export class ModelsService {
     if (req.localId) {
       const m = await this.get(req.localId);
       const facts = m.identity.facts ?? {};
+      // A .ninfer artifact: NInfer's own estimate, with what its manifest said (the scanner keeps it in the facts).
+      if (m.identity.format === 'ninfer') {
+        const manifest = { ...(facts.name ? { name: facts.name } : {}), ...(facts.components ? { components: facts.components } : {}) };
+        return ninferFit({ artifactBytes: m.identity.sizeBytes ?? 0, manifest, label: m.identity.displayName, params: req.params, gpu });
+      }
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
       return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(await calibrated(id, facts)) });
     }
@@ -294,8 +300,8 @@ export class ModelsService {
     const gpu = await this.gpu();
     const [files, info] = await Promise.all([this.hub.files(repo, opts.revision), this.hub.info(repo, opts.revision).catch(() => undefined)]);
     const layout = repoLayout(files, { name: info?.name ?? repo, tags: info?.tags ?? [] });
+    if (opts.format === 'ninfer') return this.ninferFit(repo, layout, gpu, opts.params, opts.revision);
     const params = fitParamsFrom(opts.params);
-    if (opts.format === 'ninfer') return this.ninferFit(repo, layout, gpu, params, opts.revision);
     if (runsSafetensors(engine)) return this.variantsFit(repo, layout.safetensors, gpu, engine, params, opts.revision);
     const ggufWeights = [...layout.gguf.weights].sort((a, b) => a.path.localeCompare(b.path));
     if (ggufWeights.length === 0) return { choices: [], facts: {} };
@@ -309,10 +315,11 @@ export class ModelsService {
   }
 
   /**
-   * One choice per NInfer artifact: its bytes plus llama.cpp's KV math (marked approximate), with the
-   * layout read from a GGUF of the same repo when there is one, else the manifest and the repo name.
+   * One choice per NInfer artifact, judged by NInfer's own estimate (contract/ninfer.ts ninferFit: the
+   * artifact minus the parts a launch leaves on disk, its runtime, its KV pool), with the manifest's
+   * facts and, for the facts card, a GGUF of the same repo when there is one.
    */
-  private async ninferFit(repo: string, layout: RepoLayout<HubFile>, gpu: GpuMem, params: FitParams, revision?: string): Promise<HubFitResult> {
+  private async ninferFit(repo: string, layout: RepoLayout<HubFile>, gpu: GpuMem, params: FitRequest['params'], revision?: string): Promise<HubFitResult> {
     if (layout.ninfer.length === 0) return { choices: [], facts: {} };
     const ggufWeights = [...layout.gguf.weights].sort((a, b) => a.path.localeCompare(b.path));
     const fromGguf = ggufWeights.length > 0 ? await this.readableFacts(repo, ggufWeights, revision).catch(() => undefined) : undefined;
@@ -324,9 +331,15 @@ export class ModelsService {
       const name = path.posix.basename(a.artifact.path);
       const quant = precisionFromText(name) ?? 'NVFP4';
       const paramsB = paramsFromLabel(repo.split('/')[1]) ?? fromGguf?.paramsB;
-      facts = { ...(fromGguf ?? {}), ...(manifest?.architecture ? { architecture: manifest.architecture } : {}), ...(manifest?.name ? { name: manifest.name } : {}), ...(paramsB ? { paramsB } : {}), quant };
-      const fit = estimateFit({ facts: { ...facts, bitsPerWeight: undefined, cpuOnlyFraction: undefined }, fileBytes: a.artifact.sizeBytes, gpu, engine: 'llamacpp-native', params });
-      fit.notes.push(FIT_NOTES.ninferApprox);
+      facts = {
+        ...(fromGguf ?? {}),
+        ...(manifest?.architecture ? { architecture: manifest.architecture } : {}),
+        ...(manifest?.name ? { name: manifest.name } : {}),
+        ...(manifest?.components.length ? { components: manifest.components } : {}),
+        ...(paramsB ? { paramsB } : {}),
+        quant,
+      };
+      const fit = ninferFit({ artifactBytes: a.artifact.sizeBytes, manifest, label: `${repo} ${name}`, params, gpu });
       choices.push({
         groupKey: a.artifact.path,
         quant,

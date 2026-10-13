@@ -63,8 +63,6 @@ export const FIT_NOTES = {
   budgetOverFree: 'vllm.budget-exceeds-free',
   kvTooSmall: 'vllm.kv-too-small',
   external: 'engine.external',
-  /** NInfer: the artifact's bytes plus llama.cpp's KV math; NInfer's own allocations are not known yet. */
-  ninferApprox: 'ninfer.approximate',
 } as const;
 
 export interface FitParams {

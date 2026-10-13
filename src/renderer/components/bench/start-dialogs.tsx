@@ -16,6 +16,7 @@ import { HelpTip } from '../ui/help-tip';
 import { Progress } from '../ui/progress';
 import { ErrorCard, fixFor } from './error-card';
 import type { Need } from './needs';
+import { BusyVramNote } from '../library/busy-note';
 import { FitSummary, PlanWarnings } from './plan-card';
 import { ServerReady, useStopServer } from './servers';
 import { Link } from '@tanstack/react-router';
@@ -257,6 +258,7 @@ function ServeConfirm({ request, opts }: { request: StartServerRequest; opts: Fl
           <NeedList needs={opts.needs} mode="serve" />
         </div>
       )}
+      <BusyVramNote fit={plan?.fit} kind="server" />
       {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} />}
       <p className="text-xs text-fg-3">{t('servers.confirmHint')}</p>
       {plan && (

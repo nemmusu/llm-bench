@@ -43,6 +43,8 @@ export const modelFactsSchema = z.object({
   feedForwardLength: z.number().int().optional(),
   /** Share of the GGUF file llama.cpp keeps in RAM (input embeddings). */
   cpuOnlyFraction: z.number().optional(),
+  /** NInfer artifacts: the parts packed in it, from its manifest ("text", "vision", "mtp", "dflash2"). */
+  components: z.array(z.string()).optional(),
 });
 export type ModelFacts = z.infer<typeof modelFactsSchema>;
 

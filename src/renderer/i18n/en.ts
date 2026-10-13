@@ -165,7 +165,7 @@ export const en: Messages = {
     ropeExtended: 'Context extended with YaRN: beyond the model’s limit only speed and memory count.',
     approximate: 'Rough estimate: NInfer manages memory its own way.',
     busy: {
-      title: 'Other programs are using {used} of the card right now',
+      title: 'Other programs are using {used} of the card right now.',
       run: 'To test it as it is, close them; otherwise the test starts with less memory ({free} free right now).',
       server: 'To use it as it is, close them; otherwise the server starts with less memory ({free} free right now).',
       catalog: 'Fits / does not fit looks at the card’s total memory. Close those programs before a test to have all the room.',
@@ -2118,6 +2118,7 @@ export const en: Messages = {
         ninfer: 'RTX 5090 only',
       },
       unsupported: 'not supported',
+      module: 'part of a model',
       help: {
         gguf: 'GGUF files: llama.cpp runs them, the easiest engine to start.',
         safetensors: 'Safetensors weights: vLLM and SGLang run them, great with many users at once.',
@@ -2278,6 +2279,8 @@ export const en: Messages = {
       chooseHint: 'I already selected the best one that fits your graphics card.',
       best: 'Recommended',
       parts: '{n} parts',
+      fileCount1: '1 file',
+      fileCount: '{n} files',
       wholeRepo: 'Full model',
       extras: 'Extra files (optional)',
       download: 'Download {quant} · {size}',

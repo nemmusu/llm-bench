@@ -166,7 +166,7 @@ export const it = {
     ropeExtended: 'Contesto esteso con YaRN: oltre il limite del modello contano solo la velocità e la memoria.',
     approximate: 'Stima approssimativa: NInfer gestisce la memoria a modo suo.',
     busy: {
-      title: 'Ora altri programmi usano {used} della scheda',
+      title: 'Ora altri programmi usano {used} della scheda.',
       run: 'Per provarlo così com’è chiudili, oppure il test partirà con meno memoria ({free} liberi adesso).',
       server: 'Per usarlo così com’è chiudili, oppure il server partirà con meno memoria ({free} liberi adesso).',
       catalog: 'Entra / non entra guarda la memoria totale della scheda. Prima di un test chiudi quei programmi per avere tutto lo spazio.',
@@ -2119,6 +2119,7 @@ export const it = {
         ninfer: 'solo RTX 5090',
       },
       unsupported: 'non supportato',
+      module: 'parte di un modello',
       help: {
         gguf: 'File GGUF: li usa llama.cpp, il motore più semplice da avviare.',
         safetensors: 'Pesi safetensors: li usano vLLM e SGLang, ottimi con molti utenti insieme.',
@@ -2279,6 +2280,8 @@ export const it = {
       chooseHint: 'Ho già selezionato la migliore che entra nella tua scheda video.',
       best: 'Consigliata',
       parts: '{n} parti',
+      fileCount1: '1 file',
+      fileCount: '{n} file',
       wholeRepo: 'Modello completo',
       extras: 'File aggiuntivi (facoltativi)',
       download: 'Scarica {quant} · {size}',

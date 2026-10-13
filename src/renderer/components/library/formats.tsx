@@ -60,8 +60,11 @@ export function FormatBadge({ format, precision, active, size = 'sm' }: { format
   );
 }
 
-/** A format GPU Bench cannot run (MLX, ONNX, EXL2…): shown, marked as not supported. */
-export function OtherFormatBadge({ name, size = 'sm' }: { name?: string | undefined; size?: 'sm' | 'md' }) {
+/**
+ * A format GPU Bench cannot run (MLX, ONNX, EXL2…): shown, marked as not supported. `module`: an MTP head
+ * or a draft shipped as its own folder, a part of a model rather than a format.
+ */
+export function OtherFormatBadge({ name, module, size = 'sm' }: { name?: string | undefined; module?: boolean; size?: 'sm' | 'md' }) {
   const { t } = useI18n();
   return (
     <Tooltip content={t('models.formats.help.other')}>
@@ -71,7 +74,7 @@ export function OtherFormatBadge({ name, size = 'sm' }: { name?: string | undefi
         <span aria-hidden className="opacity-60">
           ·
         </span>
-        <span>{t('models.formats.unsupported')}</span>
+        <span>{module ? t('models.formats.module') : t('models.formats.unsupported')}</span>
       </Badge>
     </Tooltip>
   );
