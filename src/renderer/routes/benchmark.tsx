@@ -473,7 +473,8 @@ function BenchmarkScreen() {
                 }}
                 className="h-11 text-md font-semibold"
                 // Custom engines right under the engine they are built on ("llama.cpp · PrismML fork"); programs of the user's own last.
-                options={[...ENGINE_ORDER.filter((k) => expert || k !== 'external'), 'command' as const].flatMap((k) => [
+                // NInfer is listed only as the kind this system runs (Linux natively, Windows in WSL).
+                options={[...ENGINE_ORDER.filter((k) => (expert || k !== 'external') && !(isNinferKind(k) && statusOf(k)?.supported === false)), 'command' as const].flatMap((k) => [
                   ...(k === 'command' ? [] : [{ value: k as string, label: t(`benchmark.engines.${k}`), description: t(`benchmark.engineDesc.${k}`), disabled: statusOf(k)?.supported === false }]),
                   ...settings.customEngines
                     .filter((e) => customEngineKindOf(e) === k)

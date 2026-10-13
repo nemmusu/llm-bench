@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { NINFER_FILE, NINFER_MANIFEST, NINFER_SUMS, parseNinferManifest, parseSha256Sums, precisionFromText } from '../../contract/formats';
 import type { LocalModel } from '../../contract/models';
+import { trainedContextOf } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
 import type { Logger, Platform } from '../deps';
 import { readJsonFile, writeFileAtomic } from '../store/atomic';
@@ -45,8 +46,8 @@ export const DOWNLOAD_SIDECAR = '.gpubench-download.json';
 export interface DownloadSidecar {
   repo: string;
   revision?: string;
-  /** Files fully downloaded and verified, by path in the repo. */
-  files: Record<string, { sha256?: string; sizeBytes?: number }>;
+  /** Files fully downloaded and verified, by path in the repo; `previous` is the version an update replaced. */
+  files: Record<string, { sha256?: string; sizeBytes?: number; previous?: { sha256?: string; sizeBytes?: number } }>;
   /** Every file a download into this folder set out to fetch (paths in the repo), done or not. */
   planned?: string[];
 }
@@ -193,11 +194,12 @@ export class ModelScanner {
     const stack: { dir: string; depth: number }[] = [{ dir: root.dir, depth: 0 }];
     while (stack.length > 0 && state.budget > 0) {
       const { dir, depth } = stack.pop() as { dir: string; depth: number };
-      // Missing roots fail realpath; a root that is a file fails readdir. Both are skipped.
-      const real = await maybe(realpath(dir));
-      const entries = real === undefined ? undefined : await maybe(readdir(dir, { withFileTypes: true }));
+      // Missing roots and roots that are files fail readdir: skipped.
+      const entries = await maybe(readdir(dir, { withFileTypes: true }));
       if (!entries) continue;
-      const key = normalizePath(real as string, this.opts.platform);
+      // Some drives cannot resolve real paths (a Linux partition mounted on Windows, some network shares):
+      // the folder as written is the key then.
+      const key = normalizePath((await maybe(realpath(dir))) ?? dir, this.opts.platform);
       if (state.seenDirs.has(key)) continue;
       state.seenDirs.add(key);
       const files: FileInfo[] = [];
@@ -356,6 +358,7 @@ export class ModelScanner {
     if (quant) identity.quant = quant;
     if (sha256.sha) identity.sha256 = sha256.sha;
     if (m.facts) identity.facts = m.facts;
+    const previous = previousOf(src, m.files, main);
     return {
       id: modelIdFor(main.path, this.opts.platform),
       identity,
@@ -364,6 +367,8 @@ export class ModelScanner {
       dir,
       origin: root.origin,
       modifiedAt: new Date(mtime).toISOString(),
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
+      ...(previous ? { previous } : {}),
     };
   }
 
@@ -383,6 +388,7 @@ export class ModelScanner {
       origin: root.origin,
       modifiedAt: new Date(Math.max(...p.files.map((f) => f.mtimeMs))).toISOString(),
       incomplete: { have: p.have, total: p.total },
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
     };
   }
 
@@ -477,6 +483,7 @@ export class ModelScanner {
       origin: root.origin,
       modifiedAt: new Date(mtime).toISOString(),
       ...(incomplete ? { incomplete } : {}),
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
     };
   }
 
@@ -491,7 +498,7 @@ export class ModelScanner {
     const manifestFile = l.files.find((f) => NINFER_MANIFEST.test(f.name));
     const manifest = manifestFile ? parseNinferManifest(await maybe(readJsonFile(manifestFile.path))) : undefined;
     const sumsFile = l.files.find((f) => NINFER_SUMS.test(f.name));
-    const sums = sumsFile ? parseSha256Sums((await maybe(readFile(sumsFile.path, 'utf8'))) ?? '') : new Map<string, string>();
+    const sums = parseSha256Sums(sumsFile ? await maybe(readFile(sumsFile.path, 'utf8')) : undefined);
     const out: LocalModel[] = [];
     for (const f of artifacts) {
       const mine = manifest && (manifest.filename === undefined || manifest.filename === f.name) ? manifest : undefined;
@@ -504,6 +511,8 @@ export class ModelScanner {
         ...(mine?.name ? { name: mine.name } : {}),
         ...(mine?.components.length ? { components: mine.components } : {}),
         ...(paramsB ? { paramsB } : {}),
+        // The manifest does not say the trained context: NInfer's models' own (contract/ninfer.ts), as the bench and tuner read it.
+        contextLength: trainedContextOf({ format: 'ninfer' }),
       };
       const quant = precisionFromText(f.name);
       const identity: LocalModel['identity'] = {
@@ -518,7 +527,7 @@ export class ModelScanner {
         facts,
       };
       if (src.repo) identity.repo = src.repo;
-      if (src.revision ?? known.revision) identity.revision = (src.revision ?? known.revision) as string;
+      if (src.revision) identity.revision = src.revision;
       if (quant) identity.quant = quant;
       if (sha256) identity.sha256 = sha256;
       out.push({
@@ -529,6 +538,7 @@ export class ModelScanner {
         dir: l.dir,
         origin: root.origin,
         modifiedAt: new Date(f.mtimeMs).toISOString(),
+        ...(src.repoDir ? { repoDir: src.repoDir } : {}),
       });
     }
     return out;
@@ -715,6 +725,20 @@ export class ModelScanner {
 /** Resolves to undefined instead of rejecting (missing files, races with deletes). */
 function maybe<T>(p: Promise<T>): Promise<T | undefined> {
   return p.catch(() => undefined);
+}
+
+/**
+ * The version an update replaced (the sidecar keeps the old sha256 and size of each file it swapped):
+ * results measured with it match its sha256 or its weak key ("provato con la versione precedente").
+ */
+function previousOf(src: Source, files: FileInfo[], main: FileInfo): LocalModel['previous'] {
+  const { sidecar, repoDir } = src;
+  if (!sidecar || !repoDir) return undefined;
+  const old = (f: FileInfo) => sidecar.files[path.relative(repoDir, f.path).split(path.sep).join('/')]?.previous;
+  if (!files.some((f) => old(f))) return undefined;
+  const sizeBytes = files.reduce((a, f) => a + (old(f)?.sizeBytes ?? f.size), 0);
+  const sha256 = old(main)?.sha256;
+  return { ...(sha256 ? { sha256 } : {}), weakKey: weakKey({ repo: src.repo, file: main.name, quant: quantFromFilename(main.name), sizeBytes }) };
 }
 
 export async function readSidecar(repoDir: string): Promise<DownloadSidecar | undefined> {

@@ -148,6 +148,14 @@ describe('settings', () => {
     expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(5);
     b.pickFolder.mockResolvedValue(null);
     for (const name of ['Scegli cartella… Cartella dei risultati', 'Scegli cartella… Cartella dei modelli', 'Aggiungi cartella']) await userEvent.click(screen.getByRole('button', { name }));
+    // A rescan that fails says why (the folder is already listed: only the rescan runs).
+    b.pickFolder.mockResolvedValueOnce('G:\\Again');
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
+    expect(await within(await screen.findByRole('list', { name: 'Altre cartelle con modelli' })).findByText('G:\\Again')).toBeTruthy();
+    api.on('POST /api/models/rescan', () => fail('DISK_FULL', 507));
+    b.pickFolder.mockResolvedValueOnce('G:\\Again');
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }));
+    expect(await screen.findByText('Spazio su disco esaurito')).toBeTruthy();
     api.on('PUT /api/settings', () => fail('VALIDATION'));
     await userEvent.click(screen.getByRole('switch', { name: 'Cerca anche nelle cartelle note' }));
     expect(await screen.findByText('Alcuni valori non sono validi')).toBeTruthy();

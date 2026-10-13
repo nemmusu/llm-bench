@@ -12,6 +12,7 @@ import { FormatBadge, FormatBadges, OtherFormatBadge, type ModelFormat } from '.
 import { HF_BASE, fileName, repoFiles, repoUrl } from '../components/library/helpers';
 import { HfTokenForm } from '../components/library/hf-token';
 import { ModelDetailSlots } from '../components/library/model-detail-slots';
+import { OnThisPc } from '../components/library/model-updates';
 import { QuantChooser } from '../components/library/quant-chooser';
 import { Page } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
@@ -258,6 +259,7 @@ export function ModelDetailPage() {
               <Skeleton className="h-28 rounded-xl" />
             </div>
           )}
+          <OnThisPc repo={repo} onDownload={setChoice} />
           {nothing && (
             <Card>
               <CardContent>

@@ -14,6 +14,7 @@ import {
   fitParamsFrom,
   fitsFully,
   fitsNow,
+  flagValue,
   kvLayoutOf,
   levelFor,
   levelRank,
@@ -242,6 +243,32 @@ describe('estimateFit — llama.cpp', () => {
     const bare = estimateFit({ facts: { paramsB: 70 }, gpu: { totalMiB: 24576, freeMiB: 24000 }, engine: 'llamacpp-native' });
     expect(bare.level).toBe('partial');
     expect(estimateFit({ facts: { ...llama8b, bitsPerWeight: 4.9 }, fileBytes: 4920739232, gpu: { totalMiB: 5000, freeMiB: 4000 }, engine: 'llamacpp-native' }).level).toBe('partial');
+  });
+
+  it('counts the draft / MTP model (weights + its KV at the same context) and the image projector the launch loads', () => {
+    const params = { contextSize: 8192, ubatchSize: 512 };
+    const input = { facts: llama8b, fileBytes: 4920739232, gpu: GPU, engine: 'llamacpp-native' as const, params };
+    const base = estimateFit(input);
+    expect(base).not.toHaveProperty('draftMiB');
+    const small: ModelFactsEx = { ...llama8b, blockCount: 4, kv: { groups: [{ layers: 4, kvHeads: 8, keyLength: 128, valueLength: 128 }], recurrentLayers: 0, recurrentBytesPerSeq: 0 } };
+    const kv = (layout: KvLayout) => llamaKvBytes(layout, 8192, 512, 1, false, 2);
+    const both = estimateFit({ ...input, extras: { draft: { bytes: 500 * MIB, facts: small }, mmprojBytes: 900 * MIB } });
+    expect(both.draftMiB).toBe(Math.round((500 * MIB + kv(small.kv as KvLayout)) / MIB));
+    expect(both.mmprojMiB).toBe(900);
+    expect(both.needMiB).toBe(base.needMiB + (both.draftMiB as number) + 900);
+    // An MTP head, or a draft whose layout could not be read: about one layer of the model's KV.
+    const oneLayer = kv(llama8b.kv as KvLayout) / 32;
+    expect(estimateFit({ ...input, extras: { draft: { bytes: 300 * MIB, facts: { mtpOnly: true } } } }).draftMiB).toBe(Math.round((300 * MIB + oneLayer) / MIB));
+    expect(estimateFit({ ...input, extras: { draft: { bytes: 300 * MIB } } }).draftMiB).toBe(Math.round((300 * MIB + oneLayer) / MIB));
+    // They stay on the GPU: fewer layers fit when the card is short.
+    const tight = { ...input, gpu: { totalMiB: 5000, freeMiB: 4900 } };
+    expect(estimateFit({ ...tight, extras: { mmprojBytes: 900 * MIB } }).maxGpuLayers).toBeLessThan(estimateFit(tight).maxGpuLayers as number);
+  });
+
+  it('reads the draft and projector flags of a launch', () => {
+    expect(flagValue(['-c', '8192', '-md', '/m/mtp.gguf'], ['-md', '--model-draft'])).toBe('/m/mtp.gguf');
+    expect(flagValue(['--mmproj=/m/mmproj.gguf'], ['-mm', '--mmproj'])).toBe('/m/mmproj.gguf');
+    expect(flagValue(['-ngl', '99'], ['-md'])).toBeUndefined();
   });
 
   it('never divides by zero free VRAM', () => {

@@ -98,6 +98,14 @@ export interface FitCalibration {
   scope: 'model' | 'architecture';
 }
 
+/** Files a llama.cpp launch loads next to the model (a recipe's or the user's arguments). */
+export interface FitExtras {
+  /** -md: a draft GGUF or an MTP head; its facts when they could be read. */
+  draft?: { bytes: number; facts?: ModelFactsEx | undefined };
+  /** --mmproj: the image projector. */
+  mmprojBytes?: number;
+}
+
 export interface FitInput {
   facts: ModelFactsEx;
   /** Bytes of all weight files (every shard). */
@@ -106,6 +114,30 @@ export interface FitInput {
   engine: EngineKind;
   params?: FitParams;
   calibration?: FitCalibration;
+  extras?: FitExtras;
+}
+
+/** Draft and projector flags of llama-server, with the value after them (or after "="). */
+export const DRAFT_FLAGS = ['-md', '--model-draft'] as const;
+export const MMPROJ_FLAGS = ['-mm', '--mmproj'] as const;
+
+/** The value of the first of `flags` in a launch's arguments ("-md x", "--mmproj=x"). */
+export function flagValue(args: readonly string[], flags: readonly string[]): string | undefined {
+  for (const [i, a] of args.entries()) {
+    if (flags.includes(a)) return args[i + 1];
+    const eq = flags.find((f) => a.startsWith(`${f}=`));
+    if (eq) return a.slice(eq.length + 1);
+  }
+  return undefined;
+}
+
+/**
+ * VRAM of the draft model: its weights and its KV cache for the same context (f16, llama.cpp's draft
+ * default). An MTP head (or a file whose layout could not be read) holds about one layer of the model's KV.
+ */
+function draftMiBOf(draft: NonNullable<FitExtras['draft']>, model: { layout: KvLayout; layers: number }, kv: (layout: KvLayout) => number): number {
+  const own = draft.facts && !draft.facts.mtpOnly ? kv(kvLayoutOf(draft.facts).layout) : kv(model.layout) / model.layers;
+  return Math.round((draft.bytes + own) / MIB);
 }
 
 export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
@@ -297,17 +329,22 @@ export function estimateFit(input: FitInput): FitEstimate {
   const computeBytes = llamaComputeBytes(facts, fullCells, ub, p.flashAttention);
   const rawKvMiB = Math.round(kvBytes / MIB);
   const computeMiB = Math.round(computeBytes / MIB);
-  const rawNeedMiB = weightsMiB + rawKvMiB + CUDA_CONTEXT_MIB + computeMiB;
+  const layers = facts.blockCount ?? FALLBACK.layers;
+  // The draft / MTP model and the image projector the launch loads too (they stay on the GPU).
+  const { draft, mmprojBytes } = input.extras ?? {};
+  const draftMiB = draft ? draftMiBOf(draft, { layout, layers }, (l) => llamaKvBytes(l, ctx, ub, seqs, unified, 2)) : undefined;
+  const mmprojMiB = mmprojBytes !== undefined ? Math.round(mmprojBytes / MIB) : undefined;
+  const extraMiB = (draftMiB ?? 0) + (mmprojMiB ?? 0);
+  const rawNeedMiB = weightsMiB + rawKvMiB + CUDA_CONTEXT_MIB + computeMiB + extraMiB;
   const cal = input.calibration;
   // Calibrated: the measured peaks of this GPU scale the KV cache + compute buffer part.
   const kvMiB = cal ? Math.round(cal.scale * rawKvMiB) : rawKvMiB;
   const overheadMiB = cal ? Math.max(0, Math.round(CUDA_CONTEXT_MIB + cal.offsetMiB + cal.scale * computeMiB)) : CUDA_CONTEXT_MIB + computeMiB;
-  const needMiB = weightsMiB + kvMiB + overheadMiB;
+  const needMiB = weightsMiB + kvMiB + overheadMiB + extraMiB;
   const availableMiB = usableMiB(gpu);
   const utilization = needMiB / availableMiB;
   // Partial offload: -ngl N puts N repeating layers (weights + their KV) on the GPU; the output
   // layer stays on the CPU unless every layer fits, but we reserve it to stay conservative.
-  const layers = facts.blockCount ?? FALLBACK.layers;
   const embd = facts.embeddingLength ?? FALLBACK.embd;
   const vocab = facts.vocabSize ?? FALLBACK.vocab;
   const bytesPerWeight = facts.bitsPerWeight ? facts.bitsPerWeight / 8 : bytesPerParam(facts.quant);
@@ -316,7 +353,7 @@ export function estimateFit(input: FitInput): FitEstimate {
   const judge = (room: number): { level: FitLevel; maxGpuLayers?: number } => {
     const full = levelFor(needMiB / room, true);
     if (full) return { level: full };
-    const maxLayers = Math.min(layers, Math.floor((room - overheadMiB - outputMiB) / perLayerMiB));
+    const maxLayers = Math.min(layers, Math.floor((room - overheadMiB - outputMiB - extraMiB) / perLayerMiB));
     return maxLayers >= 1 ? { level: 'partial', maxGpuLayers: maxLayers } : { level: 'no' };
   };
   const total = judge(availableMiB);
@@ -334,6 +371,8 @@ export function estimateFit(input: FitInput): FitEstimate {
     basis: fromFile ? 'file-size' : 'params-heuristic',
     notes,
     ...(cal ? { calibration: { samples: cal.samples, errorPct: cal.errorPct, scope: cal.scope, rawNeedMiB } } : {}),
+    ...(draftMiB !== undefined ? { draftMiB } : {}),
+    ...(mmprojMiB !== undefined ? { mmprojMiB } : {}),
     ...nowOf(gpu),
     levelNow: now.level,
     ...(now.maxGpuLayers !== undefined ? { maxGpuLayers: now.maxGpuLayers } : {}),

@@ -192,6 +192,9 @@ describe('handleLibraryEvent', () => {
     handleLibraryEvent({ type: 'download.update', job: job('a', { state: 'done' }) }, ctx);
     await vi.waitFor(() => expect(qc.getQueryData(libKeys.local)).toEqual(api.w.local));
     expect(api.calls.filter((c) => c.path === '/api/models/rescan')).toHaveLength(1);
+    // Then the repo is looked at again: what else it has (an mmproj not taken), what changed.
+    await vi.waitFor(() => expect(qc.getQueryData(libKeys.updates)).toMatchObject({ checkedAt: '2026-10-13T09:00:00.000Z' }));
+    expect(api.w.checks).toEqual([{ repo: 'org/Model-GGUF' }]);
     handleLibraryEvent({ type: 'runs.changed' }, ctx);
     expect(inv).toHaveBeenCalledWith({ queryKey: libKeys.runs });
     handleLibraryEvent({ type: 'hello', version: '1' }, ctx);

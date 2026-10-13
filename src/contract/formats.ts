@@ -170,10 +170,10 @@ export function parseNinferManifest(raw: unknown): NinferManifest | undefined {
   return out;
 }
 
-/** "<sha256>  <file>" lines of a SHA256SUMS file, by file name (a leading "*" or "./" is dropped). */
-export function parseSha256Sums(text: string): Map<string, string> {
+/** "<sha256>  <file>" lines of a SHA256SUMS file, by file name (a leading "*" or "./" is dropped); none without a file. */
+export function parseSha256Sums(text: string | undefined): Map<string, string> {
   const out = new Map<string, string>();
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of (text ?? '').split(/\r?\n/)) {
     const m = /^([0-9a-fA-F]{64})\s+\*?(?:\.\/)?(.+?)\s*$/.exec(line);
     if (m) out.set(m[2] as string, (m[1] as string).toLowerCase());
   }
@@ -251,7 +251,7 @@ export interface RepoLayout<F extends RepoFile = RepoFile> {
 }
 
 /** Code-point order: the same on every PC, whatever its locale. */
-const byPath = (a: RepoFile, b: RepoFile) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+const byPath = (a: RepoFile, b: RepoFile) => (a.path < b.path ? -1 : 1);
 const sum = (files: readonly RepoFile[]) => files.reduce((a, f) => a + f.sizeBytes, 0);
 
 /**
@@ -283,8 +283,9 @@ export function repoLayout<F extends RepoFile>(files: readonly F[], hint: { name
     }
     if (companions.includes(f)) continue;
     if (/\.gguf$/i.test(f.path)) {
+      // Weights are models; mmproj, MTP heads and drafts go with them.
       if (f.kind === 'weights') gguf.weights.push(f);
-      else if (f.kind === 'mmproj' || f.kind === 'mtp' || f.kind === 'draft') gguf.extras.push(f);
+      else gguf.extras.push(f);
       continue;
     }
     const fmt = otherFormatOf(f.path);
@@ -295,7 +296,8 @@ export function repoLayout<F extends RepoFile>(files: readonly F[], hint: { name
     byDir.set(dirOf(f.path), [...(byDir.get(dirOf(f.path)) ?? []), f]);
   }
   const variants: SafetensorsVariant<F>[] = [];
-  for (const [dir, inDir] of [...byDir].sort((a, b) => (a[0] === '' ? -1 : b[0] === '' ? 1 : a[0] < b[0] ? -1 : 1))) {
+  // Code-point order puts the root ('') first.
+  for (const [dir, inDir] of [...byDir].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     const st = inDir.filter((f) => isSafetensors(f.path));
     const weights = (st.length > 0 ? st : inDir.filter((f) => isBinWeights(f.path))).sort(byPath);
     if (weights.length === 0) continue;

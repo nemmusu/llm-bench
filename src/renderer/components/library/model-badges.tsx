@@ -1,5 +1,5 @@
 import type { FitRequest } from '../../../contract/api';
-import type { FitEstimate } from '../../../contract/models';
+import type { FitEstimate, LocalModel } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { useFit, useMainGpu, useTried } from '../../lib/queries-library';
 import { FitBadge } from '../ui/fit-badge';
@@ -24,12 +24,15 @@ export function FitFor({ req }: { req: FitRequest }) {
 
 /**
  * "Provato su questa GPU · 142 tok/s" when a completed run of this model exists for this GPU; "Provato:
- * usava la RAM condivisa" when the only ones spilled to shared memory (their speed does not count).
+ * usava la RAM condivisa" when the only ones spilled to shared memory (their speed does not count). A
+ * file an update replaced (`previous`): its runs stay, and the badge says they are of that version.
  */
-export function TriedFor({ weakKey, sha256 }: { weakKey: string; sha256?: string | undefined }) {
+export function TriedFor({ weakKey, sha256, previous }: { weakKey: string; sha256?: string | undefined; previous?: LocalModel['previous'] }) {
   const tried = useTried(weakKey, sha256);
   const gpu = useMainGpu();
   const best = bestRunHere(tried.data, gpu);
-  if (!best) return null;
-  return <TriedHereBadge tried={best} short={false} size="sm" />;
+  const before = useTried(previous?.weakKey ?? '', previous?.sha256, previous !== undefined && tried.isSuccess && best === undefined);
+  const old = bestRunHere(before.data, gpu);
+  if (best) return <TriedHereBadge tried={best} short={false} size="sm" />;
+  return old ? <TriedHereBadge tried={old} short={false} size="sm" previous /> : null;
 }

@@ -1,4 +1,4 @@
-import { readdir, realpath, rm } from 'node:fs/promises';
+import { readdir, realpath, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineKind } from '../../contract/engines';
@@ -9,8 +9,24 @@ import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
-import { ninferFit } from '../../contract/ninfer';
-import { estimateFit, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
+import { ninferFit, trainedContextOf } from '../../contract/ninfer';
+import {
+  DRAFT_FLAGS,
+  estimateFit,
+  fitFixes,
+  fitParamsFrom,
+  flagValue,
+  MMPROJ_FLAGS,
+  pickBest,
+  quantChoices,
+  runsSafetensors,
+  type FitCalibration,
+  type FitExtras,
+  type FitInput,
+  type FitParams,
+  type QuantChoice,
+} from './fit';
+import { readLocalGgufFacts } from './gguf';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
@@ -67,11 +83,38 @@ export interface CuratedResponse {
 
 const MIB_PER_GB = 1024;
 
+/**
+ * llama.cpp: the draft / MTP model (-md) and the image projector (--mmproj) a launch's arguments load
+ * (a recipe's or the user's), with their sizes and the draft's facts. A path the core cannot see (a
+ * container path) is matched to the model's own extra file of that name.
+ */
+async function launchExtras(args: readonly string[], m: LocalModel): Promise<FitExtras | undefined> {
+  const nameOf = (p: string) => path.posix.basename(p.replace(/\\/g, '/'));
+  const file = async (p: string | undefined): Promise<{ at: string; bytes: number } | undefined> => {
+    if (p === undefined) return undefined;
+    const own = m.auxiliary.find((a) => nameOf(a.path) === nameOf(p))?.path;
+    for (const at of [p, own]) {
+      const st = at === undefined ? undefined : await stat(at).catch(() => undefined);
+      if (st?.isFile()) return { at: at as string, bytes: st.size };
+    }
+    return undefined;
+  };
+  const draft = await file(flagValue(args, DRAFT_FLAGS));
+  const mmproj = await file(flagValue(args, MMPROJ_FLAGS));
+  if (!draft && !mmproj) return undefined;
+  return {
+    ...(draft ? { draft: { bytes: draft.bytes, facts: await readLocalGgufFacts([draft.at]).catch(() => undefined) } } : {}),
+    ...(mmproj ? { mmprojBytes: mmproj.bytes } : {}),
+  };
+}
+
 /** Local library, HF search, VRAM fit and the curated list behind /api/models. */
 export class ModelsService {
   readonly hub: HubClient;
   readonly scanner: ModelScanner;
   readonly hashes: HashQueue;
+  /** sha256 of local files by path + size + mtime (what the background hashing found). */
+  readonly hashCache: HashCache;
   private models: LocalModel[] | undefined;
   private scanning: Promise<LocalModel[]> | undefined;
   private curatedList: Promise<CuratedList> | undefined;
@@ -80,6 +123,7 @@ export class ModelsService {
     const { deps } = opts;
     this.hub = opts.hub ?? new HubClient({ fetch: deps.fetch, baseUrl: deps.endpoints.huggingface, getToken: opts.getToken });
     const hashCache = new HashCache(path.join(deps.paths.cacheDir, 'hashes.json'), deps.platform);
+    this.hashCache = hashCache;
     this.hashes = new HashQueue({ cache: hashCache });
     this.scanner = new ModelScanner({
       platform: deps.platform,
@@ -96,6 +140,19 @@ export class ModelsService {
   /** Where downloads go and the only folder whose models may be deleted from the app. */
   libraryDir(): Promise<string> {
     return this.scanner.libraryDir();
+  }
+
+  /**
+   * The folders on the PC holding a copy of a hub repo (a download sidecar, or <owner>/<repo> in the
+   * library or LM Studio), with the models in each; HF cache copies have no such folder and never count.
+   */
+  async repoFolders(repo: string): Promise<{ dir: string; modelIds: string[] }[]> {
+    const out = new Map<string, string[]>();
+    for (const m of await this.list()) {
+      if (m.identity.repo !== repo || !m.repoDir) continue;
+      out.set(m.repoDir, [...(out.get(m.repoDir) ?? []), m.id]);
+    }
+    return [...out].map(([dir, modelIds]) => ({ dir, modelIds }));
   }
 
   /** Last scan result (scans once on first use). */
@@ -265,10 +322,11 @@ export class ModelsService {
       // A .ninfer artifact: NInfer's own estimate, with what its manifest said (the scanner keeps it in the facts).
       if (m.identity.format === 'ninfer') {
         const manifest = { ...(facts.name ? { name: facts.name } : {}), ...(facts.components ? { components: facts.components } : {}) };
-        return ninferFit({ artifactBytes: m.identity.sizeBytes ?? 0, manifest, label: m.identity.displayName, params: req.params, gpu });
+        return ninferFit({ artifactBytes: m.identity.sizeBytes as number, manifest, label: m.identity.displayName, params: req.params, gpu });
       }
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
-      return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(await calibrated(id, facts)) });
+      const extras = runsSafetensors(req.engine) ? undefined : await launchExtras(req.params?.extraArgs ?? [], m);
+      return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(extras ? { extras } : {}), ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {
       const files = await this.hub.files(req.repo);
@@ -337,6 +395,8 @@ export class ModelsService {
         ...(manifest?.name ? { name: manifest.name } : {}),
         ...(manifest?.components.length ? { components: manifest.components } : {}),
         ...(paramsB ? { paramsB } : {}),
+        // A GGUF of the same repo says it; else NInfer's models' own (the manifest does not).
+        contextLength: trainedContextOf({ format: 'ninfer', facts: fromGguf }),
         quant,
       };
       const fit = ninferFit({ artifactBytes: a.artifact.sizeBytes, manifest, label: `${repo} ${name}`, params, gpu });

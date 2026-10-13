@@ -155,6 +155,20 @@ describe('TriedBadge', () => {
     expect(screen.getByText('Provato · 58 tok/s')).toBeTruthy();
   });
 
+  it('a version an update replaced says so', async () => {
+    renderUi(
+      <>
+        <TriedBadge tps={61} previous date="2026-09-12T10:00:00Z" />
+        <TriedBadge tps={61} previous short />
+        <TriedBadge spilled previous date="2026-09-12T10:00:00Z" />
+      </>,
+    );
+    expect(screen.getByText('Provato (versione precedente) · 61 tok/s')).toBeTruthy();
+    expect(screen.getByText('Provato con la versione precedente: usava la RAM condivisa')).toBeTruthy();
+    await userEvent.hover(screen.getByText('Provato con la versione precedente · 61 tok/s'));
+    await waitFor(() => expect(screen.getAllByText(/con la versione precedente del file, prima dell’aggiornamento/).length).toBeGreaterThan(0));
+  });
+
   it('shows the date in a tooltip', async () => {
     renderUi(<TriedBadge tps={58} date="2026-09-12T10:00:00Z" />, { lang: 'en' });
     await userEvent.hover(screen.getByText('Tried on this GPU · 58 tok/s'));

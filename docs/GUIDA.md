@@ -40,6 +40,8 @@ Nella pagina **Benchmark** scegli tre cose:
    - **Entra in parte**: funziona, ma più lentamente;
    - **Non entra**: troppo grande per la tua scheda.
    Se un modello ha l'etichetta **Provato su questa GPU**, l'hai già misurato: vedi subito quanto andava. Se l'unico test fatto usava la RAM condivisa (vedi sotto) l'etichetta dice **Provato: usava la RAM condivisa**, senza numeri: quelli non erano i veri della scheda.
+
+   Il giudizio guarda la **memoria totale della scheda**, meno 1 GB che tengono sempre il driver e lo schermo: non cambia se hai altri programmi aperti. Se in quel momento altri programmi (una macchina virtuale, un gioco, un altro modello) occupano una parte importante della scheda, l'anteprima e la conferma del server lo dicono con calma ("Ora altri programmi usano 6,2 GB della scheda: per provarlo così com'è chiudili, oppure il test partirà con meno memoria"); se per questo il modello non ci sta, l'avviso dice quanto serve e quanto è libero adesso.
 3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (dipende dal modello: GPU Bench ti dice quanto prima di iniziare, vedi sotto).
 
 Premi **Avvia benchmark**. Se serve scaricare qualcosa, GPU Bench ti mostra cosa e quanto pesa e aspetta la tua conferma.
@@ -151,10 +153,18 @@ Puoi **esportare** i risultati in CSV (anche nel formato per Excel italiano), JS
 
 Nella pagina **Modelli**:
 
-- **Sul tuo PC**: i modelli che hai, con quanto spazio occupano e come sono andati.
-- **Scarica**: i consigliati per la tua scheda e la ricerca su Hugging Face, con filtri per formato, dimensione e "solo quelli che entrano".
+- **Sul tuo PC**: i modelli che hai, divisi per formato (per llama.cpp, per vLLM / SGLang, per NInfer), con quanto spazio occupano e come sono andati. Un download fermato a metà compare come **Incompleto · 1 di 4 file**: non si può usare finché non è completo (riprendilo o eliminalo).
+- **Scarica**: i consigliati per la tua scheda e la ricerca su Hugging Face, con filtri per motore (llama.cpp, vLLM, SGLang, NInfer), dimensione e "solo quelli che entrano". La ricerca, i filtri e la posizione nella lista restano come li hai lasciati quando apri un modello e torni indietro.
+
+Ogni modello mostra i suoi **formati**, ognuno con il motore che lo usa: **GGUF · llama.cpp**, **Safetensors · vLLM / SGLang** (con la precisione, per esempio FP8 o BF16), **NInfer · solo RTX 5090**. I formati che GPU Bench non usa (MLX, ONNX…) sono indicati come non supportati. Molti repository sono misti: nella pagina del modello ogni formato ha la sua sezione e il suo download, che scarica solo i file di quel formato (mai le descrizioni, le immagini o i video).
 
 GPU Bench sceglie da solo la versione (quantizzazione) migliore che entra nella tua scheda; se sei esperto puoi sceglierne un'altra. I download si possono mettere in pausa e riprendono da soli se la connessione cade.
+
+Quello che hai già non si riscarica mai. Se scegli una versione già sul PC, è segnata **Già scaricato** e il download prende solo le parti che mancano: per esempio, se la prima volta non avevi preso la parte visione, la finestra dice **Il modello è già sul PC: scarico solo la parte visione (mmproj)**. Un file della stessa dimensione ma non ancora verificato viene controllato prima (sha256): si riscarica solo se è diverso. Nell'elenco **Sul tuo PC** e nella pagina del modello trovi anche **Aggiungi la parte visione** e **Aggiungi MTP** quando il repository ha queste parti e tu no: finiscono nella stessa cartella del modello.
+
+**Aggiornamenti.** GPU Bench guarda su Hugging Face se i file che hai scaricato sono cambiati: quando premi **Controlla aggiornamenti** e, da solo, al massimo una volta al giorno (un repository al secondo, mai a raffica). Se un file è cambiato vedi **Aggiornamento disponibile** con cosa è cambiato (per esempio "Il file Q4_K_M è cambiato (17,8 GB → 17,6 GB)") e il pulsante **Aggiorna**, che scarica solo i file cambiati: quello vecchio resta finché il nuovo non è scaricato e verificato. I risultati misurati prima restano com'erano: il badge dice **Provato con la versione precedente**.
+
+Quanto spazio serve nella scheda conta anche quello che carichi insieme al modello: con un modello MTP o bozza (`-md`) o con la parte visione (`--mmproj`) la stima mostra **+ MTP 3,2 GB** e **+ visione 0,9 GB**.
 
 Per i modelli che richiedono di accettare una licenza (per esempio Llama o Gemma) GPU Bench apre la pagina giusta e ti chiede il token di Hugging Face una sola volta: viene salvato cifrato.
 

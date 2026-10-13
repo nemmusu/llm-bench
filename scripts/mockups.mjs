@@ -173,6 +173,43 @@ function idleGpu() {
   writeFileSync(smiStateFile, JSON.stringify(IDLE_GPU));
 }
 
+/**
+ * A repo with a copy on the PC (the added folder): its Q4_K_M changed on Hugging Face since, its Q8_0 is
+ * the same, and neither has the vision part the repo offers.
+ */
+const UPDATES_REPO = 'unsloth/gemma-4-E4B-it-GGUF';
+const gemmaE4b = (seed, kb) => ({ ...llamaLikeGguf({ arch: 'gemma4', name: 'Gemma 4 E4B it', sizeLabel: '4B' }), seed, totalSize: kb * 1024 });
+const updatesRepo = () => ({
+  id: UPDATES_REPO,
+  downloads: 64_000,
+  likes: 380,
+  lastModified: '2026-10-11T10:00:00.000Z',
+  license: 'gemma',
+  pipelineTag: 'image-text-to-text',
+  numParameters: 4_000_000_000,
+  tags: ['gguf', 'image-text-to-text'],
+  readme: '# Gemma 4 E4B it GGUF\n\nQuantized for llama.cpp, with the vision projector.\n',
+  files: [
+    { path: 'gemma-4-E4B-it-Q4_K_M.gguf', gguf: gemmaE4b(31, 176) },
+    { path: 'gemma-4-E4B-it-Q8_0.gguf', gguf: gemmaE4b(32, 256) },
+    { path: 'mmproj-gemma-4-E4B-it-F16.gguf', gguf: { metadata: { 'general.architecture': 'clip', 'general.type': 'mmproj' }, seed: 33, totalSize: 48 * 1024 } },
+  ],
+});
+
+/** "Controlla aggiornamenti" in the library: the Gemma copy changed on the hub and lacks its vision part. */
+async function checkUpdates(page) {
+  await page.getByRole('button', { name: 'Controlla aggiornamenti', exact: true }).click();
+  const found = page.getByText('Aggiornamento disponibile').first();
+  await found.waitFor({ timeout: 30000 });
+  await found.scrollIntoViewIfNeeded();
+}
+
+/** The model page of that repo: "Sul tuo PC", and the Q8_0 already downloaded with its vision part ticked. */
+async function pickDownloaded(page) {
+  await page.getByRole('radio', { name: /Q8_0/ }).click();
+  await page.getByText('Il modello è già sul PC: scarico solo la parte visione (mmproj)', { exact: false }).first().waitFor({ timeout: 30000 });
+}
+
 /** Stops every server a scene started (the next screens, the live run above all, need a free GPU). */
 async function stopServers(info) {
   for (const s of await api(info, 'GET', '/api/servers')) await api(info, 'DELETE', `/api/servers/${encodeURIComponent(s.id)}`);
@@ -389,6 +426,10 @@ const SCREENS = [
   { n: 62, name: 'compare-tray', route: '/results', wait: 'Risultati', act: pickThree, small: true, after: forgetPicks },
   { n: 63, name: 'compare-models', route: '/compare?view=models', wait: 'La più veloce', act: pickModels, small: true, full: true, after: forgetPicks },
   { n: 64, name: 'compare-runs', route: '/compare?view=runs', wait: 'sui test che vuoi mettere fianco a fianco', small: true },
+  // Model updates and missing parts: "Aggiornamento disponibile" / "Aggiungi la parte visione" in the library…
+  { n: 47, name: 'models-updates', route: '/models', wait: 'Per llama.cpp (GGUF)', act: checkUpdates, small: true, full: true },
+  // …and on the model page: "Sul tuo PC", "Già scaricato", only the missing part counted.
+  { n: 48, name: 'model-onpc', route: `/models/hub/${UPDATES_REPO}`, wait: 'Sul tuo PC', act: pickDownloaded, small: true, full: true },
 ];
 
 /** The next screens start from llama.cpp again (the "Aggiorna" scenes chose SGLang in Docker). */
@@ -604,6 +645,7 @@ async function fakeWorld(dataDir) {
     repos: [
       ...demoRepos(),
       ...formatRepos(),
+      updatesRepo(),
       {
         id: REFERENCE.repo,
         sha: REFERENCE.revision,
@@ -636,7 +678,7 @@ async function fakeWorld(dataDir) {
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
   writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
   // Every format in the library: a safetensors model for vLLM / SGLang, a download stopped at 1 of 4
-  // files, an NInfer artifact with its manifest, a ternary Bonsai quant only the PrismML fork reads. In a
+  // files, an NInfer artifact with its manifest (the Bonsai quant below shows the fork badge). In a
   // folder added by the user (after the library: the Benchmark page keeps its usual first model), each repo
   // folder with GPU Bench's download sidecar, as when another install's library is added.
   const lib = path.join(dataDir, 'more-models');
@@ -660,6 +702,12 @@ async function fakeWorld(dataDir) {
   mkdirSync(bonsai, { recursive: true });
   sidecar(bonsai, 'prism-ml/Ternary-Bonsai-2-27B-gguf');
   writeFileSync(path.join(bonsai, 'Ternary-Bonsai-2-27B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ arch: 'qwen35', name: 'Bonsai 27B', sizeLabel: '27B', fileType: 141 }), totalSize: 64 * 1024 }));
+  // A copy of the Gemma repo: an older Q4_K_M (another size), the same Q8_0, no vision part.
+  const gemma = path.join(lib, 'unsloth', 'gemma-4-E4B-it-GGUF');
+  mkdirSync(gemma, { recursive: true });
+  writeFileSync(path.join(gemma, 'gemma-4-E4B-it-Q4_K_M.gguf'), buildGguf(gemmaE4b(30, 160)));
+  writeFileSync(path.join(gemma, 'gemma-4-E4B-it-Q8_0.gguf'), buildGguf(gemmaE4b(32, 256)));
+  sidecar(gemma, UPDATES_REPO);
   // A PrismML Bonsai model (ternary weights: only the PrismML fork of llama.cpp reads them).
   writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
   const results = path.join(dataDir, 'results');

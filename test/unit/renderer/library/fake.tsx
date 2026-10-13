@@ -6,14 +6,14 @@ import { createMemoryHistory } from '@tanstack/react-router';
 import { render, type RenderResult } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
 import { vi } from 'vitest';
-import type { SystemResponse } from '../../../../src/contract/api';
+import type { DownloadRequest, SystemResponse } from '../../../../src/contract/api';
 import { customEngineIdFor, customEngineKindOf, customEngineSchema, type CustomEngine, type CustomEngineCheck, type CustomEngineDraft, type CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { GpuSample } from '../../../../src/contract/hardware';
-import type { DownloadJob, FitEstimate, HubFile, HubModel, LocalModel } from '../../../../src/contract/models';
+import type { DownloadJob, FitEstimate, HubFile, HubModel, LocalFileState, LocalModel, ModelUpdates } from '../../../../src/contract/models';
 import type { RunSummary } from '../../../../src/contract/results';
 import { defaultSettings, type Settings } from '../../../../src/contract/settings';
 import type { CheckItem, CuratedResponse, DockerStatusDetail, HubFitResult, InstalledBuild, SystemCheckReport } from '../../../../src/contract/views';
@@ -291,6 +291,15 @@ export interface World {
   /** GET …/update by target ('sglang-docker', 'custom:<id>'); absent = up to date. `fetch=1` reads `<target>?fetch`. */
   updates: Record<string, EngineUpdateCheck>;
   cold: { method: 'linux-fadvise' | 'windows-standby' | 'none'; automatic: boolean; windowsTaskInstalled?: boolean };
+  /**
+   * POST /api/downloads/plan: what the PC has of each file (missing: 'get'). Unset, the route fails and
+   * the UI keeps the choice's own size, as before the core answers.
+   */
+  onPc?: Record<string, LocalFileState>;
+  /** GET /api/models/updates (and what "Controlla aggiornamenti" answers). */
+  modelUpdates: ModelUpdates;
+  /** Bodies of POST /api/models/updates/check. */
+  checks: unknown[];
 }
 
 export function world(over: Partial<World> = {}): World {
@@ -317,6 +326,8 @@ export function world(over: Partial<World> = {}): World {
     customCheck: () => customCheck(),
     updates: {},
     cold: { method: 'windows-standby', automatic: false, windowsTaskInstalled: false },
+    modelUpdates: { checking: false, models: [] },
+    checks: [],
     ...over,
   };
 }
@@ -419,6 +430,20 @@ export function libApi(w: World = world()): LibApi {
     'GET /api/models/hub/*/*/related': () => w.related,
     'POST /api/models/hub/*/*/fit': () => w.hubFit,
     'GET /api/downloads': () => w.downloads,
+    'POST /api/downloads/plan': (b) => {
+      const req = b as DownloadRequest;
+      const states = w.onPc ?? fail('HF_NOT_FOUND', 404);
+      const known = new Map([...w.files, ...w.hubFit.choices.flatMap((c) => c.files)].map((f) => [f.path, f]));
+      const files = req.files.map((p) => ({ path: p, sizeBytes: known.get(p)?.sizeBytes ?? 0, kind: known.get(p)?.kind, local: states[p] ?? 'get' }));
+      const sum = (s: LocalFileState[]) => files.filter((f) => s.includes(f.local)).reduce((a, f) => a + f.sizeBytes, 0);
+      return { repo: req.repo, dest: `D:\\Linux\\models\\${req.repo.replace('/', '\\')}`, files, bytesToGet: sum(['get', 'update']), bytesHave: sum(['have', 'check']) };
+    },
+    'GET /api/models/updates': () => w.modelUpdates,
+    'POST /api/models/updates/check': (b) => {
+      w.checks.push(b);
+      w.modelUpdates = { ...w.modelUpdates, checkedAt: '2026-10-13T09:00:00.000Z' };
+      return w.modelUpdates;
+    },
     'POST /api/downloads': (b) => {
       const req = b as { repo: string; files: string[]; label: string };
       const j = job(`dl-${w.downloads.length + 1}`, { repo: req.repo, label: req.label, state: 'queued', bytesDone: 0, files: req.files.map((path) => ({ path })) });

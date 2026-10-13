@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { EngineKind } from '../../../../src/contract/engines';
+import type { LocalModel } from '../../../../src/contract/models';
 import type { Settings } from '../../../../src/contract/settings';
 import { DownloadService } from '../../../../src/core/downloads/service';
 import { ModelsService } from '../../../../src/core/models/service';
@@ -197,6 +199,33 @@ describe('ModelsService', () => {
     await expect(svc.fit({ localId: local, engine: 'llamacpp-native' })).rejects.toMatchObject({ code: 'GPU_NOT_FOUND' });
   });
 
+  it('a launch that loads a draft / MTP model or the image projector: both in the estimate (llama.cpp only)', async () => {
+    const dir = path.join(lib(), 'o', 'eye');
+    gguf(path.join(dir, 'eye-Q4_K_M.gguf'));
+    writeGguf(path.join(dir, 'mmproj-eye-F16.gguf'), { metadata: { 'general.architecture': 'clip' }, totalSize: 2 * 1024 ** 2 });
+    // A small draft model next to it, and a draft file whose header cannot be read.
+    const draft = path.join(t.dir, 'drafts', 'tiny-Q8_0.gguf');
+    writeGguf(draft, { ...llamaLikeGguf({ embd: 16, vocab: 8 }), totalSize: 3 * 1024 ** 2 });
+    writeFileSync(path.join(t.dir, 'drafts', 'broken.gguf'), Buffer.alloc(1024 ** 2));
+    const svc = service();
+    const m = (await svc.list()).find((x) => x.identity.displayName === 'eye-Q4_K_M') as LocalModel;
+    const fit = (extraArgs: string[], engine: EngineKind = 'llamacpp-native') => svc.fit({ localId: m.id, engine, params: { contextSize: 4096, extraArgs, env: {} } });
+    const plain = await fit([]);
+    expect(plain).not.toHaveProperty('draftMiB');
+    // The projector named by its path in a container (/models/…): the model's own file of that name.
+    const both = await fit(['-md', draft, '--mmproj', '/models/o/eye/mmproj-eye-F16.gguf']);
+    expect(both.mmprojMiB).toBe(2);
+    expect(both.draftMiB).toBeGreaterThanOrEqual(3);
+    expect(both.needMiB).toBe(plain.needMiB + (both.draftMiB as number) + 2);
+    expect((await fit(['-md', path.join(t.dir, 'drafts', 'broken.gguf')])).draftMiB).toBeGreaterThanOrEqual(1);
+    const vision = await fit(['--mmproj=/models/o/eye/mmproj-eye-F16.gguf']);
+    expect(vision).toMatchObject({ mmprojMiB: 2, needMiB: plain.needMiB + 2 });
+    expect(vision).not.toHaveProperty('draftMiB');
+    // A file that is nowhere, or an engine that loads no such files: nothing added.
+    expect(await fit(['-md', '/nowhere/x.gguf'])).not.toHaveProperty('draftMiB');
+    expect(await fit(['--mmproj', '/models/o/eye/mmproj-eye-F16.gguf'], 'vllm-docker')).not.toHaveProperty('mmprojMiB');
+  });
+
   it('corrects the estimate with the peaks measured here when there are enough ("stima tarata su N misure")', async () => {
     gguf(path.join(lib(), 'c-Q8_0.gguf'));
     const asked: { model: { sha256?: string; weakKey: string; architecture?: string }; engine: string }[] = [];
@@ -329,7 +358,7 @@ describe('ModelsService', () => {
     expect(c.fit).toMatchObject({ totalMiB: GPU_32GB.totalMiB, availableMiB: GPU_32GB.totalMiB - 1024 });
     expect(c.fit.levelNow).toBeDefined();
     expect(c.weakKey).toBe(`neroued/Qwen3.8-27B-nvfp4-NInfer/qwen3_8_27b_nvfp4.ninfer//${64 * 1024}`);
-    expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 });
+    expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27, contextLength: 262_144 });
     expect(r.best).toBe('qwen3_8_27b_nvfp4.ninfer');
     // Without a manifest: still a choice; a repo without .ninfer: none.
     expect((await svc.hubFit('neroued/Qwen3.8-4B-nvfp4-NInfer', 'llamacpp-native', { format: 'ninfer' })).choices[0]?.manifest).toBeUndefined();
@@ -344,6 +373,8 @@ describe('ModelsService', () => {
     });
     const mixed = await svc.hubFit('mixed/Coder-GGUF-NInfer', 'llamacpp-native', { format: 'ninfer' });
     expect(mixed.facts.blockCount).toBe(6);
+    // The trained context its GGUF says, over NInfer's default.
+    expect(mixed.facts.contextLength).toBe(40_960);
     expect(mixed.choices[0]?.dir).toBe('NInfer');
     // The NInfer filter searches by name and narrows by the words typed.
     const found = await svc.search('27b nvfp4', { format: 'ninfer' });
@@ -363,6 +394,42 @@ describe('ModelsService', () => {
     writeFileSync(path.join(lib(), 'bare.ninfer'), 'x');
     const bare = (await svc.rescan()).find((m) => m.identity.displayName === 'bare')!;
     expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
+  });
+
+  it('what the card holds right now, without the engines GPU Bench started', async () => {
+    gpu = { totalMiB: 32607, freeMiB: 10_000, ownMiB: 8000 };
+    expect(await service().vramNow()).toEqual({ totalMiB: 32607, freeMiB: 10_000, busyMiB: 32607 - 10_000 - 8000, reserveMiB: 1024 });
+    gpu = { totalMiB: 32607, freeMiB: 30_000 };
+    expect((await service().vramNow())?.busyMiB).toBe(2607);
+    gpu = undefined;
+    expect(await service().vramNow()).toBeNull();
+  });
+
+  it('hub fits that survive missing parts: no repo info, unreadable GGUF or manifest, configs without a precision', async () => {
+    const svc = service();
+    hub.addRepo({ id: 'org/Thing-AWQ', files: [{ path: 'config.json', content: '{}' }, { path: 'model.safetensors', size: 64 }] });
+    hub.addRepo({ id: 'org/Plain', files: [{ path: 'config.json', content: '{}' }, { path: 'model.safetensors', size: 64 }] });
+    hub.addRepo({
+      id: 'org/Broken-NInfer',
+      files: [
+        { path: 'GGUF/x-Q4_K_M.gguf', size: 100 },
+        { path: 'GGUF/x-Q8_0.gguf', size: 100 },
+        { path: 'a.ninfer', size: 64 },
+        { path: 'A.artifact-manifest.json', content: '{' },
+      ],
+    });
+    // The repo's info does not answer: the files are enough (the name hint comes from the repo id).
+    hub.behavior.failNext = { status: 500, times: 1, match: 'revision/main' };
+    const awq = await svc.hubFit('org/Thing-AWQ', 'vllm-docker', { revision: 'main' });
+    expect(awq.choices[0]?.quant).toBe('AWQ');
+    const plain = await svc.hubFit('org/Plain', 'sglang-docker');
+    expect(plain.choices[0]).not.toHaveProperty('quant');
+    const broken = await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' });
+    expect(broken.choices[0]).not.toHaveProperty('manifest');
+    expect(broken.facts).toEqual({ quant: 'NVFP4', contextLength: 262_144 });
+    // Nothing fits a tiny card: no best.
+    gpu = { totalMiB: 512, freeMiB: 512 };
+    expect((await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' })).best).toBeUndefined();
   });
 
   it('serves the repo info of one hub repo, with the hub errors mapped', async () => {

@@ -13,7 +13,7 @@ import type { EngineKind, EngineStatus } from '../../contract/engines';
 import type { AppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import type { GpuInfo, GpuSample } from '../../contract/hardware';
-import type { DownloadJob, FitEstimate, HubFile, HubModel, HubSearchPage, LocalModel, VramNow } from '../../contract/models';
+import type { DownloadJob, DownloadPlan, FitEstimate, HubFile, HubModel, HubSearchPage, LocalModel, ModelUpdates, VramNow } from '../../contract/models';
 import type { RunSummary } from '../../contract/results';
 import type { Settings } from '../../contract/settings';
 import type {
@@ -82,6 +82,8 @@ export const libKeys = {
   install: ['lib', 'install'] as const,
   installTick: ['lib', 'install-tick'] as const,
   panel: ['lib', 'ui', 'downloads-panel'] as const,
+  updates: ['lib', 'models', 'updates'] as const,
+  plan: ['lib', 'plan'] as const,
 };
 
 /** The core's error behind any failure (ApiError carries it, events carry it bare; anything else is INTERNAL). */
@@ -263,13 +265,42 @@ export function useFit(req: FitRequest | undefined) {
   });
 }
 
-/** GET /api/runs/tried for one model. */
-export function useTried(weakKey: string, sha256?: string) {
+/** GET /api/runs/tried for one model (`enabled: false` waits: the previous version of a file, only when asked). */
+export function useTried(weakKey: string, sha256?: string, enabled = true) {
   const api = useApi();
   return useQuery({
     queryKey: [...libKeys.tried, weakKey, sha256],
     queryFn: () => api.get<RunSummary[]>(`/api/runs/tried?${new URLSearchParams({ weakKey, ...(sha256 ? { sha256 } : {}) }).toString()}`),
     staleTime: 60_000,
+    enabled,
+  });
+}
+
+/** GET /api/models/updates: what the last checks found (changed files, missing mmproj / MTP). */
+export function useModelUpdates() {
+  const api = useApi();
+  return useQuery({ queryKey: libKeys.updates, queryFn: () => api.get<ModelUpdates>('/api/models/updates'), staleTime: 60_000 });
+}
+
+/** "Controlla aggiornamenti": one repo (the model page) or all of them; the answer replaces the status. */
+export function useCheckUpdates() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (repo: string | undefined) => api.post<ModelUpdates>('/api/models/updates/check', repo === undefined ? {} : { repo }),
+    onSuccess: (u) => qc.setQueryData(libKeys.updates, u),
+  });
+}
+
+/** POST /api/downloads/plan: what a download would fetch and what the PC already has; `req` undefined waits. */
+export function useDownloadPlan(req: DownloadRequest | undefined) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...libKeys.plan, req],
+    queryFn: () => api.post<DownloadPlan>('/api/downloads/plan', req),
+    enabled: req !== undefined,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 
@@ -531,8 +562,16 @@ export function handleLibraryEvent(
     const before = qc.getQueryData<DownloadJob[]>(libKeys.downloads)?.find((j) => j.id === e.job.id);
     upsertJob(qc, e.job);
     if (e.job.state === 'done' && before?.state !== 'done') {
-      void api.post<LocalModel[]>('/api/models/rescan').then((models) => qc.setQueryData(libKeys.local, models), () => undefined);
+      // The library knows the files, then the repo is looked at again (what else it has, what changed).
+      void api
+        .post<LocalModel[]>('/api/models/rescan')
+        .then((models) => {
+          qc.setQueryData(libKeys.local, models);
+          return api.post<ModelUpdates>('/api/models/updates/check', { repo: e.job.repo as string });
+        })
+        .then((u) => qc.setQueryData(libKeys.updates, u), () => undefined);
       void qc.invalidateQueries({ queryKey: libKeys.check });
+      void qc.invalidateQueries({ queryKey: libKeys.plan });
       toast.success(translate(lang, 'downloads.doneToast', { name: e.job.label }), {
         action: { label: translate(lang, 'models.benchmark'), onClick: () => ctx.onBenchmark(e.job) },
       });

@@ -6,6 +6,8 @@ import { Tooltip } from './tooltip';
 export type TriedBadgeProps = {
   /** "Tried · 142 tok/s" instead of the long form. */
   short?: boolean;
+  /** Measured with the version of the file an update replaced ("provato con la versione precedente"). */
+  previous?: boolean | undefined;
   size?: 'sm' | 'md';
   className?: string;
 } & (
@@ -26,30 +28,46 @@ export type TriedBadgeProps = {
 );
 
 /** "Already measured on this GPU" marker, shown before downloading or choosing a model. */
-export function TriedBadge({ tps, spilled, date, short, size = 'md', className }: TriedBadgeProps) {
+export function TriedBadge({ tps, spilled, date, short, previous, size = 'md', className }: TriedBadgeProps) {
   const { t, number, date: fmtDate } = useI18n();
   if (spilled) {
     return (
       <Tooltip content={t('tried.spillTooltip', { date: fmtDate(date) })}>
         <Badge tone="warning" size={size} className={className}>
           <HardDrive aria-hidden />
-          {short ? t('tried.spillShort') : t('tried.spill')}
+          {previous ? t('tried.previousSpill') : short ? t('tried.spillShort') : t('tried.spill')}
         </Badge>
       </Tooltip>
     );
   }
   const value = number(tps, 0);
+  // The previous version of the file: a calmer badge that says so.
+  const text = previous ? (short ? t('tried.previousShort', { tps: value }) : t('tried.previous', { tps: value })) : short ? t('tried.short', { tps: value }) : t('tried.value', { tps: value });
   const badge = (
-    <Badge tone="accent" size={size} className={className}>
+    <Badge tone={previous ? 'outline' : 'accent'} size={size} className={className}>
       <BadgeCheck aria-hidden />
-      {short ? t('tried.short', { tps: value }) : t('tried.value', { tps: value })}
+      {text}
     </Badge>
   );
   if (!date) return badge;
-  return <Tooltip content={t('tried.tooltip', { date: fmtDate(date), tps: value })}>{badge}</Tooltip>;
+  return <Tooltip content={t(previous ? 'tried.previousTooltip' : 'tried.tooltip', { date: fmtDate(date), tps: value })}>{badge}</Tooltip>;
 }
 
 /** The badge of a "tried here" summary: the speed of the best run, or that only runs spilling to shared memory exist. */
-export function TriedHereBadge({ tried, short, size }: { tried: { tps?: number | undefined; date: string; spilled?: boolean | undefined }; short: boolean; size: 'sm' | 'md' }) {
-  return tried.tps !== undefined ? <TriedBadge tps={tried.tps} date={tried.date} short={short} size={size} /> : <TriedBadge spilled date={tried.date} short={short} size={size} />;
+export function TriedHereBadge({
+  tried,
+  short,
+  size,
+  previous,
+}: {
+  tried: { tps?: number | undefined; date: string; spilled?: boolean | undefined };
+  short: boolean;
+  size: 'sm' | 'md';
+  previous?: boolean;
+}) {
+  return tried.tps !== undefined ? (
+    <TriedBadge tps={tried.tps} date={tried.date} short={short} size={size} previous={previous} />
+  ) : (
+    <TriedBadge spilled date={tried.date} short={short} size={size} previous={previous} />
+  );
 }

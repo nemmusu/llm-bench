@@ -234,8 +234,14 @@ export const downloadRequestSchema = z.object({
   /** Files to fetch (all shards of a split GGUF; whole repo minus extras for vLLM). */
   files: z.array(z.string()).min(1),
   label: z.string().optional(),
+  /** A local model (id) the files belong with: they go into its repo folder, next to it (an mmproj, an update). */
+  into: z.string().optional(),
 });
 export type DownloadRequest = z.infer<typeof downloadRequestSchema>;
+
+/** POST /api/models/updates/check: one repo (the model page), or every downloaded repo. */
+export const checkUpdatesRequestSchema = z.object({ repo: z.string().optional() });
+export type CheckUpdatesRequest = z.infer<typeof checkUpdatesRequestSchema>;
 
 export const installEngineRequestSchema = z.object({
   /** llama.cpp native: release tag (default the newest with an asset for this PC). */

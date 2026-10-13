@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
-import type { DownloadJob } from '../../../contract/models';
-import { useI18n } from '../../i18n';
-import { useDownloadsPanel, useMainGpu, useStartDownload, useSystemCheck, useSystemInfo, useTried } from '../../lib/queries-library';
+import type { DownloadRequest } from '../../../contract/api';
+import type { DownloadJob, DownloadPlan } from '../../../contract/models';
+import { useI18n, type Formatters } from '../../i18n';
+import { useDownloadPlan, useDownloadsPanel, useMainGpu, useStartDownload, useSystemCheck, useSystemInfo, useTried } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { Button } from '../ui/button';
 import { Callout } from '../ui/callout';
@@ -22,6 +23,8 @@ export interface DownloadChoice {
   /** Identity of the model a download would produce, for "già provato". */
   weakKey: string;
   sha256?: string | undefined;
+  /** A local model the files belong with (an update, its mmproj): they go into its folder. */
+  into?: string | undefined;
 }
 
 export interface DownloadDialogProps {
@@ -38,7 +41,40 @@ export function destinationOf(modelsDir: string, repo: string): string {
   return [modelsDir.replace(/[\\/]+$/, ''), ...repo.split('/')].join(sep);
 }
 
-function Body({ choice }: { choice: DownloadChoice }) {
+/** The request a choice makes (also what its plan is asked for). */
+function requestOf(c: DownloadChoice): DownloadRequest {
+  return { repo: c.repo, revision: c.revision ?? 'main', files: c.files, label: c.label, ...(c.into ? { into: c.into } : {}) };
+}
+
+/** What the plan fetches, in words: "la parte visione (mmproj)", "la testa MTP", else the file names. */
+function whatOf(t: Formatters['t'], files: DownloadPlan['files']): string {
+  return files.map((f) => (f.kind === 'mmproj' || f.kind === 'mtp' ? t(`downloads.what.${f.kind}`) : (f.path.split('/').pop() as string))).join(', ');
+}
+
+/**
+ * What the PC already has of the request: "Il modello è già sul PC: scarico solo la parte visione (mmproj)
+ * (0,9 GB)", that there is nothing to fetch, that files already there are checked first, that an update
+ * keeps the file until the new one is verified.
+ */
+function PlanNotes({ plan, onPc }: { plan: DownloadPlan; onPc: boolean }) {
+  const { t, bytes } = useI18n();
+  const fetch = plan.files.filter((f) => f.local === 'get' || f.local === 'update');
+  const checking = plan.files.filter((f) => f.local === 'check').reduce((a, f) => a + f.sizeBytes, 0);
+  return (
+    <>
+      {onPc &&
+        (fetch.length > 0 ? (
+          <Callout tone="info" title={t('downloads.confirm.alreadyHere', { what: whatOf(t, fetch), size: bytes(plan.bytesToGet) })} />
+        ) : (
+          checking === 0 && <Callout tone="success" title={t('downloads.confirm.nothing')} />
+        ))}
+      {checking > 0 && <p className="text-fg-2">{t('downloads.confirm.checkNote', { size: bytes(checking) })}</p>}
+      {plan.files.some((f) => f.local === 'update') && <p className="text-fg-2">{t('downloads.confirm.updateNote')}</p>}
+    </>
+  );
+}
+
+function Body({ choice, plan, size }: { choice: DownloadChoice; plan: DownloadPlan | undefined; size: number }) {
   const { t, bytes, number, date } = useI18n();
   const navigate = useNavigate();
   const { settings } = useSettings();
@@ -49,16 +85,20 @@ function Body({ choice }: { choice: DownloadChoice }) {
   const best = bestRunHere(tried.data, gpu);
   const freeGb = disk?.params.freeGb === undefined ? undefined : Number(disk.params.freeGb);
   const modelsDir = settings.modelsDir || system.data?.paths.modelsDir;
-  const tooBig = freeGb !== undefined && choice.sizeBytes > freeGb * GIB;
+  const tooBig = freeGb !== undefined && size > freeGb * GIB;
+  // The folder the core picked (the one already holding the model), else where the library puts it.
+  const dest = plan?.dest ?? (modelsDir ? destinationOf(modelsDir, choice.repo) : undefined);
   return (
     <div className="flex flex-col gap-4 text-sm">
+      {/* Adding to a model of the PC (an update, its mmproj), or a request whose files are partly here. */}
+      {plan && <PlanNotes plan={plan} onPc={choice.into !== undefined || plan.bytesHave > 0} />}
       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
         <dt className="text-fg-3">{t('downloads.confirm.size')}</dt>
-        <dd className="font-semibold text-fg tabular-nums">{bytes(choice.sizeBytes)}</dd>
+        <dd className="font-semibold text-fg tabular-nums">{bytes(size)}</dd>
         <dt className="text-fg-3">{t('downloads.confirm.free')}</dt>
         <dd className="text-fg tabular-nums">{freeGb === undefined ? '–' : `${number(freeGb, 0)} GB`}</dd>
         <dt className="text-fg-3">{t('downloads.confirm.dest')}</dt>
-        <dd className="font-mono text-xs break-all text-fg">{modelsDir ? destinationOf(modelsDir, choice.repo) : '–'}</dd>
+        <dd className="font-mono text-xs break-all text-fg">{dest ?? '–'}</dd>
       </dl>
       {best &&
         (best.tps !== undefined ? (
@@ -68,7 +108,7 @@ function Body({ choice }: { choice: DownloadChoice }) {
         ))}
       {tooBig && (
         <Callout tone="danger" title={t('downloads.confirm.noSpace')} action={{ label: t('downloads.confirm.changeFolder'), onClick: () => void navigate({ to: '/settings' }) }}>
-          {t('downloads.confirm.noSpaceBody', { size: bytes(choice.sizeBytes) })}
+          {t('downloads.confirm.noSpaceBody', { size: bytes(size) })}
         </Callout>
       )}
       <p className="text-fg-2">{t('downloads.confirm.resumeNote')}</p>
@@ -82,11 +122,16 @@ export function DownloadDialog({ choice, onOpenChange, onStarted }: DownloadDial
   const start = useStartDownload();
   const [, setPanel] = useDownloadsPanel();
   const disk = useSystemCheck().data?.items.find((i) => i.id === 'disk');
-  const tooBig = choice !== undefined && disk?.params.freeGb !== undefined && choice.sizeBytes > Number(disk.params.freeGb) * GIB;
+  const plan = useDownloadPlan(choice ? requestOf(choice) : undefined).data;
+  // Part of it already on the PC: only what is not there yet counts (the plan). Else the size the choice showed.
+  const partly = plan !== undefined && plan.files.some((f) => f.local !== 'get');
+  const size = partly ? plan.bytesToGet : (choice?.sizeBytes ?? 0);
+  const tooBig = choice !== undefined && disk?.params.freeGb !== undefined && size > Number(disk.params.freeGb) * GIB;
+  const nothing = plan !== undefined && plan.files.every((f) => f.local === 'have');
 
   const confirm = (c: DownloadChoice) =>
     start.mutate(
-      { repo: c.repo, revision: c.revision ?? 'main', files: c.files, label: c.label },
+      requestOf(c),
       {
         onSuccess: (job) => {
           onOpenChange(false);
@@ -114,14 +159,14 @@ export function DownloadDialog({ choice, onOpenChange, onStarted }: DownloadDial
               <DialogClose asChild>
                 <Button>{t('common.cancel')}</Button>
               </DialogClose>
-              <Button variant="primary" disabled={tooBig || start.isPending} onClick={() => confirm(choice)}>
+              <Button variant="primary" disabled={tooBig || nothing || start.isPending} onClick={() => confirm(choice)}>
                 <Download aria-hidden />
-                {t('downloads.confirm.go', { size: bytes(choice.sizeBytes) })}
+                {nothing ? t('downloads.confirm.nothingButton') : t('downloads.confirm.go', { size: bytes(size) })}
               </Button>
             </>
           }
         >
-          <Body choice={choice} />
+          <Body choice={choice} plan={plan} size={size} />
           {start.isError && <ErrorCallout error={start.error} className="mt-4" />}
         </DialogContent>
       )}

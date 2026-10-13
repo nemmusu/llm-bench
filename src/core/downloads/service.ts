@@ -6,8 +6,9 @@ import type { DownloadRequest } from '../../contract/api';
 import { AppError, toAppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import { NINFER_SUMS, parseSha256Sums, repoLayout } from '../../contract/formats';
-import { downloadJobSchema, type DownloadJob, type HubFile } from '../../contract/models';
+import { downloadJobSchema, type DownloadJob, type DownloadPlan, type HubFile, type LocalFileState } from '../../contract/models';
 import type { Clock, Logger } from '../deps';
+import { sha256File } from '../models/hash';
 import type { HubClient } from '../models/hub';
 import { REPO_RE, repoDir, safeRepoPath } from '../models/paths';
 import { DOWNLOAD_SIDECAR, readSidecar, type DownloadSidecar } from '../models/scanner';
@@ -30,6 +31,15 @@ export interface DownloadServiceOptions {
   statfs?: (dir: string) => Promise<{ bavail: number | bigint; bsize: number | bigint }>;
   /** Core shutdown: running jobs stop and are saved as paused. */
   signal?: AbortSignal;
+  /**
+   * Folders already holding a copy of this repo (the library's, an added folder), with the ids of the
+   * models in each: a request goes where its files already are, or next to the model it names (`into`).
+   */
+  repoFolders?: (repo: string) => Promise<{ dir: string; modelIds: string[] }[]>;
+  /** sha256 of a local file when already known (the hash cache), without hashing it. */
+  knownSha?: (file: string, sizeBytes: number, mtimeMs: number) => Promise<string | undefined>;
+  /** Hashes a local file whose sha256 is not known (default: sha256File in a worker). */
+  hashFile?: (file: string, signal: AbortSignal) => Promise<string>;
   maxParallel?: number;
   maxRetries?: number;
   backoffMs?: number;
@@ -115,7 +125,7 @@ export class DownloadService {
     for (const p of parsed.data.jobs) {
       const job = p.job;
       if (job.state === 'running' || job.state === 'verifying') job.state = 'paused';
-      job.bytesTotal ??= job.files.reduce((a, f) => a + sizeOf(f), 0);
+      job.bytesTotal ??= totalOf(job);
       job.bytesPerSec = undefined;
       job.etaSec = undefined;
       const rec: JobRecord = { job, revision: p.revision, done: p.done, doneBytes: 0, lastPublish: -Infinity, ...(p.commit ? { commit: p.commit } : {}) };
@@ -130,38 +140,38 @@ export class DownloadService {
     return [...this.records.values()].map((r) => this.snapshot(r));
   }
 
+  /**
+   * What a request would do, without starting it: where the files go (the folder already holding them,
+   * or next to the model it names), and for each file whether the PC already has it ("Il modello è già
+   * sul PC: scarico solo mmproj (0,9 GB)"). A file already there and verified is never fetched again.
+   */
+  async plan(req: DownloadRequest): Promise<DownloadPlan> {
+    const { dest, files } = await this.resolve(req);
+    const sum = (states: LocalFileState[]) => files.filter((f) => states.includes(f.local)).reduce((a, f) => a + f.sizeBytes, 0);
+    return { repo: req.repo, dest, files, bytesToGet: sum(['get', 'update']), bytesHave: sum(['have', 'check']) };
+  }
+
   async add(req: DownloadRequest): Promise<DownloadJob> {
-    if (!REPO_RE.test(req.repo)) throw new AppError('VALIDATION', 'Invalid repo id', { params: { repo: req.repo } });
-    const revision = req.revision;
-    const wantsAll = req.files.includes('*');
-    if (!wantsAll && !req.files.every(safeRepoPath)) throw new AppError('VALIDATION', 'Invalid file path in request');
-    const listing = await this.opts.hub.files(req.repo, revision);
-    const byPath = new Map(listing.map((f) => [f.path, f]));
-    const paths = wantsAll ? vllmRepoFiles(listing) : [...new Set(req.files)];
-    const missing = paths.find((p) => !byPath.has(p));
-    if (missing !== undefined) throw new AppError('HF_NOT_FOUND', `File not in repo: ${missing}`, { params: { repo: req.repo, file: missing } });
-    if (paths.length === 0) throw new AppError('VALIDATION', 'Nothing to download');
+    const { dest, files: planned } = await this.resolve(req);
+    const paths = planned.map((f) => f.path);
     const same = [...this.records.values()].find(
       (r) => !FINISHED.includes(r.job.state) && r.job.repo === req.repo && r.job.files.map((f) => f.path).sort().join('\n') === [...paths].sort().join('\n'),
     );
     if (same) return this.snapshot(same);
 
-    const files = paths.map((p) => {
-      const f = byPath.get(p) as HubFile;
-      return { path: p, sizeBytes: f.sizeBytes, ...(f.sha256 ? { sha256: f.sha256 } : {}) };
-    });
+    const files = planned.map(({ kind: _, ...f }) => f);
     const job: DownloadJob = {
       id: this.opts.newId?.() ?? randomUUID(),
       label: req.label ?? (paths.length === 1 ? `${req.repo} · ${path.posix.basename(paths[0] as string)}` : req.repo),
       repo: req.repo,
       files,
-      dest: repoDir(await this.opts.modelsDir(), req.repo),
+      dest,
       state: 'queued',
       bytesDone: 0,
-      bytesTotal: files.reduce((a, f) => a + f.sizeBytes, 0),
       createdAt: new Date(this.opts.clock.wall()).toISOString(),
     };
-    const rec: JobRecord = { job, revision, done: [], doneBytes: 0, lastPublish: -Infinity };
+    job.bytesTotal = totalOf(job);
+    const rec: JobRecord = { job, revision: req.revision, done: [], doneBytes: 0, lastPublish: -Infinity };
     this.records.set(job.id, rec);
     this.emit(rec, true);
     await this.persist();
@@ -197,7 +207,7 @@ export class DownloadService {
     if (rec.running) await this.stop(rec, 'cancel');
     else {
       await this.removeParts(rec);
-      await this.planSidecar(rec, true).catch(() => undefined);
+      await this.dropPlanned(rec);
       this.setState(rec, 'cancelled');
     }
     await this.persist();
@@ -214,6 +224,74 @@ export class DownloadService {
   }
 
   // ---- internals --------------------------------------------------------------------------------
+
+  /** The request checked against the repo's listing: its files, where they go and what the PC has of them. */
+  private async resolve(req: DownloadRequest): Promise<{ dest: string; files: DownloadPlan['files'] }> {
+    if (!REPO_RE.test(req.repo)) throw new AppError('VALIDATION', 'Invalid repo id', { params: { repo: req.repo } });
+    const wantsAll = req.files.includes('*');
+    if (!wantsAll && !req.files.every(safeRepoPath)) throw new AppError('VALIDATION', 'Invalid file path in request');
+    const listing = await this.opts.hub.files(req.repo, req.revision);
+    const byPath = new Map(listing.map((f) => [f.path, f]));
+    const paths = wantsAll ? vllmRepoFiles(listing) : [...new Set(req.files)];
+    const missing = paths.find((p) => !byPath.has(p));
+    if (missing !== undefined) throw new AppError('HF_NOT_FOUND', `File not in repo: ${missing}`, { params: { repo: req.repo, file: missing } });
+    if (paths.length === 0) throw new AppError('VALIDATION', 'Nothing to download');
+    const dest = await this.destFor(req, paths);
+    const sidecar = await readSidecar(dest);
+    const files: DownloadPlan['files'] = [];
+    for (const p of paths) {
+      const f = byPath.get(p) as HubFile;
+      const want = { path: p, sizeBytes: f.sizeBytes, ...(f.sha256 ? { sha256: f.sha256 } : {}) };
+      files.push({ ...want, kind: f.kind, local: (await this.onDisk(dest, sidecar, want)).state });
+    }
+    return { dest, files };
+  }
+
+  /**
+   * Where a request's files go: the folder of the model it names; else the copy of the repo already
+   * holding most of them; else the repo's existing copy (an mmproj joins its model); else the library.
+   */
+  private async destFor(req: DownloadRequest, paths: string[]): Promise<string> {
+    const library = repoDir(await this.opts.modelsDir(), req.repo);
+    const folders = (await this.opts.repoFolders?.(req.repo)) ?? [];
+    const named = folders.find((f) => req.into !== undefined && f.modelIds.includes(req.into));
+    if (named) return named.dir;
+    // The library's copy first, then the added folders in their order; the library itself last.
+    const dirs = folders.map((f) => f.dir);
+    const candidates = [...new Set([...dirs.filter((d) => d === library), ...dirs, library])];
+    let best = { dir: candidates[0] as string, have: 0 };
+    for (const dir of candidates) {
+      let have = 0;
+      for (const p of paths) if (await stat(path.join(dir, ...p.split('/'))).catch(() => undefined)) have++;
+      if (have > best.have) best = { dir, have };
+    }
+    return best.dir;
+  }
+
+  /** What the destination holds of a file: its state, and the size / known sha256 of the copy there (the version an update replaces). */
+  private async onDisk(
+    dest: string,
+    sidecar: DownloadSidecar | undefined,
+    f: { path: string; sizeBytes?: number | undefined; sha256?: string | undefined },
+  ): Promise<{ state: LocalFileState; sizeBytes?: number; sha256?: string }> {
+    const abs = path.join(dest, ...f.path.split('/'));
+    const st = await stat(abs).catch(() => undefined);
+    if (!st) return { state: 'get' };
+    const entry = sidecar?.files[f.path];
+    const sha256 = entry?.sha256 && entry.sizeBytes === st.size ? entry.sha256 : await this.opts.knownSha?.(abs, st.size, st.mtimeMs);
+    const disk = { sizeBytes: st.size, ...(sha256 ? { sha256 } : {}) };
+    if (st.size !== f.sizeBytes) return { state: 'update', ...disk };
+    // No hub sha256 (a small file kept in git): the size is all there is to compare.
+    if (!f.sha256) return { state: 'have', ...disk };
+    if (sha256 === undefined) return { state: 'check', ...disk };
+    return { state: sha256 === f.sha256 ? 'have' : 'update', ...disk };
+  }
+
+  /** A file's state as the job now knows it; the job's total counts only what it fetches. */
+  private setLocal(rec: JobRecord, f: DownloadJob['files'][number], local: LocalFileState): void {
+    f.local = local;
+    rec.job.bytesTotal = totalOf(rec.job);
+  }
 
   private get(id: string): JobRecord {
     const rec = this.records.get(id);
@@ -258,9 +336,24 @@ export class DownloadService {
       for (const f of job.files) {
         if (rec.done.includes(f.path)) continue;
         const dest = path.join(job.dest, ...f.path.split('/'));
-        const existing = await stat(dest).catch(() => undefined);
-        // Already downloaded (and verified) by an earlier job.
-        if (!existing || existing.size !== f.sizeBytes) {
+        // What is there now (the job may resume much later, another job may have fetched the file).
+        const disk = await this.onDisk(job.dest, await readSidecar(job.dest), f);
+        let local = disk.state;
+        if (local === 'check') {
+          // Same size, sha256 unknown: hashed before deciding, so a correct file is never fetched again.
+          this.setState(rec, 'verifying');
+          const sha = await (this.opts.hashFile ?? ((file, signal) => sha256File(file, { signal })))(dest, rec.abort.signal);
+          this.setState(rec, 'running');
+          local = sha === f.sha256 ? 'have' : 'update';
+          if (local === 'have') await this.writeSidecar(rec, f.path, sha, disk.sizeBytes as number);
+        } else if (local === 'have' && f.sha256 && disk.sha256 === f.sha256) {
+          // Known (sidecar or hash cache): the sidecar keeps it, so the library knows it without hashing.
+          await this.writeSidecar(rec, f.path, f.sha256, disk.sizeBytes as number);
+        }
+        this.setLocal(rec, f, local);
+        if (local !== 'have') {
+          // An update: the old file stays until the new one is verified, then the rename swaps them.
+          const previous = local === 'update' ? { sizeBytes: disk.sizeBytes as number, ...(disk.sha256 ? { sha256: disk.sha256 } : {}) } : undefined;
           const result = await downloadFile({
             fetch: this.opts.fetch,
             url: this.opts.hub.resolveUrl(job.repo as string, rec.revision, f.path),
@@ -279,10 +372,10 @@ export class DownloadService {
             ...(this.opts.backoffMs !== undefined ? { backoffMs: this.opts.backoffMs } : {}),
             repo: job.repo as string,
           });
-          await this.writeSidecar(rec, f.path, result.sha256, result.bytes);
+          await this.writeSidecar(rec, f.path, result.sha256, result.bytes, previous);
         }
         rec.done.push(f.path);
-        rec.doneBytes += sizeOf(f);
+        rec.doneBytes = this.doneBytesOf(rec);
         job.bytesDone = rec.doneBytes;
         await this.persist();
       }
@@ -298,7 +391,7 @@ export class DownloadService {
     } catch (e) {
       if (rec.intent === 'cancel') {
         await this.removeParts(rec);
-        await this.planSidecar(rec, true).catch(() => undefined);
+        await this.dropPlanned(rec);
         this.setState(rec, 'cancelled');
       } else if (rec.intent) {
         this.setState(rec, 'paused');
@@ -346,7 +439,7 @@ export class DownloadService {
   }
 
   private doneBytesOf(rec: JobRecord): number {
-    return rec.job.files.filter((f) => rec.done.includes(f.path)).reduce((a, f) => a + sizeOf(f), 0);
+    return rec.job.files.filter((f) => rec.done.includes(f.path)).reduce((a, f) => a + counted(f), 0);
   }
 
   private async partBytes(rec: JobRecord): Promise<number> {
@@ -363,34 +456,39 @@ export class DownloadService {
     rec.job.bytesDone = rec.doneBytes;
   }
 
-  private async writeSidecar(rec: JobRecord, file: string, sha256: string, bytes: number): Promise<void> {
-    const existing = await readSidecar(rec.job.dest);
-    const sidecar: DownloadSidecar = {
-      repo: rec.job.repo as string,
-      revision: rec.commit ?? existing?.revision ?? rec.revision,
-      files: { ...(existing?.files ?? {}), [file]: { sha256, sizeBytes: bytes } },
-      ...(existing?.planned ? { planned: existing.planned } : {}),
-    };
-    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
+  /** Reads the repo folder's sidecar (a fresh one when there is none), changes it and writes it back. */
+  private async updateSidecar(rec: JobRecord, change: (s: DownloadSidecar) => DownloadSidecar): Promise<void> {
+    const existing = (await readSidecar(rec.job.dest)) ?? { repo: rec.job.repo as string, revision: rec.revision, files: {} };
+    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(change(existing), null, 2));
+  }
+
+  /** A verified file; `previous` is the version an update replaced (results measured with it keep pointing at it). */
+  private writeSidecar(rec: JobRecord, file: string, sha256: string, bytes: number, previous?: { sha256?: string; sizeBytes: number }): Promise<void> {
+    // The commit the hub resolved the files at (the revision asked for may be a branch name).
+    return this.updateSidecar(rec, (s) => {
+      // The same file written again (found already there) keeps the version it replaced.
+      const keep = previous ?? (s.files[file]?.sha256 === sha256 ? s.files[file]?.previous : undefined);
+      return { ...s, revision: rec.commit ?? s.revision, files: { ...s.files, [file]: { sha256, sizeBytes: bytes, ...(keep ? { previous: keep } : {}) } } };
+    });
   }
 
   /**
-   * Records what this job sets out to fetch (`planned`, merged with earlier jobs into the same folder)
-   * before its first byte, or (`drop`) forgets what a cancelled job never finished.
+   * Records what a job of several files sets out to fetch (`planned`, merged with earlier jobs into the
+   * same folder) before its first byte. A single file needs no record: until it is complete it is a .part.
    */
-  private async planSidecar(rec: JobRecord, drop = false): Promise<void> {
-    const existing = await readSidecar(rec.job.dest);
-    if (drop && !existing) return;
-    const mine = rec.job.files.map((f) => f.path);
-    const unfinished = new Set(mine.filter((p) => !rec.done.includes(p)));
-    const planned = drop ? (existing?.planned ?? []).filter((p) => !unfinished.has(p)) : [...new Set([...(existing?.planned ?? []), ...mine])].sort();
-    const sidecar: DownloadSidecar = {
-      repo: rec.job.repo as string,
-      revision: existing?.revision ?? rec.revision,
-      files: existing?.files ?? {},
-      ...(planned.length > 0 ? { planned } : {}),
-    };
-    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
+  private async planSidecar(rec: JobRecord): Promise<void> {
+    if (rec.job.files.length < 2) return;
+    await this.updateSidecar(rec, (s) => ({ ...s, planned: [...new Set([...(s.planned ?? []), ...rec.job.files.map((f) => f.path)])].sort() }));
+  }
+
+  /** A cancelled job: what it never finished is no longer planned (the folder reads as what it really holds). */
+  private async dropPlanned(rec: JobRecord): Promise<void> {
+    if (!(await readSidecar(rec.job.dest))?.planned) return;
+    const unfinished = new Set(rec.job.files.map((f) => f.path).filter((p) => !rec.done.includes(p)));
+    await this.updateSidecar(rec, ({ planned, ...s }) => {
+      const left = (planned as string[]).filter((p) => !unfinished.has(p));
+      return left.length > 0 ? { ...s, planned: left } : s;
+    });
   }
 
   /** Progress of the current file → job bytes, EWMA speed and ETA; throttled event. */
@@ -454,6 +552,15 @@ export class DownloadService {
 /** Persisted jobs may lack sizes (older files); count them as 0. */
 function sizeOf(f: DownloadJob['files'][number]): number {
   return f.sizeBytes ?? 0;
+}
+
+/** Bytes a file adds to its job: none when the PC has it, or may have it ('check': only if it turns out different). */
+function counted(f: DownloadJob['files'][number]): number {
+  return f.local === 'have' || f.local === 'check' ? 0 : sizeOf(f);
+}
+
+function totalOf(job: DownloadJob): number {
+  return job.files.reduce((a, f) => a + counted(f), 0);
 }
 
 function pick(e: { code: string; message: string }): { code: string; message: string } {

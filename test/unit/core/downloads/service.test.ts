@@ -111,7 +111,7 @@ describe('DownloadService', () => {
     const job = await svc.add({ repo: REPO, revision: 'main', files: [Q4] });
     // Scheduling is immediate: the returned snapshot already shows the job starting.
     expect(job).toMatchObject({ id: 'job-1', label: `${REPO} · ${Q4}`, repo: REPO, state: 'running', bytesDone: 0, dest: path.join(models(), 'ggml-org', 'Qwen3-0.6B-GGUF') });
-    expect(job.files).toEqual([{ path: Q4, sizeBytes: hub.file(REPO, Q4).size, sha256: hub.file(REPO, Q4).sha256 }]);
+    expect(job.files).toEqual([{ path: Q4, sizeBytes: hub.file(REPO, Q4).size, sha256: hub.file(REPO, Q4).sha256, local: 'get' }]);
     await svc.idle();
     const done = svc.list()[0] as DownloadJob;
     expect(done).toMatchObject({ state: 'done', bytesDone: done.bytesTotal });
@@ -119,7 +119,7 @@ describe('DownloadService', () => {
     expect(dedupe(states('job-1'))).toEqual(['queued', 'running', 'done']);
     expect(readFileSync(path.join(job.dest, Q4))).toEqual(hub.file(REPO, Q4).bytes);
     const sidecar = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
-    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } }, planned: [Q4] });
+    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } } });
     expect(completed.map((j) => j.id)).toEqual(['job-1']);
     const persisted = JSON.parse(readFileSync(path.join(dir, 'data', 'downloads.json'), 'utf8'));
     expect(persisted.jobs[0]).toMatchObject({ revision: 'main', done: [Q4], commit: hub.repo(REPO).sha, job: { state: 'done' } });
@@ -128,7 +128,8 @@ describe('DownloadService', () => {
     await svc.idle();
     const merged = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
     expect(Object.keys(merged.files).sort()).toEqual([Q4, Q8]);
-    expect(merged.planned).toEqual([Q4, Q8]);
+    // One file at a time needs no plan: until it is complete it is a .part.
+    expect(merged).not.toHaveProperty('planned');
     expect(svc.list()[1]?.label).toBe('Q8 please');
   });
 
@@ -198,6 +199,15 @@ describe('DownloadService', () => {
     hub.behavior.throttleBytesPerSec = 0;
     // Only what finished stays planned: the folder reads as the shards it really has.
     expect(sidecarOf().planned).toEqual(Object.keys(sidecarOf().files).sort());
+    // Cancelled before its first file: nothing planned is left at all.
+    hub.addRepo({ id: 'shards/Two', files: [1, 2].map((i) => ({ path: `model-0000${i}-of-00002.safetensors`, size: 256 * 1024 })) });
+    hub.behavior.throttleBytesPerSec = 32 * 1024;
+    const two = await svc.add({ repo: 'shards/Two', revision: 'main', files: ['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'] });
+    const twoSidecar = path.join(two.dest, DOWNLOAD_SIDECAR);
+    await waitFor(() => existsSync(twoSidecar) && existsSync(path.join(two.dest, 'model-00001-of-00002.safetensors.part')));
+    await svc.cancel(two.id);
+    hub.behavior.throttleBytesPerSec = 0;
+    expect(JSON.parse(readFileSync(twoSidecar, 'utf8'))).not.toHaveProperty('planned');
     // A queued job cancelled before it ran leaves no sidecar behind.
     const quiet = service({ maxParallel: 0 });
     const q = await quiet.add({ repo: 'shards/Big', revision: 'main', files: ['model-00003-of-00003.safetensors'] });
@@ -322,6 +332,146 @@ describe('DownloadService', () => {
     await svc.idle();
     expect(svc.list()[0]?.state).toBe('done');
     expect(hub.requests.filter((r) => r.url.includes('/resolve/'))).toHaveLength(0);
+  });
+
+  describe('what the PC already has', () => {
+    const EYE = 'vision/Eye-GGUF';
+    const MAIN = 'Eye-Q4_K_M.gguf';
+    const MMPROJ = 'mmproj-Eye-f16.gguf';
+    beforeAll(() => {
+      hub.addRepo({
+        id: EYE,
+        files: [
+          { path: MAIN, size: 64 * 1024, seed: 1 },
+          { path: MMPROJ, size: 16 * 1024, seed: 2 },
+          { path: 'config.json', content: '{"a":1}' },
+        ],
+      });
+    });
+    /** A copy of the repo in another folder (an added folder: the Linux library), holding `files`. */
+    function copyAt(files: Record<string, Buffer>, sidecar?: Record<string, { sha256?: string; sizeBytes?: number }>): string {
+      const at = path.join(dir, 'linux', 'vision', 'Eye-GGUF');
+      mkdirSync(at, { recursive: true });
+      for (const [p, bytes] of Object.entries(files)) writeFileSync(path.join(at, p), bytes);
+      if (sidecar) writeFileSync(path.join(at, DOWNLOAD_SIDECAR), JSON.stringify({ repo: EYE, files: sidecar }));
+      return at;
+    }
+    const resolved = () => hub.requests.filter((r) => r.url.includes('/resolve/')).map((r) => path.posix.basename(new URL(r.url, hub.url).pathname));
+    const sidecarAt = (at: string) => JSON.parse(readFileSync(path.join(at, DOWNLOAD_SIDECAR), 'utf8'));
+
+    it('the model is on the PC: only the missing mmproj is fetched, next to it, and the plan says so', async () => {
+      const main = hub.file(EYE, MAIN);
+      const at = copyAt({ [MAIN]: main.bytes }, { [MAIN]: { sha256: main.sha256, sizeBytes: main.size } });
+      const svc = service({ repoFolders: async (repo) => (repo === EYE ? [{ dir: at, modelIds: ['eye'] }] : []) });
+      const plan = await svc.plan({ repo: EYE, revision: 'main', files: [MAIN, MMPROJ] });
+      expect(plan).toMatchObject({ repo: EYE, dest: at, bytesToGet: 16 * 1024, bytesHave: 64 * 1024 });
+      expect(plan.files.map((f) => [f.path, f.kind, f.local])).toEqual([
+        [MAIN, 'weights', 'have'],
+        [MMPROJ, 'mmproj', 'get'],
+      ]);
+      const job = await svc.add({ repo: EYE, revision: 'main', files: [MAIN, MMPROJ] });
+      expect(job).toMatchObject({ dest: at, bytesTotal: 16 * 1024 });
+      await svc.idle();
+      expect(svc.list()[0]).toMatchObject({ state: 'done', bytesDone: 16 * 1024 });
+      expect(resolved()).toEqual([MMPROJ]);
+      expect(readFileSync(path.join(at, MMPROJ))).toEqual(hub.file(EYE, MMPROJ).bytes);
+      expect(Object.keys(sidecarAt(at).files).sort()).toEqual([MAIN, MMPROJ]);
+      // The mmproj alone goes next to the model it names, or to the repo's copy when it names none.
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: [MMPROJ], into: 'eye' })).dest).toBe(at);
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: ['config.json'], into: 'gone' })).dest).toBe(at);
+      // A repo with no copy on the PC: the library.
+      expect((await svc.plan({ repo: REPO, revision: 'main', files: [Q4] })).dest).toBe(path.join(models(), 'ggml-org', 'Qwen3-0.6B-GGUF'));
+    });
+
+    it('several copies: the one holding the files, else the library copy before added folders', async () => {
+      const main = hub.file(EYE, MAIN);
+      const at = copyAt({ [MAIN]: main.bytes });
+      const library = path.join(models(), 'vision', 'Eye-GGUF');
+      const svc = service({
+        repoFolders: async () => [
+          { dir: at, modelIds: ['linux'] },
+          { dir: library, modelIds: ['lib'] },
+        ],
+      });
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: [MAIN, MMPROJ] })).dest).toBe(at);
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: [MMPROJ] })).dest).toBe(library);
+    });
+
+    it('a file that changed on the hub is fetched again and swapped in once verified; the version it replaced is remembered', async () => {
+      const main = hub.file(EYE, MAIN);
+      const old = Buffer.alloc(main.size, 7);
+      const at = copyAt({ [MAIN]: old }, { [MAIN]: { sha256: 'a'.repeat(64), sizeBytes: main.size } });
+      const svc = service({ repoFolders: async () => [{ dir: at, modelIds: ['eye'] }] });
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: [MAIN] })).files[0]?.local).toBe('update');
+      await svc.add({ repo: EYE, revision: 'main', files: [MAIN], into: 'eye' });
+      await svc.idle();
+      expect(readFileSync(path.join(at, MAIN))).toEqual(main.bytes);
+      expect(sidecarAt(at).files[MAIN]).toEqual({ sha256: main.sha256, sizeBytes: main.size, previous: { sha256: 'a'.repeat(64), sizeBytes: main.size } });
+      // Asked again: already there, nothing fetched, the replaced version still remembered.
+      hub.requests.length = 0;
+      await svc.add({ repo: EYE, revision: 'main', files: [MAIN], into: 'eye' });
+      await svc.idle();
+      expect(resolved()).toEqual([]);
+      expect(sidecarAt(at).files[MAIN].previous).toEqual({ sha256: 'a'.repeat(64), sizeBytes: main.size });
+      // Another size (no sha256 known for it): an update too, its size remembered.
+      writeFileSync(path.join(at, MMPROJ), Buffer.alloc(10, 1));
+      await svc.add({ repo: EYE, revision: 'main', files: [MMPROJ] });
+      await svc.idle();
+      expect(sidecarAt(at).files[MMPROJ]).toEqual({ sha256: hub.file(EYE, MMPROJ).sha256, sizeBytes: 16 * 1024, previous: { sizeBytes: 10 } });
+    });
+
+    it('an unverified file of the right size is hashed before deciding: the same is kept, a different one is fetched', async () => {
+      const main = hub.file(EYE, MAIN);
+      const at = copyAt({ [MAIN]: main.bytes, 'config.json': hub.file(EYE, 'config.json').bytes });
+      const hashed: string[] = [];
+      let answer = main.sha256;
+      const svc = service({
+        repoFolders: async () => [{ dir: at, modelIds: ['eye'] }],
+        hashFile: async (file) => {
+          hashed.push(path.basename(file));
+          return answer;
+        },
+      });
+      const plan = await svc.plan({ repo: EYE, revision: 'main', files: [MAIN, 'config.json'] });
+      // A small file kept in git has no sha256 on the hub: the size is all there is to compare.
+      expect(plan.files.map((f) => f.local)).toEqual(['check', 'have']);
+      expect(plan).toMatchObject({ bytesToGet: 0, bytesHave: main.size + hub.file(EYE, 'config.json').size });
+      const job = await svc.add({ repo: EYE, revision: 'main', files: [MAIN, 'config.json'] });
+      await svc.idle();
+      expect(hashed).toEqual([MAIN]);
+      expect(dedupe(states(job.id))).toEqual(['queued', 'running', 'verifying', 'running', 'done']);
+      expect(resolved()).toEqual([]);
+      expect(sidecarAt(at).files[MAIN]).toEqual({ sha256: main.sha256, sizeBytes: main.size });
+      // Same size, another content: fetched, and the job's total grows by it.
+      writeFileSync(path.join(at, DOWNLOAD_SIDECAR), JSON.stringify({ repo: EYE, files: {} }));
+      answer = 'b'.repeat(64);
+      const again = await svc.add({ repo: EYE, revision: 'main', files: [MAIN] });
+      expect(again.bytesTotal).toBe(0);
+      await svc.idle();
+      expect(resolved()).toEqual([MAIN]);
+      expect(svc.list().find((j) => j.id === again.id)).toMatchObject({ state: 'done', bytesTotal: main.size, bytesDone: main.size });
+      expect(sidecarAt(at).files[MAIN].previous).toEqual({ sizeBytes: main.size });
+    });
+
+    it('a sha256 the hash cache already knows needs no hashing; the sidecar keeps it', async () => {
+      const main = hub.file(EYE, MAIN);
+      const at = copyAt({ [MAIN]: main.bytes });
+      let hashed = 0;
+      const svc = service({
+        repoFolders: async () => [{ dir: at, modelIds: ['eye'] }],
+        knownSha: async (file, size) => (path.basename(file) === MAIN && size === main.size ? main.sha256 : undefined),
+        hashFile: async () => {
+          hashed++;
+          return '';
+        },
+      });
+      expect((await svc.plan({ repo: EYE, revision: 'main', files: [MAIN] })).files[0]?.local).toBe('have');
+      await svc.add({ repo: EYE, revision: 'main', files: [MAIN] });
+      await svc.idle();
+      expect(hashed).toBe(0);
+      expect(resolved()).toEqual([]);
+      expect(sidecarAt(at).files[MAIN]).toEqual({ sha256: main.sha256, sizeBytes: main.size });
+    });
   });
 
   it('reports EWMA speed and ETA, throttling progress events to the window', async () => {

@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serveEngineFor } from '../../../../src/renderer/components/library/local-models';
-import { bridge, curated, ENGINES, fail, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
+import { bridge, curated, ENGINES, fail, GPU, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -124,6 +124,14 @@ describe('models: on your PC', () => {
     // A Bonsai quant only the PrismML fork reads: one click to set that engine up.
     const fork = within(screen.getByRole('list', { name: 'Per llama.cpp (GGUF)' })).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ });
     expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');
+  });
+
+  it('serves each format with its engine', () => {
+    const engines = [{ kind: 'ninfer-wsl', available: true, installed: true, problems: [], supported: true }] as never;
+    expect(serveEngineFor(localModel('n', { identity: { format: 'ninfer' } }), undefined, engines, 'win32')).toEqual({ kind: 'ninfer-wsl' });
+    expect(serveEngineFor(localModel('n', { identity: { format: 'ninfer' } }), undefined, [], 'linux')).toEqual({ kind: 'ninfer-native' });
+    expect(serveEngineFor(localModel('n', { identity: { format: 'ninfer' } }), undefined, undefined, 'darwin')).toEqual({ kind: 'ninfer-native' });
+    expect(serveEngineFor(localModel('n', { identity: { format: 'ninfer' } }), undefined, undefined)).toEqual({ kind: 'ninfer-native' });
   });
 
   it('copies GGUF models into Docker storage on Windows (and removes the copy)', async () => {
@@ -413,6 +421,36 @@ describe('models: download', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download', engine: 'any', author: 'openai' }));
   });
 
+  it('catalog: NInfer on a card that cannot run it, formats nothing here runs, a Bonsai repo, no note on a free card or without a GPU', async () => {
+    const api = libApi(
+      world({
+        system: system({ gpus: [{ ...GPU, name: 'NVIDIA GeForce RTX 4090', computeCapability: '8.9', memoryTotalMiB: 24564 }] }),
+        snapshot: [sample(1000, { memUsedMiB: 900 })],
+        search: [
+          hubModel('neroued/Qwen3.8-27B-nvfp4-NInfer', { formats: ['ninfer'] }),
+          hubModel('mlx-community/Q-4bit', { formats: ['other'], otherFormats: ['MLX'] }),
+          hubModel('odd/Unknown-Format', { formats: ['other'] }),
+          hubModel('prism-ml/Ternary-Bonsai-2-27B-gguf', { formats: ['gguf'] }),
+        ],
+      }),
+    );
+    renderLib('/models?tab=download&engine=any', api);
+    const list = await screen.findByRole('list', { name: 'Modelli trovati' });
+    expect(await within(list).findByText('Richiede una RTX 5090')).toBeTruthy();
+    expect(within(list).getAllByText('non supportato')).toHaveLength(2);
+    expect(within(list).getByText('Altro formato')).toBeTruthy();
+    // Nothing GPU Bench runs: no verdict, and no "size unknown" either.
+    const mlx = within(list).getAllByRole('listitem').find((li) => within(li).queryByRole('link', { name: 'mlx-community/Q-4bit' })) as HTMLElement;
+    expect(within(mlx).queryByText('Dimensione non indicata')).toBeNull();
+    expect(within(list).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ }).getAttribute('href')).toContain('modelName=prism-ml');
+    expect(screen.queryByText(/^Ora altri programmi usano/)).toBeNull();
+    // Without a GPU: no note at all.
+    const none = libApi(world({ system: system({ gpus: [] }), snapshot: [], search: [] }));
+    renderLib('/models?tab=download', none);
+    expect(await screen.findAllByRole('heading', { name: 'Nessun modello trovato' })).toBeTruthy();
+    expect(screen.queryByText(/^Ora altri programmi usano/)).toBeNull();
+  });
+
   it('catalog: models already tried on this GPU, without asking Hugging Face', async () => {
     const api = libApi(world({ runs: [run('r1', { decodeTps: 88, quant: 'Q8_0' }), run('r2', { modelWeakKey: 'lab/Other-GGUF/o.gguf/Q4_K_M/1', status: 'failed', createdAt: '2026-09-01T00:00:00.000Z' })] }));
     renderLib('/models?tab=download', api);
@@ -438,6 +476,7 @@ describe('models: download', () => {
 
   it('catalog: nothing tried yet, no results without filters, VRAM held by other programs explained', async () => {
     const api = libApi(world({ runs: [], search: [], snapshot: [sample(1000, { memUsedMiB: 17_000 })] }));
+    // (The note is checked once the list is in; without a GPU, or with a free card, there is none: next tests.)
     renderLib('/models?tab=download', api);
     expect(await screen.findByRole('heading', { name: 'Nessun modello trovato' })).toBeTruthy();
     expect(await screen.findByText('Ora altri programmi usano 16,6 GB della scheda.')).toBeTruthy();
@@ -477,7 +516,8 @@ describe('models: download', () => {
     api.on('GET /api/models/search', (_b, q) => page(q));
     act(() => release());
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(60));
-    expect(api.calls.at(-1)?.path).toContain('cursor=30');
+    // The last search asked for the second page (other polls, such as telemetry, may come after it).
+    expect(api.calls.filter((c) => c.path.startsWith('/api/models/search')).at(-1)?.path).toContain('cursor=30');
     // The end of the grid comes into view: the next page loads by itself.
     const observer = observers.at(-1) as (typeof observers)[number];
     act(() => observer.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
