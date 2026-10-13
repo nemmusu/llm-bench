@@ -55,6 +55,17 @@ export interface GenerateRequest {
   cachePrompt?: boolean;
   /** llama.cpp: run on this slot (id_slot), so a conversation finds its own cache again. */
   slot?: number;
+  /**
+   * A long conversation's text prompt as chat turns (first message, answer, new message…; promptText is
+   * them joined): chat servers send the turns, as a chat program does, so their prefix cache can find
+   * the earlier ones; the other servers send promptText.
+   */
+  chat?: ChatTurn[];
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface InferenceClient {

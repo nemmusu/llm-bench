@@ -193,7 +193,7 @@ export class NinferBuilder {
     const tail: string[] = [];
     const onAbort = () => {
       void (async () => {
-        if (wsl && pid !== undefined) await wsl.processes.stop({ distro: distro as string, pid, marker }, mp.exited).catch(() => false);
+        if (wsl && pid !== undefined) await wsl.processes.stop({ distro: distro as string, pid, marker }, mp.exited, { group: true }).catch(() => false);
         await mp.stop();
       })();
     };

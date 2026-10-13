@@ -15,7 +15,7 @@ import type { CurrentStep } from '../../../contract/events';
 import { AppError } from '../../../contract/errors';
 import type { SessionsPoint, SessionsStep, Stat } from '../../../contract/results';
 import type { PrefixCacheReading } from '../../inference/prefix-metrics';
-import type { GenerateRequest, InferenceClient, StreamEvent } from '../../inference/types';
+import type { ChatTurn, GenerateRequest, InferenceClient, StreamEvent } from '../../inference/types';
 import { fromStream, unionMs, type RequestMetrics } from '../metrics';
 import { buildPrompt, buildTextPrompt, CHARS_PER_TOKEN } from '../prompts';
 import { summarize } from '../stats';
@@ -72,7 +72,7 @@ export interface TurnResult {
   enginePrefillMs?: number;
 }
 
-type Prompt = { ids: number[] } | { text: string };
+type Prompt = { ids: number[] } | { text: string; turns: ChatTurn[] };
 type Done = Extract<StreamEvent, { kind: 'done' }>;
 type Chunk = Extract<StreamEvent, { kind: 'chunk' }>;
 
@@ -200,7 +200,7 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
     const estimated = 'ids' in prompt ? prompt.ids.length : Math.round(prompt.text.length / CHARS_PER_TOKEN);
     d.step({ kind: 'sessions', concurrency: sessions, depth: step.depth, promptTokens: estimated, outputTokens: step.outputTokens, turn, turns: step.turns, rep: requests + 1, reps: sessions * step.turns });
     const req: GenerateRequest = {
-      ...('ids' in prompt ? { promptIds: prompt.ids } : { promptText: prompt.text }),
+      ...('ids' in prompt ? { promptIds: prompt.ids } : { promptText: prompt.text, chat: prompt.turns }),
       outputTokens: step.outputTokens,
       seed: d.seed,
       ...(d.model !== undefined ? { model: d.model } : {}),
@@ -255,7 +255,8 @@ async function runLevel(step: SessionsStep, sessions: number, d: SessionsDeps, s
 function firstPrompt(depth: number, d: SessionsDeps): Prompt {
   const rep = d.nextRep();
   if (d.tokens) return { ids: buildPrompt(d.tokens, depth, rep, { seed: d.seed, salt: 'sessions', ...(d.bos !== undefined ? { bos: d.bos } : {}) }) };
-  return { text: buildTextPrompt(d.corpus, depth, rep, { seed: d.seed, salt: 'sessions', scale: d.textScale }) };
+  const text = buildTextPrompt(d.corpus, depth, rep, { seed: d.seed, salt: 'sessions', scale: d.textScale });
+  return { text, turns: [{ role: 'user', content: text }] };
 }
 
 /** The conversation so far (prompt + answer) and `followup` tokens of new text. */
@@ -263,7 +264,11 @@ async function nextPrompt(prev: Prompt, events: readonly StreamEvent[], followup
   const chunks = events.filter((e): e is Chunk => e.kind === 'chunk');
   const text = chunks.map((c) => c.text ?? '').join('');
   const rep = d.nextRep();
-  if ('text' in prev) return { text: prev.text + text + buildTextPrompt(d.corpus, followup, rep, { seed: d.seed, salt: 'sessions-followup', ...(d.textScale ? { scale: { charsPerToken: d.textScale.charsPerToken, overhead: 0 } } : {}) }) };
+  if ('text' in prev) {
+    // New text only: no template around it (the scale's overhead is for a whole prompt).
+    const more = buildTextPrompt(d.corpus, followup, rep, { seed: d.seed, salt: 'sessions-followup', ...(d.textScale ? { scale: { charsPerToken: d.textScale.charsPerToken, overhead: 0 } } : {}) });
+    return { text: prev.text + text + more, turns: [...prev.turns, { role: 'assistant', content: text }, { role: 'user', content: more }] };
+  }
   // llama.cpp returns the answer's token ids; otherwise the answer is tokenized, as a chat client sends it back as text.
   const answer = chunks.every((c) => c.ids !== undefined) ? chunks.flatMap((c) => c.ids as number[]) : await d.client.tokenize(text, { addSpecial: false, signal: d.signal });
   const more = buildPrompt(d.tokens as readonly number[], followup, rep, { seed: d.seed, salt: 'sessions-followup' });

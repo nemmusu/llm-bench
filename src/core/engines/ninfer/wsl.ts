@@ -122,10 +122,12 @@ export class WslProcesses {
    * Stops our process: TERM, then KILL after the grace time; each signal only after the ownership check.
    * `gone` resolves when it has exited (the wsl.exe relay ends with it). False = not ours or already gone.
    */
-  async stop(rec: Pick<WslRecord, 'distro' | 'pid' | 'marker'>, gone?: Promise<unknown>): Promise<boolean> {
+  async stop(rec: Pick<WslRecord, 'distro' | 'pid' | 'marker'>, gone?: Promise<unknown>, opts: { group?: boolean } = {}): Promise<boolean> {
     const run = distroRunner(this.o.proc, this.o.wsl, rec.distro);
+    // `group`: the process leads its own session (setsid): the signal goes to everything it started.
+    const target = opts.group ? ['--', `-${rec.pid}`] : [String(rec.pid)];
     if (!(await this.owned(rec.distro, rec.pid, rec.marker))) return false;
-    await run('kill', ['-TERM', String(rec.pid)], { timeoutMs: 20_000 });
+    await run('kill', ['-TERM', ...target], { timeoutMs: 20_000 });
     const grace = this.o.graceMs ?? 10_000;
     if (gone) {
       const exited = await Promise.race([gone.then(() => true), this.o.sleep(grace).then(() => false)]);
@@ -136,7 +138,7 @@ export class WslProcesses {
         if (!(await this.owned(rec.distro, rec.pid, rec.marker))) return true;
       }
     }
-    if (await this.owned(rec.distro, rec.pid, rec.marker)) await run('kill', ['-KILL', String(rec.pid)], { timeoutMs: 20_000 });
+    if (await this.owned(rec.distro, rec.pid, rec.marker)) await run('kill', ['-KILL', ...target], { timeoutMs: 20_000 });
     return true;
   }
 
