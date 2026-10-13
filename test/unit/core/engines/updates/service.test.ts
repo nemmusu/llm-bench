@@ -99,7 +99,7 @@ function setup(o: Setup = {}) {
       },
       tagInfo: async (ref) => o.tagInfo?.[ref],
     },
-    tags: { 'vllm-docker': async () => o.tags?.['vllm-docker'] ?? [], 'sglang-docker': async () => o.tags?.['sglang-docker'] ?? [] },
+    tags: { 'vllm-docker': { tags: async () => o.tags?.['vllm-docker'] ?? [] }, 'sglang-docker': { tags: async () => o.tags?.['sglang-docker'] ?? [] } },
     ...(o.packages ? { packages: o.packages } : {}),
     tools,
     fetch,

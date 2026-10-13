@@ -298,7 +298,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     settings: ctx.settings,
     images: docker.images,
     hub: docker.hub,
-    tags: { 'vllm-docker': (o) => vllmDocker.tags(o), 'sglang-docker': (o) => sglangDocker.tags(o) },
+    tags: { 'vllm-docker': vllmDocker, 'sglang-docker': sglangDocker },
     tools: { proc: deps.proc, git: deps.endpoints.git ?? ['git'], cmake: deps.endpoints.cmake ?? ['cmake'] },
     fetch: deps.fetch,
     pypi: deps.endpoints.pypi ?? 'https://pypi.org',

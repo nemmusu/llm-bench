@@ -35,7 +35,7 @@ export interface EngineUpdatesDeps {
   images: { inspect(ref: string): Promise<{ repoDigests: string[] } | undefined> };
   hub: { listTags(repo: string, nameFilter?: string, opts?: { refresh?: boolean }): Promise<HubTag[]>; tagInfo(ref: string): Promise<HubTag | undefined> };
   /** Release tags of the built-in Docker engines (vLLM's say which ones run on this GPU). */
-  tags: Record<'vllm-docker' | 'sglang-docker', (opts: { refresh?: boolean }) => Promise<UpdateTag[]>>;
+  tags: Record<'vllm-docker' | 'sglang-docker', { tags(opts: { refresh?: boolean }): Promise<UpdateTag[]> }>;
   /** `uv pip install` requirement of the managed environments (default "vllm", "sglang"). */
   packages?: Partial<Record<'vllm-native' | 'sglang-native', string>>;
   tools: GitTools;
@@ -117,7 +117,7 @@ export class EngineUpdates {
         const last = (await this.d.settings.get()).lastEngine;
         const kind = t.engine;
         const cfg: EngineConfig = last?.kind === kind && last.customEngineId === undefined ? last : { kind };
-        return this.docker(target, installer(baseOf(this.d.registry, kind)), cfg, opts, (o) => this.d.tags[kind](o), async (image) => {
+        return this.docker(target, installer(baseOf(this.d.registry, kind)), cfg, opts, (o) => this.d.tags[kind].tags(o), async (image) => {
           await this.d.settings.update({ lastEngine: { kind, image } });
         });
       }
