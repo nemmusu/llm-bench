@@ -304,7 +304,8 @@ export async function started(o: WorldOptions = {}) {
   await tick();
   w.proc.emit('message', { type: 'ready', port: 4321 });
   await vi.waitFor(() => expect(FakeWindow.last?.loaded).toBe('http://127.0.0.1:4321/'));
-  return { ...w, s, win: FakeWindow.last!, tray: FakeTray.last };
+  // Read again: TypeScript narrowed both to undefined at the reset above.
+  return { ...w, s, win: FakeWindow.last as unknown as FakeWindow, tray: FakeTray.last as FakeTray | undefined };
 }
 
 export function coreState(o: Partial<CoreState> = {}): CoreState {

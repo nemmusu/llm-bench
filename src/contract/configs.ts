@@ -18,6 +18,10 @@ import { profileSchema } from './results';
 
 export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
 
+/**
+ * SGLang reads its settings like vLLM (context, KV dtype, memory share, users, batched tokens): its
+ * own flag spellings are parsed into the same fields, and the engine kind in the key keeps the two apart.
+ */
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
   // A command template is the user's own program: no flags GPU Bench knows, like an external endpoint.
@@ -91,11 +95,11 @@ export const configParamsSchema = z.object({
   dtype: z.string().optional(),
   quantization: z.string().optional(),
   /**
-   * RoPE context extension (recipes: "Contesto oltre il limite del modello"): llama.cpp --rope-scaling /
-   * --rope-scale / --yarn-orig-ctx, vLLM --hf-overrides or --rope-scaling, SGLang
-   * --json-model-override-args (their rope_scaling), or LaunchParams.ropeScaling. Factor to 4 decimals.
+   * RoPE context extension as "type:factor" (+ ":originalContext" for YaRN), e.g. "yarn:4:32768":
+   * llama.cpp --rope-scaling/--rope-scale/--yarn-orig-ctx, vLLM --hf-overrides (or --rope-scaling),
+   * SGLang --json-model-override-args.
    */
-  ropeScaling: z.object({ type: z.string(), factor: z.number().optional(), originalContext: z.number().int().optional() }).optional(),
+  ropeScaling: z.string().optional(),
   /** Any other engine flag, "flag value" with paths as bare file names, sorted. */
   other: z.array(z.string()).default([]),
 });
@@ -116,20 +120,21 @@ export interface LaunchInput {
   modelContext?: number | undefined;
 }
 
-type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' | 'kvLayout' | 'ropeScaling'> & {
+type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' | 'kvLayout'> & {
   contextSize?: number;
-  /** RoPE scaling read so far (each flag sets its part). */
-  rope?: { type?: string; factor?: number; originalContext?: number };
   /** --kv-unified (true) / --no-kv-unified (false); undefined = not said. */
   kvUnified?: boolean;
   gpuLayers?: number | 'all';
   cpuMoe?: number | 'all';
   speculativeModel?: string;
   speculativeTokens?: number;
+  ropeType?: string;
+  ropeFactor?: number;
+  ropeOrig?: number;
   other: Set<string>;
 };
 
-type Setter = (raw: Raw, values: readonly string[], flag: string) => void;
+type Setter = (raw: Raw, values: readonly string[]) => void;
 
 const int = (v: string | undefined): number | undefined => {
   if (v === undefined || !/^-?\d+$/.test(v.trim())) return undefined;
@@ -166,7 +171,7 @@ const VALUE_FLAGS = new Map<string, Setter>();
 const add = (flags: string[], set: Setter) => {
   for (const f of flags) VALUE_FLAGS.set(f, set);
 };
-add(['-c', '--ctx-size', '--max-model-len'], (r, v) => {
+add(['-c', '--ctx-size', '--max-model-len', '--context-length'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.contextSize = n;
 });
@@ -185,7 +190,7 @@ add(['-b', '--batch-size'], (r, v) => {
 add(['-ub', '--ubatch-size'], (r, v) => {
   r.ubatchSize = positive(v[0]) ?? r.ubatchSize;
 });
-add(['-np', '--parallel', '--max-num-seqs'], (r, v) => {
+add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests'], (r, v) => {
   r.parallel = positive(v[0]) ?? r.parallel;
 });
 add(['-ngl', '--gpu-layers', '--n-gpu-layers'], (r, v) => {
@@ -218,10 +223,10 @@ add(['--speculative-model'], (r, v) => {
 add(['--num-speculative-tokens'], (r, v) => {
   r.speculativeTokens = int(v[0]) ?? r.speculativeTokens;
 });
-add(['--max-num-batched-tokens'], (r, v) => {
+add(['--max-num-batched-tokens', '--chunked-prefill-size'], (r, v) => {
   r.maxNumBatchedTokens = positive(v[0]) ?? r.maxNumBatchedTokens;
 });
-add(['--gpu-memory-utilization'], (r, v) => {
+add(['--gpu-memory-utilization', '--mem-fraction-static'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
 add(['--cache-reuse'], (r, v) => {
@@ -253,63 +258,60 @@ add(['--compilation-config', '-O'], (r, v) => {
   else if (sizes !== undefined) rest.cudagraph_capture_sizes = sizes;
   if (Object.keys(rest).length) r.other.add(`--compilation-config ${stableStringify(rest)}`);
 });
-add(['--dtype'], (r, v) => {
-  if (v[0]) r.dtype = v[0];
-});
-// RoPE scaling: llama.cpp spells each part; vLLM (older --rope-scaling, newer --hf-overrides) and SGLang
-// (--json-model-override-args) take a JSON whose rope_scaling says the same.
 add(['--rope-scaling'], (r, v) => {
-  const text = v.join(' ').trim();
-  if (!text) return;
-  if (text.startsWith('{')) {
-    readOverrides(r, `{"rope_scaling":${text}}`, '--rope-scaling');
-    return;
-  }
-  r.rope = { ...r.rope, type: text.toLowerCase() };
+  const text = v.join(' ');
+  // llama.cpp: a type ("yarn", "linear", "none"); old vLLM: the rope_scaling JSON itself.
+  if (!ropeFromJson(r, text)) r.ropeType = text.trim().toLowerCase();
 });
 add(['--rope-scale'], (r, v) => {
-  const n = num(v[0]);
-  if (n !== undefined && n > 0) r.rope = { ...r.rope, factor: n };
+  r.ropeFactor = num(v[0]) ?? r.ropeFactor;
 });
 add(['--yarn-orig-ctx'], (r, v) => {
-  const n = int(v[0]);
-  if (n !== undefined && n > 0) r.rope = { ...r.rope, originalContext: n };
+  r.ropeOrig = positive(v[0]) ?? r.ropeOrig;
 });
-add(['--hf-overrides', '--json-model-override-args'], (r, v, flag) => {
-  if (v.length) readOverrides(r, v.join(' '), flag);
-});
-
-/** A model-config override JSON: its rope_scaling is the RoPE setting, anything else stays a flag of its own. */
-function readOverrides(r: Raw, text: string, flag: string): void {
+add(['--hf-overrides', '--json-model-override-args'], (r, v) => {
+  const text = v.join(' ');
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     parsed = undefined;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    r.other.add(`${flag} ${text.trim()}`);
-    return;
-  }
-  const { rope_scaling: rope, ...rest } = parsed as Record<string, unknown>;
-  if (rope && typeof rope === 'object' && !Array.isArray(rope)) {
-    const o = rope as Record<string, unknown>;
-    const type = o.rope_type ?? o.type;
-    r.rope = {
-      ...(typeof type === 'string' ? { type: type.toLowerCase() } : {}),
-      ...(typeof o.factor === 'number' && o.factor > 0 ? { factor: o.factor } : {}),
-      ...(typeof o.original_max_position_embeddings === 'number' && o.original_max_position_embeddings > 0 ? { originalContext: o.original_max_position_embeddings } : {}),
-    };
-  } else if (rope !== undefined) rest.rope_scaling = rope;
-  if (Object.keys(rest).length) r.other.add(`${flag} ${stableStringify(rest)}`);
-}
+  const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  const { rope_scaling: rope, ...rest } = obj ?? {};
+  if (rope !== undefined) ropeFromJson(r, JSON.stringify(rope));
+  if (!obj) r.other.add(`--hf-overrides ${text.trim()}`);
+  else if (Object.keys(rest).length) r.other.add(`--hf-overrides ${stableStringify(rest)}`);
+});
+add(['--dtype'], (r, v) => {
+  if (v[0]) r.dtype = v[0];
+});
 add(['--quantization'], (r, v) => {
   if (v[0]) r.quantization = v[0];
 });
 
+/** A rope_scaling object ({rope_type|type, factor, original_max_position_embeddings}); false when `text` is not one. */
+function ropeFromJson(r: Raw, text: string): boolean {
+  let o: unknown;
+  try {
+    o = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+  const rope = o as Record<string, unknown>;
+  const type = rope.rope_type ?? rope.type;
+  if (typeof type === 'string') r.ropeType = type.toLowerCase();
+  if (typeof rope.factor === 'number') r.ropeFactor = rope.factor;
+  if (typeof rope.original_max_position_embeddings === 'number') r.ropeOrig = rope.original_max_position_embeddings;
+  return true;
+}
+
 /** Switches without a value. */
 const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['--enforce-eager', (r) => (r.enforceEager = true)],
+  // SGLang: no CUDA graphs, vLLM's eager mode.
+  ['--disable-cuda-graph', (r) => (r.enforceEager = true)],
   ['--kv-unified', (r) => (r.kvUnified = true)],
   ['-kvu', (r) => (r.kvUnified = true)],
   ['--no-kv-unified', (r) => (r.kvUnified = false)],
@@ -341,6 +343,10 @@ const IGNORED_VALUE = new Set([
   '-mmproj',
   '--mmproj',
   '--fit',
+  // SGLang: the model, the seed; Python's -m (the module) and -X (GPU Bench's marker on servers).
+  '--model-path',
+  '--random-seed',
+  '-X',
 ]);
 const IGNORED_SWITCH = new Set([
   '--no-webui',
@@ -354,6 +360,7 @@ const IGNORED_SWITCH = new Set([
   '--log-timestamps',
   // vLLM: only how much of the prompt came from the cache is reported, nothing runs differently.
   '--enable-prompt-tokens-details',
+  '--enable-cache-report',
   '--disable-log-requests',
   '--disable-log-stats',
   '--disable-uvicorn-access-log',
@@ -436,7 +443,7 @@ function parseArgs(args: readonly string[], raw: Raw, docker = false): void {
     if (IGNORED_SWITCH.has(flag) || (docker && DOCKER_SWITCH.has(flag))) continue;
     takeValues();
     const set = VALUE_FLAGS.get(flag);
-    if (set) set(raw, values, flag);
+    if (set) set(raw, values);
     else if (!IGNORED_VALUE.has(flag) && !(docker && DOCKER_VALUE.has(flag))) {
       raw.other.add([flag, ...values.map((v) => (isPath(v) ? bareName(v) : v))].join(' '));
     }
@@ -446,7 +453,6 @@ function parseArgs(args: readonly string[], raw: Raw, docker = false): void {
 /** The settings of the launch params themselves (what each engine family reads), then their extra arguments. */
 function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
   if (family === 'external') return;
-  if (p.ropeScaling) raw.rope = { ...p.ropeScaling };
   if (family === 'vllm') {
     const ctx = p.maxModelLen ?? p.contextSize;
     if (ctx !== undefined) raw.contextSize = ctx;
@@ -464,6 +470,11 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
     if (p.threads !== undefined) raw.threads = p.threads;
   }
   if (p.parallel !== undefined) raw.parallel = p.parallel;
+  if (p.ropeScaling) {
+    raw.ropeType = p.ropeScaling.type;
+    raw.ropeFactor = p.ropeScaling.factor;
+    raw.ropeOrig = p.ropeScaling.originalContext;
+  }
   parseArgs(p.extraArgs, raw);
 }
 
@@ -527,14 +538,9 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   if (raw.cudaGraphSizes !== undefined) out.cudaGraphSizes = [...new Set(raw.cudaGraphSizes)].sort((a, b) => a - b);
   if (raw.dtype !== undefined && raw.dtype !== 'auto') out.dtype = raw.dtype;
   if (raw.quantization !== undefined) out.quantization = raw.quantization;
-  const rope = raw.rope;
-  // "none", or a factor of 1, changes nothing: the same configuration as without it.
-  if (rope && rope.type !== 'none' && rope.factor !== 1 && (rope.type !== undefined || rope.factor !== undefined)) {
-    out.ropeScaling = {
-      type: rope.type ?? 'linear',
-      ...(rope.factor !== undefined ? { factor: Math.round(rope.factor * 1e4) / 1e4 } : {}),
-      ...(rope.originalContext !== undefined ? { originalContext: rope.originalContext } : {}),
-    };
+  // The trained context only matters to YaRN (linear scaling ignores it).
+  if (raw.ropeType !== undefined && raw.ropeType !== 'none') {
+    out.ropeScaling = [raw.ropeType, raw.ropeFactor ?? 1, ...(raw.ropeType === 'yarn' && raw.ropeOrig !== undefined ? [raw.ropeOrig] : [])].join(':');
   }
   return out;
 }
@@ -565,9 +571,18 @@ export function gpuKeyOf(g: { hostId: string; gpuUuid?: string | undefined; gpuN
   return g.gpuUuid ? `gpu:${g.gpuUuid}` : `host:${g.hostId}:${g.gpuName ?? 'none'}`;
 }
 
-/** Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4". */
-export function engineReleaseOf(e: { image?: string | undefined; build?: string | undefined; version?: string | undefined; variant?: string | undefined }): string {
-  return [e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
+/**
+ * Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4".
+ * A custom engine (a fork) comes first ("custom:prismml b11460"): it is never the same configuration as its base.
+ */
+export function engineReleaseOf(e: {
+  image?: string | undefined;
+  build?: string | undefined;
+  version?: string | undefined;
+  variant?: string | undefined;
+  customEngine?: { id: string } | undefined;
+}): string {
+  return [e.customEngine ? `custom:${e.customEngine.id}` : undefined, e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
 }
 
 export interface ConfigKeyParts {

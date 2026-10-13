@@ -331,7 +331,7 @@ function engineArgs(c) {
 }
 
 function engineEnv(c) {
-  return { ...env, ...c.env, FAKE_ENGINE_FLAVOR: /vllm/i.test(c.image) ? 'vllm' : 'llamacpp' };
+  return { ...env, ...c.env, FAKE_ENGINE_FLAVOR: /sglang/i.test(c.image) ? 'sglang' : /vllm/i.test(c.image) ? 'vllm' : 'llamacpp' };
 }
 
 async function cmdRun(args) {

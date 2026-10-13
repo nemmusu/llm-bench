@@ -1,0 +1,86 @@
+usage: launch_server.py [-h] --model-path MODEL_PATH
+                        [--tokenizer-path TOKENIZER_PATH] [--host HOST]
+                        [--port PORT] [--skip-server-warmup]
+                        [--dtype {auto,half,float16,bfloat16,float,float32}]
+                        [--quantization QUANTIZATION]
+                        [--context-length CONTEXT_LENGTH]
+                        [--kv-cache-dtype {auto,fp8_e5m2,fp8_e4m3,bf16,bfloat16,nvfp4}]
+                        [--served-model-name SERVED_MODEL_NAME]
+                        [--mem-fraction-static MEM_FRACTION_STATIC]
+                        [--max-running-requests MAX_RUNNING_REQUESTS]
+                        [--chunked-prefill-size CHUNKED_PREFILL_SIZE] ...
+
+options:
+  -h, --help            show this help message and exit
+  --model-path MODEL_PATH, --model MODEL_PATH
+                        The path of the model weights. This can be a local
+                        folder or a Hugging Face repo ID.
+  --tokenizer-path TOKENIZER_PATH
+                        The path of the tokenizer.
+  --tokenizer-mode {auto,slow}
+                        Tokenizer mode. 'auto' will use the fast tokenizer if
+                        available, and 'slow' will always use the slow
+                        tokenizer.
+  --host HOST           The host of the HTTP server.
+  --port PORT           The port of the HTTP server.
+  --skip-server-warmup  If set, skip warmup.
+  --trust-remote-code   Whether or not to allow for custom models defined on
+                        the Hub in their own modeling files.
+  --dtype {auto,half,float16,bfloat16,float,float32}
+                        Data type for model weights and activations. * "auto"
+                        will use FP16 precision for FP32 and FP16 models, and
+                        BF16 precision for BF16 models.
+  --quantization {awq,fp8,mxfp8,gptq,marlin,gptq_marlin,awq_marlin,bitsandbytes,gguf,modelopt,modelopt_fp8,modelopt_fp4,w8a8_int8,w8a8_fp8,moe_wna16,w4afp8,mxfp4,compressed-tensors}
+                        The quantization method.
+  --context-length CONTEXT_LENGTH
+                        The model's maximum context length. Defaults to None
+                        (will use the value from the model's config.json
+                        instead).
+  --kv-cache-dtype {auto,fp8_e5m2,fp8_e4m3,bf16,bfloat16,nvfp4}
+                        Data type for kv cache storage. "auto" will use model
+                        data type. "fp8_e5m2" and "fp8_e4m3" is supported for
+                        CUDA 11.8+.
+  --served-model-name SERVED_MODEL_NAME
+                        Override the model name returned by the v1/models
+                        endpoint in OpenAI API server.
+  --revision REVISION   The specific model version to use. It can be a branch
+                        name, a tag name, or a commit id.
+  --json-model-override-args JSON_MODEL_OVERRIDE_ARGS
+                        A dictionary in JSON string format used to override
+                        default model configurations.
+  --mem-fraction-static MEM_FRACTION_STATIC
+                        The fraction of the memory used for static allocation
+                        (model weights and KV cache memory pool). Use a
+                        smaller value if you see out-of-memory errors.
+  --max-running-requests MAX_RUNNING_REQUESTS
+                        The maximum number of running requests.
+  --max-total-tokens MAX_TOTAL_TOKENS
+                        The maximum number of tokens in the memory pool.
+  --chunked-prefill-size CHUNKED_PREFILL_SIZE
+                        The maximum number of tokens in a chunk for the
+                        chunked prefill. Setting this to -1 means disabling
+                        chunked prefill.
+  --max-prefill-tokens MAX_PREFILL_TOKENS
+                        The maximum number of tokens in a prefill batch.
+  --schedule-conservativeness SCHEDULE_CONSERVATIVENESS
+                        How conservative the schedule policy is.
+  --page-size PAGE_SIZE
+                        The number of tokens in a page.
+  --tp-size TP_SIZE, --tensor-parallel-size TP_SIZE
+                        The tensor parallelism size.
+  --random-seed RANDOM_SEED
+                        The random seed.
+  --log-level LOG_LEVEL
+                        The logging level of all loggers.
+  --enable-metrics      Enable log prometheus metrics.
+  --enable-cache-report
+                        Return number of cached tokens in
+                        usage.prompt_tokens_details for each openai request.
+  --api-key API_KEY     Set API key of the server.
+  --attention-backend {triton,torch_native,flex_attention,fa3,fa4,flashinfer,flashmla,trtllm_mla,trtllm_mha,aiter}
+                        Choose the kernels for attention layers.
+  --disable-radix-cache
+                        Disable RadixAttention for prefix caching.
+  --disable-cuda-graph  Disable cuda graph.
+  --cuda-graph-max-bs CUDA_GRAPH_MAX_BS
+                        Set the maximum batch size for cuda graph.

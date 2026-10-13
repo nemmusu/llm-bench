@@ -512,7 +512,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
           return {};
         }
       },
-      () => ({}),
+      (): { hideNoticeShown?: unknown } => ({}),
     );
     const hasTray = trayAvailable({ platform: h.platform, env: h.env, run: h.run });
     try {

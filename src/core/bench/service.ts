@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
-import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { engineBaseOf, launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
@@ -143,7 +143,21 @@ const VLLM_FREE_MARGIN_MIB = 768;
 export const SERVER_CONTEXTS = [32768, 16384, 8192, 4096] as const;
 export const SERVER_FALLBACK_CONTEXT = 8192;
 
-const isVllm = (kind: EngineKind): boolean => kind === 'vllm-docker' || kind === 'vllm-native';
+/** vLLM and SGLang: max-model-len / context-length, and a memory share reserved up front. */
+const isVllm = (kind: EngineKind): boolean => {
+  const base = engineBaseOf(kind);
+  return base === 'vllm' || base === 'sglang';
+};
+
+/**
+ * Plan warnings of the launch itself: GPU Bench flags the build does not know (a fork), left out of
+ * the command so the engine's own default applies ('flag_unsupported').
+ */
+export function launchWarnings(launch: Pick<LaunchPlan, 'unsupported' | 'engine'>): ScenarioWarning[] {
+  const missing = launch.unsupported ?? [];
+  if (missing.length === 0) return [];
+  return [{ code: 'flag_unsupported', params: { engine: launch.engine.name, flags: missing.map((m) => m.flag).join(' '), settings: missing.map((m) => m.setting).join(',') } }];
+}
 
 /** The context a server offers with these params: llama.cpp ctx-size, vLLM max-model-len (or ctx-size). */
 export function serverContextOf(kind: EngineKind, params: LaunchParams): number | undefined {
@@ -197,13 +211,17 @@ export class BenchService {
     if (scenario.profile === 'tune' && req.engine.kind === 'external') {
       throw new AppError('VALIDATION', 'An external endpoint cannot be relaunched with other settings', { params: { reason: 'tune_external' } });
     }
+    // A command template only takes the context: there are no settings to search.
+    if (scenario.profile === 'tune' && req.engine.kind === 'command') {
+      throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
+    }
     const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
     const memWarning = await this.fitVllmMemory(req.engine.kind, params);
     const c = await this.command(req, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
     const kvUnified = c.launch.argv.includes('--kv-unified');
     // A tune run picks its contexts itself (the tuner): its sweep template stays as it is.
     const fitted = scenario.profile === 'tune' ? { scenario, warnings: [] } : fitScenario(scenario, limitsFor(req.engine.kind, c.launch.params, modelContext, { kvUnified }));
-    const warnings = memWarning ? [memWarning, ...fitted.warnings] : fitted.warnings;
+    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings];
     return { model, adapter, params, ...c, scenario: fitted.scenario, warnings };
   }
 
@@ -236,7 +254,7 @@ export class BenchService {
       ...c,
       contextSize,
       apiName,
-      warnings: memWarning ? [memWarning] : [],
+      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch)],
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
     };

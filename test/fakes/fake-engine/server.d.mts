@@ -70,7 +70,7 @@ export function speeds(
 ): { decode: number; prefill: number };
 
 export interface FakeEngineOptions {
-  flavor?: 'llamacpp' | 'vllm';
+  flavor?: 'llamacpp' | 'vllm' | 'sglang';
   host?: string;
   port?: number;
   model?: string;

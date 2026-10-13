@@ -5,7 +5,7 @@
  * "Avvia solo il server". Tune results are remembered per (GPU, model, engine kind + build or image).
  */
 import type { ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
-import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
+import { engineBaseOf, type EngineBase, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
@@ -18,7 +18,7 @@ import { spillPossible } from './spill';
 import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
-import { llamaSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
+import { llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
 import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput } from './tuner';
 
 /** VRAM kept free when vLLM's memory share is fitted to the free VRAM, and the highest share used. */
@@ -199,7 +199,8 @@ export async function buildTuneSetup(
   const prefer = past?.prefer;
   if (!isLlamaCpp(kind)) {
     const util = vllmTuneUtilization(gpu);
-    const space = vllmSpace({
+    // SGLang's --mem-fraction-static is vLLM's memory share: the same fitting, the same search shape.
+    const space = (engineBaseOf(kind) === 'sglang' ? sglangSpace : vllmSpace)({
       budget,
       params: p.params,
       ...(util !== undefined ? { utilizations: vllmUtilizations(util) } : {}),
@@ -227,7 +228,7 @@ export async function buildTuneSetup(
   };
 }
 
-const family = (kind: EngineKind): 'llamacpp' | 'vllm' | 'external' => (kind === 'external' ? 'external' : isLlamaCpp(kind) ? 'llamacpp' : 'vllm');
+const family = (kind: EngineKind): EngineBase => engineBaseOf(kind);
 
 /** What a tune run must match to stand for "the same question": goal, and for 'multi' the users and context per user. */
 export interface TuneQuestion {
