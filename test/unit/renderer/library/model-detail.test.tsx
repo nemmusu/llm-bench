@@ -233,7 +233,7 @@ describe('model page', () => {
       facts: { paramsB: 9 },
     };
     const nf = {
-      choices: [{ groupKey: 'NInfer/mixed_nvfp4.ninfer', quant: 'NVFP4', dir: 'NInfer', files: [files[5]!], sizeBytes: 7e9, fit: { ...fit('good'), notes: ['ninfer.estimate'] }, weakKey: 'k3', manifest: { components: ['text', 'mtp'], containerVersion: 2 } }],
+      choices: [{ groupKey: 'NInfer/mixed_nvfp4.ninfer', quant: 'NVFP4', dir: 'NInfer', files: [files[5]!], sizeBytes: 7e9, fit: { ...fit('good'), notes: ['ninfer.estimate'] }, weakKey: 'k3', manifest: { components: ['text', 'mtp', 'audio'], containerVersion: 2 } }],
       facts: {},
     };
     // A GPU NInfer does not run on: the choice is shown, marked.
@@ -253,7 +253,8 @@ describe('model page', () => {
       expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per vLLM / SGLang (safetensors)' })).toBeTruthy();
       const ninfer = await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per NInfer (ottimizzato per RTX 5090)' });
       expect(within(ninfer).getByText('Richiede una RTX 5090')).toBeTruthy();
-      expect(within(ninfer).getByText('Contiene: text, mtp')).toBeTruthy();
+      // Its parts in plain words; one LLM Bench does not know yet as the manifest says it.
+      expect(within(ninfer).getByText('Contiene: testo, MTP, audio')).toBeTruthy();
       expect(within(ninfer).getByText('Versione del file 2: NInfer richiede la versione 3.')).toBeTruthy();
       expect(within(ninfer).queryByText('Consigliata')).toBeNull();
       expect(screen.getByText('Stima approssimativa: NInfer gestisce la memoria a modo suo.')).toBeTruthy();

@@ -101,7 +101,7 @@ describe('results list', () => {
     const [gemma, moe, ...rest] = summaries(seededRuns()).filter((r) => r.parallelUsers !== undefined);
     api.world.routes['GET /api/runs'] = () => [
       { ...gemma!, parallelPerUserTps: undefined, parallelTps: 155 },
-      { ...moe!, parallelPerUserTps: undefined, parallelTps: undefined, parallelPromptTokens: undefined },
+      { ...moe!, parallelPerUserTps: undefined, parallelTps: undefined, parallelPromptTokens: undefined, vramPeakMiB: 0 },
       ...rest,
     ];
     renderApp('/results', api);
@@ -114,6 +114,9 @@ describe('results list', () => {
     expect(alone.textContent).toBe(`${moe!.parallelUsers} utenti`);
     expect(alone.parentElement!.getAttribute('title')).toBeNull();
     expect(alone.parentElement!.children).toHaveLength(1);
+    // No memory measured: a dash, not "0,0".
+    expect(within(row(moe!.id)).queryByText('0,0')).toBeNull();
+    expect(within(row(moe!.id)).getAllByText('–').length).toBeGreaterThan(0);
   });
 
   it('"Confronta" on each row fills the tray; it opens the comparison, older first', async () => {

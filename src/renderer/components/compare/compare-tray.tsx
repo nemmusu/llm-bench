@@ -4,11 +4,12 @@
  */
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Check, GitCompareArrows, X } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import { useRef, type MouseEvent } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { COMPARE_MAX, idsOf, oldestFirst, useCompareSelection, type CompareEntry, type CompareRef } from '../../lib/compare-selection';
+import { useMoreAtEnd } from '../../lib/use-more-at-end';
 import { Button, IconButton } from '../ui/button';
 
 export interface CompareToggleProps {
@@ -50,6 +51,30 @@ export function CompareToggle({ entry, also = [], compact, className }: CompareT
   );
 }
 
+/** The picks, scrolling sideways when they do not fit the window: a fade at the right edge says there are more. */
+function TrayItems({ sel }: { sel: ReturnType<typeof useCompareSelection> }) {
+  const { t } = useI18n();
+  const ref = useRef<HTMLUListElement>(null);
+  const more = useMoreAtEnd(ref);
+  return (
+    <ul
+      ref={ref}
+      data-more={more ? 'end' : undefined}
+      className={cn('flex min-w-0 items-center gap-1.5 overflow-x-auto', more && '[mask-image:linear-gradient(to_right,black_calc(100%_-_2rem),transparent)]')}
+      aria-label={t('compare.tray.items')}
+    >
+      {sel.items.map((e) => (
+        <li key={`${e.runId}~${e.combo ?? ''}`} className="flex max-w-52 min-w-0 shrink-0 items-center gap-1 rounded-full bg-surface-2 py-0.5 pr-0.5 pl-2.5 text-xs text-fg-2">
+          <span className="truncate" title={[e.label, e.detail].filter(Boolean).join(' · ')}>
+            {e.label}
+          </span>
+          <IconButton size="sm" label={t('compare.tray.remove', { name: e.label })} icon={<X />} className="size-6" onClick={() => sel.remove(e)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The picks at the bottom of every page but Confronta itself: remove one, empty, or compare. */
 export function CompareTray() {
   const { t } = useI18n();
@@ -67,16 +92,7 @@ export function CompareTray() {
         className="pointer-events-auto flex max-w-full min-w-0 items-center gap-3 rounded-xl border border-border-strong bg-elevated py-2 pr-2 pl-4 shadow-lg"
       >
         <span className="text-sm font-semibold whitespace-nowrap text-fg tabular-nums">{t(n === 1 ? 'compare.tray.countOne' : 'compare.tray.count', { n })}</span>
-        <ul className="flex min-w-0 items-center gap-1.5 overflow-x-auto" aria-label={t('compare.tray.items')}>
-          {sel.items.map((e) => (
-            <li key={`${e.runId}~${e.combo ?? ''}`} className="flex max-w-52 min-w-0 shrink-0 items-center gap-1 rounded-full bg-surface-2 py-0.5 pr-0.5 pl-2.5 text-xs text-fg-2">
-              <span className="truncate" title={[e.label, e.detail].filter(Boolean).join(' · ')}>
-                {e.label}
-              </span>
-              <IconButton size="sm" label={t('compare.tray.remove', { name: e.label })} icon={<X />} className="size-6" onClick={() => sel.remove(e)} />
-            </li>
-          ))}
-        </ul>
+        <TrayItems sel={sel} />
         {n < 2 && <span className="hidden text-xs whitespace-nowrap text-fg-3 lg:inline">{t('compare.tray.oneMore')}</span>}
         <span className="flex shrink-0 items-center gap-1">
           <Button size="sm" variant="ghost" onClick={sel.clear}>

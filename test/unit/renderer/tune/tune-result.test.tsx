@@ -44,7 +44,7 @@ describe('tune result', () => {
   it('sums up from the numbers and recommends the fastest at the largest context', async () => {
     open();
     expect(await h1(/Qwen3 8B/)).toBeTruthy();
-    expect(screen.getByText(/Con cache q4_0 arrivi a 64K, il doppio di q8_0 \(32K\)\. Fino a 16K la più veloce è cache KV f16 \(78,0 tok\/s a 16K\)/)).toBeTruthy();
+    expect(screen.getByText(/Con cache q4_0 arrivi a 64K, il doppio di q8_0 \(32K\)\. Fino a 16K la più veloce a scrivere è cache KV f16 \(78,0 tok\/s a 16K\)/)).toBeTruthy();
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('Cache KV q4_0 · flash attention · ub 2048 · b 4096')).toBeTruthy();
     expect(within(rec).getByText('64K')).toBeTruthy();
@@ -190,7 +190,7 @@ describe('tune result', () => {
     const { unmount } = open(sparse);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Mi sono fermato prima: tempo finito')).toBeTruthy();
-    expect(screen.getByText(/Con cache q8_0 arrivi a 32K\. Fino a 32K la più veloce è/)).toBeTruthy();
+    expect(screen.getByText(/Con cache q8_0 arrivi a 32K\. Fino a 32K la più veloce a scrivere è/)).toBeTruthy();
     // One combination: its own depths to compare at, no "Prove scartate".
     expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: /Prove scartate/ })).toBeNull();

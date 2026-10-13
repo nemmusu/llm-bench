@@ -37,6 +37,13 @@ function folderOf(c: Choice): string | undefined {
   return first.includes('/') ? first.slice(0, first.lastIndexOf('/')) : undefined;
 }
 
+const COMPONENTS = ['text', 'vision', 'mtp', 'dflash', 'dflash2'] as const;
+
+/** A part of an NInfer artifact in the user's words ("testo", "visione", "MTP"); an unknown one as the manifest says it. */
+function componentName(part: string, t: ReturnType<typeof useI18n>['t']): string {
+  return (COMPONENTS as readonly string[]).includes(part) ? t(`models.detail.componentNames.${part as (typeof COMPONENTS)[number]}`) : part;
+}
+
 /**
  * One radio per choice of a format, the best one preselected, with fit and "already tried" per row:
  * GGUF quants (with the optional extras), safetensors folders and NInfer artifacts, each downloaded as
@@ -116,7 +123,7 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
               </span>
               <span className="text-fg-2 tabular-nums">{bytes(c.sizeBytes)}</span>
               {format === 'gguf' && c.files.length > 1 && <span className="text-xs text-fg-3">{t('models.detail.parts', { n: c.files.length })}</span>}
-              {c.manifest && c.manifest.components.length > 0 && <span className="text-xs text-fg-3">{t('models.detail.components', { list: c.manifest.components.join(', ') })}</span>}
+              {c.manifest && c.manifest.components.length > 0 && <span className="text-xs text-fg-3">{t('models.detail.components', { list: c.manifest.components.map((x) => componentName(x, t)).join(', ') })}</span>}
               <span className="ml-auto flex flex-wrap items-center gap-1.5">
                 {onPc(c) && (
                   <Badge tone="success" size="sm">

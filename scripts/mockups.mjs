@@ -1229,9 +1229,10 @@ async function ninferScenes(browser, info, world, written) {
   };
   const serveConfirm = async (page) => {
     await chooseNinfer(page);
+    // "Avvia un server" with NInfer's own settings and the exact command.
     await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Avvia il server' });
-    await dialog.getByRole('region', { name: 'Comando esatto' }).getByText(/--kv-capacity/).waitFor({ timeout: 30000 });
+    await page.getByRole('heading', { level: 1, name: 'Avvia un server' }).waitFor({ timeout: 30000 });
+    await page.getByRole('region', { name: 'Comando esatto' }).getByText(/--kv-capacity/).first().waitFor({ timeout: 30000 });
   };
   const checkUpdates = async (page) => {
     await showCard(page);

@@ -55,10 +55,11 @@ describe('results list', () => {
     tuned.launch = { ...tuned.launch, params: { ...tuned.launch.params, kvCacheType: 'q4_0', contextSize: 65536 } };
     const one = { ...tunedRun({ combinations: [tunedRun().tuning!.combinations[0]!] }), id: 'one', createdAt: '2026-10-07T08:00:00.000Z' };
     renderApp('/results', benchApi({ runs: [...seededRuns(), tuned, one] }));
-    const row = (await screen.findAllByRole('row')).find((r) => r.textContent?.includes('6 combinazioni'))!;
-    expect(row.textContent).toContain('Trova le impostazioni migliori · 6 combinazioni');
-    expect(within(row).getByText('cache q4_0')).toBeTruthy();
-    expect(screen.getByText(/· 1 combinazione( · [\d.]+ punti)?$/)).toBeTruthy();
+    // "Impostazioni migliori" under the date (the numbers keep their room), the whole with the combinations on hover.
+    const search = await screen.findByTitle('Trova le impostazioni migliori · 6 combinazioni');
+    expect(search.textContent).toMatch(/^Impostazioni migliori( · [\d.]+ punti)?$/);
+    expect(within(search.closest('tr')!).getByText('cache q4_0')).toBeTruthy();
+    expect(screen.getByTitle('Trova le impostazioni migliori · 1 combinazione')).toBeTruthy();
   });
 });
 

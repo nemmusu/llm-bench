@@ -64,8 +64,11 @@ export function SegmentedControl<V extends string>({
               <span className="size-1.5 rounded-full bg-white opacity-0 group-data-[state=checked]:opacity-100" />
             </span>
             {o.icon}
-            <span className="flex-1 leading-5 font-medium text-fg">{o.label}</span>
-            {o.sublabel && <span className="shrink-0 text-xs font-medium whitespace-nowrap text-fg-3 tabular-nums group-data-[state=checked]:text-accent-text">{o.sublabel}</span>}
+            {/* In a narrow card the time goes under the name ("Accurata" over "~1 h 56 min") instead of past the edge. */}
+            <span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3">
+              <span className="grow leading-5 font-medium text-fg">{o.label}</span>
+              {o.sublabel && <span className="text-xs font-medium whitespace-nowrap text-fg-3 tabular-nums group-data-[state=checked]:text-accent-text">{o.sublabel}</span>}
+            </span>
           </R.Item>
         ))}
       </R.Root>

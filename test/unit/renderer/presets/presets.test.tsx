@@ -76,7 +76,7 @@ describe('result page header: the configuration and its preset', () => {
     await userEvent.click((await screen.findAllByRole('button', { name: 'Avvia il server così' }))[0]!);
     // "Avvia un server" with the combination's settings, said as coming from that test.
     expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
-    expect(screen.getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();
+    expect(screen.getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: scrive 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();
     await waitFor(() =>
       expect(posted(a, '/api/servers/plan').map((c) => c.body)).toContainEqual(
         expect.objectContaining({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: expect.objectContaining({ contextSize: 65536, kvCacheType: 'q8_0' }) }),
@@ -87,7 +87,7 @@ describe('result page header: the configuration and its preset', () => {
     await userEvent.click((await screen.findAllByRole('button', { name: 'Usa questo preset' }))[0]!);
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     const banner = await screen.findByRole('region', { name: 'Preset' });
-    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();
+    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: scrive 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();
     // A tune run's preset starts from the Quick test, with the combination's settings.
     expect(screen.getByRole('radio', { name: /Rapido/ }).getAttribute('aria-checked')).toBe('true');
     expect(((await screen.findByLabelText('Contesto (token)')) as HTMLInputElement).value).toBe('65536');
@@ -150,7 +150,7 @@ describe('Configurazioni with tune combinations', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Chiudi' }));
     await userEvent.click(await within(row).findByRole('button', { name: 'Usa questo preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
-    expect(await screen.findByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 210 tok/s a 1K token, 64K di contesto')).toBeTruthy();
+    expect(await screen.findByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: scrive 210 tok/s a 1K token, 64K di contesto')).toBeTruthy();
   });
 });
 
@@ -224,7 +224,7 @@ describe('preset logic', () => {
     expect(shortDate('2026-10-07T09:00:00.000Z', 'it-IT')).toBe('07/10');
     const base = { runId: 'r', label: 'Qwen3 8B', date: '2026-10-07T09:00:00.000Z' };
     expect(provenanceText(base, it_)).toBe('Preset da «Qwen3 8B» del 07/10');
-    expect(provenanceText({ ...base, decodeTps: 81.6, depth: 32768, contextSize: 65536 }, it_)).toBe('Preset da «Qwen3 8B» del 07/10: 82 tok/s a 32K token, 64K di contesto');
+    expect(provenanceText({ ...base, decodeTps: 81.6, depth: 32768, contextSize: 65536 }, it_)).toBe('Preset da «Qwen3 8B» del 07/10: scrive 82 tok/s a 32K token, 64K di contesto');
     expect(provenanceText({ ...base, combo: 2, decodeTps: 80 }, it_)).toBe('Preset da «Qwen3 8B · combinazione 3» del 07/10');
   });
 

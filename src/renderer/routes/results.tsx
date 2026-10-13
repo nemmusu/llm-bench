@@ -85,17 +85,23 @@ export function ResultsPage() {
       }),
       col.accessor('createdAt', {
         header: t('results.columns.date'),
-        cell: (c) => (
-          <span className="flex flex-col leading-5">
-            <span className="text-fg-2 tabular-nums">{dateTime(c.getValue())}</span>
-            <span className="text-xs text-fg-3">
-              {t(`benchmark.profiles.${c.row.original.profile}`)}
-              {c.row.original.tunedCombinations !== undefined && ` · ${t(countKey(c.row.original.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: c.row.original.tunedCombinations })}`}
-              {/* The LLM Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
-              {c.row.original.score !== undefined && ` · ${t('results.score', { n: integer(c.row.original.score) })}`}
+        cell: (c) => {
+          const r = c.row.original;
+          const profile = t(`benchmark.profiles.${r.profile}`);
+          // A search: "Trova le impostazioni migliori · 6 combinazioni" is wider than the numbers leave room for,
+          // so "Impostazioni migliori" here and the whole on hover.
+          const combos = r.tunedCombinations === undefined ? undefined : t(countKey(r.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: r.tunedCombinations });
+          return (
+            <span className="flex flex-col leading-5">
+              <span className="text-fg-2 tabular-nums">{dateTime(c.getValue())}</span>
+              <span className="text-xs text-fg-3" title={combos && `${profile} · ${combos}`}>
+                {combos ? t('results.tuning.short') : profile}
+                {/* The LLM Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
+                {r.score !== undefined && ` · ${t('results.score', { n: integer(r.score) })}`}
+              </span>
             </span>
-          </span>
-        ),
+          );
+        },
       }),
       // The model, what went wrong (failed, cancelled, shared memory), then engine and card: one column, so the numbers fit.
       // It takes the room the numbers leave: a long name ends with "…" and shows whole on hover.
@@ -240,7 +246,8 @@ export function ResultsPage() {
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          return v === undefined ? <span className="text-fg-3">–</span> : number(v / MIB_PER_GB, 1);
+          // A test that stopped before loading the model measured no memory: "–", not "0,0".
+          return !v ? <span className="text-fg-3">–</span> : number(v / MIB_PER_GB, 1);
         },
       }),
       // "Confronta": always in sight at the end of the row (a failed run measured nothing to compare).

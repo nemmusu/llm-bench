@@ -382,6 +382,14 @@ describe('picking what to compare', () => {
     for (const name of [/^Confronta Gemma 4 31B/, /^Confronta Qwen3 30B A3B/, /^Confronta gpt-oss 20B/, /^Confronta Mistral Small/]) await userEvent.click(screen.getAllByRole('button', { name })[0]!);
     const tray = screen.getByRole('region', { name: 'Da confrontare' });
     expect(within(tray).getByText('4 selezionati')).toBeTruthy();
+    // On a narrow window the picks scroll sideways: their right edge fades while some are out of sight.
+    const picks = within(tray).getByRole('list', { name: 'Scelti per il confronto' });
+    expect(picks.dataset.more).toBeUndefined();
+    Object.defineProperty(picks, 'scrollWidth', { configurable: true, value: 700 });
+    Object.defineProperty(picks, 'clientWidth', { configurable: true, value: 400 });
+    act(() => void picks.dispatchEvent(new Event('scroll')));
+    expect(picks.dataset.more).toBe('end');
+    expect(picks.className).toContain('mask-image');
     await userEvent.click(screen.getAllByRole('button', { name: /^Confronta Qwen3 8B/ })[0]!);
     expect(await screen.findByText('Puoi confrontare al massimo 4 elementi insieme: togline uno dal confronto.')).toBeTruthy();
     await userEvent.click(within(tray).getByRole('button', { name: /^Togli Gemma 4 31B/ }));
