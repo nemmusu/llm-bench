@@ -463,17 +463,14 @@ describe('results and result: odd data', () => {
     expect(screen.getByText('ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeTruthy();
   });
 
-  it('the server dialog can be left running', async () => {
+  it('a server started like a test whose model is a different library copy: the flow finds it by its weak key', async () => {
     const full = seeded(IDS.full);
     const api = benchApi({ runs: [full], local: [localModel('q', { weakKey: full.model.weakKey })] });
-    api.world.routes['POST /api/servers'] = () => ({ id: 's', baseUrl: 'http://h:1', openaiUrl: 'http://h:1/v1', modelName: 'Q', engineLabel: 'e', startedAt: new Date().toISOString(), command: { argv: [], powershell: '', bash: '' } });
     renderApp(`/results/${IDS.full}`, api);
     await h1(/Qwen3 8B/);
     await userEvent.click(screen.getByRole('tab', { name: 'Come è stato avviato' }));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Lascia acceso' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByRole('button', { name: /Cambia modello: q model/ })).toBeTruthy();
   });
 
   it('compare a full run with a quick one: missing numbers have no difference', async () => {

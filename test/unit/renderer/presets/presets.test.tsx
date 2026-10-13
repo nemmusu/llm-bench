@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { launchParamsSchema, type LaunchParams } from '../../../../src/contract/engines';
@@ -74,10 +74,17 @@ describe('result page header: the configuration and its preset', () => {
     expect(await screen.findByText(/^· Contesto 65\.536 · cache KV q8_0 · flash attention · decodifica speculativa$/)).toBeTruthy();
     // The header's actions come first (every row of the tune ranking has its own too).
     await userEvent.click((await screen.findAllByRole('button', { name: 'Avvia il server così' }))[0]!);
-    expect(await screen.findByRole('dialog', { name: 'Avvia il server' })).toBeTruthy();
-    expect(posted(a, '/api/servers/plan')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 65536, kvCacheType: 'q8_0' } });
-    await userEvent.click(within(screen.getByRole('dialog', { name: 'Avvia il server' })).getByRole('button', { name: 'Annulla' }));
-    await userEvent.click(screen.getAllByRole('button', { name: 'Usa questo preset' })[0]!);
+    // "Avvia un server" with the combination's settings, said as coming from that test.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    expect(screen.getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();
+    await waitFor(() =>
+      expect(posted(a, '/api/servers/plan').map((c) => c.body)).toContainEqual(
+        expect.objectContaining({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: expect.objectContaining({ contextSize: 65536, kvCacheType: 'q8_0' }) }),
+      ),
+    );
+    await userEvent.click(screen.getByRole('link', { name: 'Torna ai server' }));
+    act(() => void router.navigate({ to: '/results/$runId', params: { runId: TUNE_ID } }));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Usa questo preset' }))[0]!);
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     const banner = await screen.findByRole('region', { name: 'Preset' });
     expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M · combinazione 1» del 06/10: 82 tok/s a 32K token, 64K di contesto')).toBeTruthy();

@@ -406,16 +406,15 @@ describe('Benchmark: what the search is for, and the quick recheck', () => {
 });
 
 describe('outside the tune pages', () => {
-  it('the server dialog says when the tune ran with another build, and for how many users', async () => {
+  it('the server summary says when the tune ran with another build, and for how many users', async () => {
     const api = benchApi({ runs: [...seededRuns(), tunedRun()] });
     api.world.serverPlan = () =>
       serverPlanFor({ contextSize: 32768, tuned: { runId: TUNE_ID, createdAt: '2026-10-07T09:00:00.000Z', contextSize: 32768, kvCacheType: 'q8_0', goal: 'multi', users: 4, otherBuild: { build: 'b10997', current: 'b11438' } } });
     renderApp('/', api);
     await screen.findAllByText('≈ 1 min 35 s');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Avvia il server' });
-    expect(within(dialog).getByText(/Contesto 32K e cache q8_0 per 4 utenti dal test «Trova le impostazioni migliori» del 07\/10\./)).toBeTruthy();
-    expect(within(dialog).getByText('Il test è stato fatto con b10997; ora usi b11438: fai un ricontrollo rapido.')).toBeTruthy();
+    expect(await screen.findByText(/Contesto 32K e cache q8_0 per 4 utenti dal test «Trova le impostazioni migliori» del 07\/10\./)).toBeTruthy();
+    expect(screen.getByText('Il test è stato fatto con b10997; ora usi b11438: fai un ricontrollo rapido.')).toBeTruthy();
   });
 
   it('"stima tarata su N misure" next to the fit verdict', async () => {

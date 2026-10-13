@@ -148,7 +148,7 @@ export function useStartFlow(): {
         } else setFlow({ step: 'error', job, opts, error });
       }
     },
-    [api, qc, navigate],
+    [api, qc, navigate, t],
   );
 
   /** VRAM check from the plan, then start. */

@@ -16,6 +16,7 @@ import type {
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { shellStateSchema, type ShellState as CoreState } from '../contract/servers';
+import { APP_NAME } from './app-name';
 import { closeAction, shouldExplainHide, startupWindow } from './close-behavior';
 import { HIDDEN_ARG, loginItemEnabled, setLoginItem, type LoginItemHost } from './login-item';
 import { findCommand, menuLines, trayMenu, trayStatus, trayTooltip, type TrayCommand, type TrayItem, type TrayStatus } from './tray-menu';
@@ -313,7 +314,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   function startCore(): Promise<number> {
     return new Promise((resolve, reject) => {
       const proc = e.utilityProcess.fork(path.join(h.dirname, '../core/index.cjs'), [], {
-        serviceName: 'GPU Bench Core',
+        serviceName: `${APP_NAME} Core`,
         stdio: 'pipe',
         env: {
           ...h.env,
@@ -344,7 +345,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
           reject(new Error(`core exited with code ${code}`));
           return;
         }
-        e.dialog.showErrorBox('GPU Bench', `Il motore interno si è chiuso in modo inatteso (codice ${code}). L'app verrà riavviata.`);
+        e.dialog.showErrorBox(APP_NAME, `Il motore interno si è chiuso in modo inatteso (codice ${code}). L'app verrà riavviata.`);
         app.relaunch();
         app.exit(1);
       });
@@ -359,7 +360,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       minWidth: 1024,
       minHeight: 680,
       show: false,
-      title: 'GPU Bench',
+      title: APP_NAME,
       backgroundColor: titleBarColors(dark).color,
       titleBarStyle: 'hidden',
       titleBarOverlay: { ...titleBarColors(dark), height: TITLEBAR_HEIGHT },
@@ -519,7 +520,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       s.corePort = await startCore();
     } catch (err) {
       // startCore() only rejects with an Error (the core exited before saying it was ready).
-      e.dialog.showErrorBox('GPU Bench', `Impossibile avviare GPU Bench: ${(err as Error).message}`);
+      e.dialog.showErrorBox(APP_NAME, `Impossibile avviare ${APP_NAME}: ${(err as Error).message}`);
       app.exit(1);
       return;
     }

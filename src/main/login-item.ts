@@ -6,9 +6,10 @@
  * GPUBENCH_FAKE_LOGIN_ITEM=<file>: tests never touch the real login items; the state goes to that file.
  */
 import path from 'node:path';
+import { APP_ID, APP_NAME } from './app-name';
 
 export const HIDDEN_ARG = '--hidden';
-export const AUTOSTART_NAME = 'gpu-bench.desktop';
+export const AUTOSTART_NAME = `${APP_ID}.desktop`;
 
 export interface LoginItemSettings {
   openAtLogin: boolean;
@@ -54,7 +55,7 @@ export function launchArgv(h: Pick<LoginItemHost, 'env' | 'execPath' | 'appPath'
 /** The autostart entry; string values escape backslashes once more (Desktop Entry spec). */
 export function autostartEntry(argv: readonly string[]): string {
   const exec = argv.map(execArg).join(' ').replace(/\\/g, '\\\\');
-  return ['[Desktop Entry]', 'Type=Application', 'Name=GPU Bench', `Exec=${exec}`, 'X-GNOME-Autostart-enabled=true', 'Terminal=false', 'Comment=GPU Bench (area di notifica)', ''].join('\n');
+  return ['[Desktop Entry]', 'Type=Application', `Name=${APP_NAME}`, `Exec=${exec}`, 'X-GNOME-Autostart-enabled=true', 'Terminal=false', `Comment=${APP_NAME}`, ''].join('\n');
 }
 
 async function exists(h: LoginItemHost, file: string): Promise<boolean> {

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RunResult } from '../../../../src/contract/results';
@@ -116,13 +116,18 @@ describe('tune result', () => {
     expect(screen.getByText(/^avviato con contesto 65.536 token · 2 ripetizioni per misura/)).toBeTruthy();
   });
 
-  it('“Usa questo preset” fills the Benchmark with that combination; “Avvia il server così” previews it', async () => {
+  it('“Usa questo preset” fills the Benchmark with that combination; “Avvia il server così” opens the start flow with it', async () => {
     const { api, router } = open();
     await h1(/Qwen3 8B/);
     await userEvent.click(await within(rankRows()[3]!).findByRole('button', { name: 'Avvia il server così' }));
-    expect(await screen.findByRole('dialog', { name: 'Avvia il server' })).toBeTruthy();
-    expect(api.calls.find((c) => c.path === '/api/servers/plan')!.body).toMatchObject({ params: { kvCacheType: 'q4_0', contextSize: 65536 } });
-    await userEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/servers/new'));
+    await waitFor(() =>
+      expect(api.calls.filter((c) => c.path === '/api/servers/plan').map((c) => c.body)).toContainEqual(
+        expect.objectContaining({ params: expect.objectContaining({ kvCacheType: 'q4_0', contextSize: 65536 }) }),
+      ),
+    );
+    act(() => router.history.back());
+    await h1(/Qwen3 8B/);
     await userEvent.click(within(rankRows()[2]!).getByRole('button', { name: 'Usa questo preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(await screen.findByText('Impostazioni copiate nel Benchmark')).toBeTruthy();

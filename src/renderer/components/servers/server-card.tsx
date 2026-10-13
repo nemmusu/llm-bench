@@ -154,8 +154,8 @@ export function ServerCard({ server: s, onStop, onRestart, onSave, now }: Server
   const url = lan ? (s.lanUrls[0] ?? s.openaiUrl) : s.openaiUrl;
   const target: SnippetTarget = { url, model: s.modelName, ...(lan && key ? { apiKey: key } : {}), greeting: t('servers.card.snippets.greeting') };
   return (
-    <Card className={cn('flex min-w-0 flex-col', loading && 'border-warning/40')}>
-      <section aria-label={t('servers.card.label', { name, port: s.port })} className="flex flex-col gap-4 p-card">
+    <Card role="region" aria-label={t('servers.card.label', { name, port: s.port })} className={cn('flex min-w-0 flex-col', loading && 'border-warning/40')}>
+      <div className="flex flex-col gap-4 p-card">
         <header className="flex flex-wrap items-start gap-3">
           <span aria-hidden className={cn('mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg', loading ? 'bg-warning-soft text-warning-text' : 'bg-success-soft text-success-text')}>
             {lan ? <Globe className="size-[18px]" /> : <Laptop className="size-[18px]" />}
@@ -231,7 +231,7 @@ export function ServerCard({ server: s, onStop, onRestart, onSave, now }: Server
             <Snippets target={target} />
           </div>
         )}
-      </section>
+      </div>
       <footer className="mt-auto flex flex-wrap items-center gap-2 border-t border-border px-card py-3">
         <Button size="sm" variant="danger-outline" onClick={() => onStop(s)} aria-label={t('servers.card.stopNamed', { name })}>
           <Square aria-hidden />

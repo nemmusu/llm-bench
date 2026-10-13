@@ -52,6 +52,8 @@ describe('EngineRegistry', () => {
       ['sglang-native', false, []],
       ['external', true, ['ENDPOINT_UNREACHABLE']],
       ['command', false, []],
+      ['ninfer-native', false, []],
+      ['ninfer-wsl', false, []],
     ]);
     expect(all[0]?.location).toBe('C:\\x.exe');
     expect((await new EngineRegistry().detectAll()).every((s) => !s.supported)).toBe(true);
