@@ -141,6 +141,39 @@ vLLM è un motore pensato per servire molti utenti insieme. Su Windows funziona 
 
 **Su Windows**: i modelli letti da Docker passano per una condivisione lenta. Il pulsante **Copia nello spazio Docker** li copia una volta nello spazio di Docker: i caricamenti diventano molto più veloci.
 
+### SGLang
+
+SGLang è un altro motore per servire molti utenti insieme e legge i modelli come vLLM: cartelle Hugging Face (safetensors), non file GGUF.
+
+- **Windows**: funziona in Docker Desktop, come vLLM. Nella pagina **Motori** la scheda **SGLang (Docker)** ti fa scegliere la versione (quella consigliata è segnata) e la scarica. Se non l'hai ancora scaricata, il Benchmark te la propone prima di iniziare.
+- **Linux**: in Docker oppure installato sul PC, in un suo ambiente Python che GPU Bench prepara per te.
+
+I modelli scaricati per vLLM servono anche a SGLang: non li scarichi due volte.
+
+### Motori personalizzati (fork e programmi tuoi)
+
+Nella pagina **Motori**, sotto **Motori personalizzati**, premi **Aggiungi motore**:
+
+1. **Tipo**: un fork di llama.cpp, di vLLM o di SGLang, oppure un **Programma con API OpenAI**.
+2. **Dove si trova**: il programma sul PC, un'immagine Docker o, per un programma tuo, il comando che lo avvia. **Prova** legge versione e opzioni (`--version`, `--help`) senza caricare nessun modello.
+3. **Opzioni**: argomenti in più e variabili d'ambiente da usare a ogni avvio, e i modelli per cui vuoi usarlo (parole nel nome, quantizzazioni).
+
+Un fork funziona come il motore da cui deriva. Se non conosce un'impostazione di GPU Bench (per esempio `-ub`), GPU Bench te lo dice già nella prova: in quel caso userà il suo valore predefinito, e lo trovi scritto anche nell'anteprima e nel risultato. Se gli manca qualcosa di indispensabile (per esempio la porta), GPU Bench non lo avvia. Nei risultati il motore si chiama con il suo nome e la sua versione (per esempio "PrismML b7001"), separato da llama.cpp.
+
+Per un **Programma con API OpenAI** scrivi il comando come in un terminale. GPU Bench sostituisce `{model}`, `{modelDir}`, `{port}`, `{host}`, `{ctx}` e `{alias}`, e `{port}` è obbligatorio. Il comando parte senza shell: niente `|`, `>` o `&&`, e i file `.bat`/`.cmd` vanno avviati con `cmd /c`. GPU Bench lo avvia, lo misura e lo ferma alla fine. Con `{alias}` lo riconosce e lo ferma anche dopo un riavvio improvviso.
+
+Per i modelli Bonsai (quantizzazioni PQ2_0 e PTQ1_0) il Benchmark ti propone il motore pronto **Fork PrismML di llama.cpp**: devi solo dirgli dove si trova il suo llama-server.
+
+### Aggiornare i motori
+
+Le schede di vLLM, SGLang e dei motori personalizzati ti dicono se c'è una versione più nuova, per esempio "Aggiornamento disponibile: v0.5.21 → v0.5.22 · 9,8 GB". Prima di aggiornare GPU Bench ti mostra i comandi esatti che eseguirà, e parte solo quando confermi.
+
+- **vLLM e SGLang in Docker**: scarica la versione nuova dell'immagine e la sceglie per i prossimi test. Quella di prima resta sul PC: puoi tornarci con **Usa** nell'elenco delle versioni.
+- **vLLM e SGLang installati sul PC (Linux)**: aggiorna il loro ambiente con uv, alla versione più recente pubblicata.
+- **Un motore personalizzato in Docker**: scarica la versione più nuova dell'immagine. Se l'immagine non è su Docker Hub, GPU Bench non può sapere se ce n'è una più nuova, ma può scaricarla di nuovo.
+- **Un fork di llama.cpp compilato da te da una cartella git**: **Controlla aggiornamenti** ti dice quanti commit nuovi ci sono. **Aggiorna** esegue `git pull --ff-only` e poi ricompila con `cmake --build`. Se nella cartella ci sono modifiche tue non salvate, GPU Bench non tocca niente e te lo dice.
+- **Tutto il resto** (un programma tuo, un fork installato in altro modo): lo aggiorni con i suoi strumenti.
+
 ## 7. Misura "a freddo" reale
 
 Per misurare davvero il caricamento dal disco, il modello non deve essere già nella memoria del PC.

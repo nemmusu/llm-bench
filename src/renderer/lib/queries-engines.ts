@@ -4,6 +4,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CustomEngine, CustomEngineCheck, CustomEngineDraft, CustomEngineInfo } from '../../contract/custom-engines';
+import type { EngineUpdateCheck } from '../../contract/engine-updates';
 import type { Settings } from '../../contract/settings';
 import { useApi } from './api-context';
 import type { VllmTag } from './queries-library';
@@ -12,7 +13,30 @@ import { SETTINGS_QUERY_KEY } from './settings';
 export const engineKeys = {
   custom: ['engines', 'custom'] as const,
   sglangTags: ['engines', 'sglang', 'tags'] as const,
+  updates: ['engines', 'update'] as const,
+  update: (target: string) => ['engines', 'update', target] as const,
 };
+
+/** The update API of a target ('sglang-docker', 'custom:<id>'…). */
+export function updatePath(target: string): string {
+  return target.startsWith('custom:') ? `/api/engines/custom/${encodeURIComponent(target.slice('custom:'.length))}/update` : `/api/engines/${target}/update`;
+}
+
+/** Is there a newer version? Cheap: no git fetch, Docker Hub and PyPI answers cached by the core. */
+export function useEngineUpdate(target: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({ queryKey: engineKeys.update(target), queryFn: () => api.get<EngineUpdateCheck>(updatePath(target)), enabled, staleTime: 10 * 60_000, retry: false });
+}
+
+/** "Controlla aggiornamenti": the remote asked again (git fetch, Docker Hub, PyPI). */
+export function useRecheckUpdate(target: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<EngineUpdateCheck>(`${updatePath(target)}?fetch=1`),
+    onSuccess: (check) => qc.setQueryData(engineKeys.update(target), check),
+  });
+}
 
 /** GET /api/engines/custom: every saved engine, its kind and its check (runs, version, flags it lacks). */
 export function useCustomEngines() {

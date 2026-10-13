@@ -11,6 +11,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
+import { EngineUpdatePanel } from './engine-update';
 
 export const SGLANG_REPO = 'lmsysorg/sglang';
 const PREVIEW = 6;
@@ -81,6 +82,7 @@ export function SglangDockerCard() {
           {all ? t('models.curated.less') : t('engines.sglang.allTags', { n: list.length })}
         </Button>
       )}
+      <EngineUpdatePanel target="sglang-docker" name={t('engines.sglang.dockerTitle')} enabled={running} />
       {save.isError && <ErrorCallout error={save.error} />}
     </EngineCard>
   );
@@ -116,6 +118,7 @@ export function SglangNativeCard() {
       }
     >
       {status.version && <p className="text-sm text-fg-2">{t('engines.sglang.nativeVersion', { version: status.version })}</p>}
+      <EngineUpdatePanel target="sglang-native" name={t('engines.sglang.nativeTitle')} enabled={status.available} />
       {event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'ENGINE_INSTALL_FAILED', message: key }} />}
     </EngineCard>
   );

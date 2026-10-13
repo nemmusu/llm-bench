@@ -48,6 +48,7 @@ export const ERROR_CODES = [
   'DOCKER_INSTALL_FAILED',
   'DOCKER_VOLUME_FAILED',
   'ENGINE_MISSING_LIBRARY',
+  'ENGINE_UPDATE_FAILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

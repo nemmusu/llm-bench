@@ -89,9 +89,9 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
     setStep(STEPS[STEPS.indexOf(step) + 1] as Step);
   };
   const submit = () => {
+    // "Salva" is on the last step, reached only with "Dove si trova" complete: what is wrong is on this step.
     if (!draft) {
       setShown(new Set([...STEP_FIELDS.where, ...STEP_FIELDS.options]));
-      if (!stepOk('where')) setStep('where');
       return;
     }
     save.mutate(

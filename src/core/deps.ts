@@ -105,6 +105,11 @@ export interface CoreEndpoints {
   dockerHost?: string;
   /** Docker Desktop installer URL override (tests/E2E point it at a local server). */
   dockerInstaller?: string;
+  /** PyPI (https://pypi.org): the newest vLLM / SGLang releases for the update check. */
+  pypi?: string;
+  /** git and cmake, to update an engine built from a git checkout (default from PATH). */
+  git?: string[];
+  cmake?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

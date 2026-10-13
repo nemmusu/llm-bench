@@ -1,7 +1,14 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { customEngineSchema, type CustomEngine } from '../../../../src/contract/custom-engines';
+import { CheckView } from '../../../../src/renderer/components/engines/custom-engine-check';
+import { ApiProvider } from '../../../../src/renderer/lib/api-context';
+import { useDeleteCustomEngine } from '../../../../src/renderer/lib/queries-engines';
+import { SETTINGS_QUERY_KEY } from '../../../../src/renderer/lib/settings';
+import { newQueryClient, renderUi } from '../helpers';
 import { bridge, customCheck, customInfo, ENGINES, fail, item, libApi, renderLib, report, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -289,5 +296,118 @@ describe('SGLang cards', () => {
     expect(within(card2).getByText('Serve Docker acceso')).toBeTruthy();
     expect(await within(card2).findByText('Connessione a internet non disponibile')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'SGLang nativo' })).toBeNull();
+  });
+});
+
+describe('Motori personalizzati: the check in words, the dialog on Linux, errors', () => {
+  const nativeRun = { mode: 'native' as const, path: '/p/llama-server' };
+  const down = (over: object) => ({ kind: 'llamacpp-native' as const, available: false, installed: true, problems: [] as string[], supported: true, ...over });
+
+  it('the check: every option known, a setting it has no words for, a crash without a reason, a program found', () => {
+    renderUi(<CheckView check={customCheck({ flagCount: 300, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
+    expect(screen.getByText('300 opzioni lette dal suo --help · Conosce tutte le impostazioni che GPU Bench usa.')).toBeTruthy();
+    renderUi(<CheckView check={customCheck({ missing: [{ flag: '--x', setting: 'weird', effect: 'default' }] })} baseLabel="llama.cpp" run={nativeRun} />);
+    expect(screen.getByText('Non conosce --x (weird): userò il suo valore predefinito.')).toBeTruthy();
+    renderUi(<CheckView check={customCheck({ status: down({}), flagCount: 0, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
+    renderUi(<CheckView check={customCheck({ status: down({ problems: ['ENGINE_EXITED'], problemParams: { code: '1' }, location: '/p' }), flagCount: 0, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
+    expect(screen.getByText('Il motore non è partito')).toBeTruthy();
+    expect(screen.getByText('Il motore si è chiuso all’improvviso')).toBeTruthy();
+    // A reason in GPU Bench's own words that names no path.
+    renderUi(<CheckView check={customCheck({ status: down({ problems: ['ENGINE_NOT_INSTALLED'], problemParams: { reason: 'command_missing' } }), flagCount: 0, missing: [] })} baseLabel="x" run={nativeRun} />);
+    expect(screen.getByText('Manca il comando.')).toBeTruthy();
+    renderUi(
+      <CheckView
+        check={customCheck({ kind: 'command', status: { kind: 'command', available: true, installed: true, problems: [], supported: true }, flagCount: 0, missing: [] })}
+        baseLabel="x"
+        run={{ mode: 'command', template: 'srv --port {port}', api: 'completions' }}
+      />,
+    );
+    expect(screen.getByText('Programma trovato:')).toBeTruthy();
+  });
+
+  it('Linux: an SGLang fork’s Python, a pick cancelled, an image name that is not one, a check still running', async () => {
+    const b = bridge({ platform: 'linux' });
+    b.pickFile.mockResolvedValueOnce(null);
+    const api = libApi(world({ system: linux }));
+    let answer!: (v: unknown) => void;
+    api.on('POST /api/engines/custom/check', () => new Promise((r) => (answer = r)));
+    renderLib('/engines', api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Aggiungi motore' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aggiungi un motore' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Fork di SGLang/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Avanti' }));
+    const python = within(dialog).getByLabelText('Il Python con SGLang o la sua cartella') as HTMLInputElement;
+    expect(within(dialog).getByText(/Il file python dell’ambiente dove è installato SGLang/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scegli file…' }));
+    expect(b.pickFile).toHaveBeenCalledWith({ title: 'Il Python con SGLang o la sua cartella' });
+    expect(python.value).toBe('');
+    await userEvent.type(within(dialog).getByLabelText('Nome'), 'SG');
+    await userEvent.type(python, '/venv/bin/python');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Prova' }));
+    expect(await within(dialog).findByText('Controllo in corso…')).toBeTruthy();
+    act(() => answer(customCheck({ kind: 'sglang-native', status: { kind: 'sglang-native', available: true, installed: true, version: '0.5.21', problems: [], supported: true } })));
+    expect(await within(dialog).findByText('Funziona · versione 0.5.21')).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Immagine Docker' }));
+    await userEvent.type(within(dialog).getByLabelText('Immagine Docker'), 'Not An Image');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Avanti' }));
+    expect(within(dialog).getByText('Il nome dell’immagine non è valido (per esempio ghcr.io/utente/immagine:versione).')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Immagine Docker').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('the list cannot be read; the template button; duplicate and delete that fail', async () => {
+    bridge();
+    const broken = libApi();
+    broken.on('GET /api/engines/custom', () => fail('NETWORK'));
+    renderLib('/engines', broken);
+    const section = await screen.findByRole('region', { name: 'Motori personalizzati' });
+    expect(await within(section).findByText('Connessione a internet non disponibile')).toBeTruthy();
+
+    document.body.innerHTML = '';
+    const w = world({ settings: { ...world().settings, customEngines: [prism] } });
+    w.custom = [customInfo(prism)];
+    const api = libApi(w);
+    api.on('POST /api/engines/custom/*/duplicate', () => fail('VALIDATION'));
+    api.on('DELETE /api/engines/custom/*', () => fail('NETWORK'));
+    renderLib('/engines', api);
+    const p = await card('PrismML');
+    await userEvent.click(within(p).getByRole('button', { name: 'Duplica' }));
+    expect(await within(p).findByText('Alcuni valori non sono validi')).toBeTruthy();
+    await userEvent.click(within(p).getByRole('button', { name: 'Elimina' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Elimina' }));
+    expect(await within(p).findByText('Connessione a internet non disponibile')).toBeTruthy();
+
+    // No engine yet: the built-in template opens the dialog filled in.
+    document.body.innerHTML = '';
+    renderLib('/engines', libApi());
+    await userEvent.click(await screen.findByRole('button', { name: 'Fork PrismML (modelli Bonsai)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aggiungi un motore' });
+    expect((within(dialog).getByLabelText('Nome') as HTMLInputElement).value).toBe('Fork PrismML di llama.cpp');
+  });
+
+  it('SGLang cards: a choice that cannot be saved, an install that failed without saying why', async () => {
+    bridge({ platform: 'linux' });
+    const engines = [...ENGINES(), { kind: 'sglang-docker' as const, available: true, installed: true, problems: [], supported: true }, { kind: 'sglang-native' as const, available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }];
+    const api = libApi(world({ system: linux, engines }));
+    api.on('PUT /api/settings', () => fail('VALIDATION'));
+    renderLib('/engines', api);
+    const docker = await card('SGLang (Docker)');
+    const tags = await within(docker).findByRole('list', { name: 'Versioni di SGLang' });
+    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa' })[0]!);
+    expect(await within(docker).findByText('Alcuni valori non sono validi')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'sglang-native', stage: 'error', bytesDone: 0 }));
+    expect(await within(await card('SGLang nativo')).findByText('Installazione del motore non riuscita')).toBeTruthy();
+  });
+
+  it('a change with no settings read yet leaves them unread', async () => {
+    const qc = newQueryClient();
+    const api = libApi(world({ custom: [customInfo(prism)] }));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ApiProvider api={api}>
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      </ApiProvider>
+    );
+    const { result } = renderHook(() => useDeleteCustomEngine(), { wrapper });
+    await act(() => result.current.mutateAsync('prismml'));
+    expect(qc.getQueryData(SETTINGS_QUERY_KEY)).toBeUndefined();
   });
 });

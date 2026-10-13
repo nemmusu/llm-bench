@@ -20,6 +20,8 @@ export const KNOWN_STAGES = [
   'nvidia-toolkit',
   'configure',
   'docker-group',
+  'git-pull',
+  'build',
 ] as const;
 
 export function stageLabel(t: (k: MessageKey) => string, stage: string): string {
@@ -44,7 +46,9 @@ export function InstallProgress({ event, label, className }: InstallProgressProp
   const done = stepMode ? (event.step ?? event.bytesDone) : event.bytesDone;
   const ratio = total ? Math.min(1, done / total) : undefined;
   let detail = '';
-  if (ratio !== undefined) {
+  // A build's steps are compile units (or Make's percentage): the percentage says it all.
+  if (ratio !== undefined && event.stage === 'build') detail = percent(ratio);
+  else if (ratio !== undefined) {
     detail = `${stepMode ? t('setup.progress.step', { n: done, total: total as number }) : t('setup.progress.bytes', { done: bytes(done), total: bytes(total as number) })} · ${percent(ratio)}`;
   } else if (event.state !== undefined) detail = duration(event.bytesDone);
   const stage = stageLabel(t, event.stage);

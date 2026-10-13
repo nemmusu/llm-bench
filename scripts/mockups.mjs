@@ -212,7 +212,7 @@ const SCREENS = [
   // The deep link of that suggestion: "Aggiungi motore" filled from the PrismML template.
   { n: 43, name: 'engines-template', route: `/engines?customTemplate=prismml-bonsai&modelName=${encodeURIComponent('Ternary-Bonsai-8B PQ2_0')}`, wait: 'Serve per Ternary-Bonsai-8B PQ2_0', settings: { customEngines: [] }, small: true },
   // The engine choice with the custom engines under their base.
-  { n: 44, name: 'benchmark-engines', route: '/', wait: 'Pronto a misurare', settings: { customEngines: CUSTOM_ENGINES }, act: openEngineChoice },
+  { n: 44, name: 'benchmark-engines', route: '/', wait: 'Pronto a misurare', settings: { customEngines: CUSTOM_ENGINES }, act: openEngineChoice, small: true },
 ];
 
 /** The custom engines section, scrolled into view once every check has answered. */

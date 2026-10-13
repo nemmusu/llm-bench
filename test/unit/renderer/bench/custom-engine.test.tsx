@@ -78,6 +78,15 @@ describe('Benchmark with custom engines', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Cambia motore' }).textContent).toBe('llama.cpp · PrismML'));
   });
 
+  it('expert mode: SGLang installed on the PC takes the Python of its environment', async () => {
+    const api = benchApi({}, { onboardingDone: true, expertMode: true, lastEngine: { kind: 'sglang-native' } });
+    api.world.engines.push({ kind: 'sglang-native', available: true, installed: true, problems: [], supported: true });
+    renderApp('/', api);
+    const field = (await screen.findByLabelText('Python di SGLang')) as HTMLInputElement;
+    await userEvent.type(field, '/venv/bin/python');
+    expect(field.value).toBe('/venv/bin/python');
+  });
+
   it('suggests the template a Bonsai model needs, and a saved engine once there is one', async () => {
     const api = benchApi({ local: [bonsai] }, { onboardingDone: true, lastModelId: 'bonsai' });
     const { router } = renderApp('/', api);
@@ -102,7 +111,12 @@ describe('Benchmark with custom engines', () => {
 
   it('a suggested (curated) model is checked by its repo and file; no model, no suggestion', async () => {
     const api = benchApi({ local: [], curated: [{ ...benchApi().world.curated[0]!, repo: 'prism-ml/Ternary-Bonsai-8B-gguf', file: 'Ternary-Bonsai-8B-PQ2_0.gguf', label: 'Bonsai 8B · PQ2_0', quant: 'PQ2_0' }] });
-    renderApp('/', api);
+    const { router } = renderApp('/', api);
     expect(await screen.findByText('Questo modello richiede il fork PrismML di llama.cpp')).toBeTruthy();
+    // A model still to download has no library key: the link names it only in words.
+    await userEvent.click(screen.getByRole('button', { name: 'Indica dove si trova' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/engines'));
+    expect(router.state.location.search).not.toHaveProperty('model');
+    expect(router.state.location.search).toMatchObject({ customTemplate: 'prismml-bonsai' });
   });
 });

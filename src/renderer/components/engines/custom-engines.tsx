@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Boxes, Copy, FlaskConical, GitBranch, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import { customUpdateTarget } from '../../../contract/engine-updates';
 import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
@@ -18,6 +19,7 @@ import { CheckView, customEngineWhere, kindText } from './custom-engine-check';
 import { CustomEngineDialog } from './custom-engine-dialog';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
+import { EngineUpdatePanel } from './engine-update';
 
 const ICONS: Record<CustomEngineBase, ReactNode> = {
   llamacpp: <GitBranch />,
@@ -86,8 +88,8 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
       )}
       <CustomEngineDialog
         open={editing !== undefined}
-        onOpenChange={(open) => {
-          if (open) return;
+        // The dialog has no trigger: it only ever asks to close.
+        onOpenChange={() => {
           setEditing(undefined);
           onTemplateDone?.();
         }}
@@ -187,6 +189,8 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
       )}
       {rules.length > 0 && <p className="text-sm text-fg-2">{t('engines.custom.usedFor', { rules: rules.join(', ') })}</p>}
       {e.notes && <p className="text-sm whitespace-pre-line text-fg-3">{e.notes}</p>}
+      {/* A fork's own update: its image, its git checkout; a program of the user's own says it is updated with its tools. */}
+      <EngineUpdatePanel target={customUpdateTarget(e.id)} name={e.name} enabled={status.installed} />
       {duplicate.isError && <ErrorCallout error={duplicate.error} />}
       {remove.isError && <ErrorCallout error={remove.error} />}
     </EngineCard>

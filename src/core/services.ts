@@ -22,6 +22,8 @@ import { SglangNativeAdapter } from './engines/sglang-native/adapter';
 import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
 import { createCustomEngineRoutes } from './engines/custom/routes';
+import { createEngineUpdateRoutes } from './engines/updates/routes';
+import { EngineUpdates } from './engines/updates/service';
 import { FitCalibrator, type ModelKey } from './models/calibration';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
@@ -73,6 +75,8 @@ export interface CoreServices {
   docker: DockerServices;
   vllmDocker: VllmDockerAdapter;
   sglangDocker: SglangDockerAdapter;
+  /** "Aggiorna" on the engine cards (vLLM, SGLang, custom engines). */
+  updates: EngineUpdates;
   /** Models copied into Docker volumes (fast loads with Docker Desktop). */
   modelVolumes: ModelVolumes;
   models?: ModelsLookup;
@@ -289,6 +293,17 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       customEngines,
     ),
   );
+  const updates = new EngineUpdates({
+    registry,
+    settings: ctx.settings,
+    images: docker.images,
+    hub: docker.hub,
+    tags: { 'vllm-docker': (o) => vllmDocker.tags(o), 'sglang-docker': (o) => sglangDocker.tags(o) },
+    tools: { proc: deps.proc, git: deps.endpoints.git ?? ['git'], cmake: deps.endpoints.cmake ?? ['cmake'] },
+    fetch: deps.fetch,
+    pypi: deps.endpoints.pypi ?? 'https://pypi.org',
+    clock: deps.clock,
+  });
   const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
   void docker.env.cleanupOrphans().catch(() => undefined);
@@ -467,6 +482,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     docker,
     vllmDocker,
     sglangDocker,
+    updates,
     modelVolumes,
     ...(models ? { models } : {}),
     runs,
@@ -523,6 +539,13 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     (app, ctx) => createCustomEngineRoutes({ settings: ctx.settings, registry: s.registry })(app, ctx),
+    (app, ctx) =>
+      createEngineUpdateRoutes({
+        updates: s.updates,
+        publish: (e) => ctx.hub.publish(e),
+        busy: () => s.bench.active() !== undefined || s.serve.busy(),
+        shutdown: ctx.shutdown,
+      })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>

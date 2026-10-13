@@ -62,7 +62,9 @@ describe('bootstrap helpers', () => {
     expect(d.paths.dataDir).toBe('/argdata');
     expect(d.paths.modelsDir).toBe(path.join('/data', 'GPU Bench', 'models'));
     expect(d.paths.resourcesDir).toBe(path.resolve('/data/out/core', '../../resources'));
-    expect(d.endpoints).toMatchObject({ githubApi: 'https://api.github.com', huggingface: 'https://huggingface.co', dockerHub: 'https://hub.docker.com' });
+    expect(d.endpoints).toMatchObject({ githubApi: 'https://api.github.com', huggingface: 'https://huggingface.co', dockerHub: 'https://hub.docker.com', pypi: 'https://pypi.org' });
+    // git and cmake from the PATH unless a test points them elsewhere.
+    expect(d.endpoints.git).toBeUndefined();
     const e = buildDeps({
       ...fakeHost('/data').host,
       platform: 'win32',
@@ -78,6 +80,9 @@ describe('bootstrap helpers', () => {
         GPUBENCH_DOCKER: 'docker2',
         GPUBENCH_DOCKER_HOST: '//./pipe/x',
         GPUBENCH_DOCKER_INSTALLER_URL: 'http://inst',
+        GPUBENCH_PYPI: 'http://pypi',
+        GPUBENCH_GIT: '["node","git.mjs"]',
+        GPUBENCH_CMAKE: 'cmake4',
         GPUBENCH_DEBUG: '1',
         APPDATA: '/appdata',
       },
@@ -93,6 +98,9 @@ describe('bootstrap helpers', () => {
       docker: ['docker2'],
       dockerHost: '//./pipe/x',
       dockerInstaller: 'http://inst',
+      pypi: 'http://pypi',
+      git: ['node', 'git.mjs'],
+      cmake: ['cmake4'],
     });
   });
 
