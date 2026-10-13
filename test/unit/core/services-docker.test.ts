@@ -1,4 +1,7 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DOCKER_FIXTURES } from './docker/helpers';
 import type { ServerInfo } from '../../../src/contract/api';
 import type { ProcessRunner } from '../../../src/core/deps';
 import type { DockerControlDeps } from '../../../src/core/docker/control';
@@ -56,5 +59,17 @@ describe('createServices: Docker control', () => {
     s.docker.env.reportHang('stuck');
     expect(await (await get('/api/docker/diagnosis')).json()).toEqual({ cause: 'not-answering', evidence: [] });
     expect(await (await get('/api/docker/recovery')).json()).toEqual({ servers: [], restoring: false });
+  });
+
+  it('Windows: the diagnosis reads the folder standing in for Docker Desktop (never this PC’s when it is set)', async () => {
+    const dd = path.join(t.dir, 'docker-desktop');
+    mkdirSync(path.join(dd, 'log', 'host'), { recursive: true });
+    writeFileSync(path.join(dd, 'settings-store.json'), '{"UseResourceSaver":false}');
+    writeFileSync(path.join(dd, 'log', 'host', 'monitor.log'), readFileSync(path.join(DOCKER_FIXTURES, 'desktop-backend-stuck.log'), 'utf8'));
+    const ctx = testContext(testDeps(t.dir, { proc: quietProc, platform: 'win32', env: { GPUBENCH_DOCKER_DESKTOP_DIR: dd } }));
+    const s = await createServices(ctx, { modelServices: false });
+    const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+    const res = await app.request('/api/docker/diagnosis', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+    expect(await res.json()).toMatchObject({ cause: 'resource-saver', resourceSaver: { enabled: false, timeoutSeconds: 300 }, since: '2026-10-09T19:24:55.162Z' });
   });
 });
