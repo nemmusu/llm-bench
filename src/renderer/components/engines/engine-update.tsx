@@ -40,12 +40,43 @@ function confirmText(t: Formatters['t'], c: EngineUpdateCheck, name: string): st
 }
 
 export interface EngineUpdatePanelProps {
-  /** 'sglang-docker', 'vllm-native', 'custom:<id>'… */
+  /** 'sglang-docker', 'vllm-native', 'ninfer-wsl', 'custom:<id>'… */
   target: string;
   /** The engine's name in the confirmation and the progress. */
   name: string;
   /** False while the engine is not there (the card offers its install): nothing is checked. */
   enabled: boolean;
+  /** What an engine adds under its check (NInfer: the models to upgrade for the build it has). */
+  extra?: (check: EngineUpdateCheck) => ReactNode;
+}
+
+/** Commit titles shown before "e altri N". */
+const SHOWN_COMMITS = 5;
+
+/** The new commits of a git update, newest first (`total`: how many there are). */
+function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['log']>; total: number }) {
+  const { t } = useI18n();
+  const more = total - Math.min(log.length, SHOWN_COMMITS);
+  return (
+    <>
+      <ul className="flex flex-col gap-0.5 text-sm text-fg-2">
+        {log.slice(0, SHOWN_COMMITS).map((c) => (
+          <li key={c.sha} className="flex gap-2">
+            <span className="font-mono text-xs text-fg-3 tabular-nums">{c.sha}</span>
+            <span className="min-w-0 truncate">{c.title}</span>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && <p className="text-xs text-fg-3">{t('engines.update.more', { n: more })}</p>}
+    </>
+  );
+}
+
+/** A failed rebuild: whether the previous build is back in place (NInfer keeps it aside until the new one is built). */
+function Restored({ params }: { params: Record<string, unknown> | undefined }) {
+  const { t } = useI18n();
+  if (params?.restored === undefined) return null;
+  return <p className="text-sm text-fg-2">{params.restored === true ? t('engines.update.restored', { commit: String(params.commit ?? '') }) : t('engines.update.notRestored')}</p>;
 }
 
 /**
@@ -53,7 +84,7 @@ export interface EngineUpdatePanelProps {
  * it is, or how many commits), the exact commands in a confirmation, then the update with its progress.
  * Engines updated with their own tools get a short note instead.
  */
-export function EngineUpdatePanel({ target, name, enabled }: EngineUpdatePanelProps) {
+export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdatePanelProps) {
   const { t, bytes } = useI18n();
   const query = useEngineUpdate(target, enabled);
   const recheck = useRecheckUpdate(target);
@@ -70,7 +101,10 @@ export function EngineUpdatePanel({ target, name, enabled }: EngineUpdatePanelPr
     event?.stage === 'done' ? (
       <p className="text-sm text-success-text">{version ? t('engines.update.done', { version }) : t('engines.update.doneNoVersion')}</p>
     ) : event?.stage === 'error' ? (
-      <ErrorCallout error={event.error ?? { code: 'ENGINE_UPDATE_FAILED', message: target }} />
+      <>
+        <ErrorCallout error={event.error ?? { code: 'ENGINE_UPDATE_FAILED', message: target }} />
+        <Restored params={event.error?.params} />
+      </>
     ) : null;
   const checkButton = (
     <Button size="sm" variant="ghost" className="self-start" disabled={recheck.isPending} onClick={() => recheck.mutate()}>
@@ -123,18 +157,23 @@ export function EngineUpdatePanel({ target, name, enabled }: EngineUpdatePanelPr
       </div>
     );
   } else {
-    body = <Callout tone="info" title={updateHeadline({ t, bytes }, c)} action={{ label: t('engines.update.update'), onClick: () => setConfirm(true) }} />;
+    body = (
+      <Callout tone="info" title={updateHeadline({ t, bytes }, c)} action={{ label: t('engines.update.update'), onClick: () => setConfirm(true) }}>
+        {c.log?.length ? <CommitLog log={c.log} total={c.commits ?? c.log.length} /> : undefined}
+      </Callout>
+    );
   }
 
   return (
     <div className="flex flex-col gap-2">
       {body}
       {outcome}
+      {c && extra?.(c)}
       {c && (
         <Dialog open={confirm} onOpenChange={setConfirm}>
           <DialogContent
             title={t('engines.update.confirmTitle', { name })}
-            description={confirmText(t, c, name)}
+            description={c.distro ? `${confirmText(t, c, name)} ${t('engines.update.inDistro', { distro: c.distro })}` : confirmText(t, c, name)}
             footer={
               <>
                 <DialogClose asChild>
@@ -152,8 +191,16 @@ export function EngineUpdatePanel({ target, name, enabled }: EngineUpdatePanelPr
               </>
             }
           >
-            {/* The code block names itself ("Comandi che eseguo"). */}
-            <CodeBlock single label={t('engines.update.commands')} commands={{ powershell: c.commands.map(commandLine).join('\n'), bash: c.commands.map(commandLine).join('\n') }} />
+            <div className="flex flex-col gap-2">
+              {/* The code block names itself ("Comandi che eseguo"). */}
+              <CodeBlock single label={t('engines.update.commands')} commands={{ powershell: c.commands.map(commandLine).join('\n'), bash: c.commands.map(commandLine).join('\n') }} />
+              {c.restore?.length ? (
+                <>
+                  <p className="text-xs text-fg-2">{t('engines.update.restoreNote')}</p>
+                  <CodeBlock single label={t('engines.update.restore')} commands={{ powershell: c.restore.map(commandLine).join('\n'), bash: c.restore.map(commandLine).join('\n') }} />
+                </>
+              ) : undefined}
+            </div>
           </DialogContent>
         </Dialog>
       )}

@@ -677,8 +677,9 @@ async function fakeWorld(dataDir) {
   writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
   writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
+  seedNinfer(models);
   // Every format in the library: a safetensors model for vLLM / SGLang, a download stopped at 1 of 4
-  // files, an NInfer artifact with its manifest (the Bonsai quant below shows the fork badge). In a
+  // files (the NInfer artifact comes from seedNinfer; the Bonsai quant below shows the fork badge). In a
   // folder added by the user (after the library: the Benchmark page keeps its usual first model), each repo
   // folder with GPU Bench's download sidecar, as when another install's library is added.
   const lib = path.join(dataDir, 'more-models');
@@ -693,11 +694,6 @@ async function fakeWorld(dataDir) {
   writeFileSync(path.join(orca, 'config.json'), JSON.stringify({ num_hidden_layers: 64, torch_dtype: 'bfloat16' }));
   writeFileSync(path.join(orca, 'model-00001-of-00004.safetensors'), buildSafetensors({ tensors: { w: { dtype: 'BF16', shape: [64, 64] } }, totalSize: 160 * 1024 }));
   sidecar(orca, 'orcarouter/OrcaSAQ-2-27B');
-  const ninfer = path.join(lib, 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
-  mkdirSync(ninfer, { recursive: true });
-  writeFileSync(path.join(ninfer, 'qwen3_8_27b_nvfp4.ninfer'), Buffer.alloc(192 * 1024, 1));
-  sidecar(ninfer, 'neroued/Qwen3.8-27B-nvfp4-NInfer');
-  writeFileSync(path.join(ninfer, 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json'), JSON.stringify({ artifact: { name: 'qwen3.8-27b', architecture: 'qwen3_8', container_version: 3, components: ['text', 'vision', 'mtp'] } }));
   const bonsai = path.join(lib, 'prism-ml', 'Ternary-Bonsai-2-27B-gguf');
   mkdirSync(bonsai, { recursive: true });
   sidecar(bonsai, 'prism-ml/Ternary-Bonsai-2-27B-gguf');
@@ -751,12 +747,17 @@ async function fakeWorld(dataDir) {
     // A file the fake engine reads at every launch: the tune scenes switch it to the tuner's profile.
     FAKE_ENGINE_PROFILE: profileFile,
     FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
+    // NInfer inside WSL: a fake wsl.exe whose Ubuntu-24.04 runs the fake ninfer-serve (ninferScenes).
+    GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
+    FAKE_WSL_STATE: path.join(dataDir, 'fake-wsl'),
+    FAKE_WSL_CONFIG: path.join(dataDir, 'fake-wsl.json'),
   };
   const close = async () => {
     await Promise.all([github.close(), hub.close(), dockerApi.close(), new Promise((r) => dockerHub.close(r))]);
     rmSync(GIT_FORK_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   };
-  return { env, profileFile, close };
+  writeFileSync(env.FAKE_WSL_CONFIG, '{}');
+  return { env, profileFile, modelsDir: models, close };
 }
 
 function startCore(dataDir, extraEnv) {
@@ -1142,6 +1143,159 @@ async function serverScenes(browser, info, written) {
   }
 }
 
+/** A downloaded NInfer artifact in the library: the .ninfer file, its manifest and its checksums. */
+function seedNinfer(models, repo = 'Qwen3.8-27B-nvfp4-NInfer', file = 'qwen3_8_27b_nvfp4.ninfer', o = { version: 3, name: 'qwen3.8-27b' }) {
+  const dir = path.join(models, 'neroued', repo);
+  mkdirSync(dir, { recursive: true });
+  const artifact = { filename: file, bytes: 65_536, sha256: '74'.repeat(32), container_version: o.version, architecture: 'Qwen3_5ForCausalLM', name: o.name, components: ['text', 'vision', 'mtp', 'dflash2'] };
+  writeFileSync(path.join(dir, artifact.filename), Buffer.alloc(artifact.bytes));
+  writeFileSync(path.join(dir, `${repo}.artifact-manifest.json`), JSON.stringify({ schema: 'ninfer.artifact-manifest', schema_version: 2, artifact }));
+  writeFileSync(path.join(dir, `${repo}.SHA256SUMS`), `${artifact.sha256}  ${artifact.filename}\n`);
+}
+
+/** A 27B NVFP4 artifact with MTP on an RTX 5090, roughly: quick enough for a Rapido in the scenes. */
+const NINFER_PROFILE = { loadMsCold: 2200, loadMsWarm: 1400, prefillTps: 5200, decodeTps: 82, tokensPerChunk: 3 };
+const NINFER_SIZES = [
+  { w: 1440, h: 900, suffix: '' },
+  { w: 1024, h: 680, suffix: '-1024' },
+];
+
+/**
+ * NInfer on Windows, as a user meets it (fake WSL): the Engines card still to set up (40) and its
+ * guided build (41); the card once it found the build (42); the Benchmark page with its built-in
+ * settings for the .ninfer model (43) and the server confirmation with them (44); a Rapido with
+ * "Consigliata da NInfer", its result (45) and how it was started (46); its "Aggiorna" (the engines' own) with
+ * two new commits and an older artifact to upgrade (47), and the confirmation (48). Light and dark, 1440 and 1024.
+ */
+async function ninferScenes(browser, info, world, written) {
+  const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch', 'ninfer-update', 'ninfer-update-dialog'];
+  const want = (name) => !only || only.includes(name);
+  if (!names.some(want)) return;
+  const shotAll = async (n, name, route, wait, opts = {}) => {
+    if (!want(name)) return;
+    for (const theme of ['light', 'dark']) {
+      for (const size of NINFER_SIZES) {
+        await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true });
+        const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+        const page = await context.newPage();
+        await page.goto(`${info.url}#${route}`);
+        await page.getByText(wait).first().waitFor({ timeout: 60000 });
+        await page.evaluate(() => document.fonts.ready);
+        if (opts.act) await opts.act(page);
+        await page.waitForTimeout(1200);
+        await page.mouse.move(size.w - 4, size.h - 4);
+        const file = path.join(outDir, `${n}-${name}-${theme}${size.suffix}.png`);
+        await shoot(page, file);
+        written.push(file);
+        if (opts.full && !size.suffix) {
+          const fullFile = file.replace(/\.png$/, '-full.png');
+          await shoot(page, fullFile, { full: true });
+          written.push(fullFile);
+        }
+        await context.close();
+      }
+    }
+  };
+  const card = (page) => page.getByRole('region', { name: 'NInfer', exact: true });
+  const showCard = async (page) => {
+    await card(page).getByRole('combobox', { name: 'Distribuzione WSL' }).or(card(page).getByText('Ricontrolla')).first().waitFor({ timeout: 30000 });
+    await card(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  };
+  const openBuild = async (page) => {
+    await showCard(page);
+    await card(page).getByRole('button', { name: 'Compila NInfer…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Compila NInfer' });
+    await dialog.getByRole('button', { name: 'Controlla', exact: true }).click();
+    await dialog.getByRole('region', { name: 'Comandi che eseguirò' }).waitFor({ timeout: 30000 });
+  };
+  /** NInfer (WSL) and the .ninfer model on the Benchmark page, its settings in view. */
+  const chooseNinfer = async (page) => {
+    await page.getByRole('combobox', { name: 'Cambia motore' }).click();
+    await page.getByRole('option', { name: /NInfer \(WSL\)/ }).click();
+    await page.getByRole('button', { name: /Cambia modello: qwen3.8-27b/ }).waitFor({ timeout: 30000 });
+    const settings = page.getByRole('radiogroup', { name: 'Impostazioni di NInfer' });
+    await settings.getByRole('radio', { name: /Consigliata da NInfer/ }).click();
+    await settings.scrollIntoViewIfNeeded();
+  };
+  const serveConfirm = async (page) => {
+    await chooseNinfer(page);
+    await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Avvia il server' });
+    await dialog.getByRole('region', { name: 'Comando esatto' }).getByText(/--kv-capacity/).waitFor({ timeout: 30000 });
+  };
+  const checkUpdates = async (page) => {
+    await showCard(page);
+    await card(page).getByText(/commit nuovi/).first().waitFor({ timeout: 30000 });
+    await card(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  };
+  const openUpdate = async (page) => {
+    await checkUpdates(page);
+    await card(page).getByRole('button', { name: 'Aggiorna', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Aggiornare NInfer (WSL)?' }).getByRole('region', { name: 'Comandi che eseguo' }).waitFor({ timeout: 30000 });
+  };
+  try {
+    await idle(info);
+    await shotAll(40, 'engines-ninfer-setup', '/engines', 'Motori', { act: showCard });
+    // The build in a distro without NInfer yet, where two of the tools it needs are missing.
+    writeFileSync(world.env.FAKE_WSL_CONFIG, JSON.stringify({ checkouts: [], prereqs: { ninja: '', ffmpeg: '' } }));
+    await shotAll(41, 'ninfer-build', '/engines', 'Motori', { act: openBuild });
+    writeFileSync(world.env.FAKE_WSL_CONFIG, '{}');
+    // "Indica dove si trova": the build inside Ubuntu-24.04 (the fake distro has one there).
+    await putSettings(info, { ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/user/ninfer' } } });
+    await shotAll(42, 'engines-ninfer', '/engines', 'Motori', { act: showCard });
+    await shotAll(43, 'benchmark-ninfer', '/', 'Pronto a misurare', { act: chooseNinfer, full: true });
+    await shotAll(44, 'serve-ninfer', '/', 'Pronto a misurare', { act: serveConfirm });
+    if (want('result-ninfer') || want('result-ninfer-launch')) {
+      writeFileSync(world.profileFile, JSON.stringify(NINFER_PROFILE));
+      await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
+      const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce', locale: 'it-IT' });
+      const page = await context.newPage();
+      await page.goto(`${info.url}#/`);
+      await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+      await chooseNinfer(page);
+      await page.getByRole('radio', { name: /Rapido/ }).click();
+      await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+      await page.getByRole('heading', { level: 1, name: 'Test in corso' }).waitFor({ timeout: 60000 });
+      const runId = (await api(info, 'GET', '/api/runs/active')).active.runId;
+      while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+      await context.close();
+      const run = await api(info, 'GET', `/api/runs/${runId}`);
+      console.log(`result-ninfer: ${run.status} ${run.id}`);
+      await shotAll(45, 'result-ninfer', `/results/${runId}`, 'Generazione', { full: true });
+      await shotAll(46, 'result-ninfer-launch', `/results/${runId}`, 'Generazione', {
+        act: async (page) => {
+          await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
+          await page.getByRole('button', { name: 'Mostra comando' }).click();
+          await page.evaluate(() => document.activeElement?.blur?.());
+        },
+        full: true,
+      });
+    }
+    if (want('ninfer-update') || want('ninfer-update-dialog')) {
+      // Two commits on GitHub since this build, and an older artifact in the library (container v2).
+      seedNinfer(world.modelsDir, 'Qwen3.6-27B-int4-NInfer', 'qwen3_6_27b_int4.ninfer', { version: 2, name: 'qwen3.6-27b' });
+      await api(info, 'POST', '/api/models/rescan');
+      writeFileSync(
+        world.env.FAKE_WSL_CONFIG,
+        JSON.stringify({
+          incoming: [
+            { sha: '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49', title: 'serve: verify MTP drafts in one pass' },
+            { sha: '9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c', title: 'docs: KV capacity examples for two users' },
+          ],
+        }),
+      );
+      await shotAll(47, 'ninfer-update', '/engines', 'Motori', { act: checkUpdates });
+      await shotAll(48, 'ninfer-update-dialog', '/engines', 'Motori', { act: openUpdate });
+      writeFileSync(world.env.FAKE_WSL_CONFIG, '{}');
+    }
+  } finally {
+    await idle(info).catch(() => undefined);
+    await stopServers(info).catch(() => undefined);
+    writeFileSync(world.profileFile, JSON.stringify(LIVE_PROFILE));
+  }
+}
+
+
 async function shoot(page, file, { full } = {}) {
   if (full) {
     // The page scrolls inside <main>: grow the viewport to the content so one image shows it all.
@@ -1217,6 +1371,7 @@ async function main() {
     }
     await tuneScenes(browser, info, world, written);
     await spillScenes(browser, info, world, written);
+    await ninferScenes(browser, info, world, written);
     await serverScenes(browser, info, written);
   } finally {
     await browser.close();

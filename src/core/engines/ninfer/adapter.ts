@@ -30,7 +30,7 @@ import { createProcessInstance, type ClientFactory } from '../instance';
 import { modelReadyProbe } from '../shared/probes';
 import { trustedFlags } from '../shared/standard-flags';
 import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
-import { droppedCacheFlags, ninferServeArgs } from './args';
+import { ninferServeArgs } from './args';
 import { diagnoseNinfer, ninferMessage, PID_LINE } from './logs';
 import { distroRunner, wslLaunchArgv, wslPathOf, type DistroRun, type WslProcesses } from './wsl';
 
@@ -183,6 +183,11 @@ export class NinferAdapter implements EngineAdapter {
     return (cmd, args, opts) => this.o.deps.proc.run(cmd, args, opts);
   }
 
+  /** Every build is asked again at its next probe (after an update: its commit changed). */
+  forget(): void {
+    this.probes.clear();
+  }
+
   /** The build's help and commit, cached per build for probeTtlMs; `fresh` asks again ("Ricontrolla"). */
   probe(where: NinferWhere, fresh = false): Promise<NinferProbe> {
     const key = `${where.distro ?? ''}|${where.serve}`;
@@ -223,8 +228,9 @@ export class NinferAdapter implements EngineAdapter {
       supported: true,
     };
     if (!probe.ok) {
-      const e = (probe.error as AppError).toJSON();
-      return { ...status, problems: [e.code], ...(e.params ? { problemParams: e.params } : {}) };
+      // A failed probe always says why (notInstalled: a reason and its details).
+      const e = probe.error as AppError;
+      return { ...status, problems: [e.code], problemParams: e.params as Record<string, string | number | boolean> };
     }
     return gpuProblem ? { ...status, ...gpuProblem } : status;
   }
@@ -272,7 +278,8 @@ export class NinferAdapter implements EngineAdapter {
       slow = mapped.slow;
     }
     const args = ninferServeArgs(params, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker });
-    const probe = where ? await this.probe(where).catch(() => undefined) : undefined;
+    // probe() never rejects: a build that does not answer is a probe that says so.
+    const probe = where ? await this.probe(where) : undefined;
     const commit = probe?.commit?.slice(0, 12);
     const engine: EngineIdentity = { kind: this.kind, name: 'NInfer', executable: serve, ...(commit ? { version: commit, build: commit } : {}), ...(distro ? { variant: distro } : {}) };
     const env = { ...params.env };
@@ -283,7 +290,6 @@ export class NinferAdapter implements EngineAdapter {
     const mem = ninferMemory({ artifactBytes: size, manifest: await this.manifestOf(manifest), label: model.identity.displayName, params });
     const capacity = params.ninfer?.kvCapacity;
     const kvTokens = typeof capacity === 'number' ? capacity : capacity === undefined ? params.contextSize : undefined;
-    const dropped = droppedCacheFlags(params.ninfer ?? {});
     return {
       kind: this.kind,
       argv,
@@ -300,7 +306,6 @@ export class NinferAdapter implements EngineAdapter {
       ninfer: { ...(distro ? { distro } : {}), ...(kvTokens !== undefined ? { kvTokens } : {}), bytesPerToken: mem.bytesPerToken },
       ...(slow ? { slowSharedFilesystem: true } : {}),
       ...(!where ? { pending: ['engine' as const] } : {}),
-      ...(dropped.length ? { unsupported: dropped.map((flag) => ({ flag, setting: 'ninfer.prefixReuse', effect: 'default' as const })) } : {}),
     };
   }
 

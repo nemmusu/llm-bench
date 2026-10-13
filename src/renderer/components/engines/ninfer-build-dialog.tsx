@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Check, Hammer, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import type { NinferBuildRequest, NinferKind } from '../../../contract/ninfer';
+import type { NinferBuildPlan, NinferBuildRequest, NinferKind } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { activeEvent, useInstallEvent, useStartInstall } from '../../lib/queries-library';
 import { refreshEngines, useNinferBuildPlan } from '../../lib/queries-ninfer';
@@ -67,7 +67,8 @@ export function NinferBuildDialog({ open, onOpenChange, kind, distro }: NinferBu
             <Button
               variant="primary"
               disabled={!p?.ready || running !== undefined || req === undefined}
-              onClick={() => req && start.mutate({ key: kind, path: '/api/engines/ninfer/build', body: { ...req, dir: p?.dir ?? req.dir, confirm: true } })}
+              // Enabled only with a plan that is ready: the folder it checked (absolute) is the one built.
+              onClick={() => start.mutate({ key: kind, path: '/api/engines/ninfer/build', body: { ...req, dir: (p as NinferBuildPlan).dir, confirm: true } })}
             >
               <Hammer aria-hidden />
               {t('ninfer.build.confirm')}
@@ -76,14 +77,16 @@ export function NinferBuildDialog({ open, onOpenChange, kind, distro }: NinferBu
         }
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-end gap-2">
-            <Field label={t('ninfer.build.folder')} hint={t('ninfer.build.folderHint')} className="flex-1">
-              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={dir} onChange={(e) => setDir(e.target.value)} className="font-mono" spellCheck={false} />}
-            </Field>
-            <Button className="mb-5" onClick={check} disabled={running !== undefined}>
-              {t('ninfer.build.check')}
-            </Button>
-          </div>
+          <Field label={t('ninfer.build.folder')} hint={t('ninfer.build.folderHint')}>
+            {({ id, describedBy }) => (
+              <div className="flex gap-2">
+                <Input id={id} aria-describedby={describedBy} value={dir} onChange={(e) => setDir(e.target.value)} className="min-w-0 flex-1 font-mono" spellCheck={false} />
+                <Button className="shrink-0" onClick={check} disabled={running !== undefined}>
+                  {t('ninfer.build.check')}
+                </Button>
+              </div>
+            )}
+          </Field>
           {plan.isFetching && <Skeleton className="h-32" />}
           {plan.isError && <ErrorCallout error={plan.error} />}
           {p && !plan.isFetching && (
@@ -109,12 +112,11 @@ export function NinferBuildDialog({ open, onOpenChange, kind, distro }: NinferBu
               {p.aptCommand && (
                 <Callout tone="warning" title={t('ninfer.build.aptTitle')}>
                   <p className="mb-2">{t('ninfer.build.aptBody', { where })}</p>
-                  <CodeBlock single commands={{ bash: p.aptCommand, powershell: p.aptCommand }} defaultShell="bash" label={t('ninfer.build.aptTitle')} />
+                  <CodeBlock single commands={{ bash: p.aptCommand, powershell: p.aptCommand }} defaultShell="bash" label={t('ninfer.build.aptLabel')} />
                 </Callout>
               )}
               {p.cudaFromNvidia && <Callout tone="warning" title={t('ninfer.build.cuda')} />}
               <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-fg">{t('ninfer.build.commands')}</h3>
                 <CodeBlock single commands={{ bash: p.commands.join('\n'), powershell: p.commands.join('\n') }} defaultShell="bash" label={t('ninfer.build.commands')} />
                 <p className="text-xs text-fg-3">{t('ninfer.build.confirmNote', { where })}</p>
               </section>

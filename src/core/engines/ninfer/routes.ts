@@ -1,5 +1,7 @@
 /**
  * NInfer's own routes (contract/ninfer.ts): WSL distros, "Indica dove si trova", the guided build.
+ * Its "Aggiorna" is the engines' own (GET/POST /api/engines/ninfer-native|ninfer-wsl/update,
+ * core/engines/updates).
  *
  *   GET  /api/engines/ninfer/distros     -> NinferDistros
  *   POST /api/engines/ninfer/check       (EngineConfig of a NInfer kind) -> EngineStatus
@@ -21,6 +23,8 @@ export interface NinferRouteDeps {
   builder(kind: NinferKind): { plan(req: NinferBuildRequest): Promise<NinferBuildPlan>; build(req: NinferBuildRequest, progress: ProgressSink, signal: AbortSignal): Promise<string> };
   /** settings.ninfer, updated after a successful build. */
   saveBuild(kind: NinferKind, where: { path: string; distro?: string }): Promise<void>;
+  /** Shared with the update: a build is running (one compile of NInfer at a time). */
+  jobs: { building: boolean };
   publish(e: ServerEvent): void;
   shutdown?: AbortSignal;
 }
@@ -36,25 +40,29 @@ export function withBuild(saved: NinferSettings | undefined, kind: NinferKind, w
 }
 
 export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
-  let building: Promise<void> | undefined;
-
-  const runBuild = async (req: NinferBuildRequest): Promise<void> => {
-    const ac = new AbortController();
-    const onShutdown = () => ac.abort();
-    d.shutdown?.addEventListener('abort', onShutdown, { once: true });
-    // Build progress is steps (ninja's "[12/345]", git's percent), not bytes.
-    const emit = (p: { stage: string; bytesDone: number; bytesTotal?: number }, extra: Partial<InstallEvent> = {}) =>
-      d.publish({ type: 'engine.install', kind: req.kind, stage: p.stage, bytesDone: p.bytesDone, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}), ...extra });
-    try {
-      emit({ stage: 'resolve', bytesDone: 0 });
-      const serve = await d.builder(req.kind).build(req, emit, ac.signal);
-      await d.saveBuild(req.kind, { path: serve, ...(req.distro ? { distro: req.distro } : {}) });
-      emit({ stage: 'done', bytesDone: 0 }, { result: { ninferPath: serve, ...(req.distro ? { distro: req.distro } : {}) } });
-    } catch (e) {
-      emit({ stage: 'error', bytesDone: 0 }, { error: toAppErrorData(e) });
-    } finally {
-      d.shutdown?.removeEventListener('abort', onShutdown);
-    }
+  /** The guided build in the background, as 'engine.install' events of its kind. */
+  const build = (req: NinferBuildRequest): void => {
+    if (d.jobs.building) throw new AppError('VALIDATION', 'A build is already running', { params: { reason: 'busy' } });
+    d.jobs.building = true;
+    void (async () => {
+      const ac = new AbortController();
+      const onShutdown = () => ac.abort();
+      d.shutdown?.addEventListener('abort', onShutdown, { once: true });
+      // Build progress is steps (ninja's "[12/345]", git's percent), not bytes.
+      const emit = (p: { stage: string; bytesDone: number; bytesTotal?: number }, extra: Partial<InstallEvent> = {}) =>
+        d.publish({ type: 'engine.install', kind: req.kind, stage: p.stage, bytesDone: p.bytesDone, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}), ...extra });
+      try {
+        emit({ stage: 'resolve', bytesDone: 0 });
+        const serve = await d.builder(req.kind).build(req, emit, ac.signal);
+        await d.saveBuild(req.kind, { path: serve, ...(req.distro ? { distro: req.distro } : {}) });
+        emit({ stage: 'done', bytesDone: 0 }, { result: { ninferPath: serve, ...(req.distro ? { distro: req.distro } : {}) } });
+      } catch (e) {
+        emit({ stage: 'error', bytesDone: 0 }, { error: toAppErrorData(e) });
+      } finally {
+        d.shutdown?.removeEventListener('abort', onShutdown);
+        d.jobs.building = false;
+      }
+    })();
   };
 
   return (app) => {
@@ -72,12 +80,8 @@ export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
     });
 
     app.post('/api/engines/ninfer/build', async (c) => {
-      const req = await parseBody(c, ninferBuildStartSchema);
-      if (building) throw new AppError('VALIDATION', 'A build is already running', { params: { reason: 'busy' } });
-      const { confirm: _confirm, ...rest } = req;
-      building = runBuild(rest).finally(() => {
-        building = undefined;
-      });
+      const { confirm: _confirm, ...req } = await parseBody(c, ninferBuildStartSchema);
+      build(req);
       return c.json({ ok: true as const });
     });
   };

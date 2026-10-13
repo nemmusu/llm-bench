@@ -45,6 +45,8 @@ export interface EngineUpdatesDeps {
   clock: Clock;
   /** PyPI answers are kept this long (default 10 min). */
   ttlMs?: number;
+  /** NInfer's own update of its git checkout, on Linux or inside WSL (core/engines/ninfer/update.ts). */
+  ninfer?: Record<'ninfer-native' | 'ninfer-wsl', { plan(opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> }>;
 }
 
 type Target = { kind: 'builtin'; engine: UpdatableKind } | { kind: 'custom'; id: string };
@@ -64,7 +66,7 @@ function baseOf(registry: EngineRegistry, kind: EngineKind): EngineAdapter {
 type Installer = EngineAdapter & Required<Pick<EngineAdapter, 'installPlan' | 'install'>>;
 
 /** An update ready to run: resolves with the version it installed. */
-type Run = (progress: (p: UpdateProgress) => void, signal: AbortSignal) => Promise<string>;
+export type Run = (progress: (p: UpdateProgress) => void, signal: AbortSignal) => Promise<string>;
 
 function installer(a: EngineAdapter): Installer {
   if (!a.installPlan || !a.install) throw new AppError('VALIDATION', `${a.kind} cannot be installed from the app`, { params: { reason: 'update_target' } });
@@ -82,7 +84,7 @@ export class EngineUpdates {
   async labelOf(target: string): Promise<string> {
     const t = parseTarget(target);
     if (t.kind === 'custom') return (await this.custom(t.id)).name;
-    return { 'vllm-docker': 'vLLM (Docker)', 'sglang-docker': 'SGLang (Docker)', 'vllm-native': 'vLLM', 'sglang-native': 'SGLang' }[t.engine];
+    return { 'vllm-docker': 'vLLM (Docker)', 'sglang-docker': 'SGLang (Docker)', 'vllm-native': 'vLLM', 'sglang-native': 'SGLang', 'ninfer-native': 'NInfer', 'ninfer-wsl': 'NInfer (WSL)' }[t.engine];
   }
 
   async check(target: string, opts: { fetch?: boolean } = {}): Promise<EngineUpdateCheck> {
@@ -113,6 +115,10 @@ export class EngineUpdates {
   private async plan(target: string, opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> {
     const t = parseTarget(target);
     if (t.kind === 'builtin') {
+      if (t.engine === 'ninfer-native' || t.engine === 'ninfer-wsl') {
+        const ninfer = this.d.ninfer?.[t.engine];
+        return ninfer ? ninfer.plan(opts) : { check: { ...this.base(target, 'none'), state: 'none', reason: 'tools' } };
+      }
       if (t.engine === 'vllm-docker' || t.engine === 'sglang-docker') {
         const last = (await this.d.settings.get()).lastEngine;
         const kind = t.engine;

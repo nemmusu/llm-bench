@@ -3,9 +3,10 @@
 // ninfer-serve is the fake engine (../fake-engine/ninfer-cli.mjs) running as a real child process.
 //
 //   -l -v                                        distros (UTF-16LE like the real one, UTF-8 with WSL_UTF8=1)
-//   -d <distro> --exec /bin/sh -c <script> sh …  GPU Bench's probe (##gpubench-help) and prerequisite check (##home)
+//   -d <distro> --exec /bin/sh -c <script> sh …  GPU Bench's probe (##gpubench-help), prerequisite check (##home),
+//                                                update check (##nocheckout), keep / drop / restore of the build
 //   -d <distro> --exec /usr/bin/env VAR=v… [setsid] /bin/sh -c '<pid script>' sh <program> <args…>
-//                                                ninfer-serve (the fake), git clone, cmake configure / build
+//                                                ninfer-serve (the fake), git clone / pull, cmake configure / build
 //   -d <distro> --exec cat /proc/<pid>/environ   the environment of a process it started (NUL separated)
 //   -d <distro> --exec kill -TERM|-KILL [--] [-]<pid>
 //   -d <distro> --exec dd … | stat -c %s F | fincore …   cold-load eviction
@@ -14,7 +15,10 @@
 //   FAKE_WSL_STATE   state dir (config.json with what the guided build added, procs.json); default <tmp>/gpubench-fake-wsl
 //   FAKE_WSL_CONFIG  inline JSON or a file, merged over the defaults: { noWsl, distros: [{ name, default, version, state }],
 //                    home, builds: [ninfer-serve paths], checkouts: [dirs], prereqs: { git: "git version 2.43.0", … ("" = missing) },
-//                    commit, stepMs, failStage: 'clone' | 'configure' | 'build' }
+//                    commit, stepMs, failStage: 'clone' | 'configure' | 'pull' | 'build',
+//                    branch ("master", "HEAD" = detached), upstream ("origin/master", null = none),
+//                    incoming: [{ sha, title }] (to pull, newest first), ahead, dirty: [tracked files changed],
+//                    offline (the fetch fails), tools: [upgrade tools in the checkout]; prereqs.git / .cmake "" = missing }
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -48,6 +52,14 @@ const DEFAULTS = {
   },
   commit: 'e31bc99b13f517c8aae70b997b7c4a49b4dcdc5d',
   stepMs: 30,
+  branch: 'master',
+  upstream: 'origin/master',
+  incoming: [],
+  ahead: 0,
+  dirty: [],
+  offline: false,
+  tools: ['tools/upgrade_ninfer_v2_to_v3.py'],
+  kept: [],
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -127,6 +139,62 @@ function prereqs(cfg, dir) {
   return 0;
 }
 
+/** The checkout a folder is in (the folder itself or one below it), as `git rev-parse --show-toplevel`. */
+function checkoutOf(cfg, start) {
+  const d = start.startsWith('~') ? `${cfg.home}${start.slice(1)}` : start;
+  return cfg.checkouts.find((c) => d === c || d.startsWith(`${c}/`));
+}
+
+/** GPU Bench's update check: "##key value" lines, as the real script prints them (`fetch` "1": git fetch first). */
+function updateCheck(cfg, start, fetch) {
+  if (cfg.prereqs.git === '') {
+    out('##nogit\n');
+    return 0;
+  }
+  const dir = checkoutOf(cfg, start);
+  if (!dir) {
+    out('##nocheckout\n');
+    return 0;
+  }
+  const lines = [`##dir ${dir}`];
+  if (fetch === '1') lines.push(...(cfg.offline ? ['##fetched no', '##fetcherr fatal: unable to access https://github.com/Neroued/ninfer.git/'] : ['##fetched yes']));
+  lines.push(`##head ${cfg.commit}`, `##branch ${cfg.branch}`, `##upstream ${cfg.upstream ?? ''}`);
+  if (cfg.upstream) lines.push(`##latest ${cfg.incoming[0]?.sha ?? cfg.commit}`, `##counts ${cfg.ahead}\t${cfg.incoming.length}`);
+  for (const c of cfg.upstream ? cfg.incoming : []) lines.push(`##commit ${c.sha} ${c.title}`);
+  for (const f of cfg.dirty) lines.push(`##dirty  M ${f}`);
+  for (const t of cfg.tools) lines.push(`##tool ${t}`);
+  lines.push(`##cmake ${cfg.prereqs.cmake === '' ? '' : '/usr/bin/cmake'}`);
+  out(`${lines.join('\n')}\n`);
+  return 0;
+}
+
+/** cp -p <serve> <serve>.gpubench-previous; rm -f of it; mv back + git reset --hard <commit>. */
+function keep(cfg, script, args) {
+  const serve = args[3] ?? '';
+  if (script.includes('##gpubench-kept')) {
+    if (!cfg.builds.includes(serve)) {
+      err(`cp: cannot stat '${serve}': No such file or directory\n`);
+      return 1;
+    }
+    save({ kept: [...new Set([...cfg.kept, serve])] });
+    out('##gpubench-kept\n');
+    return 0;
+  }
+  if (script.includes('##gpubench-dropped')) {
+    save({ kept: cfg.kept.filter((k) => k !== serve) });
+    out('##gpubench-dropped\n');
+    return 0;
+  }
+  // Restore: the program kept aside back, the checkout back on the commit it was on.
+  if (!cfg.kept.includes(serve)) {
+    err(`mv: cannot stat '${serve}.gpubench-previous': No such file or directory\n`);
+    return 1;
+  }
+  save({ kept: cfg.kept.filter((k) => k !== serve), commit: args[5], incoming: cfg.pulled?.incoming ?? cfg.incoming, pulled: null });
+  out('##gpubench-restored\n');
+  return 0;
+}
+
 /** A program started through the PID script: its PID first (stderr), then the program itself. */
 async function launched(cfg, distro, vars, program, args) {
   if (program.endsWith('ninfer-serve')) {
@@ -161,6 +229,17 @@ async function launched(cfg, distro, vars, program, args) {
         return 128;
       }
       save({ checkouts: [...new Set([...config().checkouts, dir])] });
+      return 0;
+    }
+    if (program === 'git' && args[2] === 'pull') {
+      await sleep(step);
+      if (cfg.failStage === 'pull' || cfg.dirty.length || cfg.ahead) {
+        err('fatal: Not possible to fast-forward, aborting.\n');
+        return 128;
+      }
+      const to = cfg.incoming[0]?.sha ?? cfg.commit;
+      out(`Updating ${cfg.commit.slice(0, 7)}..${to.slice(0, 7)}\nFast-forward\n`);
+      save({ commit: to, incoming: [], pulled: { commit: cfg.commit, incoming: cfg.incoming } });
       return 0;
     }
     if (program === 'cmake' && args[0] === '-S') {
@@ -198,6 +277,8 @@ async function exec(cfg, distro, cmd, args) {
     const script = args[1] ?? '';
     if (script.includes('##gpubench-help')) return probe(cfg, args[3] ?? '', args[4] ?? '');
     if (script.includes('##home')) return prereqs(cfg, args[3] ?? '~/ninfer');
+    if (script.includes('##nocheckout')) return updateCheck(cfg, args[3] ?? '', args[4]);
+    if (script.includes('##gpubench-kept') || script.includes('##gpubench-dropped') || script.includes('##gpubench-restored')) return keep(cfg, script, args);
     err('sh: unsupported script\n');
     return 2;
   }

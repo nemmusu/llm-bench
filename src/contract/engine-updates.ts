@@ -6,9 +6,12 @@
  * same kind, or the same tag's newer digest), 'vllm-native', 'sglang-native' (the managed uv
  * environment, against PyPI) and `custom:<id>` for a custom engine: its Docker image (a newer tag
  * on Docker Hub, else the same tag pulled again) or a llama.cpp fork built from a git checkout
- * (`git pull --ff-only`, then `cmake --build`). Anything else is updated with its own tools.
+ * (`git pull --ff-only`, then `cmake --build`); 'ninfer-native' / 'ninfer-wsl', NInfer's git checkout
+ * (on Linux, or inside the chosen WSL distro), the same way, its previous build kept aside until the
+ * new one is built. Anything else is updated with its own tools.
  */
 import { z } from 'zod';
+import { ninferArtifactUpgradeSchema } from './ninfer';
 
 /** How an engine is updated from the app. */
 export const ENGINE_UPDATE_METHODS = ['docker-tag', 'docker-pull', 'uv', 'git', 'none'] as const;
@@ -73,11 +76,19 @@ export const engineUpdateCheckSchema = z.object({
   detail: z.string().optional(),
   /** When the remote was last asked (ISO). */
   checkedAt: z.string(),
+  /** git: the new commits, newest first (up to 20): short hash and title. */
+  log: z.array(z.object({ sha: z.string(), title: z.string() })).optional(),
+  /** What puts the previous build back if the rebuild fails (shown with the commands). */
+  restore: z.array(z.array(z.string())).optional(),
+  /** Where the commands run when it is not this system (NInfer: the WSL distro). */
+  distro: z.string().optional(),
+  /** NInfer: the container version this build reads, and the library artifacts older than it (NInfer's upgrade tool). */
+  ninfer: z.object({ containerVersion: z.number().int(), artifacts: z.array(ninferArtifactUpgradeSchema) }).optional(),
 });
 export type EngineUpdateCheck = z.infer<typeof engineUpdateCheckSchema>;
 
 /** Built-in engines with an update check. */
-export const UPDATABLE_KINDS = ['vllm-docker', 'sglang-docker', 'vllm-native', 'sglang-native'] as const;
+export const UPDATABLE_KINDS = ['vllm-docker', 'sglang-docker', 'vllm-native', 'sglang-native', 'ninfer-native', 'ninfer-wsl'] as const;
 export type UpdatableKind = (typeof UPDATABLE_KINDS)[number];
 
 export const customUpdateTarget = (id: string): string => `custom:${id}`;

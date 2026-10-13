@@ -22,8 +22,19 @@ export interface TextSample {
 
 export const DEFAULT_TEXT_SCALE: TextScale = { charsPerToken: CHARS_PER_TOKEN, overhead: 0 };
 
-/** Prompt lengths (tokens, at the default scale) of the two calibration requests. */
+/** Prompt lengths (tokens, at the default scale) of the two calibration requests, at most. */
 export const CALIBRATION_TOKENS = [256, 2048] as const;
+
+/**
+ * The calibration lengths for a scenario whose longest prompt is `longest` tokens: never longer than
+ * what the scenario itself sends (its prompts were fitted to the launch's context), two different
+ * lengths when there is room for them.
+ */
+export function calibrationLengths(longest: number): number[] {
+  const hi = Math.max(1, Math.min(CALIBRATION_TOKENS[1], longest));
+  const lo = Math.min(CALIBRATION_TOKENS[0], Math.floor(hi / 4));
+  return lo > 0 ? [lo, hi] : [hi];
+}
 
 /** A prompt is "the length asked" within max(2 %, 16 tokens). */
 export function closeEnough(reported: number, wanted: number): boolean {

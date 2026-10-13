@@ -17,10 +17,9 @@
  */
 import type { LaunchParams, NinferKvDtype, NinferSpec } from '../../contract/engines';
 import type { NinferManifest } from '../../contract/formats';
-import { ninferFamilyOf, ninferFit } from '../../contract/ninfer';
+import { NINFER_MAX_CONCURRENCY, ninferFamilyOf, ninferFit } from '../../contract/ninfer';
 import type { TuneBudget, TuneKvType } from '../../contract/results';
 import { ninferArtifactInfo } from '../engines/ninfer/adapter';
-import { NINFER_MAX_CONCURRENCY } from '../engines/ninfer/args';
 import type { ModelTarget } from '../engines/types';
 import { keptParams } from './tune-space';
 import type { Dimension, TuneExpect, TunerInput, TuneSpace } from './tuner';

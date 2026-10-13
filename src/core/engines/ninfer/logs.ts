@@ -19,7 +19,7 @@ import { AppError } from '../../../contract/errors';
 import type { KvCapacity } from '../../../contract/results';
 import type { ExitInfo } from '../../deps';
 import { missingLibrary } from '../../process/missing-library';
-import type { LoadUpdate } from '../shared/load-progress';
+import type { LoadProgress } from '../../../contract/events';
 
 /** "2026-09-28 12:32:52.531  INFO  msg" → "msg" (lines without the prefix are kept as they are). */
 export function ninferMessage(line: string): string {
@@ -35,6 +35,9 @@ export function sizeMiB(text: string): number | undefined {
   const m = /([\d.]+)\s*(B|KiB|MiB|GiB)\b/.exec(text);
   return m ? Math.round(Number(m[1]) * (UNITS[m[2] as string] as number) * 100) / 100 : undefined;
 }
+
+/** What one log line says about the start (shared/load-progress.ts LoadUpdate; typed here so the two modules do not import each other). */
+type LoadUpdate = Omit<LoadProgress, 'elapsedMs' | 'expectedMs'>;
 
 /** What one stderr line says about the start (core/engines/shared/load-progress.ts for base 'ninfer'). */
 export function ninferProgress(line: string): LoadUpdate | undefined {

@@ -365,7 +365,7 @@ export const it = {
     },
     slow_shared_filesystem: {
       title: 'Il modello era su una cartella lenta',
-      body: 'Docker leggeva il modello da una cartella di Windows: il caricamento passa da una condivisione lenta. Copia il modello nello spazio di Docker da Motori.',
+      body: 'Il motore (Docker o WSL) leggeva il modello da una cartella di Windows: il caricamento passa da una condivisione lenta. In Motori trovi come tenerlo nel suo spazio.',
       action: 'Apri Motori',
     },
     energy_unavailable: {
@@ -695,7 +695,7 @@ export const it = {
     },
     slow_shared_filesystem: {
       title: 'Il modello è su una cartella lenta',
-      body: 'Docker leggerà il modello da una cartella di Windows: il caricamento a freddo sarà più lento del reale.',
+      body: 'Il motore (Docker o WSL) leggerà il modello da una cartella di Windows: il caricamento a freddo sarà più lento del reale.',
     },
     flag_unsupported: {
       title: 'Il motore non conosce alcune impostazioni',
@@ -1174,8 +1174,8 @@ export const it = {
       'sglang-native': 'SGLang installato sul sistema (solo Linux).',
       external: 'Un server già acceso, compatibile OpenAI.',
       command: 'Un tuo programma con API OpenAI: GPU Bench lo avvia e lo ferma.',
-      'ninfer-native': 'Il più veloce per Qwen 3.6 e 3.8, solo su RTX 5090 (Linux).',
-      'ninfer-wsl': 'Il più veloce per Qwen 3.6 e 3.8, solo su RTX 5090: gira dentro WSL.',
+      'ninfer-native': 'Fatto apposta per Qwen 3.6 e 3.8, solo su RTX 5090 (Linux).',
+      'ninfer-wsl': 'Fatto apposta per Qwen 3.6 e 3.8, solo su RTX 5090: gira dentro WSL.',
     },
     profiles: {
       quick: 'Rapido',
@@ -2955,6 +2955,12 @@ export const it = {
       progress: 'Aggiornamento di {name}',
       done: 'Aggiornato a {version}',
       doneNoVersion: 'Aggiornato',
+      more: 'e altri {n}',
+      inDistro: 'Tutto succede dentro {distro}, solo in questa cartella.',
+      restore: 'Per tornare com’era',
+      restoreNote: 'Se la compilazione non riesce rimetto com’era: il programma di adesso torna al suo posto e la cartella torna al commit di prima.',
+      restored: 'La compilazione non è riuscita: ho rimesso la versione di prima ({commit}), funziona come prima.',
+      notRestored: 'Non sono riuscito a rimettere la versione di prima: ricompila il motore.',
       confirmTitle: 'Aggiornare {name}?',
       commands: 'Comandi che eseguo',
       confirm: {
@@ -3255,7 +3261,7 @@ export const it = {
   ninfer: {
     title: 'NInfer',
     badge: 'solo RTX 5090 · Linux / WSL',
-    desc: 'Il motore più veloce per Qwen 3.6 e 3.8, fatto apposta per una sola RTX 5090. Legge i modelli in formato .ninfer.',
+    desc: 'Un motore fatto apposta per Qwen 3.6 e 3.8 su una sola RTX 5090. Legge i modelli in formato .ninfer.',
     status: {
       ready: 'Pronto',
       notConfigured: 'Da configurare',
@@ -3303,7 +3309,7 @@ export const it = {
       whereWsl: 'dentro {distro}',
       whereLinux: 'su questo PC',
       folder: 'Cartella',
-      folderHint: 'Un percorso Linux. Se lì c’è già una copia di NInfer, la compilo senza riscaricarla.',
+      folderHint: 'Un percorso Linux, per esempio ~/ninfer.',
       check: 'Controlla',
       prereqs: 'Cosa serve',
       tools: {
@@ -3320,6 +3326,7 @@ export const it = {
       needs: 'Serve {version} o più recente',
       aptTitle: 'Prima installa quello che manca',
       aptBody: 'Apri un terminale {where} ed esegui:',
+      aptLabel: 'Comando da copiare',
       cuda: 'Il toolkit CUDA (13.1) si installa dal sito di NVIDIA: quello di Ubuntu è troppo vecchio per la RTX 5090.',
       commands: 'Comandi che eseguirò',
       confirmNote: 'Eseguo esattamente questi comandi {where}. Ci vogliono alcuni minuti.',
@@ -3327,6 +3334,14 @@ export const it = {
       existing: 'In questa cartella c’è già NInfer: lo compilo senza riscaricarlo.',
       running: 'Compilazione di NInfer',
       done: 'NInfer è pronto: {path}',
+    },
+    artifacts: {
+      title: 'Modelli da aggiornare',
+      body: 'Questo NInfer legge il formato v{needs}: i modelli qui sotto sono più vecchi. NInfer ha uno strumento che li converte in un file nuovo (serve Python 3.11): eseguilo {where}.',
+      item: '{name}: formato v{version}',
+      command: 'Comando da copiare',
+      noTool: 'Per questo passaggio NInfer non ha uno strumento: segui la sua guida.',
+      doc: 'Come si aggiorna un modello',
     },
     spec: {
       mtp: 'MTP {n}',

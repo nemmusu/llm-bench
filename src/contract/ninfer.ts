@@ -318,23 +318,42 @@ export function ninferPresetOf(params: Pick<LaunchParams, 'contextSize' | 'paral
 
 const sortKeys = (o: object): [string, unknown][] => Object.entries(o).filter(([, v]) => v !== undefined).sort(([a], [b]) => (a < b ? -1 : 1));
 
-/** NInfer settings as their flags, for labels and comparisons ("--kv-dtype int8 --kv-capacity 131072 --spec mtp …"). */
-export function ninferParamsText(n: NinferParams | undefined): string {
-  if (!n) return '';
+/** Draft tokens when the settings name a speculative backend without a count (NInfer README: MTP 3, DFlash 7). */
+export const NINFER_DEFAULT_DRAFT_TOKENS: Record<Exclude<NinferSpec, 'off'>, number> = { mtp: 3, dflash: 7, dflash2: 7 };
+/** --max-concurrency range (1..8). */
+export const NINFER_MAX_CONCURRENCY = 8;
+
+/**
+ * NInfer's own settings as ninfer-serve flags, in launch order (docs/serving.md "Server options"):
+ * --kv-capacity, --kv-dtype, --spec/--draft-tokens/--lm-head-draft, --vision, then prefix reuse
+ * (--no-prefix-reuse, else the context-cache slots: NInfer refuses them together, so without prefix
+ * reuse they are left out) and thinking. Context and concurrency are LaunchParams of their own.
+ */
+export function ninferFlags(n: NinferParams | undefined): string[] {
+  if (!n) return [];
   const out: string[] = [];
-  if (n.kvCapacity !== undefined) out.push(`--kv-capacity ${n.kvCapacity}`);
-  if (n.kvDtype !== undefined) out.push(`--kv-dtype ${n.kvDtype}`);
-  if (n.spec !== undefined && n.spec !== 'off') out.push(`--spec ${n.spec}`);
-  if (n.draftTokens !== undefined && n.spec !== undefined && n.spec !== 'off') out.push(`--draft-tokens ${n.draftTokens}`);
-  if (n.lmHeadDraft === true) out.push('--lm-head-draft');
+  if (n.kvCapacity !== undefined) out.push('--kv-capacity', String(n.kvCapacity));
+  if (n.kvDtype !== undefined) out.push('--kv-dtype', n.kvDtype);
+  const spec = n.spec ?? 'off';
+  if (spec !== 'off') {
+    out.push('--spec', spec, '--draft-tokens', String(n.draftTokens ?? NINFER_DEFAULT_DRAFT_TOKENS[spec]));
+    if (n.lmHeadDraft === true) out.push('--lm-head-draft');
+  }
   if (n.vision === true) out.push('--vision');
   if (n.prefixReuse === false) out.push('--no-prefix-reuse');
-  if (n.deviceStateSlots !== undefined) out.push(`--device-state-slots ${n.deviceStateSlots}`);
-  if (n.hostStateSlots !== undefined) out.push(`--host-state-slots ${n.hostStateSlots}`);
-  if (n.hostKvMib !== undefined) out.push(`--host-kv-mib ${n.hostKvMib}`);
+  else {
+    if (n.deviceStateSlots !== undefined) out.push('--device-state-slots', String(n.deviceStateSlots));
+    if (n.hostStateSlots !== undefined) out.push('--host-state-slots', String(n.hostStateSlots));
+    if (n.hostKvMib !== undefined) out.push('--host-kv-mib', String(n.hostKvMib));
+  }
   if (n.thinking === false) out.push('--no-thinking');
   if (n.preserveThinking === true) out.push('--preserve-thinking');
-  return out.join(' ');
+  return out;
+}
+
+/** NInfer settings as their flags, for labels and comparisons ("--kv-capacity 131072 --kv-dtype int8 --spec mtp …"). */
+export function ninferParamsText(n: NinferParams | undefined): string {
+  return ninferFlags(n).join(' ');
 }
 
 // ---- routes --------------------------------------------------------------------------------------
@@ -403,8 +422,28 @@ export const ninferBuildPlanSchema = z.object({
 });
 export type NinferBuildPlan = z.infer<typeof ninferBuildPlanSchema>;
 
-/** Build steps (engine.install stage), in order. */
-export const NINFER_BUILD_STAGES = ['clone', 'configure', 'build'] as const;
+/** Build steps (engine.install stage), in order; an update (contract/engine-updates.ts) pulls, then builds. */
+export const NINFER_BUILD_STAGES = ['clone', 'configure', 'git-pull', 'build'] as const;
+
+// ---- updates (the "Aggiorna" of contract/engine-updates.ts, targets 'ninfer-native' / 'ninfer-wsl') ----
+
+/** How to bring an older artifact to the container version a newer NInfer reads (NInfer's docs). */
+export const NINFER_UPGRADE_DOC = 'https://github.com/Neroued/ninfer/blob/master/docs/weight-conversion.md#upgrade-an-existing-v2-artifact';
+
+/** A library artifact older than the container version this build reads. */
+export const ninferArtifactUpgradeSchema = z.object({
+  /** Library id and name of the model. */
+  id: z.string(),
+  name: z.string(),
+  /** The .ninfer file, on this PC. */
+  file: z.string(),
+  /** Its container version, and the one this build reads. */
+  version: z.number().int(),
+  needs: z.number().int(),
+  /** NInfer's own upgrade tool, ready to copy (run from its checkout), when it has one for this step. */
+  command: z.string().optional(),
+});
+export type NinferArtifactUpgrade = z.infer<typeof ninferArtifactUpgradeSchema>;
 
 /** settings.ninfer: where NInfer's build is, per kind (Engines page). */
 export const ninferSettingsSchema = z.object({

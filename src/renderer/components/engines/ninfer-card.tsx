@@ -18,6 +18,8 @@ import { Skeleton } from '../ui/skeleton';
 import type { StatusDotProps } from '../ui/status-dot';
 import { EngineCard } from './engine-card';
 import { NinferBuildDialog } from './ninfer-build-dialog';
+import { EngineUpdatePanel } from './engine-update';
+import { NinferArtifacts } from './ninfer-artifacts';
 import { presetTitle } from './ninfer-format';
 
 type Tone = StatusDotProps['tone'];
@@ -51,9 +53,11 @@ export function NinferCard() {
           {t('ninfer.badge')}
         </Badge>
       }
-      status={engines.isPending ? { tone: 'neutral', text: t('common.loading') } : ninferStatus(status, t)}
+      status={engines.isPending || kind === undefined ? { tone: 'neutral', text: t('common.loading') } : ninferStatus(status, t)}
     >
-      {kind === undefined || status?.supported === false ? (
+      {kind === undefined ? (
+        <Skeleton className="h-24" />
+      ) : kind === null || status?.supported === false ? (
         <p className="text-sm text-fg-2">{t('ninfer.unsupportedBody')}</p>
       ) : (
         <NinferSetup kind={kind} status={status} />
@@ -82,9 +86,9 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
   const configured = savedPath !== undefined && !editing;
 
   const cfgOf = (p: string): EngineConfig => ({ kind, ninferPath: p, ...(wsl && chosenDistro ? { wslDistro: chosenDistro } : {}) });
+  // The button is enabled only with a path.
   const use = () => {
     const p = path.trim();
-    if (!p) return;
     check.mutate(cfgOf(p), {
       onSuccess: (s) => {
         if (!s.installed) return;
@@ -94,7 +98,8 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
       },
     });
   };
-  const recheck = () => savedPath !== undefined && check.mutate({ kind, ninferPath: savedPath, ...(savedDistro ? { wslDistro: savedDistro } : {}) });
+  // Shown only for a saved build.
+  const recheck = () => check.mutate({ kind, ninferPath: savedPath as string, ...(savedDistro ? { wslDistro: savedDistro } : {}) });
   // The check's own answer (a path not saved yet), else the saved build's status.
   const shown = check.data ?? status;
   const presets = ninferPresetsFor({ name: 'qwen3.8-27b' });
@@ -132,6 +137,14 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
               {t('ninfer.where.change')}
             </Button>
           </div>
+          <div className="border-t border-border pt-3">
+            <EngineUpdatePanel
+              target={kind}
+              name={t(`benchmark.engines.${kind}`)}
+              enabled={status?.installed === true}
+              extra={(c) => <NinferArtifacts check={c} where={wsl ? t('ninfer.build.whereWsl', { distro: savedDistro as string }) : t('ninfer.build.whereLinux')} />}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -158,16 +171,16 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
               }
             </Field>
           )}
-          <div className="flex items-end gap-2">
-            <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')} className="flex-1">
-              {({ id, describedBy }) => (
-                <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="font-mono" spellCheck={false} />
-              )}
-            </Field>
-            <Button className="mb-5" variant="primary" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
-              {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
-            </Button>
-          </div>
+          <Field label={t('ninfer.where.label')} hint={t('ninfer.where.hint')}>
+            {({ id, describedBy }) => (
+              <div className="flex gap-2">
+                <Input id={id} aria-describedby={describedBy} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('ninfer.where.placeholder')} className="min-w-0 flex-1 font-mono" spellCheck={false} />
+                <Button variant="primary" className="shrink-0" onClick={use} disabled={check.isPending || !path.trim() || (wsl && !chosenDistro)}>
+                  {check.isPending ? t('ninfer.where.checking') : t('ninfer.where.check')}
+                </Button>
+              </div>
+            )}
+          </Field>
           {check.data && !check.data.installed && (
             <NinferProblem status={check.data} fallback={path} />
           )}
@@ -202,17 +215,17 @@ const KNOWN_PROBLEMS = ['ninfer_not_found', 'distro_missing', 'wsl_missing'] as 
 type KnownProblem = (typeof KNOWN_PROBLEMS)[number];
 
 /** Why NInfer cannot be used, in its own words (a wrong path, a distro that is gone), else the error catalog's. */
-export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback?: string | undefined }) {
+export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback: string }) {
   const { t } = useI18n();
   const reason = status.problemParams?.reason;
   if (typeof reason === 'string' && (KNOWN_PROBLEMS as readonly string[]).includes(reason)) {
     const r = reason as KnownProblem;
-    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback ?? ''), distro: String(status.problemParams?.distro ?? '') };
+    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback), distro: String(status.problemParams?.distro ?? '') };
     return (
       <Callout tone="danger" title={t(`ninfer.problems.${r}.title`, params)}>
         {t(`ninfer.problems.${r}.body`, params)}
       </Callout>
     );
   }
-  return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_NOT_INSTALLED', message: status.location ?? fallback ?? '', ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
+  return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_NOT_INSTALLED', message: status.location ?? fallback, ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
 }

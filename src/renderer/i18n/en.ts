@@ -364,7 +364,7 @@ export const en: Messages = {
     },
     slow_shared_filesystem: {
       title: 'The model was on a slow folder',
-      body: 'Docker was reading the model from a Windows folder: loading goes through a slow share. Copy the model into Docker storage from Engines.',
+      body: 'The engine (Docker or WSL) was reading the model from a Windows folder: loading goes through a slow share. Engines shows how to keep it in its own storage.',
       action: 'Open Engines',
     },
     energy_unavailable: {
@@ -694,7 +694,7 @@ export const en: Messages = {
     },
     slow_shared_filesystem: {
       title: 'The model is on a slow folder',
-      body: 'Docker will read the model from a Windows folder: the cold load will be slower than it really is.',
+      body: 'The engine (Docker or WSL) will read the model from a Windows folder: the cold load will be slower than it really is.',
     },
     flag_unsupported: {
       title: 'The engine does not know some settings',
@@ -1173,8 +1173,8 @@ export const en: Messages = {
       'sglang-native': 'SGLang installed on the system (Linux only).',
       external: 'A server already running, OpenAI compatible.',
       command: 'Your own program with an OpenAI API: GPU Bench starts and stops it.',
-      'ninfer-native': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
-      'ninfer-wsl': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
+      'ninfer-native': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
+      'ninfer-wsl': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
     },
     profiles: {
       quick: 'Quick',
@@ -2954,6 +2954,12 @@ export const en: Messages = {
       progress: 'Updating {name}',
       done: 'Updated to {version}',
       doneNoVersion: 'Updated',
+      more: 'and {n} more',
+      inDistro: 'Everything happens inside {distro}, only in this folder.',
+      restore: 'To put things back',
+      restoreNote: 'If the build fails I put things back: the current program returns to its place and the folder goes back to the previous commit.',
+      restored: 'The build failed: the previous version ({commit}) is back in place and works as before.',
+      notRestored: 'I could not put the previous version back: rebuild the engine.',
       confirmTitle: 'Update {name}?',
       commands: 'Commands I will run',
       confirm: {
@@ -3254,7 +3260,7 @@ export const en: Messages = {
   ninfer: {
     title: 'NInfer',
     badge: 'RTX 5090 only · Linux / WSL',
-    desc: 'The fastest engine for Qwen 3.6 and 3.8, made for a single RTX 5090. It reads models in the .ninfer format.',
+    desc: 'An engine made for Qwen 3.6 and 3.8 on a single RTX 5090. It reads models in the .ninfer format.',
     status: {
       ready: 'Ready',
       notConfigured: 'To set up',
@@ -3302,7 +3308,7 @@ export const en: Messages = {
       whereWsl: 'inside {distro}',
       whereLinux: 'on this PC',
       folder: 'Folder',
-      folderHint: 'A Linux path. If a copy of NInfer is already there, I build it without downloading it again.',
+      folderHint: 'A Linux path, for example ~/ninfer.',
       check: 'Check',
       prereqs: 'What is needed',
       tools: {
@@ -3319,6 +3325,7 @@ export const en: Messages = {
       needs: 'Needs {version} or newer',
       aptTitle: 'First install what is missing',
       aptBody: 'Open a terminal {where} and run:',
+      aptLabel: 'Command to copy',
       cuda: 'The CUDA toolkit (13.1) comes from NVIDIA’s site: Ubuntu’s own is too old for the RTX 5090.',
       commands: 'Commands I will run',
       confirmNote: 'I run exactly these commands {where}. It takes a few minutes.',
@@ -3326,6 +3333,14 @@ export const en: Messages = {
       existing: 'NInfer is already in this folder: I build it without downloading it again.',
       running: 'Building NInfer',
       done: 'NInfer is ready: {path}',
+    },
+    artifacts: {
+      title: 'Models to upgrade',
+      body: 'This NInfer reads format v{needs}: the models below are older. NInfer has a tool that converts them into a new file (it needs Python 3.11): run it {where}.',
+      item: '{name}: format v{version}',
+      command: 'Command to copy',
+      noTool: 'NInfer has no tool for this step: follow its guide.',
+      doc: 'How to upgrade a model',
     },
     spec: {
       mtp: 'MTP {n}',

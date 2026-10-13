@@ -322,6 +322,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     settings: ctx.settings,
     gpus: async () =>
       (await ctx.telemetry.probe().catch(() => [])).map((g) => ({ name: g.name, memTotalMiB: g.memoryTotalMiB, ...(g.computeCapability ? { computeCapability: g.computeCapability } : {}) })),
+    // The library is set up below; it is only read when an update is checked.
+    models: () => modelServices?.models.list() ?? Promise.resolve([]),
   });
   // NInfer servers a crashed session left in WSL (checked by their marker); no record = WSL is not even asked.
   void ninfer.cleanupOrphans().catch((e: unknown) => deps.log.warn('NInfer WSL cleanup failed', { error: String(e) }));
@@ -353,6 +355,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     fetch: deps.fetch,
     pypi: deps.endpoints.pypi ?? 'https://pypi.org',
     clock: deps.clock,
+    ninfer: ninfer.updaters,
   });
   const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.

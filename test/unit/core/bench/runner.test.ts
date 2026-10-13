@@ -276,6 +276,22 @@ describe('BenchRunner — happy paths', () => {
     expect(s.adapter.client.requests.every((r) => r.model === 'qwen')).toBe(true);
   });
 
+  it('chat servers: text calibrated on their own counts; a prompt far from the length asked makes counts approximate', async () => {
+    const s = setup({
+      adapter: {
+        kind: 'external',
+        client: { flavor: 'openai', tokenizeUnsupported: true, promptTokensOf: (chars) => (chars < 12_000 ? Math.round(chars / 4) + 30 : Math.round(chars / 3)) },
+      },
+      telemetry: { available: false },
+    });
+    const result = await s.runner.run(
+      input({ engineConfig: { kind: 'external', baseUrl: 'http://127.0.0.1:9999' }, scenario: custom([{ kind: 'latency', promptTokens: [64, 4096], outputTokens: 4, warmup: 0, reps: 1 }]) }),
+      new AbortController().signal,
+    );
+    expect(result.notes?.some((n) => n.code === 'text_prompts_calibrated' && n.params?.overhead === 30)).toBe(true);
+    expect(result.validity).toContain('tokens_approximate');
+  });
+
   it('endpoints without /tokenize: text prompts, approximate counts, per-chunk ITL, inexact output', async () => {
     const s = setup({
       adapter: { kind: 'external', client: { flavor: 'openai', tokenizeUnsupported: true, reportTokens: false, usage: false, shortBy: 2 } },
@@ -293,7 +309,8 @@ describe('BenchRunner — happy paths', () => {
       new AbortController().signal,
     );
     expect(result.status).toBe('completed');
-    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([1024, 256, 256, 64]);
+    // One calibration request within the scenario's own longest prompt (64 tokens: 16 first), then the prompts.
+    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([64, 256, 256, 64]);
     expect(result.metrics.latency[0]?.itlPerChunk).toBe(true);
     expect(result.metrics.firstTokenAfterLoadMs).toBeGreaterThan(0);
     expect(result.metrics.concurrency).toHaveLength(1);
