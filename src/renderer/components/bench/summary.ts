@@ -107,7 +107,7 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
  */
 export function paramParts(kind: EngineKind, p: LaunchParams, blockCount: number | undefined, f: Pick<Formatters, 't' | 'integer' | 'number' | 'percent'>): string[] {
   const { t } = f;
-  // The extra arguments are shown as typed below; only the KV layout depends on them (GPU Bench adds --kv-unified unless they say otherwise).
+  // The extra arguments are shown as typed below; only the KV layout depends on them (LLM Bench adds --kv-unified unless they say otherwise).
   const layout = configParamsOf({ engineKind: kind, params: p, blockCount }).kvLayout;
   const settings = { ...configParamsOf({ engineKind: kind, params: { ...p, extraArgs: [] }, blockCount }), ...(layout ? { kvLayout: layout } : {}) };
   const parts = configParts(kind, settings, f, { allGpu: true });

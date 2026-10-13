@@ -58,7 +58,7 @@ describe('Server page', () => {
     // curl on bash, Invoke-RestMethod on PowerShell; the OpenAI SDK; the three settings for any client.
     expect(within(s).getByRole('region', { name: 'Da terminale' }).textContent).toContain('Invoke-RestMethod http://127.0.0.1:8080/v1/chat/completions');
     await userEvent.click(within(s).getByRole('radio', { name: 'Python (OpenAI)' }));
-    expect(within(s).getByRole('region', { name: 'Python (OpenAI)' }).textContent).toContain('OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="gpu-bench"');
+    expect(within(s).getByRole('region', { name: 'Python (OpenAI)' }).textContent).toContain('OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="llm-bench"');
     await userEvent.click(within(s).getByRole('radio', { name: 'Altri programmi' }));
     expect(within(s).getByText(/Chiave API: nessuna: lascia vuoto o scrivi qualsiasi testo/)).toBeTruthy();
     await userEvent.click(within(s).getByRole('button', { name: 'Copia le impostazioni' }));
@@ -227,10 +227,10 @@ describe('Server page: presets and notices', () => {
     expect(within(second).getByText('Porta automatica')).toBeTruthy();
     expect(within(second).getByText('Rete locale')).toBeTruthy();
     // Auto-start, on and off.
-    expect(within(first).getByRole('switch', { name: 'Avvia Chat veloce all’apertura di GPU Bench' }).getAttribute('data-state')).toBe('checked');
-    await userEvent.click(within(second).getByRole('switch', { name: 'Avvia Rete all’apertura di GPU Bench' }));
-    await waitFor(() => expect(success).toHaveBeenCalledWith('«Rete» partirà all’apertura di GPU Bench'));
-    await userEvent.click(within(first).getByRole('switch', { name: 'Avvia Chat veloce all’apertura di GPU Bench' }));
+    expect(within(first).getByRole('switch', { name: 'Avvia Chat veloce all’apertura di LLM Bench' }).getAttribute('data-state')).toBe('checked');
+    await userEvent.click(within(second).getByRole('switch', { name: 'Avvia Rete all’apertura di LLM Bench' }));
+    await waitFor(() => expect(success).toHaveBeenCalledWith('«Rete» partirà all’apertura di LLM Bench'));
+    await userEvent.click(within(first).getByRole('switch', { name: 'Avvia Chat veloce all’apertura di LLM Bench' }));
     await waitFor(() => expect(success).toHaveBeenCalledWith('«Chat veloce» non partirà più da solo'));
     // Start: then it is running and cannot start again.
     await userEvent.click(within(first).getByRole('button', { name: 'Avvia il preset Chat veloce' }));
@@ -274,7 +274,7 @@ describe('Server page: presets and notices', () => {
     expect(within(await card('Server Bonsai 4B sulla porta 8091')).getByText('llama.cpp · PrismML fork')).toBeTruthy();
     expect(await screen.findByText('qwen3-8b model · Q4_K_M · llama.cpp · PrismML fork')).toBeTruthy();
     expect(screen.getByText('qwen3-8b model · Q4_K_M · Programma con API OpenAI · Il mio server')).toBeTruthy();
-    await userEvent.click(screen.getByRole('switch', { name: 'Avvia Bonsai all’apertura di GPU Bench' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Avvia Bonsai all’apertura di LLM Bench' }));
     await waitFor(() => expect(error).toHaveBeenCalledWith('Alcuni valori non sono validi'));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia il preset Bonsai' }));
     await waitFor(() => expect(error).toHaveBeenCalledWith('Modello non trovato'));
@@ -292,11 +292,11 @@ describe('Server page: presets and notices', () => {
     const notice: ServerNotice = { id: 'n1', kind: 'autostart-failed', presetId: 'p1', name: 'Chat veloce', error: { code: 'MODEL_NOT_FOUND', message: 'gone' }, at: '2026-10-13T10:00:00.000Z' };
     api.world.notices = [notice, { ...notice, id: 'n2', kind: 'tray-start-failed', name: 'Rete' }];
     renderApp('/servers', api);
-    expect(await screen.findByText('«Chat veloce» non è partito all’apertura di GPU Bench')).toBeTruthy();
+    expect(await screen.findByText('«Chat veloce» non è partito all’apertura di LLM Bench')).toBeTruthy();
     expect(screen.getByText('«Rete» non è partito dall’area di notifica')).toBeTruthy();
     expect(screen.getAllByText(/Modello non trovato\. Il file potrebbe essere stato spostato/)).toHaveLength(2);
     await userEvent.click(screen.getAllByRole('button', { name: 'Ho capito' })[0]!);
-    await waitFor(() => expect(screen.queryByText('«Chat veloce» non è partito all’apertura di GPU Bench')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('«Chat veloce» non è partito all’apertura di LLM Bench')).toBeNull());
     // The core could not forget it (gone already, core restarting): the list is read again all the same.
     api.world.routes['DELETE /api/servers/notices/n2'] = () => {
       throw apiError('INTERNAL');

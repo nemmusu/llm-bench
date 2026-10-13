@@ -15,6 +15,10 @@ import type { CacheEvictor, EvictResult } from './evictor';
  *  - The app reads the outcome from Get-ScheduledTaskInfo (LastRunTime / LastTaskResult).
  */
 
+/**
+ * The task's folder keeps the app's old name (GPU Bench, before 0.4.0): tasks registered by older
+ * versions keep working and are found and removed by this one. The UI names only the task.
+ */
 export const TASK_FOLDER = '\\GPU Bench\\';
 export const TASK_NAME = 'PurgeStandby';
 

@@ -1,6 +1,6 @@
 /**
  * Step 4 of "Avvia un server": the port (stable, so other programs find it again) and, as an advanced
- * option, the local network: every network card and GPU Bench's API key, with a clear warning.
+ * option, the local network: every network card and LLM Bench's API key, with a clear warning.
  */
 import { Eye, EyeOff, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';

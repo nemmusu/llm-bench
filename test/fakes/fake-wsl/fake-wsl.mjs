@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Fake `wsl.exe` for tests: the subset GPU Bench's NInfer support calls, with a pretend distro whose
+// Fake `wsl.exe` for tests: the subset LLM Bench's NInfer support calls, with a pretend distro whose
 // ninfer-serve is the fake engine (../fake-engine/ninfer-cli.mjs) running as a real child process.
 //
 //   -l -v                                        distros (UTF-16LE like the real one, UTF-8 with WSL_UTF8=1)
-//   -d <distro> --exec /bin/sh -c <script> sh …  GPU Bench's probe (##gpubench-help), prerequisite check (##home),
+//   -d <distro> --exec /bin/sh -c <script> sh …  LLM Bench's probe (##gpubench-help), prerequisite check (##home),
 //                                                update check (##nocheckout), keep / drop / restore of the build
 //   -d <distro> --exec /usr/bin/env VAR=v… [setsid] /bin/sh -c '<pid script>' sh <program> <args…>
 //                                                ninfer-serve (the fake), git clone / pull, cmake configure / build
@@ -118,7 +118,7 @@ function list(cfg) {
   return 0;
 }
 
-/** GPU Bench's probe: the help (exit code after it) and the checkout's commit. */
+/** LLM Bench's probe: the help (exit code after it) and the checkout's commit. */
 function probe(cfg, serve, repo) {
   if (cfg.builds.includes(serve)) {
     out(readFileSync(new URL('../../fixtures/ninfer/help.stdout.txt', import.meta.url), 'utf8'));
@@ -145,7 +145,7 @@ function checkoutOf(cfg, start) {
   return cfg.checkouts.find((c) => d === c || d.startsWith(`${c}/`));
 }
 
-/** GPU Bench's update check: "##key value" lines, as the real script prints them (`fetch` "1": git fetch first). */
+/** LLM Bench's update check: "##key value" lines, as the real script prints them (`fetch` "1": git fetch first). */
 function updateCheck(cfg, start, fetch) {
   if (cfg.prereqs.git === '') {
     out('##nogit\n');
@@ -211,7 +211,7 @@ async function launched(cfg, distro, vars, program, args) {
     setProc(child.pid, undefined);
     return code;
   }
-  // Build steps run in this process: its PID is the one GPU Bench may stop.
+  // Build steps run in this process: its PID is the one LLM Bench may stop.
   err(`gpubench-pid ${process.pid}\n`);
   setProc(process.pid, { distro, env: Object.entries(vars).map(([k, v]) => `${k}=${v}`) });
   try {

@@ -26,7 +26,7 @@ const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.tr
 
 /**
  * "I tuoi preset" of the Server page: a model, an engine, its settings and extra arguments, a port,
- * network access and "Avvia all'apertura di GPU Bench", saved in settings.serverPresets.
+ * network access and "Avvia all'apertura di LLM Bench", saved in settings.serverPresets.
  */
 export class ServerPresets {
   constructor(private readonly deps: ServerPresetsDeps) {}
@@ -76,7 +76,7 @@ export class ServerPresets {
     await this.deps.store.update({ serverPresets: list.filter((x) => x.id !== id) });
   }
 
-  /** The presets marked "Avvia all'apertura di GPU Bench", in the order they were saved. */
+  /** The presets marked "Avvia all'apertura di LLM Bench", in the order they were saved. */
   async autoStart(): Promise<ServerPreset[]> {
     return (await this.list()).filter((p) => p.autoStart);
   }
@@ -89,7 +89,7 @@ export class ServerPresets {
     // An external endpoint is already running somewhere else: there is nothing to start.
     if (engineBaseOf(data.engine.kind) === 'external' && data.engine.kind !== 'command') throw invalid('external');
     if (!data.model.localId && !data.model.repo) throw invalid('model_required');
-    // A command template is the user's own program: GPU Bench cannot add the API key to it.
+    // A command template is the user's own program: LLM Bench cannot add the API key to it.
     if (data.network === 'lan' && data.engine.kind === 'command') throw invalid('lan_unsupported');
     return data;
   }

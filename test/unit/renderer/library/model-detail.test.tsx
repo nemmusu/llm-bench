@@ -157,10 +157,10 @@ describe('model page', () => {
     expect(await screen.findByText('Modello non trovato su Hugging Face')).toBeTruthy();
     missing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
-    expect(await screen.findByText('In questo repository non ci sono file di modello che GPU Bench sa usare.')).toBeTruthy();
+    expect(await screen.findByText('In questo repository non ci sono file di modello che LLM Bench sa usare.')).toBeTruthy();
   });
 
-  it('a format whose choices are all gone, and a repo of formats GPU Bench does not run', async () => {
+  it('a format whose choices are all gone, and a repo of formats LLM Bench does not run', async () => {
     const api = libApi(world({ related: [], search: [hubModel('org/Model-GGUF', { formats: [], otherFormats: ['MLX'] })] }));
     api.on('POST /api/models/hub/*/*/fit', () => ({ choices: [], facts: {} }));
     renderLib(PAGE, api);

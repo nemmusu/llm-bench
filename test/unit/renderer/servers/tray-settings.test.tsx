@@ -31,8 +31,8 @@ describe('tray settings', () => {
     await waitFor(() => expect(api.settings.closeBehavior).toBe('quit'));
     await userEvent.click(screen.getByRole('radio', { name: 'Resta sempre nell’area di notifica' }));
     await waitFor(() => expect(api.settings.closeBehavior).toBe('tray'));
-    const login = screen.getByRole('switch', { name: 'Avvia GPU Bench all’accesso' });
-    expect(screen.getByText('Parte nell’area di notifica, con i preset segnati «Avvia all’apertura di GPU Bench».')).toBeTruthy();
+    const login = screen.getByRole('switch', { name: 'Avvia LLM Bench all’accesso' });
+    expect(screen.getByText('Parte nell’area di notifica, con i preset segnati «Avvia all’apertura di LLM Bench».')).toBeTruthy();
     await userEvent.click(login);
     await waitFor(() => expect(api.settings.launchAtLogin).toBe(true));
     await waitFor(() => expect(shellInfo).toHaveBeenCalled());
@@ -52,7 +52,7 @@ describe('tray settings', () => {
 
   it('in a browser: the login switch is off and says it is for the desktop app', async () => {
     renderApp('/settings', fakeApi({ onboardingDone: true }));
-    const login = await screen.findByRole('switch', { name: 'Avvia GPU Bench all’accesso' });
+    const login = await screen.findByRole('switch', { name: 'Avvia LLM Bench all’accesso' });
     expect((login as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Disponibile nell’app per desktop.')).toBeTruthy();
   });

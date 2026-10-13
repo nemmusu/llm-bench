@@ -179,7 +179,7 @@ describe('a library model’s commands', () => {
     await userEvent.clear(within(editor).getByLabelText('Pagina del modello'));
     await userEvent.type(within(editor).getByLabelText('Pagina del modello'), 'https://huggingface.co/m');
     await userEvent.type(within(editor).getByLabelText('Note'), 'Prova');
-    // Engines: GPU Bench's own and the saved custom ones.
+    // Engines: LLM Bench's own and the saved custom ones.
     const engine = within(editor).getByRole('combobox', { name: 'Motore' });
     engine.focus();
     fireEvent.keyDown(engine, { key: 'Enter' });

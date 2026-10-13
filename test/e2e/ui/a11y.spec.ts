@@ -8,7 +8,7 @@ import { currentTheme, goToHash, h1, skipWelcome } from './helpers';
  * The live run and a single result need real runs: test/e2e/journeys/bench-*.spec.ts scan them.
  */
 const SCREENS: [hash: string, heading: string | RegExp][] = [
-  ['#/welcome', 'Benvenuto in GPU Bench'],
+  ['#/welcome', 'Benvenuto in LLM Bench'],
   ['#/', 'Benchmark'],
   ['#/servers', /^Server$/],
   ['#/servers/new', 'Avvia un server'],

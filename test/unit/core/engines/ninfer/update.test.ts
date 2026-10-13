@@ -81,7 +81,7 @@ describe('updates of a native build', () => {
     const other = { ...a.local, paths: ['\\\\wsl.localhost\\Debian\\m.ninfer', manifest] };
     const wsl = updater({ out: tools, distro: 'Ubuntu', models: async () => [other] });
     expect((await wsl.u.plan()).check).toMatchObject({ distro: 'Ubuntu', ninfer: { artifacts: [{ id: 'n1', file: '\\\\wsl.localhost\\Debian\\m.ninfer', version: 2, needs: 3 }] } });
-    // A library that cannot be read: none; no tools: the container version GPU Bench knows.
+    // A library that cannot be read: none; no tools: the container version LLM Bench knows.
     expect((await updater({ out: '##dir /n\n', models: () => Promise.reject(new Error('scan')) }).u.plan()).check.ninfer).toEqual({ containerVersion: 3, artifacts: [] });
   });
 

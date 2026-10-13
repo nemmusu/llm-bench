@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { CompareTray } from '../compare/compare-tray';
 import { LibraryEvents } from '../library/library-events';
+import { AppNotices } from './app-notices';
 import { CommandPalette, usePaletteShortcut } from './command-palette';
 import { Sidebar } from './sidebar';
 import { TitleBar } from './title-bar';
@@ -85,6 +86,7 @@ export function AppShell() {
         </div>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
         <LibraryEvents />
+        <AppNotices />
       </div>
     </MotionConfig>
   );

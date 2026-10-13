@@ -116,7 +116,7 @@ describe('Motori personalizzati', () => {
     expect(within(await card('Vecchio')).getByText('Non trovo /gone/llama-server')).toBeTruthy();
     expect(within(await card('Rotto')).getByText('Non parte')).toBeTruthy();
     const st = await card('Senza porta');
-    expect(within(st).getByText('Manca --port (la porta): senza, GPU Bench non può avviarlo.')).toBeTruthy();
+    expect(within(st).getByText('Manca --port (la porta): senza, LLM Bench non può avviarlo.')).toBeTruthy();
     expect((within(st).getByRole('button', { name: 'Usa nel Benchmark' }) as HTMLButtonElement).disabled).toBe(true);
     const m = await card('Il mio server');
     expect(within(m).getByText('Programma trovato: /usr/bin/srv')).toBeTruthy();
@@ -186,7 +186,7 @@ describe('Motori personalizzati', () => {
     expect(await within(dialog).findByText('Scrivi il comando.')).toBeTruthy();
     await userEvent.type(within(dialog).getByLabelText('Comando che avvia il server'), 'srv --model {{model}');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Avanti' }));
-    expect(within(dialog).getByText('Manca {port}: GPU Bench deve dire al programma su quale porta rispondere.')).toBeTruthy();
+    expect(within(dialog).getByText('Manca {port}: LLM Bench deve dire al programma su quale porta rispondere.')).toBeTruthy();
     await userEvent.type(within(dialog).getByLabelText('Comando che avvia il server'), ' --port {{port}');
     await userEvent.click(within(dialog).getByRole('radio', { name: 'Chat (/v1/chat/completions)' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Prova' }));
@@ -305,14 +305,14 @@ describe('Motori personalizzati: the check in words, the dialog on Linux, errors
 
   it('the check: every option known, a setting it has no words for, a crash without a reason, a program found', () => {
     renderUi(<CheckView check={customCheck({ flagCount: 300, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
-    expect(screen.getByText('300 opzioni lette dal suo --help · Conosce tutte le impostazioni che GPU Bench usa.')).toBeTruthy();
+    expect(screen.getByText('300 opzioni lette dal suo --help · Conosce tutte le impostazioni che LLM Bench usa.')).toBeTruthy();
     renderUi(<CheckView check={customCheck({ missing: [{ flag: '--x', setting: 'weird', effect: 'default' }] })} baseLabel="llama.cpp" run={nativeRun} />);
     expect(screen.getByText('Non conosce --x (weird): userò il suo valore predefinito.')).toBeTruthy();
     renderUi(<CheckView check={customCheck({ status: down({}), flagCount: 0, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
     renderUi(<CheckView check={customCheck({ status: down({ problems: ['ENGINE_EXITED'], problemParams: { code: '1' }, location: '/p' }), flagCount: 0, missing: [] })} baseLabel="llama.cpp" run={nativeRun} />);
     expect(screen.getByText('Il motore non è partito')).toBeTruthy();
     expect(screen.getByText('Il motore si è chiuso all’improvviso')).toBeTruthy();
-    // A reason in GPU Bench's own words that names no path.
+    // A reason in LLM Bench's own words that names no path.
     renderUi(<CheckView check={customCheck({ status: down({ problems: ['ENGINE_NOT_INSTALLED'], problemParams: { reason: 'command_missing' } }), flagCount: 0, missing: [] })} baseLabel="x" run={nativeRun} />);
     expect(screen.getByText('Manca il comando.')).toBeTruthy();
     renderUi(

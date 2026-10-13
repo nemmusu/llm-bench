@@ -3,7 +3,7 @@ import { launchParamsSchema, type LaunchParams, type NinferParams } from '../../
 import type { NinferPreset, NinferPresetId } from '../../../contract/ninfer';
 import type { Formatters } from '../../i18n';
 
-/** The user's pick: a built-in preset, the settings of the result a preset came from ('run'), or GPU Bench's own choice. */
+/** The user's pick: a built-in preset, the settings of the result a preset came from ('run'), or LLM Bench's own choice. */
 export type NinferChoice = NinferPresetId | 'run' | 'auto';
 
 /** What a choice sets on the launch: context, users and NInfer's own settings. */

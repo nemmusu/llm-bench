@@ -139,7 +139,7 @@ function FormatSection({ format, hint, fit, children }: { format: ModelFormat; h
   );
 }
 
-/** Files of formats GPU Bench cannot run: listed by format and folder, never downloaded as a model. */
+/** Files of formats LLM Bench cannot run: listed by format and folder, never downloaded as a model. */
 function OtherFormats({ groups }: { groups: RepoLayout<HubFile>['other'] }) {
   const { t, bytes } = useI18n();
   return (

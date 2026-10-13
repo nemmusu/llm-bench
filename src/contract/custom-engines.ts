@@ -6,7 +6,7 @@
  * adapter with its own executable, image or Python, plus its extra arguments and environment. The
  * standard flags its `--help` does not list are left out of its commands, and said so
  * (CustomEngineCheck.missing, run note 'flag_unsupported'). An 'openai-server' engine is a command
- * template GPU Bench starts and stops (kind 'command'), measured like an external endpoint.
+ * template LLM Bench starts and stops (kind 'command'), measured like an external endpoint.
  *
  *   GET    /api/engines/custom                -> CustomEngineInfo[] (every saved engine, its kind and check)
  *   POST   /api/engines/custom                (CustomEngineDraft) -> CustomEngine (id from its name)
@@ -24,7 +24,7 @@ export const CUSTOM_ENGINE_BASES = ['llamacpp', 'vllm', 'sglang', 'openai-server
 export const customEngineBaseSchema = z.enum(CUSTOM_ENGINE_BASES);
 export type CustomEngineBase = z.infer<typeof customEngineBaseSchema>;
 
-/** Placeholders of a command template; {port} is required (GPU Bench picks a free port). */
+/** Placeholders of a command template; {port} is required (LLM Bench picks a free port). */
 export const COMMAND_PLACEHOLDERS = ['model', 'modelDir', 'port', 'host', 'ctx', 'alias'] as const;
 export type CommandPlaceholder = (typeof COMMAND_PLACEHOLDERS)[number];
 
@@ -44,7 +44,7 @@ export const customEngineRunSchema = z.discriminatedUnion('mode', [
 export type CustomEngineRun = z.infer<typeof customEngineRunSchema>;
 
 /**
- * "Usa per questi modelli": GPU Bench proposes the engine (a suggestion the user can change) for a
+ * "Usa per questi modelli": LLM Bench proposes the engine (a suggestion the user can change) for a
  * model whose repo, file or name contains one of `names` (plain text, any case; "/regex/" for a
  * regular expression), or whose quantization is one of `quants` (PQ2_0, PTQ1_0…).
  */
@@ -136,7 +136,7 @@ export function customEngineConfigOf(e: Pick<CustomEngine, 'id' | 'base' | 'run'
   return { kind: customEngineKindOf(e), customEngineId: e.id };
 }
 
-/** Bases a kind can be a fork of ('external' has none: it is not started by GPU Bench). */
+/** Bases a kind can be a fork of ('external' has none: it is not started by LLM Bench). */
 export function customBaseOfKind(kind: EngineKind): CustomEngineBase | undefined {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
   if (kind === 'vllm-native' || kind === 'vllm-docker') return 'vllm';
@@ -260,7 +260,7 @@ export function matchesModel(match: ModelMatch | undefined, model: MatchableMode
   return tokens.some((t) => quants.has(t));
 }
 
-/** The first saved engine whose rules match the model: GPU Bench's suggestion. */
+/** The first saved engine whose rules match the model: LLM Bench's suggestion. */
 export function customEngineForModel<E extends Pick<CustomEngine, 'match'>>(engines: readonly E[], model: MatchableModel): E | undefined {
   return engines.find((e) => matchesModel(e.match, model));
 }
@@ -290,21 +290,21 @@ export function templateForModel(model: MatchableModel): CustomEngineTemplate | 
 
 // ---- checks --------------------------------------------------------------------------------------
 
-/** A GPU Bench setting whose flag the engine does not list in its --help. */
+/** A LLM Bench setting whose flag the engine does not list in its --help. */
 export const missingFlagSchema = z.object({
-  /** The flag GPU Bench would pass ("-ub", "--chunked-prefill-size"). */
+  /** The flag LLM Bench would pass ("-ub", "--chunked-prefill-size"). */
   flag: z.string(),
   /** The launch setting it carries (LaunchParams key, or 'alias' / 'noWebui' / 'fit'…), for the message. */
   setting: z.string(),
   /**
-   * 'default': left out, the engine's own default applies. 'required': GPU Bench cannot run the
+   * 'default': left out, the engine's own default applies. 'required': LLM Bench cannot run the
    * engine without it (-m, --port…): the engine cannot be used.
    */
   effect: z.enum(['default', 'required']),
 });
 export type MissingFlag = z.infer<typeof missingFlagSchema>;
 
-/** "Prova": does it run (version), which options its --help lists, which GPU Bench settings it lacks. */
+/** "Prova": does it run (version), which options its --help lists, which LLM Bench settings it lacks. */
 export const customEngineCheckSchema = z.object({
   kind: engineKindSchema,
   status: engineStatusSchema,

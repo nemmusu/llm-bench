@@ -15,10 +15,12 @@ import type {
 } from 'electron';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import type { AppNotice } from '../contract/app-notices';
 import { shellStateSchema, type ShellState as CoreState } from '../contract/servers';
-import { APP_NAME } from './app-name';
+import { APP_NAME, LEGACY_APP_NAME } from './app-name';
 import { closeAction, shouldExplainHide, startupWindow } from './close-behavior';
-import { HIDDEN_ARG, loginItemEnabled, setLoginItem, type LoginItemHost } from './login-item';
+import { HIDDEN_ARG, loginItemEnabled, migrateLegacyLoginItem, setLoginItem, type LoginItemHost } from './login-item';
+import { addAppNotices, finishLegacyMove, moveLegacyData, movedNotice, type LegacyAsyncFs, type LegacyMove, type LegacySyncFs } from './migrate';
 import { findCommand, menuLines, trayMenu, trayStatus, trayTooltip, type TrayCommand, type TrayItem, type TrayStatus } from './tray-menu';
 import { trayAvailable, type RunCommand } from './tray-support';
 import { trayText, type TrayLang, type TrayTextKey } from './tray-text';
@@ -26,7 +28,7 @@ import { trayText, type TrayLang, type TrayTextKey } from './tray-text';
 /**
  * Electron main: only the shell. It starts the core as a utility process, opens the window on the
  * core's loopback URL, offers the few native things the renderer cannot do (dialogs, secrets), and
- * keeps GPU Bench in the tray while servers run (tray menu, close-to-tray, start at login).
+ * keeps LLM Bench in the tray while servers run (tray menu, close-to-tray, start at login).
  * Electron and the host process are injected (index.ts passes the real ones) so this is unit-testable.
  */
 
@@ -96,11 +98,16 @@ export interface ShellHost {
   expose(name: string, value: unknown): void;
   /** Grace period before the core is killed at quit (default 4 s, 20 s while servers run). */
   shutdownTimeoutMs?: number;
+  /**
+   * Taking over GPU Bench's data (migrate.ts): node:fs itself (sync and promises), the host name and
+   * process.kill. Absent: no migration.
+   */
+  legacy?: { sync: LegacySyncFs; async: LegacyAsyncFs; hostname: string; kill(pid: number, signal: 0): unknown };
 }
 
 export const TITLEBAR_HEIGHT = 40;
 export const MAX_SAVE_BYTES = 64 * 1024 * 1024;
-/** Time the core gets to stop our servers (containers included) when GPU Bench quits with servers running. */
+/** Time the core gets to stop our servers (containers included) when LLM Bench quits with servers running. */
 export const SHUTDOWN_WITH_SERVERS_MS = 20_000;
 export const SHUTDOWN_MS = 4000;
 
@@ -163,6 +170,13 @@ export interface ShellState {
 export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   const { app } = e;
   if (h.env.GPUBENCH_USER_DATA) app.setPath('userData', h.env.GPUBENCH_USER_DATA);
+  // GPU Bench's folder sits next to ours; tests name one (GPUBENCH_LEGACY_USER_DATA) or have none.
+  const legacyDir = h.env.GPUBENCH_LEGACY_USER_DATA || (h.env.GPUBENCH_USER_DATA ? undefined : path.join(path.dirname(app.getPath('userData')), LEGACY_APP_NAME));
+  // First thing, before the lock file and Chromium's own files land in the new folder (migrate.ts).
+  const move: LegacyMove =
+    h.legacy && legacyDir
+      ? moveLegacyData({ platform: h.platform, userData: app.getPath('userData'), legacy: legacyDir, fs: h.legacy.sync, hostname: h.legacy.hostname, kill: h.legacy.kill })
+      : { kind: 'none' };
   const s: ShellState = {
     token: randomBytes(24).toString('base64url'),
     corePort: 0,
@@ -186,6 +200,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   const appIcon = () => path.join(resources(), 'icons', 'icon.png');
   const lang = (): TrayLang => s.app?.language ?? 'it';
   const t = (k: TrayTextKey, p?: Record<string, string | number>) => trayText(lang(), k, p);
+  const warn = (msg: string) => h.write('stderr', Buffer.from(`${msg}\n`));
 
   /**
    * Secrets are encrypted whenever the OS offers it; Linux without a keyring falls back to a key
@@ -193,11 +208,19 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
    */
   const secureStorage = () => e.safeStorage.isEncryptionAvailable() && !(h.platform === 'linux' && e.safeStorage.getSelectedStorageBackend() === 'basic_text');
 
-  async function readSecret(file: string): Promise<string | undefined> {
+  /**
+   * A saved secret. One that is there but cannot be decrypted any more (Linux: the keyring entry
+   * follows the app's name, so after the rename) is removed, and the window asks for it again.
+   */
+  async function readSecret(file: string, secret: 'hf-token' | 'server-api-key', notices: AppNotice[]): Promise<string | undefined> {
+    const buf = await h.fs.readFile(file).catch(() => undefined);
+    if (buf === undefined) return undefined;
+    if (!e.safeStorage.isEncryptionAvailable()) return buf.toString('utf8');
     try {
-      const buf = await h.fs.readFile(file);
-      return e.safeStorage.isEncryptionAvailable() ? e.safeStorage.decryptString(buf) : buf.toString('utf8');
+      return e.safeStorage.decryptString(buf);
     } catch {
+      await h.fs.rm(file, { force: true }).catch((err: unknown) => warn(`unreadable secret not removed: ${String(err)}`));
+      notices.push({ id: `secret-unreadable:${secret}`, kind: 'secret-unreadable', secret, renamed: move.kind !== 'none' });
       return undefined;
     }
   }
@@ -280,9 +303,10 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     fs: h.fs,
     getLoginItemSettings: (o) => app.getLoginItemSettings(o),
     setLoginItemSettings: (o) => app.setLoginItemSettings(o),
+    run: h.run,
   };
 
-  /** "Avvia GPU Bench all'accesso": the OS entry follows the setting (only touched when they differ). */
+  /** "Avvia LLM Bench all'accesso": the OS entry follows the setting (only touched when they differ). */
   async function syncLoginItem(wanted: boolean): Promise<void> {
     if (s.loginWanted === wanted) return;
     s.loginWanted = wanted;
@@ -312,7 +336,8 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     }
   }
 
-  function startCore(): Promise<number> {
+  /** Starts the core; once it is ready it gets the saved secrets (read before: they may have been unreadable). */
+  function startCore(secrets: { token: string | undefined; key: string | undefined }): Promise<number> {
     return new Promise((resolve, reject) => {
       const proc = e.utilityProcess.fork(path.join(h.dirname, '../core/index.cjs'), [], {
         serviceName: `${APP_NAME} Core`,
@@ -331,11 +356,9 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       proc.on('message', (msg: { type?: string; port?: number } | null) => {
         if (msg?.type === 'ready' && typeof msg.port === 'number') {
           // The saved secrets first, then the presets marked "Avvia all'apertura" (they may need the key).
-          void Promise.all([readSecret(tokenFile()), readSecret(serverKeyFile())]).then(([token, key]) => {
-            proc.postMessage({ type: 'hf-token', token: token ?? null });
-            if (key) proc.postMessage({ type: 'server-api-key', key, storage: secureStorage() ? 'encrypted' : 'plain' });
-            proc.postMessage({ type: 'autostart' });
-          });
+          proc.postMessage({ type: 'hf-token', token: secrets.token ?? null });
+          if (secrets.key) proc.postMessage({ type: 'server-api-key', key: secrets.key, storage: secureStorage() ? 'encrypted' : 'plain' });
+          proc.postMessage({ type: 'autostart' });
           resolve(msg.port);
         } else onCoreMessage(msg);
       });
@@ -384,7 +407,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       if (/^https:\/\//.test(url)) void e.shell.openExternal(url);
       return { action: 'deny' };
     });
-    // Closing the window while a server runs keeps GPU Bench in the tray ("Alla chiusura della finestra").
+    // Closing the window while a server runs keeps LLM Bench in the tray ("Alla chiusura della finestra").
     win.on('close', (ev) => {
       const servers = s.app?.servers.length ?? 0;
       const action = closeAction({ quitting: s.quitting, behavior: s.app?.closeBehavior ?? 'tray-if-servers', servers, tray: s.tray !== undefined });
@@ -494,12 +517,12 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   }
 
   if (!app.requestSingleInstanceLock()) {
-    // Another GPU Bench is already open: it gets focused (second-instance) and this one leaves.
+    // Another LLM Bench is already open: it gets focused (second-instance) and this one leaves.
     app.quit();
     return s;
   }
 
-  // Launching GPU Bench again brings the window back, from the tray too.
+  // Launching LLM Bench again brings the window back, from the tray too.
   app.on('second-instance', showWindow);
 
   if (h.env.GPUBENCH_TEST_HOOKS === '1') exposeTestHooks();
@@ -517,8 +540,17 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       (): { hideNoticeShown?: unknown } => ({}),
     );
     const hasTray = trayAvailable({ platform: h.platform, env: h.env, run: h.run });
+    // GPU Bench's data taken over: the copy (when its folder could not be renamed), the paths that
+    // follow it and the start at login, before the core reads any of it; the window says it once.
+    const notices: AppNotice[] = [];
+    if (move.kind !== 'none') {
+      notices.push(movedNotice(move, await finishLegacyMove({ platform: h.platform, fs: (h.legacy as NonNullable<ShellHost['legacy']>).async, warn }, move)));
+      await migrateLegacyLoginItem(loginHost).catch((err: unknown) => warn(`login item not moved: ${String(err)}`));
+    }
+    const secrets = { token: await readSecret(tokenFile(), 'hf-token', notices), key: await readSecret(serverKeyFile(), 'server-api-key', notices) };
+    await addAppNotices(h.fs, dataDir(), notices).catch((err: unknown) => warn(`notices not saved: ${String(err)}`));
     try {
-      s.corePort = await startCore();
+      s.corePort = await startCore(secrets);
     } catch (err) {
       // startCore() only rejects with an Error (the core exited before saying it was ready).
       e.dialog.showErrorBox(APP_NAME, `Impossibile avviare ${APP_NAME}: ${(err as Error).message}`);

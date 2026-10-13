@@ -40,7 +40,7 @@ type Step = (typeof STEPS)[number];
 const STEP_FIELDS: Record<Step, readonly FormField[]> = { kind: [], where: ['name', 'path', 'image', 'template'], options: ['extraArgs', 'env', 'names'] };
 
 /**
- * "Aggiungi motore": what kind of engine, where it is (with "Prova": its version and the GPU Bench
+ * "Aggiungi motore": what kind of engine, where it is (with "Prova": its version and the LLM Bench
  * settings it does not know), then the optional extra arguments, environment and model rules.
  */
 export function CustomEngineDialog(p: CustomEngineDialogProps) {

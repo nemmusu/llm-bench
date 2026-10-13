@@ -285,6 +285,7 @@ function thisHostId() {
   } catch {
     // The core falls back to the host name too.
   }
+  // The app's host id (sysinfo/fingerprint.ts): the salt keeps the old name on purpose.
   return createHash('sha256').update(`gpu-bench:${(machineId ?? os.hostname()).trim().toLowerCase()}`).digest('hex');
 }
 
@@ -296,7 +297,7 @@ function thisHostId() {
 /** The fake engine stands in for every custom engine (GPUBENCH_LLAMA_LAUNCHER runs it with node). */
 const FAKE_ENGINE_CLI = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
 /** A fork in a real git checkout two commits behind its upstream (made by fakeWorld). */
-const GIT_FORK_DIR = path.join(os.tmpdir(), 'gpubench-mockups-gitfork');
+const GIT_FORK_DIR = path.join(os.tmpdir(), 'llmbench-mockups-gitfork');
 const GIT_FORK_EXE = path.join(GIT_FORK_DIR, 'prism', 'build', 'bin', 'llama-server.mjs');
 const UPDATE_SETTINGS = {
   lastEngine: { kind: 'sglang-docker', image: 'lmsysorg/sglang:v0.5.20' },
@@ -306,7 +307,7 @@ const UPDATE_SETTINGS = {
 /** The checkout of GIT_FORK_DIR: upstream two commits ahead, already fetched; its build folder ignored by git. */
 function makeGitFork() {
   rmSync(GIT_FORK_DIR, { recursive: true, force: true });
-  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=GPU Bench', '-c', 'user.email=mockups@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...a], { cwd, stdio: 'pipe' });
+  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=LLM Bench', '-c', 'user.email=mockups@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...a], { cwd, stdio: 'pipe' });
   const upstream = path.join(GIT_FORK_DIR, 'upstream');
   mkdirSync(upstream, { recursive: true });
   git(upstream, 'init', '-q');
@@ -363,15 +364,15 @@ const SCREENS = [
   // Before the live run below installs llama.cpp: the server confirmation lists its install too.
   { n: 17, name: 'serve-confirm', route: '/', wait: 'Pronto a misurare', act: openServeConfirm, small: true },
   { n: 3, name: 'run', route: 'LIVE', wait: 'Test in corso', settle: 2500 },
-  { n: 4, name: 'result', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', small: true },
+  { n: 4, name: 'result', route: `/results/${RESULT_ID}`, wait: 'Punteggio LLM Bench', small: true },
   { n: 5, name: 'benchmark-expert', route: '/', wait: 'Pronto a misurare', settings: { expertMode: true }, full: true },
-  { n: 6, name: 'result-launch', route: `/results/${RESULT_ID}`, wait: 'Punteggio GPU Bench', tab: 'Come è stato avviato' },
+  { n: 6, name: 'result-launch', route: `/results/${RESULT_ID}`, wait: 'Punteggio LLM Bench', tab: 'Come è stato avviato' },
   { n: 7, name: 'model-picker', route: '/', wait: 'Pronto a misurare', click: { role: 'button', name: /Cambia modello/ } },
   { n: 8, name: 'results', route: '/results', wait: 'Risultati' },
   { n: 9, name: 'monitor', route: '/monitor', wait: 'Monitor GPU', settle: 900 },
   { n: 10, name: 'settings', route: '/settings', wait: 'Impostazioni' },
   { n: 11, name: 'palette', route: '/', wait: 'Avvia benchmark', keys: 'Control+K' },
-  { n: 12, name: 'result-en', route: `/results/${RESULT_ID}`, wait: 'GPU Bench score', settings: { language: 'en' } },
+  { n: 12, name: 'result-en', route: `/results/${RESULT_ID}`, wait: 'LLM Bench score', settings: { language: 'en' } },
   // An older two-run link (?a=&b=): the same comparison as ?ids=.
   { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Chi va più veloce', small: true, full: true, after: forgetPicks },
   { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
@@ -454,7 +455,7 @@ async function confirmForkUpdate(page) {
 /** The custom engines section, scrolled into view once every check has answered. */
 async function showCustomEngines(page) {
   const section = page.getByRole('region', { name: 'Motori personalizzati' }).or(page.locator('section[aria-labelledby="custom-engines-title"]'));
-  await page.getByText('Questo motore non conosce alcune impostazioni di GPU Bench').first().waitFor({ timeout: 30000 });
+  await page.getByText('Questo motore non conosce alcune impostazioni di LLM Bench').first().waitFor({ timeout: 30000 });
   // Their update notes come last: the page is in its final layout once they are there.
   await page.getByText('Aggiorna questo motore con i suoi strumenti.').first().waitFor({ timeout: 30000 });
   await section.first().scrollIntoViewIfNeeded();
@@ -520,7 +521,7 @@ async function openSheetHtml(page) {
   await page.getByRole('dialog').getByRole('radio', { name: /Pagina HTML/ }).click();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Salva la scheda' }).click();
-  const file = path.join(os.tmpdir(), `gpubench-mockup-sheet-${process.pid}.html`);
+  const file = path.join(os.tmpdir(), `llmbench-mockup-sheet-${process.pid}.html`);
   await (await download).saveAs(file);
   await page.goto(pathToFileURL(file).href);
   await page.getByText('Il contesto si legge una volta sola').first().waitFor({ timeout: 10000 });
@@ -656,7 +657,7 @@ async function fakeWorld(dataDir) {
         pipelineTag: 'text-generation',
         baseModel: 'Qwen/Qwen3-4B',
         tags: ['gguf', 'text-generation'],
-        readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nQwen3 4B quantized for llama.cpp. The **reference** model of the GPU Bench score.\n',
+        readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nQwen3 4B quantized for llama.cpp. The **reference** model of the LLM Bench score.\n',
         files: [{ path: REFERENCE.file, gguf: { ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 192 * 1024 } }],
       },
     ],
@@ -681,7 +682,7 @@ async function fakeWorld(dataDir) {
   // Every format in the library: a safetensors model for vLLM / SGLang, a download stopped at 1 of 4
   // files (the NInfer artifact comes from seedNinfer; the Bonsai quant below shows the fork badge). In a
   // folder added by the user (after the library: the Benchmark page keeps its usual first model), each repo
-  // folder with GPU Bench's download sidecar, as when another install's library is added.
+  // folder with LLM Bench's download sidecar, as when another install's library is added.
   const lib = path.join(dataDir, 'more-models');
   const sidecar = (dir, repo) => writeFileSync(path.join(dir, '.gpubench-download.json'), JSON.stringify({ repo, files: {} }));
   const st = path.join(lib, 'Qwen', 'Qwen3-8B-FP8');
@@ -1317,7 +1318,7 @@ async function shoot(page, file, { full } = {}) {
 async function main() {
   if (!args.has('--no-build')) execFileSync(process.execPath, [path.join(root, 'scripts/build.mjs')], { stdio: 'inherit', cwd: root });
   mkdirSync(outDir, { recursive: true });
-  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'gpubench-mockups-'));
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'llmbench-mockups-'));
   const world = await fakeWorld(dataDir);
   const { proc, info } = await startCore(dataDir, world.env);
   const browser = await chromium.launch();

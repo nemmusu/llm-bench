@@ -116,7 +116,7 @@ export function createApp(ctx: CoreContext, opts: AppOptions): Hono {
   app.all('/api/*', (c) => c.json({ error: { code: 'VALIDATION', message: 'Unknown API route' } }, 404));
 
   app.get('*', async (c) => {
-    if (!ctx.deps.paths.uiDir) return c.text('GPU Bench core (API only)', 200);
+    if (!ctx.deps.paths.uiDir) return c.text('LLM Bench core (API only)', 200);
     return serveStatic(ctx.deps.paths.uiDir, new URL(c.req.url).pathname);
   });
 

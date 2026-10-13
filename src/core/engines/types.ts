@@ -82,7 +82,7 @@ export interface PlanOptions {
    */
   apiName?: string;
   /**
-   * Options the engine's --help lists, when the caller knows them (a fork's check): GPU Bench's own
+   * Options the engine's --help lists, when the caller knows them (a fork's check): LLM Bench's own
    * flags the build lacks are left out and listed in LaunchPlan.unsupported. llama.cpp adapters read
    * them from their own probe; undefined elsewhere = pass everything.
    */
@@ -95,7 +95,7 @@ export interface PlanOptions {
  */
 export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string> };
 
-/** The model name a GPU Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
+/** The model name a LLM Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
 export function serverApiName(kind: EngineKind, model: ModelTarget): string {
   const base = engineBaseOf(kind);
   const repoNamed = base === 'vllm' || base === 'sglang';
@@ -135,7 +135,7 @@ export interface LaunchPlan {
   marker: string;
   /** Preview only: parts of argv that are placeholders until an install/download (see PlanOptions.preview). */
   pending?: PendingPart[];
-  /** GPU Bench flags the build does not know: left out of argv (the engine's default applies). */
+  /** LLM Bench flags the build does not know: left out of argv (the engine's default applies). */
   unsupported?: MissingFlag[];
   /**
    * The API key the engine was started with (a server shared on the local network, servers/lan.ts):

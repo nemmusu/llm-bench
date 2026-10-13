@@ -72,9 +72,10 @@ export function toolOverride(v: string | undefined): string[] | undefined {
   return [v];
 }
 
+/** Data folder of the standalone core (browser mode); inside Electron the main process passes its userData. */
 export function defaultDataDir(platform: string, env: NodeJS.ProcessEnv, home: string): string {
-  if (platform === 'win32') return path.join(env.APPDATA ?? path.join(home, 'AppData', 'Roaming'), 'GPU Bench');
-  return path.join(env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'gpu-bench');
+  if (platform === 'win32') return path.join(env.APPDATA ?? path.join(home, 'AppData', 'Roaming'), 'LLM Bench');
+  return path.join(env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'llm-bench');
 }
 
 /** Real dependencies of the core, configured from the environment (tests override endpoints and tools). */
@@ -92,7 +93,9 @@ export function buildDeps(b: BootEnv): CoreDeps {
       cacheDir: path.join(dataDir, 'cache'),
       enginesDir: path.join(dataDir, 'engines'),
       resultsDir: path.join(dataDir, 'results'),
-      modelsDir: env.GPUBENCH_MODELS_DIR ?? path.join(b.home, 'GPU Bench', 'models'),
+      modelsDir: env.GPUBENCH_MODELS_DIR ?? path.join(b.home, 'LLM Bench', 'models'),
+      // GPU Bench's default (the name before 0.4.0): kept as the models folder while it is the one in use (models/legacy-dir.ts).
+      ...(env.GPUBENCH_MODELS_DIR ? {} : { legacyModelsDir: path.join(b.home, 'GPU Bench', 'models') }),
       resourcesDir: env.GPUBENCH_RESOURCES_DIR ?? path.resolve(b.dirname, '../../resources'),
       uiDir: env.GPUBENCH_UI_DIR ?? path.resolve(b.dirname, '../renderer'),
       home: b.home,

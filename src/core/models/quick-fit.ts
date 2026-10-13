@@ -40,7 +40,7 @@ function familyOf(m: Pick<HubModel, 'formats'>, format: HubFormat): Family {
  */
 export function quickFit(m: HubModel, gpu: GpuMem, format: HubFormat = 'any'): QuickFit | undefined {
   if (m.paramsB === undefined) return undefined;
-  // Only formats GPU Bench cannot run (an MLX repo): no verdict to give.
+  // Only formats LLM Bench cannot run (an MLX repo): no verdict to give.
   if (format === 'any' && m.formats.length > 0 && m.formats.every((f) => f === 'other')) return undefined;
   const family = familyOf(m, format);
   if (family === 'ninfer') {

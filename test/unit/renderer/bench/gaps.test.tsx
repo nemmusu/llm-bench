@@ -448,7 +448,7 @@ describe('results and result: odd data', () => {
     expect(screen.getByRole('table', { name: 'Sistema' }).textContent).toContain('Piano energetico–');
     await userEvent.click(screen.getByRole('tab', { name: 'Come è stato avviato' }));
     await userEvent.click(screen.getByRole('button', { name: 'Mostra comando' }));
-    expect(screen.getByText('Il server era già acceso: GPU Bench non ha avviato nessun comando.')).toBeTruthy();
+    expect(screen.getByText('Il server era già acceso: LLM Bench non ha avviato nessun comando.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Avvia solo il server così' })).toBeNull();
 
     act(() => void router.navigate({ to: '/results/$runId', params: { runId: 'dock' } }));

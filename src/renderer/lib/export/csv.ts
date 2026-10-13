@@ -5,7 +5,7 @@
  *    opens it correctly with a double click);
  *  - standard: `,` separator, decimal point, no BOM (RFC 4180).
  */
-import type { RunResult, Stat } from '../../../contract/results';
+import { RUN_APP_NAMES, type RunResult, type Stat } from '../../../contract/results';
 import { engineLabelOf, modelLabelOf } from '../../components/bench/format';
 import { noteText } from '../../components/bench/notes';
 import type { Formatters } from '../../i18n';
@@ -86,7 +86,7 @@ export function csvRows(run: RunResult, f: Pick<Formatters, 't' | 'integer' | 'n
     valueRow(info, t('results.columns.gpu'), gpu?.name),
     valueRow(info, t('result.details.driver'), gpu?.driverVersion),
     valueRow(info, t('result.details.host'), run.hardware.hostLabel),
-    valueRow(info, 'GPU Bench', run.app.version),
+    valueRow(info, RUN_APP_NAMES[run.app.name], run.app.version),
   ];
   if (run.error) rows.push(valueRow(info, t('export.csv.error'), `${run.error.code}: ${run.error.message}`));
 

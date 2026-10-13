@@ -79,7 +79,7 @@ describe('Scheda da condividere: content', () => {
     expect(glossary?.after?.[0]).toMatch(/È un’approssimazione\.$/);
     expect(row(/^Contesto riusato/)?.slice(1)).toEqual(['0%', '99,7%', 'B · Qwen3-8B-FP8: 99,7% contro 0%']);
     expect(r.sentence).toBe('Qwen3-8B-FP8 con vLLM v0.12.0 (CUDA) su RTX 5090: legge il contesto a 1.763 token/s e scrive a 31,7 token/s per conversazione (prova con 200.000 token).');
-    expect(r.footer).toMatch(/^Scheda creata il .* con GPU Bench 0\.3\.0\./);
+    expect(r.footer).toMatch(/^Scheda creata il .* con LLM Bench 0\.3\.0\./);
     expect(r.meta.at(-1)).toMatch(/^misurato il /);
   });
 
@@ -187,7 +187,7 @@ describe('Scheda da condividere: never a secret', () => {
 
   it('files: names, types, and the page itself', () => {
     const md = sheetRequest(input({ service: 'Assistente del team' }), 'markdown', it_);
-    expect(md.defaultName).toBe('gpubench_scheda_Assistente-del-team_2026-10-07.md');
+    expect(md.defaultName).toBe('llmbench_scheda_Assistente-del-team_2026-10-07.md');
     expect(md.mime).toBe('text/markdown;charset=utf-8');
     expect(md.content).toContain('# Assistente del team: ');
     expect(md.content).toContain('## Velocità e tempi di attesa');
@@ -195,7 +195,7 @@ describe('Scheda da condividere: never a secret', () => {
     expect(md.content).toContain('- **Contesto riusato**: ');
     expect(md.content).toContain('```bash');
     const html = sheetRequest(input(), 'html', en);
-    expect(html.defaultName).toMatch(/^gpubench_sheet_.*\.html$/);
+    expect(html.defaultName).toMatch(/^llmbench_sheet_.*\.html$/);
     expect(html.content).toContain('<html lang="en">');
     expect(html.content).toContain('<dt>Context reused</dt>');
     expect(html.content).toContain('<h2>The context is read only once</h2>');

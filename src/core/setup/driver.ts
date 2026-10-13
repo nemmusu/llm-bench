@@ -135,7 +135,7 @@ export interface DriverCheckResult {
   driverVersion?: string;
   cudaVersion?: string;
   cudaSource?: 'nvidia-smi' | 'table';
-  /** Lowest driver that satisfies GPU Bench and every detected GPU. */
+  /** Lowest driver that satisfies LLM Bench and every detected GPU. */
   minRequired?: string;
   /** What sets minRequired: the oldest installable llama.cpp CUDA build, or the GPU architecture. */
   reason?: 'app-minimum' | 'architecture';
@@ -166,7 +166,7 @@ export function driverCheck(input: DriverCheckInput, table: DriverRequirements =
   // macOS and others: there is no supported NVIDIA driver to point at.
   if (!os) return { state: 'missing', recommendedAction: 'none', links: [] };
 
-  // The build GPU Bench installs follows the OS the core runs on (WSL runs Linux builds) …
+  // The build LLM Bench installs follows the OS the core runs on (WSL runs Linux builds) …
   const appCuda = table.appMinimumCuda[input.platform === 'win32' ? 'win32' : 'linux'];
   // … but the driver numbering follows the driver's OS.
   let minRequired = minDriverForCuda(appCuda, os, table) as string;

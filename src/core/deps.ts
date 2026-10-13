@@ -81,6 +81,8 @@ export interface CorePaths {
   resultsDir: string;
   /** Default models folder (settings.modelsDir overrides it). */
   modelsDir: string;
+  /** The default models folder of GPU Bench (before 0.4.0), adopted while the user keeps the default (models/legacy-dir.ts). */
+  legacyModelsDir?: string;
   /** Bundled read-only resources (corpus, curated models, compat tables). */
   resourcesDir: string;
   /** Built renderer to serve (undefined = API only). */

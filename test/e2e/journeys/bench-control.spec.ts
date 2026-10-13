@@ -94,7 +94,7 @@ test('an external server (expert mode): no engine to install, loading not measur
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await expect(page.getByRole('button', { name: 'Avvia solo il server così' })).toBeHidden();
     await page.getByRole('button', { name: 'Mostra comando' }).click();
-    await expect(page.getByText('Il server era già acceso: GPU Bench non ha avviato nessun comando.')).toBeVisible();
+    await expect(page.getByText('Il server era già acceso: LLM Bench non ha avviato nessun comando.')).toBeVisible();
   } finally {
     await gb.close();
     await engine.close();

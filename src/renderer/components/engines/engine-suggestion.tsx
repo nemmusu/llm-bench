@@ -17,7 +17,7 @@ export interface EngineSuggestionProps {
 }
 
 /**
- * GPU Bench's suggestion for the chosen model, never a choice made for the user: a saved engine
+ * LLM Bench's suggestion for the chosen model, never a choice made for the user: a saved engine
  * whose rules match ("Per questo modello c'è PrismML fork · Usa"), or, when none does, the built-in
  * template the model needs ("Questo modello richiede il fork PrismML di llama.cpp · Indica dove si
  * trova · Scopri di più").

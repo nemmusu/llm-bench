@@ -70,7 +70,7 @@ describe('“Avvia solo il server”', () => {
     await screen.findAllByText('≈ 1 min 35 s');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server' }));
     expect(await screen.findByText(/Contesto 64K e cache q4_0 dal test «Trova le impostazioni migliori» del 07\/10\./)).toBeTruthy();
-    // "Scelte da GPU Bench" says the same.
+    // "Scelte da LLM Bench" says the same.
     expect(screen.getByText('Dal test «Trova le impostazioni migliori» del 07/10: contesto 64K, cache q4_0.')).toBeTruthy();
     await userEvent.click(screen.getByRole('link', { name: 'Apri il risultato' }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${TUNE_ID}`));

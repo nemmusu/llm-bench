@@ -4,11 +4,11 @@ import type { CloseBehavior } from '../contract/servers';
 export type CloseAction = 'quit' | 'hide' | 'minimize';
 
 export interface CloseInput {
-  /** GPU Bench is quitting ("Esci", the OS logging out, a test closing the app): always let the window go. */
+  /** LLM Bench is quitting ("Esci", the OS logging out, a test closing the app): always let the window go. */
   quitting: boolean;
   /** settings.closeBehavior ("Alla chiusura della finestra"). */
   behavior: CloseBehavior;
-  /** Servers GPU Bench started that are running (or starting). */
+  /** Servers LLM Bench started that are running (or starting). */
   servers: number;
   /** A tray icon is shown (some Linux desktops have no notification area). */
   tray: boolean;
@@ -24,7 +24,7 @@ export function closeAction(o: CloseInput): CloseAction {
   return o.tray ? 'hide' : 'minimize';
 }
 
-/** The one-time "GPU Bench resta attivo nell'area di notifica" notification: the first time the window hides. */
+/** The one-time "LLM Bench resta attivo nell'area di notifica" notification: the first time the window hides. */
 export function shouldExplainHide(action: CloseAction, alreadyShown: boolean): boolean {
   return action === 'hide' && !alreadyShown;
 }

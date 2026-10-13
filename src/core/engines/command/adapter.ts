@@ -1,6 +1,6 @@
 /**
  * "Programma con API OpenAI" (kind 'command'): any program that serves the OpenAI API, started from
- * the user's command template (contract/custom-engines.ts). GPU Bench fills in the placeholders,
+ * the user's command template (contract/custom-engines.ts). LLM Bench fills in the placeholders,
  * starts it, waits for /v1/models, measures it like an external endpoint (text prompts, usage
  * counts) and stops it. Only the process it started is ever stopped: it is recorded in the
  * ownership registry like every engine process, and verified by the marker in its command line

@@ -1,6 +1,6 @@
 /**
  * "Rendi raggiungibile dalla rete locale": a server bound to every network card of this PC that
- * answers only with GPU Bench's API key. Engines are started on 127.0.0.1 by default (ports.ts
+ * answers only with LLM Bench's API key. Engines are started on 127.0.0.1 by default (ports.ts
  * LOOPBACK); this turns an exact launch into its network version, whatever the engine.
  */
 import type { NetworkInterfaceInfo } from 'node:os';
@@ -46,7 +46,7 @@ export function lanUrls(addresses: readonly string[], port: number): string[] {
   return addresses.map((a) => `http://${a}:${port}/v1`);
 }
 
-/** Removes `--api-key X` / `--api-key=X` the user may have typed: the key of a network server is always GPU Bench's. */
+/** Removes `--api-key X` / `--api-key=X` the user may have typed: the key of a network server is always LLM Bench's. */
 function withoutApiKey(argv: readonly string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -64,7 +64,7 @@ function withoutApiKey(argv: readonly string[]): string[] {
  * The same launch, reachable from the local network: `--host 127.0.0.1` becomes 0.0.0.0 (native
  * engines), `-p 127.0.0.1:H:C` becomes 0.0.0.0:H:C (containers, whose engine already listens on every
  * card inside), and `--api-key <key>` is added at the end (llama.cpp, vLLM and SGLang all take it).
- * GPU Bench keeps talking to it on 127.0.0.1 (plan.host), with the key (plan.apiKey). Command
+ * LLM Bench keeps talking to it on 127.0.0.1 (plan.host), with the key (plan.apiKey). Command
  * templates are the user's own programs: they cannot be shared this way (VALIDATION 'lan_unsupported').
  */
 export function exposeOnLan(plan: LaunchPlan, apiKey: string): LaunchPlan {

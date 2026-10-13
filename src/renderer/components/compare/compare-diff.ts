@@ -1,6 +1,7 @@
 /** "Cosa cambia tra loro": every setting of the compared items side by side, the different ones marked. */
 import type { LaunchParams } from '../../../contract/engines';
 import { ninferParamsText } from '../../../contract/ninfer';
+import { runAppLabel } from '../../../contract/results';
 import type { Formatters, MessageKey } from '../../i18n';
 import { modelLabelOf, prettyVariant } from '../bench/format';
 import { engineName, type CompareItem } from './compare-model';
@@ -79,7 +80,7 @@ export function diffRows(items: readonly CompareItem[], f: Pick<Formatters, 't' 
     row('system', t('result.details.cuda'), (it) => gpu(it)?.cudaVersion ?? dash),
     row('system', t('result.details.os'), (it) => it.run.hardware.os.name),
     row('system', t('result.details.host'), (it) => it.run.hardware.hostLabel),
-    row('system', t('result.details.app'), (it) => it.run.app.version),
+    row('system', t('result.details.app'), (it) => runAppLabel(it.run.app)),
   );
   return rows;
 }

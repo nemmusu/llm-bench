@@ -28,7 +28,7 @@ export function h1(page: Page, name: string | RegExp) {
 
 /** First launch lands on the welcome wizard: skip it like a user in a hurry would. */
 export async function skipWelcome(page: Page): Promise<void> {
-  await expect(h1(page, 'Benvenuto in GPU Bench')).toBeVisible();
+  await expect(h1(page, 'Benvenuto in LLM Bench')).toBeVisible();
   await page.getByRole('button', { name: 'Salta, lo farò dopo' }).click();
   await expect(h1(page, 'Benchmark')).toBeVisible();
 }

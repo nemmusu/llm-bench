@@ -18,7 +18,7 @@ import { flaggedSummary, inferSpills, spillFactsOf, withInferredSpill, type Infe
 export const EXPORT_FORMAT = 'gpubench-export';
 export const EXPORT_VERSION = 1;
 
-/** `.gpubench` export file: a list of complete runs. */
+/** `.llmbench` export file (`.gpubench` before 0.4.0, same content): a list of complete runs. */
 export interface ExportBundle {
   format: typeof EXPORT_FORMAT;
   version: number;
@@ -342,9 +342,9 @@ export class RunsRepo {
   /** Writes the bundle's runs that are not already present (by id); invalid or newer runs are skipped. */
   async importBundle(json: unknown): Promise<{ imported: number; skipped: number }> {
     const parsed = bundleSchema.safeParse(json);
-    if (!parsed.success) throw new AppError('VALIDATION', 'Not a GPU Bench export file', { params: { reason: 'not_export' } });
+    if (!parsed.success) throw new AppError('VALIDATION', 'Not a LLM Bench export file', { params: { reason: 'not_export' } });
     if (parsed.data.version > EXPORT_VERSION) {
-      throw new AppError('VALIDATION', 'Export file from a newer GPU Bench', {
+      throw new AppError('VALIDATION', 'Export file from a newer LLM Bench', {
         params: { reason: 'export_too_new', version: parsed.data.version },
       });
     }

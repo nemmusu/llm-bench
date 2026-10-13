@@ -91,7 +91,7 @@ export function precisionFromConfig(config: unknown): Precision | undefined {
   return ({ bfloat16: 'BF16', float16: 'FP16', float32: 'FP32' } as Record<string, Precision>)[dtype];
 }
 
-/** Formats GPU Bench cannot run, by folder name or file extension. */
+/** Formats LLM Bench cannot run, by folder name or file extension. */
 const OTHER_DIRS: [RegExp, string][] = [
   [word('mlx'), 'MLX'],
   [/onnx/i, 'ONNX'],
@@ -128,7 +128,7 @@ export function otherFormatOf(path: string): string | undefined {
   return OTHER_EXTS.find(([re]) => re.test(segs.at(-1) as string))?.[1];
 }
 
-/** Hub tags of formats GPU Bench cannot run. */
+/** Hub tags of formats LLM Bench cannot run. */
 const OTHER_TAGS: Record<string, string> = { mlx: 'MLX', onnx: 'ONNX', openvino: 'OpenVINO', coreml: 'Core ML', exl2: 'EXL2', exl3: 'EXL2', tflite: 'TFLite', executorch: 'ExecuTorch', peft: 'LoRA' };
 
 /** NInfer artifact files: the model, its manifest and its checksums ("<Repo>.artifact-manifest.json", "<Repo>.SHA256SUMS"). */
@@ -219,7 +219,7 @@ export interface SafetensorsVariant<F extends RepoFile = RepoFile> {
   precision?: Precision | undefined;
 }
 
-/** Files of a format GPU Bench cannot run, or loose weights no engine here loads. */
+/** Files of a format LLM Bench cannot run, or loose weights no engine here loads. */
 export interface OtherFormatGroup<F extends RepoFile = RepoFile> {
   /** "MLX", "ONNX", "NInfer", "LoRA"… or "safetensors" for weights without a config.json. */
   format: string;

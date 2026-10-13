@@ -139,7 +139,7 @@ describe('exampleBody / buildLogExcerpt', () => {
     const lines = many.split('\n');
     expect(lines.length).toBe(LOG_EXCERPT_LINES);
     expect(lines.at(-1)).toBe('note');
-    expect(lines.at(-2)).toBe('=== gpu-bench ===');
+    expect(lines.at(-2)).toBe('=== llm-bench ===');
     const wide = buildLogExcerpt([{ label: 'a', lines: Array.from({ length: 300 }, () => 'y'.repeat(1000)) }], []);
     expect(Buffer.byteLength(wide)).toBeLessThanOrEqual(LOG_EXCERPT_BYTES);
     const huge = buildLogExcerpt([{ label: 'a', lines: ['z'.repeat(LOG_EXCERPT_BYTES * 2)] }], []);
@@ -156,7 +156,7 @@ describe('BenchRunner — happy paths', () => {
     expect(result.status).toBe('completed');
     expect(s.runs.saved).toHaveLength(1);
     expect(result.id).toBe('RUN1');
-    expect(result.app).toEqual({ name: 'gpu-bench', version: '0.1.0-test' });
+    expect(result.app).toEqual({ name: 'llm-bench', version: '0.1.0-test' });
     expect(result.metrics.load.warmMs?.values).toEqual([2000]);
     expect(result.metrics.load.coldMs).toBeUndefined();
     expect(result.metrics.load.phases.map((p) => p.name)).toEqual(['init', 'load_tensors']);

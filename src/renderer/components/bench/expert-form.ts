@@ -1,6 +1,6 @@
 /**
  * Expert mode form ⇄ LaunchParams / Scenario. Fields are kept as text while the user types;
- * an empty field means "let GPU Bench decide" (undefined), an invalid one is reported and ignored.
+ * an empty field means "let LLM Bench decide" (undefined), an invalid one is reported and ignored.
  */
 import type { LaunchParams } from '../../../contract/engines';
 import { yarnScaling } from '../../../contract/recipes';

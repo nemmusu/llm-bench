@@ -48,10 +48,10 @@ describe('local network addresses', () => {
 });
 
 describe('a launch shared on the local network', () => {
-  it('native engines: every card, GPU Bench\'s key only (the user\'s own --api-key is dropped)', () => {
+  it('native engines: every card, LLM Bench\'s key only (the user\'s own --api-key is dropped)', () => {
     const p = exposeOnLan(plan(), 'gpub-key');
     expect(p.argv).toEqual(['llama-server', '-m', 'm.gguf', '--host', LAN_HOST, '--port', '8080', '--alias', 'x', '--api-key', 'gpub-key']);
-    // GPU Bench still talks to it on 127.0.0.1, with the key.
+    // LLM Bench still talks to it on 127.0.0.1, with the key.
     expect(p.host).toBe('127.0.0.1');
     expect(p.apiKey).toBe('gpub-key');
     // Shown and stored commands never carry it.

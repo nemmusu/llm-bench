@@ -184,7 +184,7 @@ export class NvidiaSmiCli {
         continue;
       }
       if (usedMinimal) {
-        throw new AppError('DRIVER_TOO_OLD', 'nvidia-smi does not support the fields GPU Bench needs', {
+        throw new AppError('DRIVER_TOO_OLD', 'nvidia-smi does not support the fields LLM Bench needs', {
           params: { field: rejected },
           detail: tail(out.stdout + out.stderr),
         });

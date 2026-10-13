@@ -70,7 +70,7 @@ export function modelLabelOf(identity: Pick<ModelTarget['identity'], 'displayNam
 /**
  * The servers of the Server page ("Avvia un server", a preset, "Avvia il server così", the tray):
  * an engine started with the chosen or recommended settings on a stable port, left running for other
- * programs until the user stops it (or quits GPU Bench). Only servers started here are ever stopped.
+ * programs until the user stops it (or quits LLM Bench). Only servers started here are ever stopped.
  */
 export class ServeService {
   private readonly running = new Map<string, Running>();
@@ -269,7 +269,7 @@ export class ServeService {
     }
   }
 
-  /** "Avvia all'apertura di GPU Bench": every marked preset, one after the other. */
+  /** "Avvia all'apertura di LLM Bench": every marked preset, one after the other. */
   async autoStart(signal: AbortSignal): Promise<void> {
     for (const p of (await this.deps.presets?.autoStart()) ?? []) {
       if (signal.aborted) return;
@@ -302,7 +302,7 @@ export class ServeService {
     await this.settled();
   }
 
-  /** Resolves once every engine being stopped has gone (GPU Bench quitting waits for this). */
+  /** Resolves once every engine being stopped has gone (LLM Bench quitting waits for this). */
   async settled(): Promise<void> {
     while (this.stopping.size) await Promise.all([...this.stopping]);
   }

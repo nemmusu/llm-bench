@@ -3,7 +3,7 @@
  *
  * Inspired by llmfit (github.com/AlexsJones/llmfit, MIT licence, © Alex Jones): its
  * bytes-per-parameter table, KV = 2·n_kv_heads·head_dim·ctx·bytes and the 60 / 85 / 98 %
- * utilization levels. GPU Bench is more precise:
+ * utilization levels. LLM Bench is more precise:
  *  - weights are the real file bytes (all shards) when known, minus the input embeddings that
  *    llama.cpp keeps in RAM when the output tensor is separate;
  *  - the KV cache is summed per layer group from the real metadata: per-layer KV heads and head
@@ -147,7 +147,7 @@ export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
   if (p.kvCacheType !== undefined) out.kvCacheType = p.kvCacheType;
   if (p.ubatchSize !== undefined) out.ubatchSize = p.ubatchSize;
   if (p.parallel !== undefined) out.parallel = p.parallel;
-  // llama.cpp -c is the whole context: with several slots GPU Bench shares one pool (--kv-unified)
+  // llama.cpp -c is the whole context: with several slots LLM Bench shares one pool (--kv-unified)
   // unless the extra arguments split it (each slot then gets -c / slots).
   if (p.parallel !== undefined && p.parallel > 1) {
     out.kvUnified = !p.extraArgs.some((a) => a === '--no-kv-unified' || a === '-no-kvu');
@@ -384,7 +384,7 @@ export function usableMiB(gpu: Pick<GpuMem, 'totalMiB'>): number {
   return Math.max(1, gpu.totalMiB - VRAM_RESERVE_MIB);
 }
 
-/** What the card holds right now: total, free, and what other programs (not GPU Bench's engines) use. */
+/** What the card holds right now: total, free, and what other programs (not LLM Bench's engines) use. */
 function nowOf(gpu: GpuMem): Pick<FitEstimate, 'totalMiB' | 'freeNowMiB' | 'busyMiB'> {
   return { totalMiB: gpu.totalMiB, freeNowMiB: gpu.freeMiB, busyMiB: Math.max(0, gpu.totalMiB - gpu.freeMiB - (gpu.ownMiB ?? 0)) };
 }

@@ -247,7 +247,7 @@ describe('benchmark home', () => {
     expect((posted(api, '/api/runs')[0]!.body as StartRunRequest).allowSharedGpu).toBe(true);
   });
 
-  it('GPU busy when starting: other programs, or a GPU Bench server to stop first', async () => {
+  it('GPU busy when starting: other programs, or a LLM Bench server to stop first', async () => {
     const api = benchApi();
     let answer: 'memory' | 'own' | 'progress' | 'internal' | 'ok' = 'memory';
     api.world.routes['POST /api/runs'] = () => {
@@ -268,7 +268,7 @@ describe('benchmark home', () => {
 
     answer = 'own';
     await start();
-    const own = await screen.findByRole('dialog', { name: 'Un server avviato da GPU Bench sta usando la scheda video' });
+    const own = await screen.findByRole('dialog', { name: 'Un server avviato da LLM Bench sta usando la scheda video' });
     expect(within(own).getByText('Qwen · http://127.0.0.1:5000')).toBeTruthy();
     answer = 'internal';
     await userEvent.click(within(own).getByRole('button', { name: 'Ferma il server e avvia' }));

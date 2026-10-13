@@ -2,9 +2,9 @@
  * NInfer: a C++/CUDA inference engine for Qwen3.5-family models (Qwen3.6-27B, Qwen3.8-27B,
  * Qwen3.6-35B-A3B) on ONE RTX 5090 (sm_120a). It runs from its source build tree
  * (build/apps/ninfer-serve <model.ninfer> …) and serves OpenAI Chat Completions (no /v1/completions):
- * GPU Bench measures it with the chat client and text prompts.
+ * LLM Bench measures it with the chat client and text prompts.
  *
- *   ninfer-native  Linux: the ninfer-serve the user built (or GPU Bench's guided build).
+ *   ninfer-native  Linux: the ninfer-serve the user built (or LLM Bench's guided build).
  *   ninfer-wsl     Windows: the same, inside a WSL distro (wsl.exe -d <distro> --exec …). The port is
  *                  reached through WSL's localhost forwarding; models are read from the distro's own
  *                  disk (a Windows folder through /mnt/c works, but reads much more slowly).
@@ -413,7 +413,7 @@ export const ninferBuildPlanSchema = z.object({
   /** Exactly what runs, one line per step (clone, configure, build), ready to copy. */
   commands: z.array(z.string()),
   prereqs: z.array(ninferPrereqSchema),
-  /** "sudo apt install …" for what is missing: shown to copy, never run by GPU Bench. */
+  /** "sudo apt install …" for what is missing: shown to copy, never run by LLM Bench. */
   aptCommand: z.string().optional(),
   /** CUDA is missing or too old: its toolkit (13.1 validated) comes from NVIDIA's repository, not Ubuntu's. */
   cudaFromNvidia: z.boolean(),

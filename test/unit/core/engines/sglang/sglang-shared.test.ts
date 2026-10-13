@@ -128,7 +128,7 @@ describe('SGLang start log', () => {
     expect(sglangProgress('Capturing batches (bs=1): 0%|          | 0/0 [00:00<?, ?it/s]')).toEqual({ stage: 'cuda-graphs', done: 0, total: 0 });
     expect(sglangProgress('Loading safetensors checkpoint shards:   0% Completed | 0/0 [00:00<?, ?it/s]')).toEqual({ stage: 'weights', done: 0, total: 0 });
     expect(sglangProgress('nothing to see')).toBeUndefined();
-    // External endpoints and command programs say nothing GPU Bench knows.
+    // External endpoints and command programs say nothing LLM Bench knows.
     expect(parseLoadProgress('Load weight begin', 'command')).toBeUndefined();
   });
 

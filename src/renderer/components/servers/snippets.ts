@@ -41,7 +41,7 @@ export function httpSnippets(t: SnippetTarget): { bash: string; powershell: stri
 
 /** The OpenAI Python SDK (pip install openai). Without a key the SDK still wants some text. */
 export function pythonSnippet(t: SnippetTarget, noKeyComment: string): string {
-  const key = t.apiKey ? `"${t.apiKey}"` : `"gpu-bench"  # ${noKeyComment}`;
+  const key = t.apiKey ? `"${t.apiKey}"` : `"llm-bench"  # ${noKeyComment}`;
   return [
     'from openai import OpenAI',
     '',

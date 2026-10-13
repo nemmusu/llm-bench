@@ -1,6 +1,6 @@
 /**
  * Step 3 of "Avvia un server": where the settings come from.
- *  - "Le migliori dai tuoi test": GPU Bench's choice (the latest "Trova le impostazioni migliori", else
+ *  - "Le migliori dai tuoi test": LLM Bench's choice (the latest "Trova le impostazioni migliori", else
  *    the context that fits), the test a page handed over, and the Configurazioni of this model here
  *    with their numbers ("54,6 tok/s a 32K");
  *  - "I tuoi preset": the presets of this model, and an engine's built-in ones (NInfer);
@@ -34,7 +34,7 @@ export interface SettingsStepProps {
   /** "Le migliori dai tuoi test": 'auto', 'draft' or a configuration id. */
   best: string;
   onBest: (v: string) => void;
-  /** What GPU Bench would choose (the plan of the request without settings). */
+  /** What LLM Bench would choose (the plan of the request without settings). */
   autoTuned: ServerPlan['tuned'] | undefined;
   provenance: PresetProvenance | undefined;
   configs: readonly TestedConfig[];

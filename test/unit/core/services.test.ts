@@ -443,7 +443,7 @@ describe('createServices with the models module', () => {
     expect(await gpuInfo()).toEqual({ totalMiB: 32607, freeMiB: 31007 });
     ctx.telemetry.snapshot = () => Promise.resolve([{ memTotalMiB: 8192, memUsedMiB: null } as never]);
     expect(await gpuInfo()).toEqual({ totalMiB: 8192, freeMiB: 8192 });
-    // A server GPU Bench started holds memory too: in use, but not "other programs".
+    // A server LLM Bench started holds memory too: in use, but not "other programs".
     s.ownership.list = () => Promise.resolve([{ kind: 'process', pid: 42 } as never, { kind: 'container', pid: 0 } as never]);
     let reads = 0;
     ctx.telemetry.otherGpuUsers = (own) => {

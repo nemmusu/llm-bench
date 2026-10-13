@@ -74,7 +74,7 @@ function llamaProgress(line: string): LoadUpdate | undefined {
 
 /**
  * What `line` says about the start of a `kind` engine; undefined = nothing (the stage stays as it is).
- * External endpoints and command programs print nothing GPU Bench knows.
+ * External endpoints and command programs print nothing LLM Bench knows.
  */
 export function parseLoadProgress(line: string, kind: EngineKind): LoadUpdate | undefined {
   const base = engineBaseOf(kind);

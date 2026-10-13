@@ -25,7 +25,7 @@ describe('tray menu', () => {
   it('two servers and three presets, in Italian (snapshot)', () => {
     expect(menuLines(trayMenu(two, 'it'))).toMatchInlineSnapshot(`
       [
-        "Apri GPU Bench",
+        "Apri LLM Bench",
         "---",
         "Chat veloce · porta 8080",
         "Copia indirizzo",
@@ -51,7 +51,7 @@ describe('tray menu', () => {
   it('nothing running yet (or no state from the core yet), in English (snapshot)', () => {
     expect(menuLines(trayMenu(undefined, 'en'))).toMatchInlineSnapshot(`
       [
-        "Open GPU Bench",
+        "Open LLM Bench",
         "---",
         "Start preset ▸",
         "  No saved presets (x)",
@@ -69,7 +69,7 @@ describe('tray menu', () => {
 
   it('every item leads to its command, addressed by section', () => {
     const items = trayMenu(two, 'it');
-    expect(findCommand(items, ['Apri GPU Bench'])).toEqual({ kind: 'open' });
+    expect(findCommand(items, ['Apri LLM Bench'])).toEqual({ kind: 'open' });
     expect(findCommand(items, ['Chat veloce · porta 8080', 'Copia indirizzo'])).toEqual({ kind: 'copy', url: 'http://127.0.0.1:8080/v1' });
     expect(findCommand(items, ['Gemma 4 12B · porta 8081 · rete locale', 'Copia indirizzo'])).toEqual({ kind: 'copy', url: 'http://192.168.1.20:8081/v1' });
     expect(findCommand(items, ['Gemma 4 12B · porta 8081 · rete locale', 'Ferma (chiudi modello)'])).toEqual({ kind: 'stop', id: 's2' });
@@ -93,10 +93,10 @@ describe('tray menu', () => {
   });
 
   it('tooltip: the servers with their ports, cut at the Windows limit', () => {
-    expect(trayTooltip(undefined, 'it')).toBe('GPU Bench');
-    expect(trayTooltip(state({ servers: [two.servers[0]!] }), 'it')).toBe('GPU Bench · 1 server attivo: Qwen3 8B (8080)');
-    expect(trayTooltip(two, 'en')).toBe('GPU Bench · 2 servers running: Qwen3 8B (8080), Gemma 4 12B (8081)');
-    expect(trayTooltip(state({ servers: [{ ...two.servers[0]!, status: 'loading' }] }), 'it')).toBe('GPU Bench · 1 server attivo: Qwen3 8B si avvia');
+    expect(trayTooltip(undefined, 'it')).toBe('LLM Bench');
+    expect(trayTooltip(state({ servers: [two.servers[0]!] }), 'it')).toBe('LLM Bench · 1 server attivo: Qwen3 8B (8080)');
+    expect(trayTooltip(two, 'en')).toBe('LLM Bench · 2 servers running: Qwen3 8B (8080), Gemma 4 12B (8081)');
+    expect(trayTooltip(state({ servers: [{ ...two.servers[0]!, status: 'loading' }] }), 'it')).toBe('LLM Bench · 1 server attivo: Qwen3 8B si avvia');
     const many = state({ servers: Array.from({ length: 9 }, (_, i) => ({ ...two.servers[0]!, id: `s${i}`, modelName: `Modello lunghissimo ${i}`, port: 8080 + i })) });
     const tip = trayTooltip(many, 'it');
     expect(tip).toHaveLength(TOOLTIP_MAX);

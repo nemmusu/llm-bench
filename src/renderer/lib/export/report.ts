@@ -2,7 +2,7 @@
  * A run as a format-neutral document (title, facts, tables, callouts, command), already localized
  * and formatted. Markdown and HTML exports render the same model, so they always say the same.
  */
-import type { RunResult, Stat } from '../../../contract/results';
+import { runAppLabel, type RunResult, type Stat } from '../../../contract/results';
 import { engineLabelOf, modelLabelOf, MIB_PER_GB, prefillStat, shortGpuName } from '../../components/bench/format';
 import { kpisOf, sentenceKey } from '../../components/bench/kpis';
 import { noteText } from '../../components/bench/notes';
@@ -160,6 +160,6 @@ export function reportOf(run: RunResult, f: Formatters): Report {
     ],
     ...(k.wordsPerSec === undefined ? {} : { sentence: t(sentenceKey(k.wordsPerSec), { words: integer(k.wordsPerSec) }) }),
     sections,
-    footer: t('export.footer', { version: run.app.version, id: run.id }),
+    footer: t('export.footer', { app: runAppLabel(run.app), id: run.id }),
   };
 }

@@ -117,7 +117,7 @@ export class UvInstaller {
         headers: {
           accept: 'application/vnd.github+json',
           'x-github-api-version': '2022-11-28',
-          'user-agent': `gpu-bench/${this.o.appVersion ?? 'dev'}`,
+          'user-agent': `llm-bench/${this.o.appVersion ?? 'dev'}`,
         },
         signal: t.signal,
       });

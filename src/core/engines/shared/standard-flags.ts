@@ -1,10 +1,10 @@
 /**
- * The flags GPU Bench itself passes to each engine, and what to do when a build does not know one.
+ * The flags LLM Bench itself passes to each engine, and what to do when a build does not know one.
  *
  * Forks keep their base's flags, at most with extras; some lack a few (an older base, a trimmed
  * fork). A flag the build's --help does not list is left out of the command (the engine's own
  * default then applies) and reported (LaunchPlan.unsupported → the run's 'flag_unsupported' note,
- * the Engines page check). Without the flags GPU Bench cannot do without (model, host, port, the
+ * the Engines page check). Without the flags LLM Bench cannot do without (model, host, port, the
  * served name its readiness checks look for) the engine cannot be used: ENGINE_BAD_FLAG.
  *
  * A --help that does not list every required flag is not trusted (a help printed in another format):
@@ -15,7 +15,7 @@ import type { EngineBase } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 
 export interface StandardFlag {
-  /** Every spelling; the first is the one GPU Bench writes. */
+  /** Every spelling; the first is the one LLM Bench writes. */
   spellings: readonly string[];
   /** LaunchParams key (or 'alias', 'seed', 'cacheReport'…) the flag carries. */
   setting: string;
@@ -118,7 +118,7 @@ export function missingStandardFlags(base: FlagBase, known: ReadonlySet<string>)
 }
 
 /**
- * Builds GPU Bench's own part of a command for a build whose options are `known` (undefined = not
+ * Builds LLM Bench's own part of a command for a build whose options are `known` (undefined = not
  * known: everything is passed). A flag the build lacks is left out and remembered in `missing`;
  * a required one stops the launch.
  */

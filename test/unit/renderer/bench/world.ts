@@ -23,7 +23,7 @@ import { HOST, HOST_ID, seededRuns, summaries } from './fixtures';
 configure({ asyncUtilTimeout: 5000 });
 vi.setConfig({ testTimeout: 30_000 });
 
-export const ENGINES_DIR ='C:\\Users\\utente\\AppData\\Roaming\\GPU Bench\\engines';
+export const ENGINES_DIR ='C:\\Users\\utente\\AppData\\Roaming\\LLM Bench\\engines';
 
 export function apiError(code: AppErrorData['code'], params?: AppErrorData['params'], status = 400): ApiError {
   return new ApiError({ code, message: `${code} message`, ...(params ? { params } : {}) }, status);
@@ -109,7 +109,7 @@ export function serverPlanFor(over: Partial<ServerPlan> = {}): ServerPlan {
   };
 }
 
-/** A server GPU Bench started (GET/POST /api/servers). */
+/** A server LLM Bench started (GET/POST /api/servers). */
 export function serverInfo(id: string, over: Partial<ServerInfo> = {}): ServerInfo {
   const port = over.port ?? 5123;
   return {
@@ -416,7 +416,7 @@ export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof
     return (await handle(world, method, path, body)) as T;
   };
   api.get = vi.fn(async <T,>(path: string) => {
-    if (path === '/api/health' || path === '/api/settings') return baseGet<T>(path);
+    if (path === '/api/health' || path === '/api/settings' || path === '/api/app/notices') return baseGet<T>(path);
     return call<T>('GET', path);
   }) as ApiClient['get'];
   api.post = vi.fn(async <T,>(path: string, body?: unknown) => call<T>('POST', path, body)) as ApiClient['post'];

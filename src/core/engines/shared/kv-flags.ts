@@ -33,7 +33,7 @@ export function llamaKvArgs(p: Pick<LaunchParams, 'kvCacheType'>): string[] {
 const KV_LAYOUT_FLAGS = new Set(['--kv-unified', '-kvu', '--no-kv-unified', '-no-kvu']);
 
 /**
- * `--kv-unified` when GPU Bench chooses the layout: more than one slot, a build that knows the flag, and
+ * `--kv-unified` when LLM Bench chooses the layout: more than one slot, a build that knows the flag, and
  * extra arguments that do not choose it themselves (the tuner's "contesto diviso per utente" passes
  * --no-kv-unified). One pool for every slot: a single long prompt can use the whole context.
  */

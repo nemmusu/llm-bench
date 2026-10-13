@@ -4,6 +4,7 @@ import { cleanup, render, type RenderResult } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
 import type { ReactNode } from 'react';
 import { afterEach, vi } from 'vitest';
+import type { AppNotice } from '../../../src/contract/app-notices';
 import type { ServerEvent } from '../../../src/contract/events';
 import { defaultSettings, type Settings } from '../../../src/contract/settings';
 import { App } from '../../../src/renderer/app';
@@ -29,6 +30,8 @@ afterEach(() => {
 
 export interface FakeApi extends ApiClient {
   settings: Settings;
+  /** GET /api/app/notices (the rename's one-time notices): none unless a test puts some. */
+  notices: AppNotice[];
   emit(e: ServerEvent): void;
   setConnected(ok: boolean): void;
   calls: { method: string; path: string; body?: unknown }[];
@@ -40,10 +43,12 @@ export function fakeApi(initial: Partial<Settings> = {}, opts: { failSettings?: 
   let onStatus: ((ok: boolean) => void) | undefined;
   const api: FakeApi = {
     settings: { ...defaultSettings(), ...initial },
+    notices: [],
     calls: [],
     get: vi.fn(async <T,>(path: string) => {
       api.calls.push({ method: 'GET', path });
       if (path === '/api/health') return { ok: true, version: '0.1.0', pid: 1 } as T;
+      if (path === '/api/app/notices') return api.notices as T;
       if (path === '/api/settings') {
         if (opts.failSettings) throw new Error('settings unavailable');
         return { ...api.settings } as T;

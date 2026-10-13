@@ -39,7 +39,7 @@ function baseAdapter(registry: EngineRegistry, engine: CustomEngine): EngineAdap
   return a instanceof CustomEngineAdapter ? a.inner : a;
 }
 
-/** Runs, which version, which options its --help lists, which of GPU Bench's flags it lacks. */
+/** Runs, which version, which options its --help lists, which of LLM Bench's flags it lacks. */
 export async function checkCustomEngine(registry: EngineRegistry, engine: CustomEngine): Promise<CustomEngineCheck> {
   const kind = customEngineKindOf(engine);
   const adapter = baseAdapter(registry, engine);

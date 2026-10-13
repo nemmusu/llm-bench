@@ -1,6 +1,6 @@
 /**
  * The Server page: the servers that are on (address, snippets, Ferma / Riavvia / Log), the saved
- * presets (start with one click, "Avvia all'apertura di GPU Bench") and the starts that failed while
+ * presets (start with one click, "Avvia all'apertura di LLM Bench") and the starts that failed while
  * nobody was looking. "Avvia un server" opens the start flow.
  */
 import { Link } from '@tanstack/react-router';

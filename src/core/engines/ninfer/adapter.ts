@@ -1,5 +1,5 @@
 /**
- * NInfer (contract/ninfer.ts): ninfer-serve from the user's own build (or GPU Bench's guided build),
+ * NInfer (contract/ninfer.ts): ninfer-serve from the user's own build (or LLM Bench's guided build),
  * on Linux ('ninfer-native') or inside a WSL distro on Windows ('ninfer-wsl', see wsl.ts).
  *
  *  - detect: where the build is (the request's config, else settings.ninfer); one probe runs
@@ -389,7 +389,7 @@ export class NinferAdapter implements EngineAdapter {
       ...(onExit ? { onExit } : {}),
     });
     if (!this.wsl) return inst;
-    // The process GPU Bench sees is wsl.exe: its VRAM is the WSL VM's, never attributable to the engine.
+    // The process LLM Bench sees is wsl.exe: its VRAM is the WSL VM's, never attributable to the engine.
     const { pid: _relay, ...rest } = inst;
     return rest;
   }

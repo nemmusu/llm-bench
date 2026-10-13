@@ -67,7 +67,7 @@ test('a llama.cpp fork: added with its check, the flag it lacks said in words, t
 
     const card = page.getByRole('region', { name: 'PrismML' });
     await expect(card.getByText('Funziona come llama.cpp')).toBeVisible();
-    await expect(card.getByText('Questo motore non conosce alcune impostazioni di GPU Bench')).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByText('Questo motore non conosce alcune impostazioni di LLM Bench')).toBeVisible({ timeout: 30_000 });
     await scan(page, 'custom engines');
     await card.getByRole('button', { name: 'Usa nel Benchmark' }).click();
 
@@ -169,7 +169,7 @@ test('a fork built from git: new commits found, pulled and rebuilt; changes of y
   // A real git checkout of a fake fork: its "upstream" is another folder, its build folder is ignored by git.
   const root = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-git-'));
   const git = (cwd: string, ...args: string[]) =>
-    execFileSync('git', ['-c', 'user.name=GPU Bench E2E', '-c', 'user.email=e2e@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...args], { cwd, stdio: 'pipe' })
+    execFileSync('git', ['-c', 'user.name=LLM Bench E2E', '-c', 'user.email=e2e@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...args], { cwd, stdio: 'pipe' })
       .toString()
       .trim();
   const upstream = path.join(root, 'upstream');

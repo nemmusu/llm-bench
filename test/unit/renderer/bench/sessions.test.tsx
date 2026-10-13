@@ -195,7 +195,7 @@ describe('Compare page with long conversations', () => {
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Indirizzo' }), 'http://admin:segreta@gpu:8000/v1?api_key=sk-abcdefghijklmnop');
     await userEvent.click(within(dialog).getByRole('radio', { name: /Pagina HTML/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Salva la scheda' }));
-    expect(await screen.findByText(/Scheda salvata: C:\\out\\gpubench_scheda_Assistente-del-team_/)).toBeTruthy();
+    expect(await screen.findByText(/Scheda salvata: C:\\out\\llmbench_scheda_Assistente-del-team_/)).toBeTruthy();
     const saved = saveFile.mock.calls[0]![0] as unknown as { content: string; defaultName: string };
     expect(saved.defaultName).toMatch(/\.html$/);
     expect(saved.content).toContain('Confronto con le altre configurazioni');

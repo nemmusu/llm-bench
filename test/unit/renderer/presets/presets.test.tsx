@@ -34,7 +34,7 @@ function point(depth: number, decode: number): LatencyPoint {
 }
 
 function combo(params: Partial<LaunchParams>, maxContext: number, sweep: LatencyPoint[], tags: TuneCombination['tags'] = []): TuneCombination {
-  const argv = ['C:\\Users\\utente\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11438-cuda-13.4\\llama-server.exe', '-m', 'x.gguf', '-c', String(maxContext)];
+  const argv = ['C:\\Users\\utente\\AppData\\Roaming\\LLM Bench\\engines\\llamacpp\\b11438-cuda-13.4\\llama-server.exe', '-m', 'x.gguf', '-c', String(maxContext)];
   return { params: P(params), kvType: params.kvCacheType === 'q8_0' ? 'q8_0' : 'f16', maxContext, vramPeakMiB: 30000, sweep, command: { argv, powershell: argv.join(' '), bash: argv.join(' ') }, outcome: 'ok', tags };
 }
 

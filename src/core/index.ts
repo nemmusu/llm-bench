@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { CoreContext } from './context';
 import type { CoreDeps } from './deps';
 import { createApp, type RouteModule } from './server/app';
+import { adoptLegacyModelsDir } from './models/legacy-dir';
 import { createServices, serviceModules, type CoreServices, type ServicesOptions } from './services';
 import { EventHub } from './server/event-hub';
 import { SettingsRepo } from './store/settings-repo';
@@ -40,6 +41,8 @@ export async function createCore(deps: CoreDeps, opts: CoreOptions): Promise<Cor
     telemetry,
     sysinfo: createSysInfo(deps, { telemetry }),
   };
+  // Before anything reads the models folder: GPU Bench's default one stays in use (rename, 0.4.0).
+  await adoptLegacyModelsDir({ settings: ctx.settings, paths: deps.paths, log: deps.log });
   const services = await createServices(ctx, opts.services);
   let boundPort = 0;
   const app = createApp(ctx, {
@@ -64,7 +67,7 @@ export async function createCore(deps: CoreDeps, opts: CoreOptions): Promise<Cor
     close: () =>
       new Promise<void>((resolve) => {
         shutdown.abort();
-        // Our servers (processes and containers) are stopped before the core goes: quitting GPU Bench stops them.
+        // Our servers (processes and containers) are stopped before the core goes: quitting LLM Bench stops them.
         void Promise.all([services.bench.whenIdle(), services.serve.stopAll()]).finally(() => server.close(() => resolve()));
         // SSE streams keep connections open: drop them so close() completes.
         (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();

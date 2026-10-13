@@ -89,9 +89,10 @@ describe('capacity: quick checks, the estimate rounded to 8K, a search down to 8
 describe('time: the forecast, the limit and every request within it', () => {
   it('the estimate is the plan’s duration; the limit is it × 1.5 (never below the budget’s shortest)', async () => {
     const t = tuneTime(input(real()));
-    // ~47 minutes for this model with "Veloce" (~34 before the 200K point of every combination that reaches it): not 5.
-    expect(t.estimateMs / 60_000).toBeGreaterThan(35);
-    expect(t.estimateMs / 60_000).toBeLessThan(50);
+    // ~34 minutes for this model with "Veloce": not 5, and not 47 (a 200K point in every combination
+    // that reaches it, which only "Accurata" and "Completo" measure).
+    expect(t.estimateMs / 60_000).toBeGreaterThan(30);
+    expect(t.estimateMs / 60_000).toBeLessThan(38);
     expect(t.limitMs).toBe(Math.round(t.estimateMs * TIME_MARGIN));
     // "Accurata" tries more values: longer.
     expect(tuneTime(input(real({ budget: 'thorough', space: llamaSpace({ budget: 'thorough', params: P() }) }))).estimateMs).toBeGreaterThan(t.estimateMs);
@@ -121,10 +122,10 @@ describe('time: the forecast, the limit and every request within it', () => {
     expect(log.filter((l) => l.depth === 1024 && l.reps > 1).length).toBeGreaterThan(0);
     // The deepest prompt of 256K: once for each combination at 256K (q8_0, q4_0), in its sweep.
     expect(log.filter((l) => l.depth === 262_000)).toHaveLength(t.combinations.filter((c) => c.maxContext === 262_144).length);
-    // "Veloce" on 256K: 1K, 4K, 16K, 64K, 200K and the exact maximum; screened at 1K and 64K.
+    // "Veloce" on 256K: 1K, 4K, 16K, 64K and the exact maximum (no 200K); screened at 1K and 64K.
     const rec = t.combinations[t.recommended!]!;
     expect(rec).toMatchObject({ kvType: 'q8_0', maxContext: 262_144, params: { ubatchSize: 2048 } });
-    expect(rec.sweep.map((p) => p.promptTokens)).toEqual([1024, 4096, 16384, 65536, 204_800, 262_000]);
+    expect(rec.sweep.map((p) => p.promptTokens)).toEqual([1024, 4096, 16384, 65536, 262_000]);
     expect(rec.sweep.at(-1)!.decodeTps.n).toBe(1);
     // A screening that lost never sent its deepest prompt (the winner's sweep did, on its own launch).
     expect(t.attempts.filter((a) => a.screen === 'lost').every((a) => a.points.every((p) => p.promptTokens <= 65_536))).toBe(true);
@@ -147,8 +148,8 @@ describe('time: the forecast, the limit and every request within it', () => {
     expect(t.stoppedBy).toBe('budget');
     expect(lab.t).toBeLessThanOrEqual(4.5 * 60_000 + TIME_GRACE_MS);
     const cut = t.attempts.find((a) => a.skipped);
-    // The first deep point left: 200K (a request of minutes).
-    expect(cut!.skipped).toEqual([{ depth: 204_800, predictedMs: expect.any(Number) }]);
+    // The first deep point left: the deepest prompt of 256K (a request of minutes).
+    expect(cut!.skipped).toEqual([{ depth: 262_000, predictedMs: expect.any(Number) }]);
     expect(cut!.skipped![0]!.predictedMs).toBeGreaterThan(SLOW_REQUEST_MS);
     // The second repetition of 64K would not have ended in time: the point keeps the one made (n = 1).
     expect(log.some((l) => l.depth === 65_536 && l.made < l.reps)).toBe(true);

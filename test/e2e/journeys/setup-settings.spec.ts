@@ -57,7 +57,7 @@ test('settings survive a restart: appearance, options, folders, Hugging Face tok
     await expect(cold).toBeVisible();
     await cold.click();
     const ask = page.getByRole('alertdialog', { name: 'Attivare le misure a freddo reali?' });
-    await expect(ask.getByText(/GPU Bench\\PurgeStandby/)).toBeVisible();
+    await expect(ask.getByText(/«PurgeStandby» di LLM Bench/)).toBeVisible();
     await scan(page, 'cold measurements explanation');
     await ask.getByRole('button', { name: 'Annulla' }).click();
     await expect(cold).not.toBeChecked();

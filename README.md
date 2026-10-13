@@ -1,6 +1,8 @@
-# GPU Bench
+# LLM Bench
 
-Misura le prestazioni della tua GPU NVIDIA con l'inferenza LLM: caricamento a freddo e a caldo, token/s in lettura e in generazione, primo token, latenza tra token, più utenti insieme, VRAM e consumi. Funziona con **llama.cpp** (nativo o Docker) e **vLLM** (Docker, o nativo su Linux), su **Windows e Linux**.
+Misura le prestazioni della tua GPU NVIDIA con l'inferenza LLM: caricamento a freddo e a caldo, token/s in lettura e in generazione, primo token, latenza tra token, più utenti insieme, VRAM e consumi. Funziona con **llama.cpp** (nativo o Docker), **vLLM** e **SGLang** (Docker, o nativi su Linux), **NInfer** e i tuoi motori personalizzati, su **Windows e Linux**.
+
+Repository: <https://github.com/nemmusu/llm-bench>. Fino alla versione 0.3 si chiamava **GPU Bench**: al primo avvio LLM Bench prende i suoi dati (vedi [la guida](docs/GUIDA.md#da-gpu-bench-a-llm-bench)).
 
 - Pensato per chi non è esperto: installa da solo motori e modelli, spiega i numeri a parole, ogni problema ha un pulsante che lo risolve.
 - Completo per chi è esperto: tutti i parametri di avvio, comando esatto copiabile, confronto tra risultati, esportazione.

@@ -25,7 +25,7 @@ export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
  */
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
-  // A command template is the user's own program: no flags GPU Bench knows, like an external endpoint.
+  // A command template is the user's own program: no flags LLM Bench knows, like an external endpoint.
   return kind === 'external' || kind === 'command' ? 'external' : 'vllm';
 }
 
@@ -35,11 +35,11 @@ export const LLAMA_DEFAULTS = {
   flashAttention: 'auto',
   batchSize: 2048,
   ubatchSize: 512,
-  /** GPU Bench passes "all" (or 999) when the layers are left unset: everything on the GPU. */
+  /** LLM Bench passes "all" (or 999) when the layers are left unset: everything on the GPU. */
   gpuLayers: 'all',
 } as const;
 
-/** vLLM's own defaults (GPU Bench always passes --gpu-memory-utilization, 0.9 unless lowered). */
+/** vLLM's own defaults (LLM Bench always passes --gpu-memory-utilization, 0.9 unless lowered). */
 export const VLLM_DEFAULTS = {
   cacheType: 'auto',
   gpuMemoryUtilization: 0.9,
@@ -360,11 +360,11 @@ const IGNORED_VALUE = new Set([
   '-mmproj',
   '--mmproj',
   '--fit',
-  // SGLang: the model, the seed; Python's -m (the module) and -X (GPU Bench's marker on servers).
+  // SGLang: the model, the seed; Python's -m (the module) and -X (LLM Bench's marker on servers).
   '--model-path',
   '--random-seed',
   '-X',
-  // NInfer: the served name (GPU Bench's marker on benchmarks), its logs.
+  // NInfer: the served name (LLM Bench's marker on benchmarks), its logs.
   '--model-id',
   '--log-stats-interval-ms',
   '--request-log-jsonl',
@@ -515,7 +515,7 @@ export function configParamsOf(input: LaunchInput): ConfigParams {
   const family = engineFamilyOf(input.engineKind);
   const fromLaunch = emptyRaw();
   if (input.params) fromParams(family, input.params, fromLaunch);
-  // Params alone: GPU Bench adds --kv-unified for more than one slot. A command line without it: split
+  // Params alone: LLM Bench adds --kv-unified for more than one slot. A command line without it: split
   // (llama-server shares the pool by default only when the slot count is automatic).
   if (!input.argv?.length || family === 'external') return normalize(family, fromLaunch, input, true);
   // The command line already holds the extra arguments: its unknown flags are the whole list.

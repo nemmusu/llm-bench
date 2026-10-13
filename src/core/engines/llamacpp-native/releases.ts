@@ -161,7 +161,7 @@ export class LlamaReleasesClient {
     const headers: Record<string, string> = {
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
-      'user-agent': `gpu-bench/${this.opts.appVersion ?? '0'}`,
+      'user-agent': `llm-bench/${this.opts.appVersion ?? '0'}`,
     };
     if (cached) headers['if-none-match'] = cached.etag;
 

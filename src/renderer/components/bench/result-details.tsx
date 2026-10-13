@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import type { LatencyPoint, RunResult, Stat } from '../../../contract/results';
+import { runAppLabel, type LatencyPoint, type RunResult, type Stat } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { columnHelper, DataTable } from '../ui/data-table';
@@ -220,7 +220,7 @@ export function Details({ run }: { run: RunResult }) {
               [t('result.details.os'), hw.os.name],
               [t('result.details.powerPlan'), hw.os.powerPlan ?? dash],
               [t('result.details.host'), hw.hostLabel],
-              [t('result.details.app'), `GPU Bench ${run.app.version}`],
+              [t('result.details.app'), runAppLabel(run.app)],
             ]}
           />
         </Section>

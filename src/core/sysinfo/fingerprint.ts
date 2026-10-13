@@ -109,7 +109,11 @@ export function countPhysicalCores(cpuinfo: string): number | undefined {
   return cores.size > 0 ? cores.size : undefined;
 }
 
-/** Anonymous stable id: the raw machine id never leaves the PC (it ends up in shared result files). */
+/**
+ * Anonymous stable id: the raw machine id never leaves the PC (it ends up in shared result files).
+ * The salt keeps the app's old name (GPU Bench): a new one would make this PC's earlier runs look
+ * like another PC's.
+ */
 export function hostIdFrom(machineId: string): string {
   return createHash('sha256').update(`gpu-bench:${machineId.trim().toLowerCase()}`).digest('hex');
 }

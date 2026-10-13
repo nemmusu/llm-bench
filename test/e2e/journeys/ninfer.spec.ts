@@ -1,5 +1,5 @@
 /**
- * NInfer like a person on Windows: point GPU Bench at the build inside WSL (a fake wsl.exe whose
+ * NInfer like a person on Windows: point LLM Bench at the build inside WSL (a fake wsl.exe whose
  * distro runs the fake ninfer-serve), pick the "Consigliata da NInfer" settings for a .ninfer model,
  * run a Rapido benchmark, then start a server with the same settings and stop it.
  */

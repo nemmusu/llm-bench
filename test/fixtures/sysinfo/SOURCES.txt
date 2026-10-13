@@ -6,7 +6,7 @@ win-reg-displayversion.txt reg query "HKLM\SOFTWARE\Microsoft\Windows NT\Current
 win-powercfg.txt           powercfg /getactivescheme  (Italian locale: "(Prestazioni elevate)", no trailing newline)
 win-ps-cores.txt           powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty NumberOfCores"
 win-ps-os-caption.txt      powershell … "(Get-CimInstance Win32_OperatingSystem).Caption"
-win-ps-sysinfo.txt         the single PowerShell script GPU Bench actually runs (cores sum + caption, key=value lines)
+win-ps-sysinfo.txt         the single PowerShell script LLM Bench actually runs (cores sum + caption, key=value lines)
 wsl-os-release.txt         cat /etc/os-release
 wsl-proc-version.txt       cat /proc/version (contains "microsoft")
 wsl-machine-id.txt         /etc/machine-id                                                          (value faked)

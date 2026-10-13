@@ -31,7 +31,7 @@ export function isHttpUrl(text: string): boolean {
 }
 
 /**
- * The engine part of the request. Outside expert mode only the kind is sent (GPU Bench picks the
+ * The engine part of the request. Outside expert mode only the kind is sent (LLM Bench picks the
  * managed build / default image). An external endpoint needs a valid URL.
  */
 export function engineConfigOf(kind: EngineKind, form: EngineForm, expert: boolean): { config: EngineConfig; invalid: EngineField[] } {

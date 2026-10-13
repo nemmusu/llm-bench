@@ -275,7 +275,7 @@ export const startServerRequestSchema = startRunRequestSchema.pick({ engine: tru
   /** The port other programs use. Absent = the first free one from 8080 (ServerPlan.port says which). */
   port: serverPortSchema.optional(),
   /**
-   * 'lan': reachable from other devices on the local network (bound to 0.0.0.0), only with GPU Bench's
+   * 'lan': reachable from other devices on the local network (bound to 0.0.0.0), only with LLM Bench's
    * API key (--api-key). Absent = 'local' (127.0.0.1 only).
    */
   network: serverNetworkSchema.optional(),
@@ -328,7 +328,7 @@ export const serverPlanSchema = z.object({
 });
 export type ServerPlan = z.infer<typeof serverPlanSchema>;
 
-/** An engine started by GPU Bench outside a benchmark, kept running until the user stops it. */
+/** An engine started by LLM Bench outside a benchmark, kept running until the user stops it. */
 export const serverInfoSchema = z.object({
   id: z.string(),
   baseUrl: z.string(),

@@ -43,7 +43,7 @@ export interface GpuMem {
   totalMiB: number;
   /** Free right now: total minus what every process holds. */
   freeMiB: number;
-  /** Of what is in use, what GPU Bench's own engines hold (a server it started): not "other programs". */
+  /** Of what is in use, what LLM Bench's own engines hold (a server it started): not "other programs". */
   ownMiB?: number;
 }
 

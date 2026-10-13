@@ -10,11 +10,11 @@ describe('tray icon', () => {
     const t = await started();
     const tray = t.tray!;
     expect(tray.images).toEqual([{ path: path.join(trayDir, 'idle.png') }]);
-    expect(tray.tooltip).toBe('GPU Bench');
-    expect(tray.labels()).toEqual(['Apri GPU Bench', '---', 'Avvia preset', 'Ferma tutti i server', '---', 'Esci']);
+    expect(tray.tooltip).toBe('LLM Bench');
+    expect(tray.labels()).toEqual(['Apri LLM Bench', '---', 'Avvia preset', 'Ferma tutti i server', '---', 'Esci']);
     t.proc.emit('message', { type: 'shell-state', state: oneServer });
     expect(tray.image).toEqual({ path: path.join(trayDir, 'running.png') });
-    expect(tray.tooltip).toBe('GPU Bench · 1 server attivo: Qwen3 8B (8080)');
+    expect(tray.tooltip).toBe('LLM Bench · 1 server attivo: Qwen3 8B (8080)');
     expect(tray.labels()).toContain('Qwen3 8B · porta 8080');
     // Same status: the icon is not set again.
     t.proc.emit('message', { type: 'shell-state', state: { ...oneServer, language: 'en' } });
@@ -43,7 +43,7 @@ describe('tray icon', () => {
     t.proc.emit('message', { type: 'shell-state', state: oneServer });
     const tray = t.tray!;
     t.proc.posted.length = 0;
-    tray.click('Apri GPU Bench');
+    tray.click('Apri LLM Bench');
     expect(t.win.shown).toBe(1);
     tray.click('Copia indirizzo');
     expect(t.clipboard).toEqual(['http://127.0.0.1:8080/v1']);
@@ -74,7 +74,7 @@ describe('tray icon', () => {
     cancel.proc.emit('message', { type: 'shell-state', state: oneServer });
     cancel.tray!.click('Esci');
     await tick();
-    expect(cancel.boxes[0]).toMatchObject({ message: 'Uscire da GPU Bench?', detail: expect.stringContaining('C’è un server acceso'), buttons: ['Ferma ed esci', 'Annulla'] });
+    expect(cancel.boxes[0]).toMatchObject({ message: 'Uscire da LLM Bench?', detail: expect.stringContaining('C’è un server acceso'), buttons: ['Ferma ed esci', 'Annulla'] });
     expect(cancel.calls.quit).toBe(0);
 
     const ok = await started({ quitResponse: 0 });
@@ -89,12 +89,12 @@ describe('tray icon', () => {
     const t = await started();
     t.proc.emit('message', { type: 'shell-notice', notice: { kind: 'start-failed', name: 'Chat veloce' } });
     t.proc.emit('message', { type: 'shell-notice', notice: {} });
-    expect(t.shown).toEqual([{ title: 'Un server non è partito', body: '«Chat veloce» non è partito. Apri GPU Bench per vedere perché.', icon: path.resolve('/app/out/main', '../../resources/icons/icon.png') }]);
+    expect(t.shown).toEqual([{ title: 'Un server non è partito', body: '«Chat veloce» non è partito. Apri LLM Bench per vedere perché.', icon: path.resolve('/app/out/main', '../../resources/icons/icon.png') }]);
   });
 });
 
 describe('closing the window', () => {
-  it('nothing running: GPU Bench quits as before', async () => {
+  it('nothing running: LLM Bench quits as before', async () => {
     const t = await started();
     expect(t.win.close()).toBe(true);
   });
@@ -105,7 +105,7 @@ describe('closing the window', () => {
     t.win.visible = true;
     expect(t.win.close()).toBe(false);
     expect(t.win.visible).toBe(false);
-    expect(t.shown).toEqual([{ title: 'GPU Bench è ancora attivo', body: 'GPU Bench resta attivo nell’area di notifica: il server continua a funzionare.', icon: expect.any(String) }]);
+    expect(t.shown).toEqual([{ title: 'LLM Bench è ancora attivo', body: 'LLM Bench resta attivo nell’area di notifica: il server continua a funzionare.', icon: expect.any(String) }]);
     await vi.waitFor(() => expect(String(t.files.get(path.join('/user', 'shell.json')))).toBe('{"hideNoticeShown":true}'));
     expect(t.win.close()).toBe(false);
     expect(t.shown).toHaveLength(1);
@@ -123,7 +123,7 @@ describe('closing the window', () => {
     const always = await started();
     always.proc.emit('message', { type: 'shell-state', state: coreState({ closeBehavior: 'tray' }) });
     expect(always.win.close()).toBe(false);
-    expect(always.shown[0]!.body).toBe('GPU Bench resta attivo nell’area di notifica. Per chiuderlo usa «Esci» dal suo menu.');
+    expect(always.shown[0]!.body).toBe('LLM Bench resta attivo nell’area di notifica. Per chiuderlo usa «Esci» dal suo menu.');
     const never = await started();
     never.proc.emit('message', { type: 'shell-state', state: { ...oneServer, closeBehavior: 'quit' } });
     expect(never.win.close()).toBe(true);
@@ -155,11 +155,11 @@ describe('closing the window', () => {
 
 describe('started at login', () => {
   it('stays in the tray (or minimized without one)', async () => {
-    const t = await started({ argv: ['gpu-bench', '--hidden'] });
+    const t = await started({ argv: ['llm-bench', '--hidden'] });
     t.win.events.get('ready-to-show')!();
     expect(t.win.shown).toBe(0);
     expect(t.win.minimizedCount).toBe(0);
-    const noTray = await started({ argv: ['gpu-bench', '--hidden'], env: { GPUBENCH_NO_TRAY: '1' } });
+    const noTray = await started({ argv: ['llm-bench', '--hidden'], env: { GPUBENCH_NO_TRAY: '1' } });
     noTray.win.events.get('ready-to-show')!();
     expect(noTray.win.minimizedCount).toBe(1);
   });
@@ -167,7 +167,7 @@ describe('started at login', () => {
   it('the login item follows the setting, only when it differs from the OS', async () => {
     const t = await started();
     t.proc.emit('message', { type: 'shell-state', state: coreState({ launchAtLogin: true }) });
-    await vi.waitFor(() => expect(t.login).toEqual([{ openAtLogin: true, path: '/app/electron', args: [path.resolve('/app/out/main', '../..'), '--hidden'] }]));
+    await vi.waitFor(() => expect(t.login).toEqual([{ openAtLogin: true, path: '/app/electron', args: [path.resolve('/app/out/main', '../..'), '--hidden'], name: 'LLM Bench' }]));
     t.proc.emit('message', { type: 'shell-state', state: coreState({ launchAtLogin: true, language: 'en' }) });
     t.proc.emit('message', { type: 'shell-state', state: coreState({ launchAtLogin: false }) });
     await vi.waitFor(() => expect(t.login).toHaveLength(2));
@@ -220,7 +220,7 @@ describe('E2E test hooks (GPUBENCH_TEST_HOOKS=1)', () => {
     t.proc.emit('message', { type: 'shell-state', state: oneServer });
     expect(hooks.trayMenu()).toContain('Qwen3 8B · porta 8080');
     expect(hooks.trayStatus()).toBe('running');
-    expect(hooks.trayTooltip()).toBe('GPU Bench · 1 server attivo: Qwen3 8B (8080)');
+    expect(hooks.trayTooltip()).toBe('LLM Bench · 1 server attivo: Qwen3 8B (8080)');
     expect(hooks.clickTray('Qwen3 8B · porta 8080', 'Copia indirizzo')).toBe(true);
     expect(t.clipboard).toEqual(['http://127.0.0.1:8080/v1']);
     expect(hooks.clickTray('Nope')).toBe(false);

@@ -28,7 +28,7 @@ describe('HeadTailLog', () => {
 describe('buildLogExcerpt', () => {
   it('keeps everything that fits', () => {
     const text = buildLogExcerpt([{ label: 'warm-load 1', lines: ['a', 'b'] }], ['note']);
-    expect(text).toBe('=== warm-load 1 ===\na\nb\n=== gpu-bench ===\nnote');
+    expect(text).toBe('=== warm-load 1 ===\na\nb\n=== llm-bench ===\nnote');
     expect(buildLogExcerpt([], [])).toBe('');
   });
 
@@ -53,7 +53,7 @@ describe('buildLogExcerpt', () => {
     expect(omittedCount(marker)).toBeGreaterThan(500);
     expect(lines.filter((l) => omittedCount(l) !== undefined)).toHaveLength(2);
     // The latest lines of the latest engine, then the notes.
-    expect(lines.slice(-5)).toEqual(['t1998', 't1999', '=== gpu-bench ===', 'note 1', 'note 2']);
+    expect(lines.slice(-5)).toEqual(['t1998', 't1999', '=== llm-bench ===', 'note 1', 'note 2']);
     // Lines between kept head and kept tail are accounted for exactly.
     const keptTail = lines.slice(last + 2 + LOG_HEAD_LINES, -3).length;
     expect(omittedCount(marker)).toBe(500 + 2000 - keptTail);

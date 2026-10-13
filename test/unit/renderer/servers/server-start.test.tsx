@@ -68,7 +68,7 @@ async function fromBenchmark(api: Api) {
 }
 
 describe('Avvia un server: from the Benchmark page to a running server', () => {
-  it('the model and engine chosen there, GPU Bench’s settings, the plan; Avvia starts it on the plan’s port and opens the Server page', async () => {
+  it('the model and engine chosen there, LLM Bench’s settings, the plan; Avvia starts it on the plan’s port and opens the Server page', async () => {
     const api = benchApi();
     const success = vi.spyOn(toast, 'success');
     const { router } = await fromBenchmark(api);
@@ -76,7 +76,7 @@ describe('Avvia un server: from the Benchmark page to a running server', () => {
     expect(screen.getByRole('combobox', { name: 'Motore' }).textContent).toContain('llama.cpp');
     // Beginners send no settings: the core picks them for this card.
     expect(lastPlan(api)).toEqual({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, network: 'local' });
-    expect(screen.getByRole('radio', { name: /Scelte da GPU Bench/ }).getAttribute('data-state')).toBe('checked');
+    expect(screen.getByRole('radio', { name: /Scelte da LLM Bench/ }).getAttribute('data-state')).toBe('checked');
     expect(screen.getByText('L’ho scelto perché entri bene nella tua scheda video.')).toBeTruthy();
     expect(screen.getByText('Entra perfettamente')).toBeTruthy();
     expect(screen.getByText('http://127.0.0.1:8080/v1')).toBeTruthy();
@@ -198,7 +198,7 @@ describe('Avvia un server: from the Benchmark page to a running server', () => {
 });
 
 describe('Avvia un server: where the settings come from', () => {
-  it('"Le migliori dai tuoi test": GPU Bench’s choice from the latest tune, and this model’s configurations with their numbers', async () => {
+  it('"Le migliori dai tuoi test": LLM Bench’s choice from the latest tune, and this model’s configurations with their numbers', async () => {
     const api = benchApi();
     const tuned = { runId: '01K6Y7Q2ZC4M8N3B5V9R1T0XWE', createdAt: '2026-10-07T10:00:00.000Z', contextSize: 65536, kvCacheType: 'q4_0' as const, otherBuild: { build: 'b10997', current: 'b11438' } };
     api.world.serverPlan = (body) => serverPlanFor({ ...((body as StartServerRequest).params ? { params: (body as StartServerRequest).params! } : { tuned }), port: 8080 });
@@ -227,7 +227,7 @@ describe('Avvia un server: where the settings come from', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('GPU Bench’s own choice saved as a preset says it came from the tune', async () => {
+  it('LLM Bench’s own choice saved as a preset says it came from the tune', async () => {
     const api = benchApi();
     const tuned = { runId: 'r-tune', createdAt: '2026-10-07T10:00:00.000Z', contextSize: 65536, kvCacheType: 'q4_0' as const, goal: 'multi' as const, users: 4 };
     api.world.serverPlan = () => serverPlanFor({ tuned });
@@ -284,7 +284,7 @@ describe('Avvia un server: where the settings come from', () => {
     expect(screen.queryByText('Gli altri preset sono nella pagina Server.')).toBeNull();
   });
 
-  it('NInfer: its own presets (NinferPresetPicker), the user’s, or GPU Bench’s choice', async () => {
+  it('NInfer: its own presets (NinferPresetPicker), the user’s, or LLM Bench’s choice', async () => {
     const ninfer = localModel('qwen38', { format: 'ninfer', displayName: 'Qwen3.8-27B-nvfp4', file: 'qwen.ninfer', quant: 'NVFP4', facts: { name: 'qwen3.8-27b' } });
     const api = benchApi({ local: [ninfer], presets: [serverPreset('mine', { name: 'Mio NInfer', model: { localId: 'qwen38' }, engine: { kind: 'ninfer-wsl' }, params: { contextSize: 32768, extraArgs: [], env: {} } })] });
     await openFlow(api);
@@ -300,7 +300,7 @@ describe('Avvia un server: where the settings come from', () => {
     await userEvent.click(screen.getByRole('radio', { name: /Mio NInfer/ }));
     await waitFor(() => expect(lastPlan(api).params).toMatchObject({ contextSize: 32768 }));
     expect(screen.getByRole('radio', { name: /Provata su RTX 5090/ }).getAttribute('aria-checked')).toBe('false');
-    await userEvent.click(screen.getByRole('radio', { name: 'Scelte da GPU Bench' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Scelte da LLM Bench' }));
     await waitFor(() => expect(lastPlan(api).params).toBeUndefined());
     expect(screen.getByRole('radio', { name: /Mio NInfer/ }).getAttribute('aria-checked')).toBe('false');
   });
@@ -464,7 +464,7 @@ describe('Avvia un server: model, engine, port and network', () => {
     expect((avvia() as HTMLButtonElement).disabled).toBe(true);
     await userEvent.clear(field);
     await userEvent.type(field, '9001');
-    expect(await screen.findByText('La porta 9001 è già usata da un server di GPU Bench: scegline un’altra o fermalo.')).toBeTruthy();
+    expect(await screen.findByText('La porta 9001 è già usata da un server di LLM Bench: scegline un’altra o fermalo.')).toBeTruthy();
     await userEvent.clear(field);
     await userEvent.type(field, '9002');
     await waitFor(() => expect(lastPlan(api).port).toBe(9002));
@@ -508,7 +508,7 @@ describe('Avvia un server: model, engine, port and network', () => {
     const memory = benchApi({ apiKey: { key: 'gpub-mem-key-0123456789', storage: 'memory' } });
     await openFlow(memory);
     await userEvent.click(screen.getByRole('switch', { name: 'Rendi raggiungibile dalla rete locale' }));
-    expect(await screen.findByText('La chiave vale solo finché GPU Bench resta aperto.')).toBeTruthy();
+    expect(await screen.findByText('La chiave vale solo finché LLM Bench resta aperto.')).toBeTruthy();
   });
 
   it('no model on the PC and no suggestion: the way to the Models page', async () => {

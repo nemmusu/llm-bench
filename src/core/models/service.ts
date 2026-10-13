@@ -481,7 +481,7 @@ export class ModelsService {
   }
 
   /**
-   * Deletes a model's files. Only models entirely inside the GPU Bench models folder qualify (real
+   * Deletes a model's files. Only models entirely inside the LLM Bench models folder qualify (real
    * paths, so a symlink cannot point the delete elsewhere): user files in other folders, LM Studio,
    * Ollama or the HF cache are never touched.
    */
@@ -492,7 +492,7 @@ export class ModelsService {
     for (const t of targets) {
       const real = await realpath(t).catch(() => path.resolve(t));
       if (!lib || !isInside(real, lib)) {
-        throw new AppError('VALIDATION', 'Only models inside the GPU Bench models folder can be deleted', { params: { path: t } });
+        throw new AppError('VALIDATION', 'Only models inside the LLM Bench models folder can be deleted', { params: { path: t } });
       }
     }
     for (const t of targets) await rm(t, { recursive: true, force: true });

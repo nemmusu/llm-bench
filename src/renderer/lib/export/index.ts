@@ -1,4 +1,4 @@
-/** Export formats of one run, and of a selection of runs (.gpubench bundle). */
+/** Export formats of one run, and of a selection of runs (.llmbench bundle). */
 import type { RunResult } from '../../../contract/results';
 import { slug } from '../../components/bench/format';
 import type { Formatters } from '../../i18n';
@@ -19,9 +19,9 @@ const EXT: Record<ExportFormat, { ext: string; mime: string; name: string }> = {
   html: { ext: 'html', mime: 'text/html;charset=utf-8', name: 'HTML' },
 };
 
-/** "gpubench_Qwen3-8B-Q4_K_M_2026-10-06_01K6Y7Q2.csv" */
+/** "llmbench_Qwen3-8B-Q4_K_M_2026-10-06_01K6Y7Q2.csv" */
 export function exportFileName(run: Pick<RunResult, 'id' | 'createdAt' | 'model'>, ext: string): string {
-  return `gpubench_${slug(run.model.displayName)}_${run.createdAt.slice(0, 10)}_${run.id.slice(0, 8)}.${ext}`;
+  return `llmbench_${slug(run.model.displayName)}_${run.createdAt.slice(0, 10)}_${run.id.slice(0, 8)}.${ext}`;
 }
 
 export function exportContent(run: RunResult, format: ExportFormat, f: Formatters): string {
@@ -45,12 +45,12 @@ export function exportRequest(run: RunResult, format: ExportFormat, f: Formatter
   return { defaultName: exportFileName(run, ext), content: exportContent(run, format, f), mime, filters: [{ name, extensions: [ext] }] };
 }
 
-/** The .gpubench bundle returned by POST /api/runs/export, ready to save. */
+/** The .llmbench bundle returned by POST /api/runs/export, ready to save. */
 export function bundleRequest(bundle: unknown, now: Date): SaveRequest {
   return {
-    defaultName: `gpubench_${now.toISOString().slice(0, 10)}.gpubench`,
+    defaultName: `llmbench_${now.toISOString().slice(0, 10)}.llmbench`,
     content: `${JSON.stringify(bundle, null, 2)}\n`,
     mime: 'application/json',
-    filters: [{ name: 'GPU Bench', extensions: ['gpubench'] }],
+    filters: [{ name: 'LLM Bench', extensions: ['llmbench'] }],
   };
 }

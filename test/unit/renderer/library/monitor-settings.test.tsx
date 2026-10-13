@@ -126,7 +126,7 @@ describe('settings', () => {
     const b = bridge({ pickFolder: vi.fn(async () => 'D:\\Shared') });
     const api = libApi();
     renderLib('/settings', api);
-    expect(await screen.findByText('C:\\Data\\GPU Bench\\results')).toBeTruthy();
+    expect(await screen.findByText('C:\\Data\\LLM Bench\\results')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Scegli cartella… Cartella dei risultati' }));
     await waitFor(() => expect(api.w.settings.resultsDir).toBe('D:\\Shared'));
     b.pickFolder.mockResolvedValueOnce('E:\\Models');
@@ -213,7 +213,7 @@ describe('settings', () => {
     const sw = await screen.findByRole('switch', { name: 'Misure a freddo reali' });
     await userEvent.click(sw);
     const ask = await screen.findByRole('alertdialog', { name: 'Attivare le misure a freddo reali?' });
-    expect(within(ask).getByText(/GPU Bench\\PurgeStandby/)).toBeTruthy();
+    expect(within(ask).getByText(/«PurgeStandby» di LLM Bench/)).toBeTruthy();
     await userEvent.click(within(ask).getByRole('button', { name: 'Attiva' }));
     expect(await screen.findByText('Richiesta di Windows annullata: non è cambiato nulla.')).toBeTruthy();
     declined = false;
@@ -256,7 +256,7 @@ describe('settings', () => {
     const b = bridge();
     const api = libApi(world({ runs: [run('a'), run('b')] }));
     renderLib('/settings', api);
-    expect(await screen.findByText('2 risultati in un file .gpubench')).toBeTruthy();
+    expect(await screen.findByText('2 risultati in un file .llmbench')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Esporta…' }));
     expect(await screen.findByText('Esportati 2 risultati')).toBeTruthy();
     expect(api.calls.find((c) => c.path === '/api/runs/export')?.body).toEqual({ ids: ['a', 'b'] });
@@ -286,7 +286,7 @@ describe('settings', () => {
     const api = libApi(world({ runs: [run('a')] }));
     api.on('POST /api/runs/export', () => fail('RUN_NOT_FOUND', 404));
     renderLib('/settings', api);
-    expect(await screen.findByText('1 risultato in un file .gpubench')).toBeTruthy();
+    expect(await screen.findByText('1 risultato in un file .llmbench')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Esporta…' }));
     expect(await screen.findByText('Risultato non trovato')).toBeTruthy();
   });
@@ -299,7 +299,7 @@ describe('settings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'llmfit' }));
     expect(b.openExternal).toHaveBeenCalledWith('https://github.com/AlexsJones/llmfit');
     await userEvent.click(screen.getByRole('button', { name: 'Apri la cartella' }));
-    expect(b.revealPath).toHaveBeenCalledWith('C:\\Data\\GPU Bench');
+    expect(b.revealPath).toHaveBeenCalledWith('C:\\Data\\LLM Bench');
   });
 
   it('one result exports in the singular', async () => {

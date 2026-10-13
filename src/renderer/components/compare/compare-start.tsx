@@ -1,5 +1,5 @@
 /**
- * Confronta, before there is anything to compare: pick two to four MODELS (GPU Bench takes the fastest
+ * Confronta, before there is anything to compare: pick two to four MODELS (LLM Bench takes the fastest
  * configuration measured on this card for each, or the one you choose), or pick tests one by one. What
  * is already picked (from Risultati, Configurazioni, a result…) is shown on top, ready to compare.
  */

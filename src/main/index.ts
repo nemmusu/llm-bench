@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, Tray, utilityProcess } from 'electron';
+import * as fsSync from 'node:fs';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import v8 from 'node:v8';
@@ -21,5 +22,6 @@ startShell(
     write: (stream, d) => process[stream].write(d),
     takeCoverage: () => v8.takeCoverage(),
     expose: exposeOnGlobal,
+    legacy: { sync: fsSync, async: fs, hostname: os.hostname(), kill: process.kill.bind(process) },
   },
 );

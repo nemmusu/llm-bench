@@ -55,7 +55,7 @@ export function findLocalModel(run: Pick<RunResult, 'model'>, local: readonly Lo
 const measured = (points: readonly LatencyPoint[]) => points.filter((p) => p.decodeTps.n > 0);
 
 /**
- * A build GPU Bench installed: in this PC's engines folder, or in the same layout elsewhere (a test
+ * A build LLM Bench installed: in this PC's engines folder, or in the same layout elsewhere (a test
  * from another PC or user in a shared results folder): this PC's own managed build is used instead.
  */
 function managedBuild(exe: string, enginesDir: string | undefined): boolean {

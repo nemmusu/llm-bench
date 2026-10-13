@@ -52,7 +52,7 @@ describe('models: on your PC', () => {
 
   it('delete errors, cancel, empty library and load errors', async () => {
     const api = libApi(world({ local: [localModel('m1', { identity: { facts: undefined, quant: undefined, sizeBytes: undefined } })] }));
-    api.on('DELETE /api/models/local/*', () => fail('VALIDATION', 400, 'Only models inside the GPU Bench models folder can be deleted'));
+    api.on('DELETE /api/models/local/*', () => fail('VALIDATION', 400, 'Only models inside the LLM Bench models folder can be deleted'));
     renderLib('/models', api);
     expect(await screen.findByText('0 B')).toBeTruthy();
     await userEvent.click(await screen.findByRole('button', { name: 'Elimina: Model m1' }));
@@ -439,7 +439,7 @@ describe('models: download', () => {
     expect(await within(list).findByText('Richiede una RTX 5090')).toBeTruthy();
     expect(within(list).getAllByText('non supportato')).toHaveLength(2);
     expect(within(list).getByText('Altro formato')).toBeTruthy();
-    // Nothing GPU Bench runs: no verdict, and no "size unknown" either.
+    // Nothing LLM Bench runs: no verdict, and no "size unknown" either.
     const mlx = within(list).getAllByRole('listitem').find((li) => within(li).queryByRole('link', { name: 'mlx-community/Q-4bit' })) as HTMLElement;
     expect(within(mlx).queryByText('Dimensione non indicata')).toBeNull();
     expect(within(list).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ }).getAttribute('href')).toContain('modelName=prism-ml');

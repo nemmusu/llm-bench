@@ -11,7 +11,7 @@ describe('title bar colours', () => {
 });
 
 describe('startShell', () => {
-  it('quits at once when another GPU Bench is already open', () => {
+  it('quits at once when another LLM Bench is already open', () => {
     const w = world({ lock: false, env: { GPUBENCH_USER_DATA: '/tmp/ud' } });
     const s = startShell(w.e, w.h);
     expect(w.calls.quit).toBe(1);

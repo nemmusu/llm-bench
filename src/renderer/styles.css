@@ -3,7 +3,7 @@
 @import '@fontsource-variable/jetbrains-mono';
 
 /*
- * GPU Bench design tokens.
+ * LLM Bench design tokens.
  *
  * Runtime values live in CSS variables on :root (light) and [data-theme='dark'] so the theme can
  * switch without a rebuild; Tailwind utilities point at them through `@theme inline`.

@@ -58,7 +58,7 @@ export function shortGpuName(name: string): string {
   return name.replace(/^NVIDIA\s+(GeForce\s+)?/i, '');
 }
 
-/** True when `exe` lives inside the folder where GPU Bench installs engines (a managed build). */
+/** True when `exe` lives inside the folder where LLM Bench installs engines (a managed build). */
 export function isManagedExecutable(exe: string, enginesDir: string | undefined): boolean {
   if (!enginesDir) return false;
   const norm = (p: string) => p.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();

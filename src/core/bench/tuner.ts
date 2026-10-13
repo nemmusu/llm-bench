@@ -30,7 +30,8 @@
  *  5. Full context sweep of each type's best combination (and of any screened variant that was the
  *     fastest at one of its depths): what its screening measured is reused, so each deep prompt of a
  *     combination is measured once. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the
- *     exact maximum; "Accurata" doubles; both measure 200K when the context reaches it.
+ *     exact maximum, without 200K (minutes per request); "Accurata" doubles and measures 200K when
+ *     the context reaches it.
  *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
  *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
  *     the only way to a larger context.

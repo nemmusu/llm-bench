@@ -16,7 +16,7 @@ export function customEngineWhere(e: Pick<CustomEngine, 'run'>): string {
   return r.mode === 'native' ? r.path : r.mode === 'docker' ? r.image : r.template;
 }
 
-/** A GPU Bench setting in words ("l’ubatch"); an unknown key as it is. */
+/** A LLM Bench setting in words ("l’ubatch"); an unknown key as it is. */
 export function settingText(t: Formatters['t'], setting: string): string {
   const key = `engines.custom.settings.${setting}` as MessageKey;
   const text = t(key);
@@ -54,7 +54,7 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
     const reason = status.problemParams?.reason;
     const known = typeof reason === 'string' ? (`engines.custom.problems.${reason}` as MessageKey) : undefined;
     const text = known ? t(known, { path: String(status.problemParams?.path ?? ''), port: '{port}' }) : undefined;
-    // A reason GPU Bench can say in its own words, else the error catalog's text.
+    // A reason LLM Bench can say in its own words, else the error catalog's text.
     if (text !== undefined && text !== known) return <Callout tone="danger" title={text} />;
     return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_START_FAILED', message: status.location ?? '', ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
   }

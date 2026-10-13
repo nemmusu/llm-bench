@@ -1,6 +1,6 @@
 /**
  * "I tuoi preset" on the Server page: each saved preset with its model, engine, configuration in
- * words, port and network, "Avvia all'apertura di GPU Bench", and Avvia / Modifica / Elimina.
+ * words, port and network, "Avvia all'apertura di LLM Bench", and Avvia / Modifica / Elimina.
  */
 import { Globe, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';

@@ -1,4 +1,4 @@
-/** "Salva come preset": a name and "Avvia all'apertura di GPU Bench"; the rest comes from the server or the flow. */
+/** "Salva come preset": a name and "Avvia all'apertura di LLM Bench"; the rest comes from the server or the flow. */
 import { Bookmark } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';

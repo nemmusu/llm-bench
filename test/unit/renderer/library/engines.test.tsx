@@ -55,7 +55,7 @@ describe('engines: llama.cpp', () => {
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native', executable: 'D:\\llama\\llama-server.exe' }));
     expect(await within(llama).findByText('Funziona · versione b9999')).toBeTruthy();
     expect(within(llama).queryByText('In uso')).toBeNull();
-    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da GPU Bench' }));
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da LLM Bench' }));
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native' }));
   });
 
@@ -91,7 +91,7 @@ describe('engines: llama.cpp', () => {
     expect(await within(llama).findByText('Non parte')).toBeTruthy();
     expect(await within(llama).findByText('Il motore non è partito')).toBeTruthy();
     expect(await within(llama).findByText('Si è verificato un errore imprevisto')).toBeTruthy();
-    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da GPU Bench' }));
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da LLM Bench' }));
     expect(await within(llama).findByText('Alcuni valori non sono validi')).toBeTruthy();
   });
 
@@ -168,7 +168,7 @@ describe('engines: Docker', () => {
     expect(await within(docker).findByText('Immagine pronta: ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'error', bytesDone: 0 }));
     expect(await within(docker).findByText('Download dell’immagine Docker non riuscito')).toBeTruthy();
-    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }));
+    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di LLM Bench' }));
     expect(await screen.findByText('Contenitori rimossi: 1')).toBeTruthy();
   });
 
@@ -181,7 +181,7 @@ describe('engines: Docker', () => {
     expect(await within(docker).findByText('Motivo: gpu-check-failed')).toBeTruthy();
     await userEvent.click(within(docker).getByRole('button', { name: 'Verifica la GPU in Docker' }));
     expect(await within(docker).findByText('Docker non vede la scheda video')).toBeTruthy();
-    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }));
+    await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di LLM Bench' }));
     expect(await within(docker).findByText('Non ho i permessi per usare Docker')).toBeTruthy();
   });
 
@@ -245,7 +245,7 @@ describe('engines: Docker', () => {
     expect(await within(docker).findByText('Non riesco a capire lo stato di Docker: premi «Ricontrolla».')).toBeTruthy();
     api.w.docker = { state: 'unsupported', reason: 'podman' };
     await userEvent.click(within(docker).getByRole('button', { name: 'Ricontrolla' }));
-    expect(await within(docker).findByText('Questa installazione di Docker non è supportata da GPU Bench.')).toBeTruthy();
+    expect(await within(docker).findByText('Questa installazione di Docker non è supportata da LLM Bench.')).toBeTruthy();
     expect(within(docker).getByText('Motivo: podman')).toBeTruthy();
     api.w.docker = { state: 'starting' };
     await userEvent.click(within(docker).getByRole('button', { name: 'Ricontrolla' }));

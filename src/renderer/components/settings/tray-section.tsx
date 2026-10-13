@@ -1,5 +1,5 @@
 /**
- * Settings → "Area di notifica": what closing the window does, and "Avvia GPU Bench all'accesso".
+ * Settings → "Area di notifica": what closing the window does, and "Avvia LLM Bench all'accesso".
  * The main process follows these settings (tray, close-to-tray, the login item); on a Linux desktop
  * without a notification area the window is minimized instead, and this section says so.
  */

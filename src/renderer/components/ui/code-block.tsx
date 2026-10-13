@@ -31,7 +31,7 @@ type TokenKind = 'cmd' | 'flag' | 'string' | 'cont' | 'text';
 export function tokenize(command: string): { text: string; kind: TokenKind }[] {
   const out: { text: string; kind: TokenKind }[] = [];
   let first = true;
-  // Quoted strings stay whole even when they contain spaces (e.g. "…\GPU Bench\…").
+  // Quoted strings stay whole even when they contain spaces (e.g. "…\LLM Bench\…").
   for (const part of command.match(/'[^']*'|"[^"]*"|\s+|[^\s'"]+|['"]/g) ?? []) {
     if (/^\s+$/.test(part)) {
       out.push({ text: part, kind: 'text' });

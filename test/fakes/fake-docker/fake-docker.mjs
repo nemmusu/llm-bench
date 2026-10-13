@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fake `docker` CLI for tests: the subset GPU Bench calls, with real child processes as
+// Fake `docker` CLI for tests: the subset LLM Bench calls, with real child processes as
 // "containers" (the fake engine bound to the published host port). Run with plain `node`.
 //
 //   version --format json | desktop start [--detach] | run [-d] [--rm] [--name N] [--label L]…

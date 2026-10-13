@@ -127,7 +127,7 @@ export const BUSY_NOTE_SHARE = 0.15;
 export const vramNowSchema = z.object({
   totalMiB: z.number(),
   freeMiB: z.number(),
-  /** In use by other programs (not GPU Bench's own engines). */
+  /** In use by other programs (not LLM Bench's own engines). */
   busyMiB: z.number().min(0),
   reserveMiB: z.number(),
 });
@@ -167,7 +167,7 @@ export const fitEstimateSchema = z.object({
   totalMiB: z.number().optional(),
   /** VRAM free right now (total minus what every program holds), MiB; absent when unknown. */
   freeNowMiB: z.number().optional(),
-  /** What other programs hold right now (in use minus GPU Bench's own engines), MiB; absent when unknown. */
+  /** What other programs hold right now (in use minus LLM Bench's own engines), MiB; absent when unknown. */
   busyMiB: z.number().min(0).optional(),
   /**
    * The verdict for a launch right now: llama.cpp against min(free now, total − reserve), vLLM refusing to
@@ -250,7 +250,7 @@ export const hubModelSchema = z.object({
   formats: z.array(z.enum(['gguf', 'safetensors', 'ninfer', 'other'])).default([]),
   /** Safetensors precision from the name, tags and the hub's dtype counts (contract/formats.ts). */
   precision: z.enum(PRECISIONS).optional(),
-  /** The formats behind 'other' ("MLX", "ONNX", "NInfer"…): listed, not run by GPU Bench. */
+  /** The formats behind 'other' ("MLX", "ONNX", "NInfer"…): listed, not run by LLM Bench. */
   otherFormats: z.array(z.string()).default([]),
   paramsB: z.number().optional(),
   pipelineTag: z.string().optional(),

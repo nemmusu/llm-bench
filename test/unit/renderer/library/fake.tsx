@@ -57,7 +57,7 @@ export function system(over: Partial<SystemResponse> = {}): SystemResponse {
       { pid: 9, name: 'ollama.exe', knownLlm: true },
     ],
     docker: { state: 'running', version: '29.8.0' },
-    paths: { dataDir: 'C:\\Data\\GPU Bench', resultsDir: 'C:\\Data\\GPU Bench\\results', modelsDir: 'C:\\Models', enginesDir: 'C:\\Data\\GPU Bench\\engines' },
+    paths: { dataDir: 'C:\\Data\\LLM Bench', resultsDir: 'C:\\Data\\LLM Bench\\results', modelsDir: 'C:\\Models', enginesDir: 'C:\\Data\\LLM Bench\\engines' },
     ...over,
   };
 }
@@ -383,6 +383,7 @@ export function libApi(w: World = world()): LibApi {
   const overrides = new Map<string, Handler>();
   const routes: Record<string, Handler> = {
     'GET /api/health': () => ({ ok: true, version: '0.1.0', pid: 1 }),
+    'GET /api/app/notices': () => [],
     'GET /api/settings': () => ({ ...w.settings }),
     'PUT /api/settings': (b) => {
       w.settings = { ...w.settings, ...(b as Partial<Settings>) };
@@ -592,7 +593,7 @@ export function bridge(over: Partial<Bridge> = {}): Bridge {
     pickFile: vi.fn(async () => 'D:\\llama\\llama-server.exe'),
     saveHfToken: vi.fn(async () => ({ ok: true, secure: true })),
     clearHfToken: vi.fn(async () => undefined),
-    saveFile: vi.fn(async () => 'D:\\export.gpubench'),
+    saveFile: vi.fn(async () => 'D:\\export.llmbench'),
     setTitleBarTheme: vi.fn(async () => undefined),
     ...over,
   };

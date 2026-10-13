@@ -247,7 +247,7 @@ describe('summary', () => {
       'extra arguments: --metrics',
       '1 environment variables',
     ]);
-    // The layout follows the extra arguments too (GPU Bench adds --kv-unified unless they say otherwise).
+    // The layout follows the extra arguments too (LLM Bench adds --kv-unified unless they say otherwise).
     expect(paramParts('llamacpp-native', { extraArgs: ['--no-kv-unified'], env: {}, parallel: 4 }, 36, it_)).toContain('contesto diviso per utente');
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 20 }, 36, it_)).toEqual(['20 livelli in GPU']);
     expect(paramParts('llamacpp-docker', { extraArgs: [], env: {}, gpuLayers: 99 }, 36, it_)).toEqual(['tutto in GPU']);
@@ -496,7 +496,7 @@ describe('expert form', () => {
 describe('rerun', () => {
   const lib = [local('m', { weakKey: seeded(IDS.full).model.weakKey }), local('p')];
   it('turns a run back into a request', () => {
-    const r = rerunOf(seeded(IDS.full), lib, 'C:\\Users\\utente\\AppData\\Roaming\\GPU Bench\\engines');
+    const r = rerunOf(seeded(IDS.full), lib, 'C:\\Users\\utente\\AppData\\Roaming\\LLM Bench\\engines');
     expect(r.request).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'm' }, profile: 'full' });
     expect(r.request.params?.contextSize).toBe(8192);
     expect(r.modelMissing).toBe(false);

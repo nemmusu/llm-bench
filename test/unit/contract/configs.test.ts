@@ -196,7 +196,7 @@ describe('configuration settings from a launch', () => {
     expect(llama(['-np', '4', '-no-kvu']).kvLayout).toBe('split');
     // A command line with several slots and no flag: llama-server splits (the pool is shared only with automatic slots).
     expect(llama(['-np', '4']).kvLayout).toBe('split');
-    // Params alone: GPU Bench adds --kv-unified itself, unless the extra arguments say otherwise.
+    // Params alone: LLM Bench adds --kv-unified itself, unless the extra arguments say otherwise.
     expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ parallel: 4 }) }).kvLayout).toBe('unified');
     expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ parallel: 4, extraArgs: ['--no-kv-unified'] }) }).kvLayout).toBe('split');
     // One slot: the layout makes no difference.

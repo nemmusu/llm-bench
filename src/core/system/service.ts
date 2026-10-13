@@ -18,7 +18,7 @@ export interface SystemServiceOptions {
   sysinfo: SysInfo;
   /** Docker state from the docker module; absent = "unknown". */
   dockerStatus?: () => Promise<DockerStatus>;
-  /** PIDs GPU Bench started (process registry), never reported as "other" GPU users. */
+  /** PIDs LLM Bench started (process registry), never reported as "other" GPU users. */
   ownPids?: () => number[];
   log?: Logger;
   /** Snapshot reuse window for the polling monitor (default 500 ms). */

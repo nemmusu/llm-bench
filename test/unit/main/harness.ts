@@ -6,6 +6,7 @@ import type { BrowserWindowConstructorOptions, MenuItemConstructorOptions } from
 import type { ShellState as CoreState } from '../../../src/contract/servers';
 import { startShell, type ElectronApi, type ShellHost, type ShellTestHooks } from '../../../src/main/shell';
 import type { CommandResult } from '../../../src/main/tray-support';
+import type { FakeFs } from './fake-fs';
 
 export type Handler = (...args: unknown[]) => unknown;
 
@@ -160,6 +161,15 @@ export interface WorldOptions {
   /** Index of the button the "Esci" dialog returns. */
   quitResponse?: number;
   loginEnabled?: boolean;
+  /** GPU Bench's data (the rename migration): the in-memory file system it lives in. */
+  legacy?: FakeFs;
+  /** safeStorage.decryptString (default: strips the 'enc:' prefix). */
+  decrypt?: (b: Buffer) => string;
+  /** Files whose write fails, and whether rm fails. */
+  writeFails?: (p: string) => boolean;
+  rmFails?: boolean;
+  /** Called when the shell asks for the single-instance lock. */
+  onLock?: () => void;
 }
 
 export function world(o: WorldOptions = {}) {
@@ -196,7 +206,10 @@ export function world(o: WorldOptions = {}) {
       setPath: (n: string, p: string) => void calls.setPath.push([n, p]),
       getPath: (n: string) => (n === 'userData' ? '/user' : '/docs'),
       isPackaged: o.packaged ?? false,
-      requestSingleInstanceLock: () => o.lock ?? true,
+      requestSingleInstanceLock: () => {
+        o.onLock?.();
+        return o.lock ?? true;
+      },
       quit: () => void calls.quit++,
       exit: (c?: number) => void calls.exit.push(c ?? 0),
       relaunch: () => void calls.relaunch++,
@@ -223,7 +236,7 @@ export function world(o: WorldOptions = {}) {
     safeStorage: {
       isEncryptionAvailable: () => o.secure ?? true,
       encryptString: (s: string) => Buffer.from(`enc:${s}`),
-      decryptString: (b: Buffer) => b.toString().replace(/^enc:/, ''),
+      decryptString: (b: Buffer) => (o.decrypt ? o.decrypt(b) : b.toString().replace(/^enc:/, '')),
       getSelectedStorageBackend: (() => o.backend ?? 'gnome_libsecret') as never,
     },
     shell: {
@@ -258,15 +271,22 @@ export function world(o: WorldOptions = {}) {
         if (v === undefined) throw new Error('ENOENT');
         return Buffer.isBuffer(v) ? v : Buffer.from(v);
       },
-      writeFile: async (p, d) => void files.set(p, d as Buffer),
+      writeFile: async (p, d) => {
+        if (o.writeFails?.(p)) throw new Error(`EACCES: ${p}`);
+        files.set(p, d as Buffer);
+      },
       mkdir: async () => undefined,
-      rm: async (p) => void files.delete(p),
+      rm: async (p) => {
+        if (o.rmFails) throw new Error(`EPERM: ${p}`);
+        files.delete(p);
+      },
     },
     run: async (cmd) => o.run?.(cmd) ?? { code: null, stdout: '' },
     write: (_stream, d) => void out.push(d),
     takeCoverage: () => void coverage++,
     expose: (name, value) => void (exposed[name] = value),
     shutdownTimeoutMs: o.timeoutMs ?? 50,
+    ...(o.legacy ? { legacy: { sync: o.legacy, async: o.legacy, hostname: 'pc', kill: () => true } } : {}),
   };
   const invoke = (ch: string, ...args: unknown[]) => handlers.get(ch)!({}, ...args);
   return {

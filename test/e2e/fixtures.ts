@@ -18,6 +18,12 @@ export interface LaunchOptions {
   settings?: Record<string, unknown>;
   /** Reuse an existing userData dir (to test persistence across restarts). */
   userData?: string;
+  /**
+   * GPU Bench's data folder to take over (the rename to LLM Bench): `userData` is then left exactly as
+   * given (no settings.json, no seeded model) and the fake tools keep their state in `stateDir`.
+   */
+  legacyUserData?: string;
+  stateDir?: string;
 }
 
 export interface AppHandle {
@@ -35,14 +41,16 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const fakes = existsSync(E2E_ENV_FILE) ? (JSON.parse(readFileSync(E2E_ENV_FILE, 'utf8')) as Record<string, string>) : {};
   // Deterministic library: one tiny model, and never the real folders of this PC.
   const settingsFile = path.join(userData, 'settings.json');
-  if (!existsSync(settingsFile)) writeFileSync(settingsFile, JSON.stringify({ scanKnownLocations: false, ...opts.settings }));
+  if (!opts.legacyUserData && !existsSync(settingsFile)) writeFileSync(settingsFile, JSON.stringify({ scanKnownLocations: false, ...opts.settings }));
   const seeded = path.join(userData, 'models', 'local', 'Qwen3-0.6B-Q4_K_M.gguf');
-  if ((opts.seedModel ?? true) && !existsSync(seeded)) {
+  if (!opts.legacyUserData && (opts.seedModel ?? true) && !existsSync(seeded)) {
     mkdirSync(path.dirname(seeded), { recursive: true });
     writeFileSync(seeded, buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 0.6B', sizeLabel: '0.6B' }), totalSize: 96 * 1024 }));
   }
-  const dockerState = path.join(userData, 'fake-docker');
-  const smiState = path.join(userData, 'fake-nvidia-smi.json');
+  const stateDir = opts.stateDir ?? userData;
+  mkdirSync(stateDir, { recursive: true });
+  const dockerState = path.join(stateDir, 'fake-docker');
+  const smiState = path.join(stateDir, 'fake-nvidia-smi.json');
   if (!existsSync(smiState)) writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
   Object.assign(env, {
     ...fakes,
@@ -57,8 +65,9 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     GPUBENCH_MODELS_DIR: path.join(userData, 'models'),
     // The tray and the window through globalThis.__gpubench (Playwright cannot click the OS tray); no desktop toasts.
     GPUBENCH_TEST_HOOKS: '1',
-    // "Avvia GPU Bench all'accesso" writes here, never to this PC's real login items.
-    GPUBENCH_FAKE_LOGIN_ITEM: path.join(userData, 'login-item.json'),
+    // "Avvia LLM Bench all'accesso" writes here, never to this PC's real login items.
+    GPUBENCH_FAKE_LOGIN_ITEM: path.join(stateDir, 'login-item.json'),
+    ...(opts.legacyUserData ? { GPUBENCH_LEGACY_USER_DATA: opts.legacyUserData } : {}),
     ...(process.env.GPUBENCH_E2E_COVERAGE ? { NODE_V8_COVERAGE: process.env.GPUBENCH_E2E_COVERAGE } : {}),
     ...opts.env,
   });

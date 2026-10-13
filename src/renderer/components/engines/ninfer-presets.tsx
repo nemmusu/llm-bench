@@ -14,7 +14,7 @@ export interface NinferPresetPickerProps {
   onChange: (v: NinferChoice) => void;
 }
 
-/** "Impostazioni di NInfer" for a .ninfer model: the built-in presets, the result's own, or GPU Bench's choice. */
+/** "Impostazioni di NInfer" for a .ninfer model: the built-in presets, the result's own, or LLM Bench's choice. */
 export function NinferPresetPicker({ presets, run, value, onChange }: NinferPresetPickerProps) {
   const { t } = useI18n();
   const chosen = presets.find((p) => p.id === value);

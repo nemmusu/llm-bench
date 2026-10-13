@@ -1,5 +1,5 @@
 /**
- * Spills of runs saved before GPU Bench measured the shared memory (no metrics.vram.sharedPeakMiB).
+ * Spills of runs saved before LLM Bench measured the shared memory (no metrics.vram.sharedPeakMiB).
  * Nothing in such a file says that the model did not fit, yet a run that spilled generated ~10–15×
  * slower than every other run of the same model on that card: an RTX 5090 Rapido at 256K of f16 cache
  * made 3.5 tok/s where the clean runs made 54.6 and 53.7, and its numbers drove the expected durations,

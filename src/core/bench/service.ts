@@ -78,7 +78,7 @@ export interface BenchServiceDeps {
   shutdown?: AbortSignal;
   /** Last-minute engine tweaks the user never has to think about (e.g. use the model's Docker volume copy). */
   adjustEngine?: (req: StartServerRequest, model: ModelTarget) => Promise<EngineConfig | undefined>;
-  /** Reason a run cannot start right now (e.g. a GPU Bench server holds the GPU), or undefined. */
+  /** Reason a run cannot start right now (e.g. a LLM Bench server holds the GPU), or undefined. */
   blockedBy?: () => AppError | undefined;
   /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
   calibration?: TuneSetupDeps['calibration'];
@@ -148,7 +148,7 @@ export interface PreparedServer extends Launched {
 /** Plan fields shared by runs and servers. */
 type Preview = Pick<RunPlan, 'command' | 'needs' | 'pending' | 'fit' | 'warnings'>;
 
-/** vLLM's default gpu_memory_utilization, and the VRAM left free when GPU Bench lowers it. */
+/** vLLM's default gpu_memory_utilization, and the VRAM left free when LLM Bench lowers it. */
 const VLLM_DEFAULT_UTILIZATION = 0.9;
 const VLLM_FREE_MARGIN_MIB = 768;
 
@@ -166,7 +166,7 @@ const isVllm = (kind: EngineKind): boolean => {
 };
 
 /**
- * Plan warnings of the launch itself: GPU Bench flags the build does not know (a fork), left out of
+ * Plan warnings of the launch itself: LLM Bench flags the build does not know (a fork), left out of
  * the command so the engine's own default applies ('flag_unsupported').
  */
 export function launchWarnings(launch: Pick<LaunchPlan, 'unsupported' | 'engine'>): ScenarioWarning[] {
@@ -289,7 +289,7 @@ export class BenchService {
     const contextSize = await this.fillServerContext(run, model, params);
     const apiName = serverApiName(kind, model);
     const c = await this.command(run, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName, port: req.port });
-    // "Rendi raggiungibile dalla rete locale": every card, GPU Bench's API key (the preview shows it redacted).
+    // "Rendi raggiungibile dalla rete locale": every card, LLM Bench's API key (the preview shows it redacted).
     if (req.network === 'lan') c.launch = exposeOnLan(c.launch, opts.preview ? API_KEY_PLACEHOLDER : this.serverApiKey());
     const past = opts.preview ? undefined : (await this.expectedLoad(model, kind)).expectedLoadMs;
     const expectedLoadMs = past?.warm ?? past?.cold;

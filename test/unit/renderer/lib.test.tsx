@@ -48,11 +48,11 @@ describe('command formatting', () => {
   });
 
   it('formats multi-line commands for both shells', () => {
-    const argv = ['C:\\GPU Bench\\llama-server.exe', '--model', 'C:\\m.gguf', '--no-webui', '-v', '--n-predict', '-1', '--port', '80'];
+    const argv = ['C:\\LLM Bench\\llama-server.exe', '--model', 'C:\\m.gguf', '--no-webui', '-v', '--n-predict', '-1', '--port', '80'];
     expect(formatCommand(argv, 'powershell', { CUDA_VISIBLE_DEVICES: "0'" })).toBe(
       [
         "$env:CUDA_VISIBLE_DEVICES = '0'''",
-        "& 'C:\\GPU Bench\\llama-server.exe' `",
+        "& 'C:\\LLM Bench\\llama-server.exe' `",
         '  --model C:\\m.gguf `',
         '  --no-webui `',
         '  -v `',

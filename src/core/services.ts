@@ -64,6 +64,7 @@ import { ServerPresets } from './servers/presets';
 import { createServerRoutes } from './servers/routes';
 import { ServeService } from './servers/service';
 import { createSystemRoutes } from './system/routes';
+import { createAppNoticeRoutes } from './system/notices';
 import { createSystemService } from './system/service';
 
 /** Lookup of local models (the models module plugs in here). */
@@ -115,7 +116,7 @@ export interface CoreServices {
   modelServices?: ModelServices;
   evictor: CacheEvictor;
   windowsStandby?: WindowsStandbyEvictor;
-  /** PIDs of engine processes GPU Bench started (kept fresh for "other GPU users" checks). */
+  /** PIDs of engine processes LLM Bench started (kept fresh for "other GPU users" checks). */
   ownPids(): number[];
   /** Ownership marker of the run in progress (its container must survive a cleanup). */
   activeMarker(): string | undefined;
@@ -367,7 +368,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   else if (deps.platform === 'win32') evictor = windowsStandby = new WindowsStandbyEvictor(deps);
 
   /**
-   * VRAM held right now by engines GPU Bench started (a server left running): in use, but not by "other
+   * VRAM held right now by engines LLM Bench started (a server left running): in use, but not by "other
    * programs" (the fit's busyMiB). Read only while one runs, and at most every 2 s.
    */
   let ownVram: { at: number; value: Promise<number> } | undefined;
@@ -556,7 +557,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     telemetryIntervalMs: async () => (await ctx.settings.get()).telemetryIntervalMs,
     shutdown: ctx.shutdown,
     blockedBy: () =>
-      serve.busy() ? new AppError('VRAM_BUSY', 'A GPU Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
+      serve.busy() ? new AppError('VRAM_BUSY', 'A LLM Bench server is running on the GPU', { params: { reason: 'own_server' } }) : undefined,
     calibration: (model, kind) => {
       const id = model.identity;
       return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);
@@ -603,6 +604,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
 /** HTTP routes of every service. */
 export function serviceModules(s: CoreServices): RouteModule[] {
   return [
+    createAppNoticeRoutes(),
     createSystemRoutes((ctx) =>
       createSystemService({
         paths: ctx.deps.paths,

@@ -113,7 +113,7 @@ describe('LlamaReleasesClient', () => {
     const req = gh.requests[before];
     expect(req?.url).toBe('/repos/ggml-org/llama.cpp/releases?per_page=30');
     expect(req?.headers['if-none-match']).toMatch(/^W\//);
-    expect(req?.headers['user-agent']).toBe('gpu-bench/1.2.3');
+    expect(req?.headers['user-agent']).toBe('llm-bench/1.2.3');
   });
 
   it('rate limited: GITHUB_RATE_LIMITED with the reset time, or the stale cache when there is one', async () => {

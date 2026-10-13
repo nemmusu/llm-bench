@@ -1,6 +1,6 @@
 /**
  * A server of one's own, kept running: "Comandi personalizzati" saved as a preset that starts with
- * GPU Bench, started from it; closing the window keeps GPU Bench in the tray (the tray through the
+ * LLM Bench, started from it; closing the window keeps LLM Bench in the tray (the tray through the
  * main process's test hooks, see server-helpers.ts) and the server answering; "Esci" stops it.
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -17,7 +17,7 @@ const FAST = { FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, loadMsCold
 const PORT = 18431;
 const URL = `http://127.0.0.1:${PORT}/v1`;
 
-test('custom commands saved as a preset and started from it; the window closes to the tray, the server keeps answering; "Esci" stops it; the preset starts with GPU Bench', async () => {
+test('custom commands saved as a preset and started from it; the window closes to the tray, the server keeps answering; "Esci" stops it; the preset starts with LLM Bench', async () => {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-serve-'));
   let gb = await launchApp({ env: FAST, userData });
   try {
@@ -39,12 +39,12 @@ test('custom commands saved as a preset and started from it; the window closes t
     await expect(command).toContainText(String(PORT));
     await scan(page, 'custom commands');
 
-    // Saved as a preset that starts with GPU Bench.
+    // Saved as a preset that starts with LLM Bench.
     await page.getByRole('button', { name: 'Salva come preset' }).click();
     const save = page.getByRole('dialog', { name: 'Salva come preset' });
     await expect(save.getByText(`porta ${PORT}.`, { exact: false })).toBeVisible();
     await save.getByLabel('Nome').fill('Chat veloce');
-    await save.getByRole('checkbox', { name: /Avvia all’apertura di GPU Bench/ }).click();
+    await save.getByRole('checkbox', { name: /Avvia all’apertura di LLM Bench/ }).click();
     await scan(page, 'save as preset');
     await save.getByRole('button', { name: 'Salva' }).click();
     await expect(page.getByText('Preset «Chat veloce» salvato')).toBeVisible();
@@ -73,19 +73,19 @@ test('custom commands saved as a preset and started from it; the window closes t
     expect(await hook(app, 'clickTray', `Chat veloce · porta ${PORT}`, 'Copia indirizzo')).toBe(true);
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(URL);
 
-    // Closing the window: GPU Bench stays in the tray (said once), the server keeps answering.
+    // Closing the window: LLM Bench stays in the tray (said once), the server keeps answering.
     await hook(app, 'closeWindow');
-    await expect.poll(async () => (await hook(app, 'notifications')).map((n) => n.body)).toContain('GPU Bench resta attivo nell’area di notifica: il server continua a funzionare.');
+    await expect.poll(async () => (await hook(app, 'notifications')).map((n) => n.body)).toContain('LLM Bench resta attivo nell’area di notifica: il server continua a funzionare.');
     expect(await hook(app, 'windowState')).toMatchObject({ visible: false, destroyed: false });
     expect(await modelsStatus(URL)).toBe(200);
 
-    // "Avvia GPU Bench all'accesso": the login item follows the switch (a file here, never this PC's real one).
+    // "Avvia LLM Bench all'accesso": the login item follows the switch (a file here, never this PC's real one).
     await nav.getByRole('link', { name: 'Impostazioni' }).click();
-    await page.getByRole('switch', { name: 'Avvia GPU Bench all’accesso' }).click();
+    await page.getByRole('switch', { name: 'Avvia LLM Bench all’accesso' }).click();
     const loginFile = path.join(userData, 'login-item.json');
     await expect.poll(() => (existsSync(loginFile) ? (JSON.parse(readFileSync(loginFile, 'utf8')) as { openAtLogin?: boolean }).openAtLogin : undefined)).toBe(true);
 
-    // "Esci" from the tray, confirmed: GPU Bench stops its server and quits.
+    // "Esci" from the tray, confirmed: LLM Bench stops its server and quits.
     await hook(app, 'answerQuit', true);
     const exited = new Promise<void>((resolve) => app.process().once('exit', () => resolve()));
     expect(await hook(app, 'clickTray', 'Esci')).toBe(true);
@@ -96,7 +96,7 @@ test('custom commands saved as a preset and started from it; the window closes t
     await gb.close().catch(() => undefined);
   }
 
-  // Next time GPU Bench opens, the preset marked "Avvia all'apertura" starts by itself.
+  // Next time LLM Bench opens, the preset marked "Avvia all'apertura" starts by itself.
   gb = await launchApp({ env: FAST, userData });
   try {
     const { page, app } = gb;

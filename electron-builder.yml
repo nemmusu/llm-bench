@@ -1,6 +1,6 @@
-appId: app.gpubench.desktop
-productName: GPU Bench
-copyright: Copyright © 2026 GPU Bench
+appId: app.llmbench.desktop
+productName: LLM Bench
+copyright: Copyright © 2026 LLM Bench
 directories:
   output: dist
   buildResources: build
@@ -42,15 +42,15 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: GPU Bench
+  shortcutName: LLM Bench
   installerLanguages: [it_IT, en_US]
   language: '1040'
   displayLanguageSelector: true
-  artifactName: GPU-Bench-Setup-${version}.${ext}
-  uninstallDisplayName: GPU Bench
+  artifactName: LLM-Bench-Setup-${version}.${ext}
+  uninstallDisplayName: LLM Bench
 
 portable:
-  artifactName: GPU-Bench-${version}-portable.${ext}
+  artifactName: LLM-Bench-${version}-portable.${ext}
 
 linux:
   target:
@@ -61,11 +61,16 @@ linux:
   icon: resources/icons/icon.png
   category: Utility
   synopsis: Misura le prestazioni della GPU con l'inferenza LLM
-  description: GPU Bench misura caricamento a freddo e a caldo, token/s, latenza, VRAM e consumi con llama.cpp e vLLM.
-  maintainer: GPU Bench <noreply@gpubench.invalid>
-  artifactName: gpu-bench-${version}-${arch}.${ext}
-  # Lets the desktop link the running window to gpu-bench.desktop (app_id / WM_CLASS).
+  description: LLM Bench misura caricamento a freddo e a caldo, token/s, latenza, VRAM e consumi con llama.cpp, vLLM, SGLang e NInfer.
+  maintainer: LLM Bench <noreply@llmbench.invalid>
+  # llm-bench-<version>-amd64.deb, llm-bench-<version>-x86_64.AppImage
+  artifactName: llm-bench-${version}-${arch}.${ext}
+  # Lets the desktop link the running window to llm-bench.desktop (app_id / WM_CLASS).
   syncDesktopName: true
+  desktop:
+    entry:
+      Name: LLM Bench
+      StartupWMClass: llm-bench
 
 deb:
   priority: optional

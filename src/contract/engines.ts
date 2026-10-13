@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * How an engine runs. SGLang: Docker everywhere (`lmsysorg/sglang`, on Windows through Docker
  * Desktop's WSL2 GPU), native on Linux only. 'command': a program the user names with a command
- * template (contract/custom-engines.ts) that serves the OpenAI API: GPU Bench starts and stops it,
+ * template (contract/custom-engines.ts) that serves the OpenAI API: LLM Bench starts and stops it,
  * and measures it like an external endpoint.
  */
 export const ENGINE_KINDS = [
@@ -31,7 +31,7 @@ export type ApiFlavor = z.infer<typeof apiFlavorSchema>;
 
 /**
  * The engine behind a kind: which flags, logs, readiness and tuner dimensions apply. 'external'
- * covers every OpenAI server GPU Bench only talks to (external endpoints) or starts from a command
+ * covers every OpenAI server LLM Bench only talks to (external endpoints) or starts from a command
  * template ('command'): no known flags.
  */
 export type EngineBase = 'llamacpp' | 'vllm' | 'sglang' | 'ninfer' | 'external';
@@ -87,7 +87,7 @@ export type NinferSpec = (typeof NINFER_SPECS)[number];
 /**
  * NInfer's own launch settings (LaunchParams.ninfer). The shared fields keep their meaning:
  * contextSize → --max-context (each request's ceiling, prompt + answer), parallel → --max-concurrency
- * (requests served at once, 1..8). Unset = NInfer's default, except what GPU Bench sets for benchmarks
+ * (requests served at once, 1..8). Unset = NInfer's default, except what LLM Bench sets for benchmarks
  * (core/engines/ninfer/args.ts: no prefix reuse, no thinking).
  */
 export const ninferParamsSchema = z.object({
@@ -116,7 +116,7 @@ export type NinferParams = z.infer<typeof ninferParamsSchema>;
 
 /**
  * User-facing launch parameters. Beginners never see most of these: defaults come from
- * the planner. `undefined` means "let GPU Bench decide".
+ * the planner. `undefined` means "let LLM Bench decide".
  */
 export const launchParamsSchema = z.object({
   contextSize: z.number().int().positive().optional(),

@@ -26,7 +26,7 @@ export interface NinferBuildDialogProps {
 }
 
 /**
- * "Compila NInfer": the folder, what is missing (with the apt line to copy: GPU Bench never installs
+ * "Compila NInfer": the folder, what is missing (with the apt line to copy: LLM Bench never installs
  * system packages), the exact commands, then the build after an explicit confirmation, with progress.
  */
 export function NinferBuildDialog({ open, onOpenChange, kind, distro }: NinferBuildDialogProps) {

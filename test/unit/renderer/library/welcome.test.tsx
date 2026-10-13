@@ -33,7 +33,7 @@ describe('welcome wizard', () => {
       engines: [{ kind: 'llamacpp-native', available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }],
     });
     renderLib('/welcome', api);
-    expect(await h1('Benvenuto in GPU Bench')).toBeTruthy();
+    expect(await h1('Benvenuto in LLM Bench')).toBeTruthy();
     expect(await screen.findByText('Versione 617.14 · CUDA 13.4')).toBeTruthy();
     expect(screen.getByText('Mancano ancora 2 cose: premi il pulsante accanto a ciascuna, al resto penso io.')).toBeTruthy();
     expect(screen.queryByText('vLLM (Linux)')).toBeNull();
@@ -74,7 +74,7 @@ describe('welcome wizard', () => {
     await waitFor(() => expect(api.w.settings.onboardingDone).toBe(true));
     expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native' });
     expect(api.w.settings.lastModelId).toBeUndefined();
-    await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'Benvenuto in GPU Bench' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'Benvenuto in LLM Bench' })).toBeNull());
   });
 
   it('a model already on the PC is recommended and becomes the benchmark model', async () => {

@@ -7,7 +7,7 @@
  *   cmake --build <dir>/build -j
  *
  * Prerequisites are checked first (one read-only script); what is missing is listed with its apt
- * packages and a "sudo apt install …" line to copy: GPU Bench never installs system packages, and never
+ * packages and a "sudo apt install …" line to copy: LLM Bench never installs system packages, and never
  * changes anything else in the distro. Progress comes from git's and ninja's own lines ("[12/345]").
  */
 import { NINFER_REPO_URL, NINFER_SERVE_PATH, type NINFER_BUILD_STAGES, type NinferBuildPlan, type NinferBuildRequest, type NinferKind, type NinferPrereq } from '../../../contract/ninfer';

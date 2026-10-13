@@ -22,7 +22,7 @@ export function render(messages) {
   return `${messages.map((m) => `<|im_start|>${m.role}\n${typeof m.content === 'string' ? m.content : ''}<|im_end|>\n`).join('')}<|im_start|>assistant\n`;
 }
 
-/** Tokens of a text: one per 4.3 characters (the calibration in GPU Bench finds this). */
+/** Tokens of a text: one per 4.3 characters (the calibration in LLM Bench finds this). */
 export function tokens(text) {
   return Math.ceil(text.length / 4.3);
 }

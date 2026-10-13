@@ -92,7 +92,7 @@ test('history: filter, export the result and a selection, import, delete', async
     const chooser2 = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Importa' }).click();
     await (await chooser2).setFiles(wrong);
-    await expect(page.getByText('Questo file non è un’esportazione di GPU Bench.')).toBeVisible();
+    await expect(page.getByText('Questo file non è un’esportazione di LLM Bench.')).toBeVisible();
   } finally {
     await gb.close();
   }

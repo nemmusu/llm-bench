@@ -50,17 +50,19 @@ describe('bootstrap helpers', () => {
   });
 
   it('puts data in the usual per-user folder of each OS', () => {
-    expect(defaultDataDir('win32', { APPDATA: 'C:\\Users\\u\\AppData\\Roaming' }, 'C:\\Users\\u')).toBe(path.join('C:\\Users\\u\\AppData\\Roaming', 'GPU Bench'));
-    expect(defaultDataDir('win32', {}, '/h')).toBe(path.join('/h', 'AppData', 'Roaming', 'GPU Bench'));
-    expect(defaultDataDir('linux', { XDG_CONFIG_HOME: '/x' }, '/h')).toBe(path.join('/x', 'gpu-bench'));
-    expect(defaultDataDir('linux', {}, '/h')).toBe(path.join('/h', '.config', 'gpu-bench'));
+    expect(defaultDataDir('win32', { APPDATA: 'C:\\Users\\u\\AppData\\Roaming' }, 'C:\\Users\\u')).toBe(path.join('C:\\Users\\u\\AppData\\Roaming', 'LLM Bench'));
+    expect(defaultDataDir('win32', {}, '/h')).toBe(path.join('/h', 'AppData', 'Roaming', 'LLM Bench'));
+    expect(defaultDataDir('linux', { XDG_CONFIG_HOME: '/x' }, '/h')).toBe(path.join('/x', 'llm-bench'));
+    expect(defaultDataDir('linux', {}, '/h')).toBe(path.join('/h', '.config', 'llm-bench'));
   });
 
   it('builds deps from the environment, defaults included', () => {
     const d = buildDeps({ ...fakeHost('/data').host, env: {}, argv: ['--data-dir=/argdata'], platform: 'aix' });
     expect(d.platform).toBe('linux');
     expect(d.paths.dataDir).toBe('/argdata');
-    expect(d.paths.modelsDir).toBe(path.join('/data', 'GPU Bench', 'models'));
+    expect(d.paths.modelsDir).toBe(path.join('/data', 'LLM Bench', 'models'));
+    // GPU Bench's default models folder (before 0.4.0), kept in use while it is the one with the models.
+    expect(d.paths.legacyModelsDir).toBe(path.join('/data', 'GPU Bench', 'models'));
     expect(d.paths.resourcesDir).toBe(path.resolve('/data/out/core', '../../resources'));
     expect(d.endpoints).toMatchObject({ githubApi: 'https://api.github.com', huggingface: 'https://huggingface.co', dockerHub: 'https://hub.docker.com', pypi: 'https://pypi.org' });
     // git and cmake from the PATH unless a test points them elsewhere.
@@ -88,7 +90,9 @@ describe('bootstrap helpers', () => {
       },
     });
     expect(e.platform).toBe('win32');
-    expect(e.paths).toMatchObject({ dataDir: path.join('/appdata', 'GPU Bench'), modelsDir: '/m', resourcesDir: '/r', uiDir: '/ui' });
+    expect(e.paths).toMatchObject({ dataDir: path.join('/appdata', 'LLM Bench'), modelsDir: '/m', resourcesDir: '/r', uiDir: '/ui' });
+    // A models folder set from outside (tests): no old one to adopt.
+    expect(e.paths.legacyModelsDir).toBeUndefined();
     expect(e.endpoints).toEqual({
       githubApi: 'http://gh',
       huggingface: 'http://hf',

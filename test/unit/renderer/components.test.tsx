@@ -242,13 +242,13 @@ describe('Stepper', () => {
 });
 
 describe('CodeBlock', () => {
-  const commands = { powershell: "& 'C:\\GPU Bench\\llama.exe' `\n  --port 8080", bash: "'/opt/GPU Bench/llama' \\\n  --port 8080 \"x y\"" };
+  const commands = { powershell: "& 'C:\\LLM Bench\\llama.exe' `\n  --port 8080", bash: "'/opt/LLM Bench/llama' \\\n  --port 8080 \"x y\"" };
 
   it('tokenizes programs, flags, strings and continuations', () => {
-    expect(tokenize("& 'C:\\GPU Bench\\x.exe' `\n  --flag v")).toEqual([
+    expect(tokenize("& 'C:\\LLM Bench\\x.exe' `\n  --flag v")).toEqual([
       { text: '&', kind: 'cmd' },
       { text: ' ', kind: 'text' },
-      { text: "'C:\\GPU Bench\\x.exe'", kind: 'string' },
+      { text: "'C:\\LLM Bench\\x.exe'", kind: 'string' },
       { text: ' ', kind: 'text' },
       { text: '`', kind: 'cont' },
       { text: '\n  ', kind: 'text' },
@@ -269,9 +269,9 @@ describe('CodeBlock', () => {
   it('switches between PowerShell and bash', async () => {
     renderUi(<CodeBlock commands={commands} label="Comando" />);
     const code = screen.getByLabelText('Comando');
-    expect(code.textContent).toContain('C:\\GPU Bench');
+    expect(code.textContent).toContain('C:\\LLM Bench');
     await userEvent.click(screen.getByRole('radio', { name: 'bash' }));
-    expect(code.textContent).toContain('/opt/GPU Bench');
+    expect(code.textContent).toContain('/opt/LLM Bench');
   });
 
   it('copies the visible command and confirms', async () => {

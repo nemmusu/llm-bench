@@ -76,7 +76,7 @@ export interface TelemetrySampler {
   probe(): Promise<GpuInfo[]>;
   /** One-shot reading, used for VRAM baselines and the live monitor. */
   snapshot(): Promise<GpuSample[]>;
-  /** Processes using the GPU that GPU Bench did not start (with their VRAM and kind when known). */
+  /** Processes using the GPU that LLM Bench did not start (with their VRAM and kind when known). */
   otherGpuUsers(ownPids: number[]): Promise<GpuUser[]>;
   /** Continuous sampling with a single long-running nvidia-smi (-lms). */
   start(intervalMs: number, onSamples?: (samples: GpuSample[]) => void): TelemetrySession;

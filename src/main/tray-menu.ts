@@ -2,7 +2,7 @@
  * The tray menu as plain data, from what the core says runs (contract ShellState): pure, so it is
  * tested on its own and rendered as a list in a snapshot. shell.ts turns it into an Electron menu.
  *
- *   Apri GPU Bench
+ *   Apri LLM Bench
  *   ───
  *   Qwen3 8B · porta 8080            (one section per running server)
  *     Copia indirizzo

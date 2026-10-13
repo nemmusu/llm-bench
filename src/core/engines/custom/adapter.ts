@@ -3,7 +3,7 @@
  * `customEngineId` is filled in from the saved engine (its executable, image, Python or command)
  * and goes to its base's adapter: same flags, timings, logs and tuner as the base. Its extra
  * arguments come before the run's own, its environment under the run's own. A fork whose --help
- * lacks some of GPU Bench's flags gets a command without them (PlanOptions.knownFlags) and the plan
+ * lacks some of LLM Bench's flags gets a command without them (PlanOptions.knownFlags) and the plan
  * says which (LaunchPlan.unsupported). Labels, Configurazioni and config keys carry its name
  * (EngineIdentity.name / customEngine).
  */

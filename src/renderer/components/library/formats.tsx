@@ -56,7 +56,7 @@ export function FormatBadge({ format, precision, active, size = 'sm' }: { format
 }
 
 /**
- * A format GPU Bench cannot run (MLX, ONNX, EXL2…): shown, marked as not supported. `module`: an MTP head
+ * A format LLM Bench cannot run (MLX, ONNX, EXL2…): shown, marked as not supported. `module`: an MTP head
  * or a draft shipped as its own folder, a part of a model rather than a format.
  */
 export function OtherFormatBadge({ name, module, size = 'sm' }: { name?: string | undefined; module?: boolean; size?: 'sm' | 'md' }) {

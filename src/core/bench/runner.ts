@@ -106,7 +106,7 @@ export interface RunnerDeps {
   /** The benchmark corpus text (loaded once by the caller). */
   corpus: () => Promise<string>;
   scoreReference?: () => Promise<ScoreReference | undefined>;
-  /** PIDs of processes GPU Bench itself started (never counted as "other GPU users"). */
+  /** PIDs of processes LLM Bench itself started (never counted as "other GPU users"). */
   ownPids: () => number[];
   telemetryIntervalMs?: number;
   /** Max wait for VRAM to drop back to the baseline between loads. */
@@ -353,7 +353,7 @@ function splitBlock(lines: readonly string[]): { head: string[]; rest: string[];
  */
 function excerptLines(blocks: readonly { label: string; lines: readonly string[] }[], notes: readonly string[], budget: number): string[] {
   const parts = blocks.map((b) => ({ label: b.label, ...splitBlock(b.lines) }));
-  const tailNotes = notes.length ? ['=== gpu-bench ===', ...notes] : [];
+  const tailNotes = notes.length ? ['=== llm-bench ===', ...notes] : [];
   const all = (keep: (p: (typeof parts)[number], i: number) => { head: number; rest: number }) => {
     const out: string[] = [];
     parts.forEach((p, i) => {
@@ -1397,7 +1397,7 @@ export class BenchRunner {
     return {
       schema: RESULT_SCHEMA_VERSION,
       id: input.runId,
-      app: { name: 'gpu-bench', version: d.appVersion },
+      app: { name: 'llm-bench', version: d.appVersion },
       createdAt,
       finishedAt: new Date(d.clock.wall()).toISOString(),
       status,

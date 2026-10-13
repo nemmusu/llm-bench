@@ -1,5 +1,5 @@
 /**
- * llama-server arguments, the same for the native and the Docker adapter: everything GPU Bench sets
+ * llama-server arguments, the same for the native and the Docker adapter: everything LLM Bench sets
  * is explicit (the record is exact), through a FlagGate so a build that lacks one of the flags (a
  * fork) runs without it and says so.
  */

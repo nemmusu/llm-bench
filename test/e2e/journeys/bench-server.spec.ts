@@ -73,7 +73,7 @@ test('a server from "Le migliori dai tuoi test": its address to copy, the sideba
     await page.getByRole('link', { name: /Qwen3-0\.6B/ }).first().click();
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await page.getByRole('button', { name: 'Rifai questo benchmark' }).click();
-    const own = page.getByRole('dialog', { name: 'Un server avviato da GPU Bench sta usando la scheda video' });
+    const own = page.getByRole('dialog', { name: 'Un server avviato da LLM Bench sta usando la scheda video' });
     await expect(own).toBeVisible();
     await own.getByRole('button', { name: 'Ferma il server e avvia' }).click();
     await expect(h1(page, 'Test in corso')).toBeVisible({ timeout: 30_000 });

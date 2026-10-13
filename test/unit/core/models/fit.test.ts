@@ -120,7 +120,7 @@ describe('KV and compute building blocks', () => {
     expect(
       fitParamsFrom({ contextSize: 1, kvCacheType: 'q8_0', ubatchSize: 2, parallel: 3, flashAttention: 'on', gpuMemoryUtilization: 0.5, maxModelLen: 4, extraArgs: [], env: {} }),
     ).toEqual({ contextSize: 1, kvCacheType: 'q8_0', ubatchSize: 2, parallel: 3, kvUnified: true, flashAttention: 'on', gpuMemoryUtilization: 0.5, maxModelLen: 4 });
-    // llama.cpp -c is the whole context: one pool shared by the slots (GPU Bench's --kv-unified), or split by them.
+    // llama.cpp -c is the whole context: one pool shared by the slots (LLM Bench's --kv-unified), or split by them.
     expect(fitParamsFrom({ contextSize: 32768, parallel: 4, extraArgs: ['--no-kv-unified'], env: {} })).toEqual({ contextSize: 8192, parallel: 4, kvUnified: false });
     expect(fitParamsFrom({ parallel: 4, extraArgs: ['-no-kvu'], env: {} })).toEqual({ parallel: 4, kvUnified: false });
     expect(fitParamsFrom({ contextSize: 32768, parallel: 1, extraArgs: ['--no-kv-unified'], env: {} })).toEqual({ contextSize: 32768, parallel: 1 });
@@ -219,7 +219,7 @@ describe('estimateFit — llama.cpp', () => {
     const p = launchParamsSchema.parse({ contextSize: 32768 });
     const estimate = (q: LaunchParams) => estimateFit({ facts: llama8b, fileBytes: 4920739232, gpu: busy, engine: 'llamacpp-native', params: fitParamsFrom(q) });
     expect(fitFixes('llamacpp-native', p, fit, estimate)).toMatchObject({ maxContext: expect.any(Number) });
-    // What GPU Bench's own engines hold is in use, but not "other programs".
+    // What LLM Bench's own engines hold is in use, but not "other programs".
     expect(estimateFit({ facts: llama8b, fileBytes: 1, gpu: { ...busy, ownMiB: 20000 }, engine: 'llamacpp-native' }).busyMiB).toBe(32607 - 7000 - 20000);
     // An idle headless card (everything free): a launch now still keeps the reserve.
     expect(availableNowMiB(estimateFit({ facts: llama8b, fileBytes: 1, gpu: { totalMiB: 32607, freeMiB: 32607 }, engine: 'llamacpp-native' }))).toBe(usableMiB({ totalMiB: 32607 }));

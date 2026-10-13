@@ -122,7 +122,7 @@ describe('speed ↔ context words (speed-at)', () => {
 });
 
 describe('the tokens a speed was measured on', () => {
-  it('the engine\'s own count for calibrated text prompts, else the exact prompt GPU Bench built', () => {
+  it('the engine\'s own count for calibrated text prompts, else the exact prompt LLM Bench built', () => {
     const p = { promptTokens: 4096, promptTokensReported: 4031.5 };
     expect(contextTokensOf(p, true)).toBe(4032);
     expect(contextTokensOf(p, false)).toBe(4096);

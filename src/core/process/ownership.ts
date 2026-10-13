@@ -5,7 +5,7 @@ import type { Platform, ProcessRunner } from '../deps';
 import { writeFileAtomic } from '../store/atomic';
 
 /**
- * Every engine process/container GPU Bench starts is recorded here (dataDir/processes.json),
+ * Every engine process/container LLM Bench starts is recorded here (dataDir/processes.json),
  * so that after a crash we can stop our own leftovers at the next start-up — and only those.
  * A record is trusted only after the live process proves it is ours: same executable AND our
  * unique marker (`--alias gpubench-<uuid>`) in its command line. PIDs get reused, the marker does not.

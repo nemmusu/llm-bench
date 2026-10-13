@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { cn } from '../../lib/cn';
 
-/** GPU Bench mark: a gauge needle on the brand gradient. Same drawing as resources/icons/icon.svg. */
+/** LLM Bench mark: a gauge needle on the brand gradient. Same drawing as resources/icons/icon.svg. */
 export function Logo({ size = 24, className }: { size?: number; className?: string }) {
   const id = useId();
   return (

@@ -34,7 +34,7 @@ export interface SheetInput {
   service?: string;
   address?: string;
   notes?: string;
-  /** GPU Bench version that writes the sheet. */
+  /** LLM Bench version that writes the sheet. */
   appVersion: string;
   now: Date;
 }
@@ -248,7 +248,7 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
 export function sheetRequest(input: SheetInput, format: SheetFormat, f: Formatters): SaveRequest {
   const report = sheetOf(input, f);
   const labels = { powershell: f.t('codeblock.powershell'), bash: f.t('codeblock.bash') };
-  const name = `gpubench_${f.t('sheet.fileWord')}_${slug(input.service || input.run.model.displayName)}_${input.now.toISOString().slice(0, 10)}`;
+  const name = `llmbench_${f.t('sheet.fileWord')}_${slug(input.service || input.run.model.displayName)}_${input.now.toISOString().slice(0, 10)}`;
   return format === 'markdown'
     ? { defaultName: `${name}.md`, content: reportToMarkdown(report, labels), mime: 'text/markdown;charset=utf-8', filters: [{ name: 'Markdown', extensions: ['md'] }] }
     : { defaultName: `${name}.html`, content: reportToHtml(report, { lang: f.lang, labels }), mime: 'text/html;charset=utf-8', filters: [{ name: 'HTML', extensions: ['html'] }] };

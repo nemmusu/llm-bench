@@ -1,7 +1,7 @@
 // Builds the Linux packages (.deb + AppImage) inside the official electron-builder Docker image,
 // so they can be produced from Windows too (electron-builder cannot build .deb natively there).
 //
-//   node scripts/dist-linux.mjs            → dist/linux/gpu-bench-<version>-amd64.deb, …AppImage
+//   node scripts/dist-linux.mjs            → dist/linux/llm-bench-<version>-amd64.deb, …AppImage
 //
 // The committed sources (git archive of HEAD) are copied into the container: no Windows
 // node_modules or build output leaks into the Linux build.

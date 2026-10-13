@@ -1,7 +1,7 @@
 import { ChevronDown, RotateCcw, Server, SlidersHorizontal } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useState, type ReactNode } from 'react';
-import type { RunResult } from '../../../contract/results';
+import { runAppLabel, type RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { AppliedRecipeLine } from '../recipes/recipe-chip';
@@ -130,7 +130,7 @@ export function Launch({ run, rerun, onRerun, onUseSettings, onServe }: LaunchPr
               <pre role="region" tabIndex={0} aria-label={t('result.launch.request')} className="overflow-x-auto rounded-md bg-surface-2 p-3 font-mono text-xs leading-5 text-fg-2 focus-ring">{JSON.stringify(run.launch.requestExample, null, 2)}</pre>
             </KeyValue>
           )}
-          <KeyValue label={t('result.details.app')}>GPU Bench {run.app.version}</KeyValue>
+          <KeyValue label={t('result.details.app')}>{runAppLabel(run.app)}</KeyValue>
         </dl>
       </Card>
     </div>

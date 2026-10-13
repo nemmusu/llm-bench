@@ -43,7 +43,7 @@
     { "cudaMajor": 13, "linux": "580.00", "win32": "580.00", "source": "cuda-release-notes" },
     { "cudaMajor": 12, "linux": "525.60.13", "win32": "527.41", "source": "cuda-release-notes" }
   ],
-  "$appMinimumCuda": "Oldest CUDA build of llama.cpp GPU Bench can install per OS (release assets win-cuda-12.4 and ubuntu-cuda-12.8): below its driver minimum no managed llama.cpp CUDA build runs.",
+  "$appMinimumCuda": "Oldest CUDA build of llama.cpp LLM Bench can install per OS (release assets win-cuda-12.4 and ubuntu-cuda-12.8): below its driver minimum no managed llama.cpp CUDA build runs.",
   "appMinimumCuda": { "win32": "12.4", "linux": "12.8" },
   "architectures": [
     {

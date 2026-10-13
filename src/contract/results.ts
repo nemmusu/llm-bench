@@ -260,7 +260,7 @@ export function promptsCalibrated(run: { notes?: readonly { code: string }[] | u
 
 /**
  * How many tokens a point's prompt really had, for every place that says it ("lettura di un prompt da
- * N token"): the engine's count for calibrated text prompts, else the exact length GPU Bench built.
+ * N token"): the engine's count for calibrated text prompts, else the exact length LLM Bench built.
  * Grid depths (nominalDepth) keep using promptTokens, so equal measurements still line up.
  */
 export function contextTokensOf(p: Pick<LatencyPoint, 'promptTokens' | 'promptTokensReported'>, calibrated: boolean): number {
@@ -747,10 +747,20 @@ export const tuningSchema = z.object({
 });
 export type Tuning = z.infer<typeof tuningSchema>;
 
+/** The app that saved a run: 'gpu-bench' before 0.4.0 (the app's old name; old runs keep it, it is history), 'llm-bench' since. */
+export const RUN_APP_NAMES = { 'gpu-bench': 'GPU Bench', 'llm-bench': 'LLM Bench' } as const;
+export const runAppSchema = z.object({ name: z.enum(['gpu-bench', 'llm-bench']), version: z.string() });
+export type RunApp = z.infer<typeof runAppSchema>;
+
+/** "LLM Bench 0.4.0", or "GPU Bench 0.3.0" for a run saved before the rename. */
+export function runAppLabel(app: RunApp): string {
+  return `${RUN_APP_NAMES[app.name]} ${app.version}`;
+}
+
 export const runResultSchema = z.object({
   schema: z.literal(RESULT_SCHEMA_VERSION),
   id: z.string(),
-  app: z.object({ name: z.literal('gpu-bench'), version: z.string() }),
+  app: runAppSchema,
   createdAt: z.string(),
   finishedAt: z.string(),
   status: runStatusSchema,

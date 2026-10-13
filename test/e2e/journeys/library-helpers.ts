@@ -36,7 +36,7 @@ export async function startLibraryWorld(): Promise<LibraryWorld> {
         likes: 500,
         license: 'apache-2.0',
         tags: ['gguf'],
-        readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nThe **reference** model of the GPU Bench score.\n',
+        readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nThe **reference** model of the LLM Bench score.\n',
         files: [{ path: REFERENCE.file, gguf: { ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 192 * 1024 } }],
       },
     ],
@@ -110,7 +110,7 @@ export async function scan(page: Page, label: string): Promise<void> {
 
 /** First launch lands on the wizard: skip it like a user in a hurry. */
 export async function skipWelcome(page: Page): Promise<void> {
-  await expect(h1(page, 'Benvenuto in GPU Bench')).toBeVisible();
+  await expect(h1(page, 'Benvenuto in LLM Bench')).toBeVisible();
   await page.getByRole('button', { name: 'Salta, lo farò dopo' }).click();
   await expect(h1(page, 'Benchmark')).toBeVisible();
 }

@@ -53,7 +53,7 @@ describe('NInfer on the Benchmark page', () => {
     await userEvent.click(within(settings).getByRole('radio', { name: /Provata su RTX 5090/ }));
     expect(screen.getByText(/circa 27 GB di memoria video/)).toBeTruthy();
     await waitFor(() => expect(lastPlan(api)?.params).toMatchObject({ contextSize: 65_536, ninfer: { kvCapacity: 131_072, kvDtype: 'int8', vision: true } }));
-    await userEvent.click(within(settings).getByRole('radio', { name: 'Scelte da GPU Bench' }));
+    await userEvent.click(within(settings).getByRole('radio', { name: 'Scelte da LLM Bench' }));
     expect(screen.getByText(/Il contesto che serve al test/)).toBeTruthy();
     await waitFor(() => expect(lastPlan(api)?.params).toBeUndefined());
     expect(lastPlan(api)?.engine).toMatchObject({ kind: 'ninfer-wsl' });

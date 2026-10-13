@@ -1,4 +1,4 @@
-// Forks: GPU Bench's flags a build lacks are left out (and said), RoPE scaling per engine, and custom
+// Forks: LLM Bench's flags a build lacks are left out (and said), RoPE scaling per engine, and custom
 // engines resolved from the settings onto their base adapter.
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';

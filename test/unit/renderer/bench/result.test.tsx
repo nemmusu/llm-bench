@@ -212,7 +212,7 @@ describe('result details and log', () => {
       fireEvent.click(await screen.findByRole('menuitem', { name }));
     };
     await pick(/CSV per Excel/);
-    expect(await screen.findByText(/Esportazione pronta \(CSV per Excel \(italiano\)\): C:\\out\\gpubench_Qwen3-8B/)).toBeTruthy();
+    expect(await screen.findByText(/Esportazione pronta \(CSV per Excel \(italiano\)\): C:\\out\\llmbench_Qwen3-8B/)).toBeTruthy();
     expect((saveFile.mock.calls[0]![0] as unknown as { content: string }).content.startsWith('\uFEFF')).toBe(true);
     saveFile.mockResolvedValueOnce(null as never);
     await pick(/Markdown/);
@@ -287,7 +287,7 @@ describe('how it was started', () => {
     expect(await screen.findByText('8.192')).toBeTruthy();
     expect(screen.getByText('Viene dalle impostazioni scelte.')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Comando esatto' }).textContent).toContain('llama-server');
-    // (The other preview is of GPU Bench's own choice, said next to it.)
+    // (The other preview is of LLM Bench's own choice, said next to it.)
     expect(posted(api, '/api/servers/plan').map((c) => c.body)).toContainEqual(expect.objectContaining({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: expect.objectContaining({ contextSize: 8192 }) }));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia' }));
     const dialog = await screen.findByRole('dialog', { name: 'Il server non è partito' });

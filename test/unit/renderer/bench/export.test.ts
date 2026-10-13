@@ -48,7 +48,7 @@ describe('CSV', () => {
     expect(rows.find((r) => r[1] === 'Generazione' && r[2] === 512)?.[4]).toBe(run.metrics.latency[1]!.decodeTps.median);
     expect(rows.some((r) => r[0] === 'Più utenti' && r[3] === 16)).toBe(true);
     expect(rows.some((r) => r[0] === 'llama-bench')).toBe(true);
-    expect(rows.some((r) => r[1] === 'Punteggio GPU Bench')).toBe(true);
+    expect(rows.some((r) => r[1] === 'Punteggio LLM Bench')).toBe(true);
     expect(rows.some((r) => r[4] === 'gpu_shared')).toBe(true);
     const csv = runToCsv(run, it_, 'excel-it');
     expect(csv.startsWith('\uFEFFSezione;Misura;')).toBe(true);
@@ -144,14 +144,14 @@ describe('report', () => {
 describe('export formats and saving', () => {
   it('names files and builds every format', () => {
     const run = seeded(IDS.full);
-    expect(exportFileName(run, 'csv')).toBe('gpubench_Qwen3-8B_2026-10-06_01K6Y7Q2.csv');
+    expect(exportFileName(run, 'csv')).toBe('llmbench_Qwen3-8B_2026-10-06_01K6Y7Q2.csv');
     for (const f of EXPORT_FORMATS) {
       const req = exportRequest(run, f, it_);
       expect(req.content.length).toBeGreaterThan(100);
       expect(req.filters[0]!.extensions[0]).toBe(req.defaultName.split('.').pop());
     }
     expect(JSON.parse(exportContent(run, 'json', it_))).toEqual(run);
-    expect(bundleRequest({ format: 'gpubench-export', runs: [] }, new Date('2026-10-06T00:00:00Z')).defaultName).toBe('gpubench_2026-10-06.gpubench');
+    expect(bundleRequest({ format: 'gpubench-export', runs: [] }, new Date('2026-10-06T00:00:00Z')).defaultName).toBe('llmbench_2026-10-06.llmbench');
   });
 
   it('uses the native dialog in the desktop app', async () => {

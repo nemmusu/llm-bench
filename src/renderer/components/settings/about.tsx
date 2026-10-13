@@ -5,7 +5,7 @@ import { Logo } from '../brand/logo';
 import { Button } from '../ui/button';
 import { Section } from './section';
 
-/** Projects GPU Bench builds on, with their licenses. */
+/** Projects LLM Bench builds on, with their licenses. */
 export const CREDITS = [
   { name: 'llama.cpp', license: 'MIT', url: 'https://github.com/ggml-org/llama.cpp' },
   { name: 'vLLM', license: 'Apache-2.0', url: 'https://github.com/vllm-project/vllm' },

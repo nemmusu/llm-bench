@@ -12,7 +12,7 @@ export interface ServerKeysOptions {
 
 /**
  * The API key of servers shared on the local network. One key for every network server, made by
- * GPU Bench the first time it is needed, shown to the user (to paste in other devices), kept by the
+ * LLM Bench the first time it is needed, shown to the user (to paste in other devices), kept by the
  * Electron main process (encrypted), never written to settings, logs or stored commands.
  */
 export class ServerKeys {

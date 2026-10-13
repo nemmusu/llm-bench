@@ -7,7 +7,7 @@ import { currentTheme, h1, openPalette, PAGES, skipWelcome } from './helpers';
 
 test('first launch shows the welcome wizard, with the core version', async ({ gb }) => {
   const { page } = gb;
-  await expect(h1(page, 'Benvenuto in GPU Bench')).toBeVisible();
+  await expect(h1(page, 'Benvenuto in LLM Bench')).toBeVisible();
   await expect(page.getByText('Controllo del sistema').first()).toBeVisible();
   await expect(page.getByLabel(/^Versione /)).toHaveText(/^v\d+\.\d+\.\d+$/);
   await page.getByRole('button', { name: 'Continua' }).click();

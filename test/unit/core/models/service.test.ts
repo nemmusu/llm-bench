@@ -396,7 +396,7 @@ describe('ModelsService', () => {
     expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
   });
 
-  it('what the card holds right now, without the engines GPU Bench started', async () => {
+  it('what the card holds right now, without the engines LLM Bench started', async () => {
     gpu = { totalMiB: 32607, freeMiB: 10_000, ownMiB: 8000 };
     expect(await service().vramNow()).toEqual({ totalMiB: 32607, freeMiB: 10_000, busyMiB: 32607 - 10_000 - 8000, reserveMiB: 1024 });
     gpu = { totalMiB: 32607, freeMiB: 30_000 };

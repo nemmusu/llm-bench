@@ -62,7 +62,7 @@ test('Docker stopped: "Avvia Docker" brings it up; then GPU check, image downloa
     await expect(docker.getByText('Docker vede la scheda video')).toBeVisible({ timeout: 30_000 });
     await docker.getByRole('button', { name: 'Scarica l’immagine di llama.cpp' }).click();
     await expect(docker.getByText('Immagine pronta: ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeVisible({ timeout: 30_000 });
-    await docker.getByRole('button', { name: 'Pulisci i contenitori di GPU Bench' }).click();
+    await docker.getByRole('button', { name: 'Pulisci i contenitori di LLM Bench' }).click();
     await expect(page.getByText(/^Contenitori rimossi: \d+$/)).toBeVisible();
     await scan(page, 'docker running');
 

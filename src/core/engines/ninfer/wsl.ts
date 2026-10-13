@@ -1,5 +1,5 @@
 /**
- * NInfer inside WSL (Windows). GPU Bench only ever reads the user's distro and runs its own
+ * NInfer inside WSL (Windows). LLM Bench only ever reads the user's distro and runs its own
  * ninfer-serve there; it never touches anything else:
  *
  *  - distros: `wsl.exe -l -v` (does not start the VM);
@@ -28,7 +28,7 @@ import { promises as fs } from 'node:fs';
 
 /** wsl.exe's own messages in UTF-8 (it writes UTF-16 otherwise). */
 export const WSL_ENV = { WSL_UTF8: '1' } as const;
-/** Environment variable that marks a ninfer-serve GPU Bench started (its value is the ownership marker). */
+/** Environment variable that marks a ninfer-serve LLM Bench started (its value is the ownership marker). */
 export const OWNER_ENV = 'GPUBENCH_OWNER';
 /** The launcher script: prints the PID, then becomes the program (exec keeps the PID). */
 export const PID_SCRIPT = 'echo "gpubench-pid $$" >&2; exec "$@"';
@@ -103,7 +103,7 @@ export interface WslProcessesOptions {
 }
 
 /**
- * The ninfer-serve processes GPU Bench started in WSL: recorded while they run, stopped only after
+ * The ninfer-serve processes LLM Bench started in WSL: recorded while they run, stopped only after
  * their environment proves they are ours.
  */
 export class WslProcesses {

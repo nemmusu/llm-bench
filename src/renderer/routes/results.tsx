@@ -91,7 +91,7 @@ export function ResultsPage() {
             <span className="text-xs text-fg-3">
               {t(`benchmark.profiles.${c.row.original.profile}`)}
               {c.row.original.tunedCombinations !== undefined && ` · ${t(countKey(c.row.original.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: c.row.original.tunedCombinations })}`}
-              {/* The GPU Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
+              {/* The LLM Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
               {c.row.original.score !== undefined && ` · ${t('results.score', { n: integer(c.row.original.score) })}`}
             </span>
           </span>
@@ -285,7 +285,7 @@ export function ResultsPage() {
         <>
           {view === 'runs' && (
             <>
-              <input ref={fileRef} type="file" accept=".gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
+              <input ref={fileRef} type="file" accept=".llmbench,.gpubench,.json,application/json" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void onImport(e)} />
               <Button onClick={() => fileRef.current?.click()}>
                 <Upload aria-hidden />
                 {t('results.import')}

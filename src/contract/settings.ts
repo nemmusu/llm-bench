@@ -45,7 +45,7 @@ export const settingsSchema = z.object({
   serverPresets: serverPresetsSettingSchema,
   /** Closing the window: hide to the tray while a server runs (default), always hide, or quit. */
   closeBehavior: closeBehaviorSchema.default('tray-if-servers'),
-  /** "Avvia GPU Bench all'accesso": opt-in (Windows login item, Linux autostart entry). */
+  /** "Avvia LLM Bench all'accesso": opt-in (Windows login item, Linux autostart entry). */
   launchAtLogin: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof settingsSchema>;

@@ -7,12 +7,12 @@ import type { LatencyPoint } from '../../contract/results';
 
 /** Tokens kept free in the context besides prompt + output (BOS, server-side extras). */
 export const CONTEXT_MARGIN = 16;
-/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K…), or ×4 (16K, 64K, 256K…) for long contexts; 200K on both. */
+/** The grid: 1K, 4K, then doubling (8K, 16K, 32K, 64K… and 200K), or ×4 (16K, 64K, 256K…) for long contexts. */
 export const FIRST_DEPTHS = [1024, 4096] as const;
 /** Share of the context used for the optional 25/50/75/100 % points. */
 export const DEPTH_FRACTIONS = [0.25, 0.5, 0.75, 1] as const;
 
-/** How the grid grows after 4K: doubling, or ×4 (fewer deep points: "Veloce" on long contexts). */
+/** How the grid grows after 4K: doubling, or ×4 (fewer deep points, no 200K: "Veloce" on long contexts). */
 export type GridStep = 2 | 4;
 
 /** Deepest prompt a context of `ctx` tokens can take with `outputTokens` to generate. */
@@ -21,14 +21,16 @@ export function maxDepth(ctx: number, outputTokens: number): number {
 }
 
 /**
- * 1K, 4K, then ×`step` (8K, 16K… or 16K, 64K…) up to `limit` (inclusive), and 200K (a context people
- * use, between 128K and 256K) when the limit reaches it, on either grid.
+ * 1K, 4K, then ×`step` (8K, 16K… or 16K, 64K…) up to `limit` (inclusive). The doubling grid adds 200K
+ * (a context people use, between 128K and 256K) when the limit reaches it: "Accurata" and the context
+ * sweep of "Completo". The ×4 grid of "Veloce" does not: a 200K prompt takes minutes, and a quick
+ * search on a 256K model would grow by about a third (34 → 47 min on an RTX 5090).
  */
 export function depthGrid(limit: number, step: GridStep = 2): number[] {
   const out: number[] = [];
   for (const d of FIRST_DEPTHS) if (d <= limit) out.push(d);
   for (let d = 4096 * step; d <= limit; d *= step) out.push(d);
-  if (limit >= CONTEXT_200K) out.push(CONTEXT_200K);
+  if (step === 2 && limit >= CONTEXT_200K) out.push(CONTEXT_200K);
   return out.sort((a, b) => a - b);
 }
 

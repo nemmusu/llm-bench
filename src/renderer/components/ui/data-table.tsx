@@ -89,7 +89,7 @@ export function DataTable<T extends RowData>({ columns, data, caption, initialSo
                       meta?.className,
                     )}
                   >
-                    {/* No column groups in GPU Bench tables, so there are no placeholder headers. */}
+                    {/* No column groups in LLM Bench tables, so there are no placeholder headers. */}
                     {canSort ? (
                       <button
                         type="button"

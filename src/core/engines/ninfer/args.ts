@@ -1,5 +1,5 @@
 /**
- * ninfer-serve's command line from GPU Bench's launch settings (docs/serving.md "Server options"):
+ * ninfer-serve's command line from LLM Bench's launch settings (docs/serving.md "Server options"):
  *
  *   ninfer-serve <model.ninfer> --host H --port N --model-id ID
  *     --max-context  ← LaunchParams.contextSize      --max-concurrency ← parallel

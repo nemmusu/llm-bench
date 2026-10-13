@@ -198,7 +198,7 @@ export function presetsForModel(presets: readonly ServerPreset[], model: ServerM
 export type FlowChoices = {
   engine: EngineConfig;
   model: ServerModel;
-  /** undefined = GPU Bench chooses (the latest "Trova le impostazioni migliori", else what fits the card). */
+  /** undefined = LLM Bench chooses (the latest "Trova le impostazioni migliori", else what fits the card). */
   params: LaunchParams | undefined;
   /** undefined = the first free port from 8080. */
   port: number | undefined;
@@ -226,7 +226,7 @@ export function parsePort(text: string): { port: number | undefined; invalid: bo
 }
 
 /**
- * Where the settings of a new preset come from: GPU Bench's choice (the tune it used, if any), a test
+ * Where the settings of a new preset come from: LLM Bench's choice (the tune it used, if any), a test
  * (handed over, or one of the model's configurations; a tune's combination too), else the user's own.
  */
 export function presetSource(c: { tab: 'best' | 'presets' | 'custom'; best: string; tunedRunId: string | undefined; test: { runId: string; combo?: number | undefined } | undefined }): ServerSettingsSource {

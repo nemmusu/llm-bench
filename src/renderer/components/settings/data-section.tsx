@@ -10,7 +10,7 @@ import { ErrorCallout } from '../library/error-callout';
 import { Button } from '../ui/button';
 import { Row, Section } from './section';
 
-/** Export every result to one .gpubench file (to move or share them) and import such a file back. */
+/** Export every result to one .llmbench file (to move or share them) and import such a file back (.gpubench too: GPU Bench, before 0.4.0). */
 export function DataSection() {
   const { t, integer } = useI18n();
   const api = useApi();
@@ -24,9 +24,9 @@ export function DataSection() {
       const bundle = await api.post<unknown>('/api/runs/export', { ids: (runs.data as RunSummary[]).map((r) => r.id) });
       const day = new Date().toISOString().slice(0, 10);
       return window.gpubench?.saveFile({
-        defaultName: `gpu-bench-${day}.gpubench`,
+        defaultName: `llm-bench-${day}.llmbench`,
         content: JSON.stringify(bundle),
-        filters: [{ name: 'GPU Bench', extensions: ['gpubench', 'json'] }],
+        filters: [{ name: 'LLM Bench', extensions: ['llmbench', 'gpubench', 'json'] }],
       });
     },
     onSuccess: (path) => {
@@ -70,7 +70,7 @@ export function DataSection() {
             <input
               ref={input}
               type="file"
-              accept=".gpubench,.json,application/json"
+              accept=".llmbench,.gpubench,.json,application/json"
               hidden
               onChange={(e) => {
                 const file = e.target.files?.[0];

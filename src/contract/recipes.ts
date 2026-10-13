@@ -89,7 +89,7 @@ export type RecipeMatch = z.infer<typeof recipeMatchSchema>;
 
 /**
  * The engine to use for the model:
- *   builtin   one of GPU Bench's engines (the Benchmark page preselects it)
+ *   builtin   one of LLM Bench's engines (the Benchmark page preselects it)
  *   custom    a saved custom engine (settings.customEngines) by id
  *   template  the saved custom engine made from (or matching) a built-in template, e.g.
  *             'prismml-bonsai'; none saved yet = the guided action "Indica dove si trova il fork"
@@ -378,7 +378,7 @@ export function recipePatchFor(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling
     out.parts.push('context');
   }
   if (r.ropeScaling !== undefined) {
-    // A command template has no RoPE flags GPU Bench knows; NInfer runs its models as trained.
+    // A command template has no RoPE flags LLM Bench knows; NInfer runs its models as trained.
     if (target === 'command' || target === 'ninfer') out.skipped.push({ part: 'rope', reason: 'engine' });
     else {
       out.params.ropeScaling = r.ropeScaling;

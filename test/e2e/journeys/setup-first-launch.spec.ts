@@ -21,7 +21,7 @@ test('first launch on an empty PC: install llama.cpp with one click, download th
     const { page, userData } = gb;
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await stubDesktop(gb);
-    await expect(h1(page, 'Benvenuto in GPU Bench')).toBeVisible();
+    await expect(h1(page, 'Benvenuto in LLM Bench')).toBeVisible();
 
     // Step 1: the system check, one traffic light per item.
     const check = page.getByRole('region', { name: 'Controllo del sistema' });

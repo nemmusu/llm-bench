@@ -42,7 +42,7 @@ export const serverModelSchema = z.object({
 export type ServerModel = z.infer<typeof serverModelSchema>;
 
 /**
- * Where the settings of a server come from (said next to a preset): GPU Bench's choice, "Trova le
+ * Where the settings of a server come from (said next to a preset): LLM Bench's choice, "Trova le
  * impostazioni migliori", one configuration of Risultati → Configurazioni, or typed by hand.
  */
 export const serverSettingsSourceSchema = z.object({
@@ -69,7 +69,7 @@ export const serverPresetInputSchema = z.object({
   /** Always the same port, so other programs keep working after a restart. Absent = the first free one from 8080. */
   port: serverPortSchema.optional(),
   network: serverNetworkSchema.default('local'),
-  /** "Avvia all'apertura di GPU Bench": started when the app opens. Off unless the user turns it on. */
+  /** "Avvia all'apertura di LLM Bench": started when the app opens. Off unless the user turns it on. */
   autoStart: z.boolean().default(false),
   source: serverSettingsSourceSchema.optional(),
   /** "Comandi per questo modello" (contract/recipes.ts): absent = the model's recipe, if it has one; { use: false } = without. */
@@ -183,7 +183,7 @@ export const shellToCoreSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hf-token'), token: z.string().nullable() }),
   /** The saved API key (at start-up), or the confirmation that a new one was saved. */
   z.object({ type: z.literal('server-api-key'), key: z.string(), storage: z.enum(['encrypted', 'plain']) }),
-  /** The window is up: start the presets marked "Avvia all'apertura di GPU Bench". */
+  /** The window is up: start the presets marked "Avvia all'apertura di LLM Bench". */
   z.object({ type: z.literal('autostart') }),
   z.object({ type: z.literal('tray'), action: trayActionSchema, id: z.string().optional() }),
 ]);

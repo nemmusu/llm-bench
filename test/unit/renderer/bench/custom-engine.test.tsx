@@ -1,5 +1,5 @@
 // The Benchmark page with custom engines: the choice grouped under each base, the request naming the
-// engine, and GPU Bench's suggestion for a model that needs one (a saved engine, or a built-in template).
+// engine, and LLM Bench's suggestion for a model that needs one (a saved engine, or a built-in template).
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';

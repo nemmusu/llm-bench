@@ -168,7 +168,7 @@ export class NinferUpdater {
     const out = await run('/bin/sh', ['-c', UPDATE_SCRIPT, 'sh', start, opts.fetch ? '1' : '0'], { timeoutMs: 120_000 });
     const r = parseUpdate(out.stdout);
     if (!r.git) return { check: { ...base, reason: 'git-missing' } };
-    // What this build reads: the newest container its own upgrade tools write (else the one GPU Bench knows).
+    // What this build reads: the newest container its own upgrade tools write (else the one LLM Bench knows).
     const containerVersion = r.tools.length ? Math.max(...r.tools.map((t) => t.to)) : NINFER_CONTAINER_VERSION;
     const ninfer = { containerVersion, artifacts: await this.artifacts(containerVersion, r, where) };
     const dir = r.dir;

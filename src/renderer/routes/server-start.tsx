@@ -148,7 +148,7 @@ export function ServerStartPage() {
   const configRun = useRun(configSource?.runId);
   const configParams =
     configRun.data && local.data ? presetOf(configRun.data, local.data, system.data?.paths.enginesDir, { combo: configSource?.combo }).params : undefined;
-  // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), a test's own NInfer settings, or GPU Bench's choice.
+  // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), a test's own NInfer settings, or LLM Bench's choice.
   const ninferPresets = option?.source === 'local' && format === 'ninfer' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name }) : [];
   // Handed-over NInfer settings are the preset they match, else offered as they are ('run').
   const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(undefined);
@@ -167,7 +167,7 @@ export function ServerStartPage() {
       paramsReady = configParams !== undefined;
     }
   } else if (tab === 'presets') {
-    // One of the user's presets, else NInfer's choice ('auto': GPU Bench decides).
+    // One of the user's presets, else NInfer's choice ('auto': LLM Bench decides).
     params = pickedPreset ? pickedPreset.params : ninferParams;
     paramsReady = pickedPreset !== undefined || ninferPresets.length > 0;
   } else {
@@ -187,7 +187,7 @@ export function ServerStartPage() {
   const plan = planQ.isError ? undefined : planQ.data;
   // The preview of exactly these choices (not the previous one still on screen while typing).
   const current = plan && !planQ.isPlaceholderData && planKey === requestKey ? plan : undefined;
-  // "Scelte da GPU Bench": what it would choose (the latest "Trova le impostazioni migliori", else the context that fits).
+  // "Scelte da LLM Bench": what it would choose (the latest "Trova le impostazioni migliori", else the context that fits).
   const autoRequest = option && engine && tab === 'best' ? serverRequest({ engine, model: optionModel(option), params: undefined, port: port.port, network: effNetwork, ...recipe.requestPart(recipeOn) }) : undefined;
   const autoKey = useDebounced(keyOf(autoRequest), 300);
   const autoPlan = useServerPlan(autoKey ? (JSON.parse(autoKey) as StartServerRequest) : undefined);
