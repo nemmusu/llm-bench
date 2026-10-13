@@ -115,6 +115,9 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
     } else {
       modelRef = src.repo;
     }
+    // A draft model named in the arguments (--speculative-config's "model"): mounted too, its path rewritten.
+    const aux = this.containerArgs(params.extraArgs, 'vllm', src.kind === 'local' ? [{ hostDir: src.hostDir, containerDir: `/models/${src.name}` }] : []);
+    volumes.push(...aux.volumes);
     // Only a placeholder in the plan: the token value is added to the docker CLI's environment at start.
     const env: Record<string, string> = { ...params.env };
     if (this.v.hfToken?.()) env.HF_TOKEN = HF_PLACEHOLDER;
@@ -131,7 +134,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
       volumes,
       envNames: Object.keys(env),
       image,
-      args: vllmServeArgs(params, {
+      args: vllmServeArgs({ ...params, extraArgs: aux.args }, {
         model: modelRef,
         positional: vllmPositionalModel(compat, tag),
         host: '0.0.0.0',

@@ -118,11 +118,14 @@ export class SglangDockerAdapter extends DockerEngineAdapter {
     } else {
       modelRef = src.repo;
     }
+    // A draft model named in the arguments: mounted too, its path rewritten.
+    const aux = this.containerArgs(params.extraArgs, 'sglang', src.kind === 'local' ? [{ hostDir: src.hostDir, containerDir: `/models/${src.name}` }] : []);
+    volumes.push(...aux.volumes);
     const env = sglangEnv(params);
     if (this.s.hfToken?.()) env.HF_TOKEN = HF_PLACEHOLDER;
     const gate = new FlagGate('sglang', trustedFlags('sglang', opts.knownFlags));
     const args = sglangServeArgs(
-      params,
+      { ...params, extraArgs: aux.args },
       {
         model: modelRef,
         host: '0.0.0.0',

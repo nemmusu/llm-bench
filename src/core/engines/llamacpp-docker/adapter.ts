@@ -96,6 +96,8 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
     const volume = cfg.modelVolume;
     // Split GGUFs: every shard sits next to the first one, so mounting its folder is enough.
     const mount = volume !== undefined ? `${volume}:/models:ro` : `${hostPath.dirname(main)}:/models:ro`;
+    // A draft model or an image projector named in the arguments: next to the model, or mounted on its own.
+    const aux = this.containerArgs(params.extraArgs, 'llamacpp', volume !== undefined ? [] : [{ hostDir: hostPath.dirname(main), containerDir: '/models' }]);
     const caps = await this.capabilities(cfg);
     const gate = new FlagGate('llamacpp', trustedFlags('llamacpp', caps.flags));
     const docker = await this.o.cli.command();
@@ -105,10 +107,10 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       marker: opts.marker,
       hostPort: opts.port,
       containerPort: LLAMA_CONTAINER_PORT,
-      volumes: [mount],
+      volumes: [mount, ...aux.volumes],
       envNames: Object.keys(env),
       image,
-      args: llamaServerArgs(params, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker, apiName: opts.apiName }, gate),
+      args: llamaServerArgs({ ...params, extraArgs: aux.args }, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker, apiName: opts.apiName }, gate),
     });
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', image, variant: /cuda13/.test(image) ? 'cuda13' : 'cuda' };
     const digest = await this.imageDigest(image);
