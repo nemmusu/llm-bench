@@ -74,6 +74,22 @@ export const STANDARD_FLAGS: Record<FlagBase, readonly StandardFlag[]> = {
     { spellings: ['--quantization'], setting: 'quantization' },
     { spellings: ['--json-model-override-args'], setting: 'ropeScaling' },
   ],
+  // ninfer-serve <model.ninfer> [options] (the model is positional); docs/serving.md "Server options".
+  ninfer: [
+    { spellings: ['--host'], setting: 'host', required: true },
+    { spellings: ['--port'], setting: 'port', required: true },
+    { spellings: ['--model-id'], setting: 'alias', required: true },
+    { spellings: ['--max-context'], setting: 'contextSize' },
+    { spellings: ['--max-concurrency'], setting: 'parallel' },
+    { spellings: ['--kv-capacity'], setting: 'ninfer.kvCapacity' },
+    { spellings: ['--kv-dtype'], setting: 'ninfer.kvDtype' },
+    { spellings: ['--spec'], setting: 'ninfer.spec' },
+    { spellings: ['--draft-tokens'], setting: 'ninfer.draftTokens' },
+    { spellings: ['--lm-head-draft'], setting: 'ninfer.lmHeadDraft' },
+    { spellings: ['--vision'], setting: 'ninfer.vision' },
+    { spellings: ['--no-prefix-reuse'], setting: 'ninfer.prefixReuse' },
+    { spellings: ['--no-thinking'], setting: 'ninfer.thinking' },
+  ],
 };
 
 const specOf = (base: FlagBase, flag: string): StandardFlag | undefined => STANDARD_FLAGS[base].find((s) => s.spellings.includes(flag));

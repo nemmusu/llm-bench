@@ -552,6 +552,10 @@ export const it = {
       title: 'Manca una libreria di sistema: {library}',
       what: 'Il motore ne ha bisogno e su questo Linux non c’è. Apri un terminale, esegui «sudo apt install {package}» e poi riprova: non serve reinstallare nulla.',
     },
+    ENGINE_GPU_UNSUPPORTED: {
+      title: '{engine} funziona solo con una {gpu}',
+      what: 'Questo motore è fatto per una sola scheda: su questo PC non c’è. Usa llama.cpp, vLLM o SGLang con lo stesso modello in un altro formato.',
+    },
     ENGINE_EXITED: { title: 'Il motore si è chiuso all’improvviso', what: 'Apri il log per capire cosa è successo e riprova.' },
     ENGINE_TIMEOUT: { title: 'Il motore non ha risposto in tempo', what: 'Riprova: la prima volta può servire più tempo. Se capita ancora, prova un modello più piccolo.' },
     ENGINE_OOM: { title: 'Memoria della scheda video insufficiente', what: 'Scegli un modello più piccolo, una quantizzazione più leggera o un contesto più corto.' },
@@ -895,6 +899,8 @@ export const it = {
       'sglang-native': 'SGLang',
       external: 'Server esterno',
       command: 'Programma con API OpenAI',
+      'ninfer-native': 'NInfer',
+      'ninfer-wsl': 'NInfer (WSL)',
     },
     engineDesc: {
       'llamacpp-native': 'Il più semplice: si installa da solo, niente Docker.',
@@ -905,6 +911,8 @@ export const it = {
       'sglang-native': 'SGLang installato sul sistema (solo Linux).',
       external: 'Un server già acceso, compatibile OpenAI.',
       command: 'Un tuo programma con API OpenAI: GPU Bench lo avvia e lo ferma.',
+      'ninfer-native': 'Il più veloce per Qwen 3.6 e 3.8, solo su RTX 5090 (Linux).',
+      'ninfer-wsl': 'Il più veloce per Qwen 3.6 e 3.8, solo su RTX 5090: gira dentro WSL.',
     },
     profiles: {
       quick: 'Rapido',
@@ -1039,6 +1047,7 @@ export const it = {
       dtype: 'Tipo di dati',
       quantization: 'Quantizzazione',
       ropeScaling: 'Estensione del contesto (RoPE)',
+      ninfer: 'Impostazioni NInfer',
       promptLengths: 'Lunghezze dei prompt',
       outputTokens: 'Token generati',
       repetitions: 'Ripetizioni',

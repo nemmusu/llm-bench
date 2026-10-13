@@ -303,11 +303,19 @@ export function userContext(plan: Pick<LaunchPlan, 'kind' | 'argv' | 'params'>):
   return plan.argv.includes('--kv-unified') ? { contextPerUser: ctx, contextShared: true } : { contextPerUser: Math.floor(ctx / slots), contextShared: false };
 }
 
-/** Example request for the launch record: token arrays are summarized, long texts shortened. */
+const shortText = (text: string): string => (text.length > 200 ? `${text.slice(0, 200)}…` : text);
+
+/** Example request for the launch record: token arrays are summarized, long texts (also chat messages) shortened. */
 export function exampleBody(body: Record<string, unknown>): Record<string, unknown> {
   const prompt = body.prompt;
   if (Array.isArray(prompt)) return { ...body, prompt: `<${prompt.length} token ids>` };
-  if (typeof prompt === 'string' && prompt.length > 200) return { ...body, prompt: `${prompt.slice(0, 200)}…` };
+  if (typeof prompt === 'string') return { ...body, prompt: shortText(prompt) };
+  if (Array.isArray(body.messages)) {
+    const messages = (body.messages as unknown[]).map((m) =>
+      m !== null && typeof m === 'object' && typeof (m as { content?: unknown }).content === 'string' ? { ...m, content: shortText((m as { content: string }).content) } : m,
+    );
+    return { ...body, messages };
+  }
   return body;
 }
 
