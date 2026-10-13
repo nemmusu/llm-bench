@@ -95,7 +95,7 @@ Nella pagina Server ogni server acceso ha il suo riquadro: l'**URL base** e il *
 
 ### L'area di notifica
 
-Chiudendo la finestra mentre un server è acceso, LLM Bench resta nell'area di notifica (vicino all'orologio) e il server continua a funzionare; te lo dice una volta. Dall'icona riapri la finestra, copi l'indirizzo di un server, lo fermi o lo riavvii, avvii un preset, fermi tutti i server o esci. **Esci** chiede conferma se ci sono server accesi e li ferma: LLM Bench chiude solo i programmi che ha avviato lui, mai un tuo llama-server.
+Chiudendo la finestra mentre un server è acceso, LLM Bench resta nell'area di notifica (vicino all'orologio) e il server continua a funzionare; te lo dice una volta. Dall'icona riapri la finestra, copi l'indirizzo di un server, lo fermi o lo riavvii, avvii un preset, fermi tutti i server o esci. **Esci** chiede conferma se ci sono server accesi e li ferma: LLM Bench chiude solo i programmi che ha avviato lui, mai un tuo llama-server. Su Windows il menu dice anche com'è Docker (acceso, spento, non risponde) e offre **Avvia Docker** o **Riavvia Docker**.
 
 In **Impostazioni → Area di notifica** scegli cosa fa la chiusura della finestra (restare nell'area di notifica solo con un server acceso, sempre, oppure uscire) e attivi **Avvia LLM Bench all'accesso**: parte nell'area di notifica con i preset segnati *Avvia all'apertura*. Su un desktop Linux senza area di notifica (GNOME senza l'estensione AppIndicator) la finestra si riduce a icona invece di nascondersi.
 
@@ -195,8 +195,17 @@ Nella pagina **Benchmark**, quando il modello scelto ha i suoi comandi, compare 
 vLLM è un motore pensato per servire molti utenti insieme. Su Windows funziona tramite Docker Desktop.
 
 - Se Docker manca, la pagina **Motori** ha un pulsante che lo installa (vedrai la licenza di Docker e la richiesta di permessi di Windows).
-- Se Docker è spento, il pulsante **Avvia Docker** lo accende.
+- Se Docker è spento, il pulsante **Avvia Docker** lo accende. Lo trovi ovunque serve: avviando un test o un server con un motore in Docker te lo chiede nella stessa finestra e poi continua da solo; c'è anche nel menu dell'area di notifica.
 - Su Linux LLM Bench ti mostra prima i comandi esatti che eseguirà per installare Docker e il supporto NVIDIA, poi ti chiede la password.
+
+### Quando Docker non risponde
+
+A volte Docker Desktop resta aperto ma smette di rispondere: di solito succede quando il suo **Resource Saver** lo spegne dopo qualche minuto senza contenitori accesi e lo spegnimento si blocca a metà. LLM Bench se ne accorge (anche mentre un tuo server gira in Docker) e lo dice in alto in ogni pagina, nell'area di notifica e con una notifica.
+
+- **Riavvia Docker** (dalla finestra o dal menu dell'area di notifica) lo riavvia; se non basta lo chiude e lo riapre. Immagini, modelli e contenitori restano. I server di LLM Bench che erano accesi ripartono da soli, con le stesse impostazioni e la stessa porta.
+- Se nemmeno così riparte, LLM Bench ti propone l'ultima prova, spiegata: spegnere e riaccendere solo la macchina WSL di Docker (`docker-desktop`). Le tue altre distribuzioni WSL restano accese.
+- **Perché e come evitarlo** legge il registro di Docker Desktop e ti dice cosa è successo. Per evitarlo: in Docker Desktop apri Impostazioni (l'ingranaggio) → Resources → Advanced e disattiva **Resource Saver**. LLM Bench non cambia mai le impostazioni di Docker: il pulsante **Apri Docker Desktop** ti porta lì.
+- Se Docker si è fermato da solo e ha spento i tuoi server, LLM Bench ti propone **Riavvia i server che erano attivi** appena Docker è di nuovo acceso.
 
 **Su Windows**: i modelli letti da Docker passano per una condivisione lenta. Il pulsante **Copia nello spazio Docker** li copia una volta nello spazio di Docker: i caricamenti diventano molto più veloci.
 
@@ -268,6 +277,7 @@ In **Impostazioni → Cartella dei risultati** puoi scegliere una cartella condi
 | "Memoria video esaurita" | Scegli un modello più piccolo o una versione più compressa; in modalità esperto riduci il contesto |
 | "Il motore non ha risposto in tempo" | Riprova; se succede ancora, il modello probabilmente non entra nella memoria video: usa la cache q4_0, meno contesto o **Trova le impostazioni migliori** |
 | "Docker non è avviato" | Premi **Avvia Docker** |
+| "Docker non risponde" | Premi **Riavvia Docker**; per evitarlo disattiva il Resource Saver di Docker Desktop (vedi «Quando Docker non risponde») |
 | "Serve accettare la licenza" | Apri la pagina del modello su Hugging Face, accetta e salva il tuo token in Impostazioni |
 
 ## 10. Modalità esperto

@@ -194,6 +194,11 @@ export class DockerCli {
     this.timeoutMs = o.timeoutMs ?? 30_000;
   }
 
+  /** The OS the CLI runs on (Docker Desktop's VM in between everywhere but Linux). */
+  get platform(): Platform {
+    return this.o.platform;
+  }
+
   /**
    * argv prefix of the docker CLI: the override, else plain "docker" when it is on PATH (keeps the
    * stored command short and copyable), else a well-known install location, else "docker".

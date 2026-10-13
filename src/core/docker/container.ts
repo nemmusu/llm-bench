@@ -89,6 +89,36 @@ export interface StartContainerOptions {
   runTimeoutMs?: number;
   /** Upper bound of the post-ready wait for late log lines (default 1 s; does not change tReady). */
   logCatchUpMs?: number;
+  /**
+   * While the engine prints nothing new, readiness is probed at most this often (default: 500 ms with
+   * Docker Desktop, 0 on Linux). See throttledProbe.
+   */
+  idleProbeMs?: number;
+}
+
+/**
+ * Readiness probes through Docker Desktop's port forwarder: every probe of a port the engine does
+ * not listen on yet is a refused connection its forwarder retries and logs (about 17 a second at
+ * the 50 ms poll: Docker Desktop's logs rotated every 3 minutes during a vLLM load). While the
+ * engine prints nothing new a probe goes out at most every `idleMs`; any new log line ("Uvicorn
+ * running…", "server is listening…") lets the next one through at once, so the time to ready stays
+ * as precise as before.
+ */
+export function throttledProbe(probe: (signal: AbortSignal) => Promise<boolean>, now: () => number, idleMs: number): { probe: (signal: AbortSignal) => Promise<boolean>; line: () => void } {
+  let fresh = true;
+  let last = Number.NEGATIVE_INFINITY;
+  return {
+    probe: (signal) => {
+      const t = now();
+      if (!fresh && t - last < idleMs) return Promise.resolve(false);
+      fresh = false;
+      last = t;
+      return probe(signal);
+    },
+    line: () => {
+      fresh = true;
+    },
+  };
 }
 
 const LOG_MIN_WAIT_MS = 150;
@@ -154,8 +184,11 @@ export async function startContainer(o: StartContainerOptions): Promise<DockerEn
   let ended = false;
   let wake: (() => void) | undefined;
   const lines = new AsyncQueue<LogLine>();
+  // Docker Desktop (Windows, macOS) forwards the published port through its VM: see throttledProbe.
+  const ready = throttledProbe(o.probe, () => clock.now(), o.idleProbeMs ?? (cli.platform === 'linux' ? 0 : 500));
   void (async () => {
     for await (const l of logs.lines) {
+      ready.line();
       const p = parseTimestampedLine(l.text);
       const s: Stamp = p.tsMs === undefined ? { t: l.t } : { t: l.t, ts: p.tsMs };
       if (p.tsMs !== undefined) minOffset = Math.min(minOffset, l.t - p.tsMs);
@@ -214,7 +247,7 @@ export async function startContainer(o: StartContainerOptions): Promise<DockerEn
     baseUrl: `http://${plan.host}:${plan.port}`,
     client: o.client,
     clock,
-    probe: o.probe,
+    probe: ready.probe,
     phaseOf: () => undefined,
     diagnose: (tail, exit) =>
       oomKilled
