@@ -123,8 +123,9 @@ export function DownloadDialog({ choice, onOpenChange, onStarted }: DownloadDial
   const [, setPanel] = useDownloadsPanel();
   const disk = useSystemCheck().data?.items.find((i) => i.id === 'disk');
   const plan = useDownloadPlan(choice ? requestOf(choice) : undefined).data;
-  // Only what is not on the PC yet counts (the plan, once it answers).
-  const size = plan?.bytesToGet ?? choice?.sizeBytes ?? 0;
+  // Part of it already on the PC: only what is not there yet counts (the plan). Else the size the choice showed.
+  const partly = plan !== undefined && plan.files.some((f) => f.local !== 'get');
+  const size = partly ? plan.bytesToGet : (choice?.sizeBytes ?? 0);
   const tooBig = choice !== undefined && disk?.params.freeGb !== undefined && size > Number(disk.params.freeGb) * GIB;
   const nothing = plan !== undefined && plan.files.every((f) => f.local === 'have');
 
