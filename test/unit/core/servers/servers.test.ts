@@ -202,6 +202,16 @@ describe('ServeService', () => {
     expect((await setup({ vram: [undefined, 5000] }).svc.start(req, signal())).vramMiB).toBeUndefined();
     expect((await setup({ vram: [5000, undefined] }).svc.start(req, signal())).vramMiB).toBeUndefined();
     expect((await setup({ vram: [5000, 4000] }).svc.start(req, signal())).vramMiB).toBeUndefined();
+    // The GPU cannot be read: the server starts anyway.
+    const blind = setup();
+    blind.deps.vramUsedMiB = async () => {
+      throw new Error('nvidia-smi gone');
+    };
+    expect((await new ServeService(blind.deps).start(req, signal())).vramMiB).toBeUndefined();
+    const late = setup({ vram: [1000] });
+    const reads = [async () => 1000, async () => Promise.reject(new Error('gone'))];
+    late.deps.vramUsedMiB = () => reads.shift()!();
+    expect((await new ServeService(late.deps).start(req, signal())).vramMiB).toBeUndefined();
   });
 
   it('ports: the next free one, a chosen one, never one in use by us or by another program', async () => {

@@ -139,6 +139,16 @@ describe('modelReadyProbe', () => {
     expect(await broken(s)).toBe(false);
   });
 
+  it('a server shared on the network is asked with its API key', async () => {
+    const seen: (string | null)[] = [];
+    const fetch = (async (url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('authorization'));
+      return String(url).endsWith('/health') ? new Response('') : json({ data: [{ id: 'gpubench-x' }] });
+    }) as typeof globalThis.fetch;
+    expect(await modelReadyProbe(fetch, 'http://e', 'gpubench-x', 'gpub-key')(new AbortController().signal)).toBe(true);
+    expect(seen).toEqual([null, 'Bearer gpub-key']);
+  });
+
   it('parses model lists defensively', () => {
     expect(listsModel('not json', 'x')).toBe(false);
     expect(listsModel('{}', 'x')).toBe(false);

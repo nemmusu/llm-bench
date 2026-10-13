@@ -505,8 +505,14 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   void app.whenReady().then(async () => {
     registerIpc();
     const prefs = h.fs.readFile(prefsFile()).then(
-      (b) => JSON.parse(String(b)) as { hideNoticeShown?: unknown },
-      () => ({}) as { hideNoticeShown?: unknown },
+      (b): { hideNoticeShown?: unknown } => {
+        try {
+          return JSON.parse(String(b)) as { hideNoticeShown?: unknown };
+        } catch {
+          return {};
+        }
+      },
+      () => ({}),
     );
     const hasTray = trayAvailable({ platform: h.platform, env: h.env, run: h.run });
     try {
@@ -517,7 +523,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       app.exit(1);
       return;
     }
-    s.hideNoticeShown = (await prefs.catch(() => ({ hideNoticeShown: false }))).hideNoticeShown === true;
+    s.hideNoticeShown = (await prefs).hideNoticeShown === true;
     if (await hasTray) {
       s.tray = new e.Tray(e.nativeImage.createFromPath(trayIconFile('idle')));
       s.trayIcon = 'idle';

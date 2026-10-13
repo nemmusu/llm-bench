@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ServerInfo, ServerPlan, StartServerRequest } from '../../contract/api';
 import { AppError } from '../../contract/errors';
-import type { ServerLog, ServerNotice } from '../../contract/servers';
+import type { ServerLog, ServerNetwork, ServerNotice } from '../../contract/servers';
 import type { Clock } from '../deps';
 import { LoadTracker } from '../engines/shared/load-progress';
 import type { EngineAdapter, EngineInstance, LaunchPlan, ModelTarget } from '../engines/types';
@@ -145,7 +145,7 @@ export class ServeService {
     }
   }
 
-  private async launch(request: StartServerRequest & { port: number }, port: number, signal: AbortSignal): Promise<ServerInfo> {
+  private async launch(request: StartServerRequest & { port: number; network: ServerNetwork }, port: number, signal: AbortSignal): Promise<ServerInfo> {
     const marker = `gpubench-${randomUUID()}`;
     const { model, adapter, launch: plan, contextSize, apiName, expectedLoadMs } = await this.deps.prepare(request, marker);
     const presetName = request.presetId !== undefined ? (await this.deps.presets?.get(request.presetId).catch(() => undefined))?.name : undefined;
@@ -163,7 +163,7 @@ export class ServeService {
       throw e;
     }
     const shown = this.deps.redact(plan.argv, plan.env);
-    const network = request.network ?? 'local';
+    const network = request.network;
     const info: ServerInfo = {
       id: marker,
       baseUrl: instance.baseUrl,

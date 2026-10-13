@@ -23,6 +23,7 @@ describe('preload bridge', () => {
     await b.saveHfToken('hf_x');
     await b.clearHfToken();
     await b.saveFile({ defaultName: 'r.csv', content: 'a' });
+    await b.shellInfo();
     expect(invoke.mock.calls.map((c) => c[0])).toEqual([
       'gpubench:connection',
       'gpubench:pick-file',
@@ -33,6 +34,7 @@ describe('preload bridge', () => {
       'gpubench:hf-token-save',
       'gpubench:hf-token-clear',
       'gpubench:save-file',
+      'gpubench:shell-info',
     ]);
     expect(invoke.mock.calls[1]).toEqual(['gpubench:pick-file', { title: 't' }]);
   });

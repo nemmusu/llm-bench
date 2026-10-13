@@ -199,6 +199,30 @@ describe('BenchService.prepareServer / planServer', () => {
     expect(p.warnings).toEqual([]);
   });
 
+  it('the chosen port, else a free one; the plan says which and how it is reached', async () => {
+    const s = serviceSetup(tmp, { deps: { fit: async () => fit('good') } });
+    const svc = new BenchService(s.deps);
+    const chosen = await svc.planServer({ ...llama(), port: 8085 });
+    expect(chosen).toMatchObject({ port: 8085, network: 'local' });
+    expect(s.adapter.plans.at(-1)?.port).toBe(8085);
+    expect((await svc.planServer(llama())).port).toBe(40000);
+  });
+
+  it('shared on the local network: every card and the API key (redacted in the preview, real at start)', async () => {
+    const s = serviceSetup(tmp, { adapter: { hostArg: true }, deps: { fit: async () => fit('good'), redact: (argv, env) => ({ argv, env }), serverApiKey: () => 'gpub-real-key' } });
+    const svc = new BenchService(s.deps);
+    const plan = await svc.planServer({ ...llama(), port: 8086, network: 'lan' });
+    expect(plan.network).toBe('lan');
+    expect(plan.command.argv).toEqual(expect.arrayContaining(['--host', '0.0.0.0', '--api-key', '<API_KEY>']));
+    expect(plan.command.argv).not.toContain('gpub-real-key');
+    const started = await svc.prepareServer({ ...llama(), port: 8086, network: 'lan' }, { preview: false, marker: 'gpubench-lan' });
+    expect(started.launch.argv.slice(-2)).toEqual(['--api-key', 'gpub-real-key']);
+    expect(started.launch.apiKey).toBe('gpub-real-key');
+    // No key available (never in the app: the core makes one): refused.
+    const keyless = new BenchService(serviceSetup(tmp, { adapter: { hostArg: true }, deps: { fit: async () => fit('good') } }).deps);
+    await expect(keyless.prepareServer({ ...llama(), network: 'lan' }, { preview: false, marker: 'gpubench-x' })).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'api_key_missing' } });
+  });
+
   it('refuses external endpoints (already running)', async () => {
     const svc = new BenchService(serviceSetup(tmp).deps);
     await expect(svc.planServer({ engine: { kind: 'external', baseUrl: 'http://h:1' }, model: {} })).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'external' } });

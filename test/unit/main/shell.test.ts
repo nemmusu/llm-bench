@@ -1,152 +1,7 @@
-import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { BrowserWindowConstructorOptions } from 'electron';
-import { MAX_SAVE_BYTES, startShell, titleBarColors, type ElectronApi, type ShellHost } from '../../../src/main/shell';
-
-type Handler = (...args: unknown[]) => unknown;
-
-class FakeProc extends EventEmitter {
-  stdout = new EventEmitter();
-  stderr = new EventEmitter();
-  posted: unknown[] = [];
-  killed = false;
-  postMessage(m: unknown) {
-    this.posted.push(m);
-  }
-  kill() {
-    this.killed = true;
-    return true;
-  }
-}
-
-class FakeWindow {
-  static last: FakeWindow | undefined;
-  opts: BrowserWindowConstructorOptions;
-  events = new Map<string, Handler>();
-  wc = new Map<string, Handler>();
-  openHandler: Handler | undefined;
-  shown = 0;
-  focused = 0;
-  restored = 0;
-  minimized = false;
-  overlay: unknown;
-  loaded = '';
-  webContents = {
-    on: (ev: string, fn: Handler) => this.wc.set(ev, fn),
-    setWindowOpenHandler: (fn: Handler) => (this.openHandler = fn),
-  };
-  constructor(opts: BrowserWindowConstructorOptions) {
-    this.opts = opts;
-    FakeWindow.last = this;
-  }
-  once(ev: string, fn: Handler) {
-    this.events.set(ev, fn);
-  }
-  show() {
-    this.shown++;
-  }
-  isMinimized() {
-    return this.minimized;
-  }
-  restore() {
-    this.restored++;
-  }
-  focus() {
-    this.focused++;
-  }
-  setTitleBarOverlay(o: unknown) {
-    this.overlay = o;
-  }
-  async loadURL(u: string) {
-    this.loaded = u;
-  }
-}
-
-function world(o: { lock?: boolean; packaged?: boolean; dark?: boolean; secure?: boolean; tokenFile?: Buffer; platform?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}) {
-  const appEvents = new Map<string, Handler>();
-  const handlers = new Map<string, Handler>();
-  const files = new Map<string, Buffer | string>();
-  if (o.tokenFile) files.set(path.join('/user', 'hf-token.bin'), o.tokenFile);
-  const proc = new FakeProc();
-  const forks: { modulePath: string; opts: Record<string, unknown> }[] = [];
-  const errors: string[] = [];
-  const calls = { quit: 0, exit: [] as number[], relaunch: 0, setPath: [] as string[][], openExternal: [] as string[], reveal: [] as string[] };
-  let readyResolve!: () => void;
-  const ready = new Promise<void>((r) => (readyResolve = r));
-  const dialogs = { open: { canceled: false, filePaths: ['/picked'] } as { canceled: boolean; filePaths: string[] }, save: { canceled: false, filePath: '/saved.csv' } as { canceled: boolean; filePath?: string } };
-  const e: ElectronApi = {
-    app: {
-      setPath: (n: string, p: string) => void calls.setPath.push([n, p]),
-      getPath: (n: string) => (n === 'userData' ? '/user' : '/docs'),
-      isPackaged: o.packaged ?? false,
-      requestSingleInstanceLock: () => o.lock ?? true,
-      quit: () => void calls.quit++,
-      exit: (c?: number) => void calls.exit.push(c ?? 0),
-      relaunch: () => void calls.relaunch++,
-      whenReady: () => ready,
-      on: ((ev: string, fn: Handler) => appEvents.set(ev, fn)) as never,
-    } as unknown as ElectronApi['app'],
-    BrowserWindow: FakeWindow as unknown as ElectronApi['BrowserWindow'],
-    dialog: {
-      showOpenDialog: (async () => dialogs.open) as never,
-      showSaveDialog: (async () => dialogs.save) as never,
-      showErrorBox: (_t: string, m: string) => void errors.push(m),
-    },
-    ipcMain: { handle: ((ch: string, fn: Handler) => handlers.set(ch, fn)) as never },
-    nativeTheme: { shouldUseDarkColors: o.dark ?? false },
-    safeStorage: {
-      isEncryptionAvailable: () => o.secure ?? true,
-      encryptString: (s: string) => Buffer.from(`enc:${s}`),
-      decryptString: (b: Buffer) => b.toString().replace(/^enc:/, ''),
-    },
-    shell: {
-      openExternal: (async (u: string) => void calls.openExternal.push(u)) as never,
-      showItemInFolder: (p: string) => void calls.reveal.push(p),
-    },
-    utilityProcess: {
-      fork: (modulePath, _args, opts) => {
-        forks.push({ modulePath, opts });
-        return proc as never;
-      },
-    },
-  };
-  const out: Buffer[] = [];
-  let coverage = 0;
-  const h: ShellHost = {
-    env: o.env ?? {},
-    platform: o.platform ?? 'win32',
-    dirname: '/app/out/main',
-    resourcesPath: '/res',
-    fs: {
-      readFile: async (p) => {
-        const v = files.get(p);
-        if (v === undefined) throw new Error('ENOENT');
-        return Buffer.isBuffer(v) ? v : Buffer.from(v);
-      },
-      writeFile: async (p, d) => void files.set(p, d as Buffer),
-      mkdir: async () => undefined,
-      rm: async (p) => void files.delete(p),
-    },
-    write: (_stream, d) => void out.push(d),
-    takeCoverage: () => void coverage++,
-    shutdownTimeoutMs: o.timeoutMs ?? 50,
-  };
-  const invoke = (ch: string, ...args: unknown[]) => handlers.get(ch)!({}, ...args);
-  return { e, h, appEvents, handlers, files, proc, forks, errors, calls, readyResolve, dialogs, out, invoke, coverage: () => coverage };
-}
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
-
-async function started(o: Parameters<typeof world>[0] = {}) {
-  const w = world(o);
-  const s = startShell(w.e, w.h);
-  w.readyResolve();
-  await tick();
-  w.proc.emit('message', { type: 'ready', port: 4321 });
-  await vi.waitFor(() => expect(FakeWindow.last?.loaded).toBe('http://127.0.0.1:4321/'));
-  return { ...w, s, win: FakeWindow.last! };
-}
+import { MAX_SAVE_BYTES, startShell, titleBarColors } from '../../../src/main/shell';
+import { started, tick, world } from './harness';
 
 describe('title bar colours', () => {
   it('match the renderer canvas in both themes', () => {
@@ -191,9 +46,9 @@ describe('startShell', () => {
     expect(t.win.shown).toBe(0);
   });
 
-  it('sends no token when none is saved', async () => {
+  it('sends no token when none is saved, then asks for the start-up presets', async () => {
     const t = await started();
-    await vi.waitFor(() => expect(t.proc.posted).toContainEqual({ type: 'hf-token', token: null }));
+    await vi.waitFor(() => expect(t.proc.posted).toEqual([{ type: 'hf-token', token: null }, { type: 'autostart' }]));
   });
 
   it('keeps navigation inside the app and opens only https links outside', async () => {
@@ -251,6 +106,11 @@ describe('startShell', () => {
     expect(t.proc.posted).toContainEqual({ type: 'hf-token', token: null });
     const plain = await started({ secure: false });
     expect(await plain.invoke('gpubench:hf-token-save', 'hf_x')).toEqual({ ok: true, secure: false });
+    // Linux without a keyring: Electron's built-in key is no protection, the UI must warn.
+    const basic = await started({ platform: 'linux', backend: 'basic_text' });
+    expect(await basic.invoke('gpubench:hf-token-save', 'hf_y')).toEqual({ ok: true, secure: false });
+    const keyring = await started({ platform: 'linux', backend: 'gnome_libsecret' });
+    expect(await keyring.invoke('gpubench:hf-token-save', 'hf_z')).toEqual({ ok: true, secure: true });
   });
 
   it('IPC: exports saved through the native dialog, inputs validated', async () => {
@@ -268,13 +128,16 @@ describe('startShell', () => {
     expect(await t.invoke('gpubench:save-file', { defaultName: 'x', content: 'y' })).toBeNull();
   });
 
-  it('a second launch focuses (and restores) the existing window', async () => {
+  it('a second launch shows, restores and focuses the existing window (from the tray too)', async () => {
     const t = await started();
     t.appEvents.get('second-instance')!();
+    expect(t.win.shown).toBe(1);
     t.win.minimized = true;
     t.appEvents.get('second-instance')!();
     expect(t.win.focused).toBe(2);
     expect(t.win.restored).toBe(1);
+    // Already visible: not shown again.
+    expect(t.win.shown).toBe(1);
     const early = world();
     startShell(early.e, early.h);
     expect(() => early.appEvents.get('second-instance')!()).not.toThrow();
@@ -308,6 +171,7 @@ describe('startShell', () => {
     t.proc.emit('exit', 0);
     await vi.waitFor(() => expect(t.calls.quit).toBe(1));
     expect(t.coverage()).toBe(1);
+    expect(t.tray!.destroyed).toBe(true);
     // The second before-quit (from app.quit) goes through.
     beforeQuit({ preventDefault: () => prevented++ });
     expect(prevented).toBe(1);
@@ -338,23 +202,34 @@ describe('startShell', () => {
     expect(t.calls.relaunch).toBe(0);
   });
 
-  it('uses the default shutdown grace period', async () => {
-    const w = world();
-    delete w.h.shutdownTimeoutMs;
-    vi.useFakeTimers();
-    try {
-      startShell(w.e, w.h);
-      w.readyResolve();
-      await vi.advanceTimersByTimeAsync(0);
-      w.proc.emit('message', { type: 'ready', port: 1 });
-      await vi.advanceTimersByTimeAsync(0);
-      w.appEvents.get('before-quit')!({ preventDefault: () => {} });
-      await vi.advanceTimersByTimeAsync(3999);
-      expect(w.proc.killed).toBe(false);
-      await vi.advanceTimersByTimeAsync(2);
-      expect(w.proc.killed).toBe(true);
-    } finally {
-      vi.useRealTimers();
+  it('uses the default shutdown grace period: 4 s, 20 s while servers run (they are stopped first)', async () => {
+    for (const [servers, grace] of [
+      [false, 4000],
+      [true, 20_000],
+    ] as const) {
+      const w = world();
+      delete w.h.shutdownTimeoutMs;
+      vi.useFakeTimers();
+      try {
+        startShell(w.e, w.h);
+        w.readyResolve();
+        await vi.advanceTimersByTimeAsync(0);
+        w.proc.emit('message', { type: 'ready', port: 1 });
+        await vi.advanceTimersByTimeAsync(0);
+        if (servers) {
+          w.proc.emit('message', {
+            type: 'shell-state',
+            state: { servers: [{ id: 's', modelName: 'm', port: 8080, url: 'u', status: 'ready', network: 'local' }], presets: [], closeBehavior: 'tray-if-servers', launchAtLogin: false, language: 'it' },
+          });
+        }
+        w.appEvents.get('before-quit')!({ preventDefault: () => {} });
+        await vi.advanceTimersByTimeAsync(grace - 1);
+        expect(w.proc.killed).toBe(false);
+        await vi.advanceTimersByTimeAsync(2);
+        expect(w.proc.killed).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     }
   });
 });

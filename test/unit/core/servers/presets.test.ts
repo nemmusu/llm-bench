@@ -60,12 +60,15 @@ describe('server presets', () => {
   it('changes some fields, keeps the rest, removes the port or the source with null', async () => {
     const { p, later } = presets();
     const saved = await p.create(input);
+    const other = await p.create({ ...input, name: 'Altro' });
     later();
     const changed = await p.update(saved.id, { autoStart: true, network: 'lan', port: null, source: null });
     expect(changed).toMatchObject({ id: saved.id, name: 'Chat veloce', autoStart: true, network: 'lan', createdAt: saved.createdAt, updatedAt: '2026-10-13T10:01:00.000Z' });
     expect(changed).not.toHaveProperty('port');
     expect(changed).not.toHaveProperty('source');
     expect(await p.autoStart()).toEqual([changed]);
+    // The other preset is untouched.
+    expect((await p.list()).find((x) => x.id === other.id)).toEqual(other);
     // Its own name is not a clash.
     expect((await p.update(saved.id, { name: 'chat VELOCE' })).name).toBe('chat VELOCE');
   });
