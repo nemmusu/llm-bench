@@ -36,10 +36,15 @@ win:
   icon: resources/icons/icon.png
 
 nsis:
+  # A classic installer: the wizard, Program Files for all users (one UAC prompt), the uninstaller in
+  # Windows' "App installate" / "Programmi e funzionalità" (HKLM). User data stays in %APPDATA%.
   oneClick: false
-  perMachine: false
-  allowElevation: false
+  perMachine: true
+  allowElevation: true
   allowToChangeInstallationDirectory: true
+  menuCategory: false
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: LLM Bench
@@ -47,7 +52,7 @@ nsis:
   language: '1040'
   displayLanguageSelector: true
   artifactName: LLM-Bench-Setup-${version}.${ext}
-  uninstallDisplayName: LLM Bench
+  uninstallDisplayName: ${productName}
 
 portable:
   artifactName: LLM-Bench-${version}-portable.${ext}
