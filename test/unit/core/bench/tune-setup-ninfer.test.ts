@@ -32,6 +32,13 @@ describe('"Trova le impostazioni migliori" with NInfer', () => {
       { model, adapter: {} as EngineAdapter, engine: { kind: 'ninfer-wsl' }, params: P({ ninfer: { prefixReuse: false, thinking: false } }), launch: { modelBytes: 4096 }, scenario: buildScenario('tune') },
     );
     expect(input.space.dimensions.map((d) => d.key)).toEqual(['spec', 'draft', 'lmhead', 'kv8', 'vision']);
+    // "Più utenti": NInfer's lanes for them.
+    const multi = await buildTuneSetup(
+      deps as never,
+      { engine: { kind: 'ninfer-wsl' }, tune: { budget: 'fast', goal: 'multi', users: 4 } as never },
+      { model, adapter: {} as EngineAdapter, engine: { kind: 'ninfer-wsl' }, params: P(), launch: { modelBytes: 4096 }, scenario: buildScenario('tune') },
+    );
+    expect(multi.space.base('bf16')).toMatchObject({ np: 4 });
     expect(input.predict?.(P({ contextSize: 4096 }))).toMatchObject({ basis: 'file-size', notes: ['ninfer.estimate'] });
   });
 

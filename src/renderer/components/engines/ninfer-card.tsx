@@ -86,9 +86,9 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
   const configured = savedPath !== undefined && !editing;
 
   const cfgOf = (p: string): EngineConfig => ({ kind, ninferPath: p, ...(wsl && chosenDistro ? { wslDistro: chosenDistro } : {}) });
+  // The button is enabled only with a path.
   const use = () => {
     const p = path.trim();
-    if (!p) return;
     check.mutate(cfgOf(p), {
       onSuccess: (s) => {
         if (!s.installed) return;
@@ -98,7 +98,8 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
       },
     });
   };
-  const recheck = () => savedPath !== undefined && check.mutate({ kind, ninferPath: savedPath, ...(savedDistro ? { wslDistro: savedDistro } : {}) });
+  // Shown only for a saved build.
+  const recheck = () => check.mutate({ kind, ninferPath: savedPath as string, ...(savedDistro ? { wslDistro: savedDistro } : {}) });
   // The check's own answer (a path not saved yet), else the saved build's status.
   const shown = check.data ?? status;
   const presets = ninferPresetsFor({ name: 'qwen3.8-27b' });
@@ -141,7 +142,7 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
               target={kind}
               name={t(`benchmark.engines.${kind}`)}
               enabled={status?.installed === true}
-              extra={(c) => <NinferArtifacts check={c} where={wsl ? t('ninfer.build.whereWsl', { distro: savedDistro ?? '' }) : t('ninfer.build.whereLinux')} />}
+              extra={(c) => <NinferArtifacts check={c} where={wsl ? t('ninfer.build.whereWsl', { distro: savedDistro as string }) : t('ninfer.build.whereLinux')} />}
             />
           </div>
         </div>

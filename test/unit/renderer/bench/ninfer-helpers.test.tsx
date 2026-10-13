@@ -1,3 +1,4 @@
+import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import { ninferPresetsFor } from '../../../../src/contract/ninfer';
@@ -6,7 +7,9 @@ import { diffRows } from '../../../../src/renderer/components/bench/compare-rows
 import { modelOptions } from '../../../../src/renderer/components/bench/model-options';
 import { presetOf } from '../../../../src/renderer/components/bench/rerun';
 import { kTokens, presetTitle, serverNinfer, specText, withNinferPreset } from '../../../../src/renderer/components/engines/ninfer-format';
+import { NinferPresetPicker } from '../../../../src/renderer/components/engines/ninfer-presets';
 import { createFormatters } from '../../../../src/renderer/i18n';
+import { renderUi } from '../helpers';
 import { seededRuns } from './fixtures';
 import { localModel } from './world';
 
@@ -25,6 +28,11 @@ describe('NInfer settings in words', () => {
     expect(presetTitle(tested!, t)).toBe('Provata su RTX 5090: 64K per richiesta, KV int8 condivisa da 128K, 2 utenti, visione, MTP 3');
     // A preset without a pool or a KV type: the context and NInfer's bf16.
     expect(presetTitle({ id: 'ninfer-recommended', params: { contextSize: 8192, ninfer: { kvCapacity: 'auto' } } }, t)).toBe('Consigliata da NInfer: contesto 8K, KV bf16, 1 utenti, ');
+  });
+
+  it('a result whose NInfer settings are all defaults is offered as "–"', () => {
+    renderUi(<NinferPresetPicker presets={ninferPresetsFor({ name: 'qwen3.8-27b' })} run={{}} value="run" onChange={() => undefined} />);
+    expect(screen.getByRole('radio', { name: 'Come nel test da cui viene il preset: –' }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('puts a choice over the user\'s settings, and a server keeps NInfer\'s own defaults', () => {

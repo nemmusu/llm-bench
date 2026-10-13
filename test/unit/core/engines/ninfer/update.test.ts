@@ -85,6 +85,13 @@ describe('updates of a native build', () => {
     expect((await updater({ out: '##dir /n\n', models: () => Promise.reject(new Error('scan')) }).u.plan()).check.ninfer).toEqual({ containerVersion: 3, artifacts: [] });
   });
 
+  it('a fetch that failed without a word is still said', async () => {
+    const out = `##dir /n\n##fetched no\n##head ${HEAD}\n##branch master\n##upstream origin/master\n##latest ${HEAD}\n##counts 0\t0\n`;
+    const { check } = await updater({ out }).u.plan({ fetch: true });
+    expect(check).toMatchObject({ state: 'blocked', reason: 'fetch-failed' });
+    expect(check).not.toHaveProperty('detail');
+  });
+
   it('starts from the program\'s folder when the build is not in the usual place', async () => {
     expect((await updater({ out: '##nocheckout\n', repo: '' }).u.plan()).check).toMatchObject({ target: 'ninfer-native', method: 'none', state: 'none', reason: 'tools' });
   });

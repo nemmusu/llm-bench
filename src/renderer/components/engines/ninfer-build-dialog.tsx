@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Check, Hammer, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import type { NinferBuildRequest, NinferKind } from '../../../contract/ninfer';
+import type { NinferBuildPlan, NinferBuildRequest, NinferKind } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { activeEvent, useInstallEvent, useStartInstall } from '../../lib/queries-library';
 import { refreshEngines, useNinferBuildPlan } from '../../lib/queries-ninfer';
@@ -67,7 +67,8 @@ export function NinferBuildDialog({ open, onOpenChange, kind, distro }: NinferBu
             <Button
               variant="primary"
               disabled={!p?.ready || running !== undefined || req === undefined}
-              onClick={() => req && start.mutate({ key: kind, path: '/api/engines/ninfer/build', body: { ...req, dir: p?.dir ?? req.dir, confirm: true } })}
+              // Enabled only with a plan that is ready: the folder it checked (absolute) is the one built.
+              onClick={() => start.mutate({ key: kind, path: '/api/engines/ninfer/build', body: { ...req, dir: (p as NinferBuildPlan).dir, confirm: true } })}
             >
               <Hammer aria-hidden />
               {t('ninfer.build.confirm')}

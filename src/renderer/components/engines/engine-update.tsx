@@ -53,12 +53,10 @@ export interface EngineUpdatePanelProps {
 /** Commit titles shown before "e altri N". */
 const SHOWN_COMMITS = 5;
 
-/** The new commits of a git update, newest first. */
-function CommitLog({ check }: { check: EngineUpdateCheck }) {
+/** The new commits of a git update, newest first (`total`: how many there are). */
+function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['log']>; total: number }) {
   const { t } = useI18n();
-  const log = check.log ?? [];
-  if (log.length === 0) return null;
-  const more = (check.commits ?? log.length) - Math.min(log.length, SHOWN_COMMITS);
+  const more = total - Math.min(log.length, SHOWN_COMMITS);
   return (
     <>
       <ul className="flex flex-col gap-0.5 text-sm text-fg-2">
@@ -161,7 +159,7 @@ export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdate
   } else {
     body = (
       <Callout tone="info" title={updateHeadline({ t, bytes }, c)} action={{ label: t('engines.update.update'), onClick: () => setConfirm(true) }}>
-        {c.log?.length ? <CommitLog check={c} /> : undefined}
+        {c.log?.length ? <CommitLog log={c.log} total={c.commits ?? c.log.length} /> : undefined}
       </Callout>
     );
   }

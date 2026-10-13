@@ -77,6 +77,16 @@ describe('NInfer in the services', () => {
       const res = await app.request('/api/engines/ninfer/distros', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(await res.json()).toEqual({ wsl: false, distros: [] });
       await expect.poll(() => log.entries.some((e) => e.msg === 'NInfer WSL cleanup failed'), { timeout: 10_000 }).toBe(true);
+      // A guided build through the app: its events go to the hub (here it stops at once: no Linux to ask).
+      const events: unknown[] = [];
+      ctx.hub.subscribe((e) => events.push(e));
+      const build = await app.request('/api/engines/ninfer/build', { method: 'POST', body: JSON.stringify({ kind: 'ninfer-wsl', distro: 'Ubuntu', confirm: true }), headers: { authorization: 'Bearer t', host: '127.0.0.1:1', 'content-type': 'application/json' } });
+      expect(build.status).toBe(200);
+      await expect.poll(() => events.some((e) => (e as { stage?: string }).stage === 'error')).toBe(true);
+      // Telemetry that cannot answer: no GPU to judge.
+      ctx.telemetry.probe = () => Promise.reject(new Error('nvml'));
+      s.ninfer.wsl.forget();
+      expect((await s.ninfer.wsl.detect()).problems).not.toContain('ENGINE_GPU_UNSUPPORTED');
     }
   });
 });

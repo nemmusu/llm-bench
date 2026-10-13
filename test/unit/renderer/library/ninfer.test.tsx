@@ -125,13 +125,61 @@ describe('NInfer card', () => {
 
   it('a saved native build that works: its commit; a build under way shows its progress', async () => {
     const api = ninferApi({ system: linux, engines: [ready({ kind: 'ninfer-native', variant: undefined })], settings: { ninfer: { native: { path: '/opt/ninfer' } } } });
+    api.w.updates['ninfer-native'] = {
+      target: 'ninfer-native',
+      method: 'git',
+      state: 'current',
+      current: 'e31bc99',
+      commands: [],
+      checkedAt: '2026-10-13T10:00:00.000Z',
+      ninfer: { containerVersion: 3, artifacts: [{ id: 'b', name: 'qwen3_6_27b', file: '/m/b.ninfer', version: 2, needs: 3, command: 'cd /opt/ninfer && python3 tools/upgrade_ninfer_v2_to_v3.py /m/b.ninfer /m/b.v3.ninfer' }] },
+    };
+    api.on('POST /api/engines/ninfer/check', () => ready({ kind: 'ninfer-native', variant: undefined }));
     renderLib('/engines', api);
     const c = await card();
     expect(await within(c).findByText(COMMIT.slice(0, 12))).toBeTruthy();
     expect(within(c).queryByText('Distribuzione')).toBeNull();
+    // Its update says where the conversion of an older model runs (this PC); "Ricontrolla" asks again.
+    expect(await within(c).findByText(/eseguilo su questo PC/)).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Ricontrolla' }));
+    await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/check')?.body).toEqual({ kind: 'ninfer-native', ninferPath: '/opt/ninfer' }));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'build', bytesDone: 3, step: 3, steps: 10 }));
     expect(await within(c).findByText('Compilazione')).toBeTruthy();
     expect(within(c).queryByRole('button', { name: 'Compila NInfer…' })).toBeNull();
+  });
+
+  it('a check that takes time says so', async () => {
+    const api = ninferApi();
+    let answer!: (s: EngineStatus) => void;
+    api.on('POST /api/engines/ninfer/check', () => new Promise<EngineStatus>((r) => (answer = r)));
+    renderLib('/engines', api);
+    const c = await card();
+    await userEvent.type(await within(c).findByRole('textbox', { name: 'Dove si trova NInfer' }), '/n');
+    await userEvent.click(within(c).getByRole('button', { name: 'Controlla e usa' }));
+    expect(await within(c).findByRole('button', { name: 'Controllo…' })).toBeTruthy();
+    act(() => answer(status({ installed: false })));
+    expect(await within(c).findByRole('button', { name: 'Controlla e usa' })).toBeTruthy();
+  });
+
+  it('a saved build that stopped working: its own words, else the error catalog', async () => {
+    const saved = { ninfer: { wsl: { distro: 'Ubuntu-24.04', path: '/home/u/ninfer' } } };
+    const where = async (st: EngineStatus) => {
+      const r = renderLib('/engines', ninferApi({ engines: [st], settings: saved }));
+      const c = await card();
+      return { c, r };
+    };
+    // Not found, the path from the status' location.
+    let v = await where(status({ location: '/x/ninfer-serve', problemParams: { reason: 'ninfer_not_found' } }));
+    expect(await within(v.c).findByText('ninfer-serve non è qui: /x/ninfer-serve')).toBeTruthy();
+    v.r.unmount();
+    // Nothing but the saved path to say.
+    v = await where(status({ problemParams: { reason: 'ninfer_not_found' } }));
+    expect(await within(v.c).findByText('ninfer-serve non è qui: /home/u/ninfer')).toBeTruthy();
+    v.r.unmount();
+    // No reason at all: the catalog's words for a missing engine.
+    v = await where(status({ problems: [], problemParams: undefined }));
+    expect(await within(v.c).findByText('Il motore non è installato')).toBeTruthy();
+    v.r.unmount();
   });
 });
 
@@ -207,7 +255,11 @@ describe('Compila NInfer', () => {
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Compila' }));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'error', bytesDone: 0 }));
     expect(await within(dialog).findByText('Installazione del motore non riuscita')).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+    // A second attempt that ends without saying where: still done.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Compila' }));
+    await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/build')).toHaveLength(2));
+    act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'done', bytesDone: 0 }));
+    expect(await screen.findByText(/NInfer è pronto/)).toBeTruthy();
   });
 });
 
@@ -293,6 +345,16 @@ describe('NInfer updates (the engines\' own "Aggiorna")', () => {
     expect(await within(c).findByText('La compilazione non è riuscita: ho rimesso la versione di prima (e31bc99), funziona come prima.')).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: false } } }));
     expect(await within(c).findByText('Non sono riuscito a rimettere la versione di prima: ricompila il motore.')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'update:ninfer-wsl', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: true } } }));
+    expect(await within(c).findByText('La compilazione non è riuscita: ho rimesso la versione di prima (), funziona come prima.')).toBeTruthy();
+  });
+
+  it('commit titles without a count: as many as listed', async () => {
+    const api = configured(update({ commits: undefined, log: [{ sha: 'aaaaaaa', title: 'only one' }] }));
+    renderLib('/engines', api);
+    const c = await card();
+    expect(await within(c).findByText('only one')).toBeTruthy();
+    expect(within(c).queryByText(/e altri/)).toBeNull();
   });
 
   it('a build outside its checkout: updated with its own tools, the models to upgrade still said', async () => {
