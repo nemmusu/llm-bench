@@ -71,6 +71,7 @@ test('a server from "Le migliori dai tuoi test": its address to copy, the sideba
     await expect(serverCard(page, /Qwen3 0\.6B.*/).getByText('Acceso', { exact: true })).toBeVisible({ timeout: 60_000 });
     await nav.getByRole('link', { name: 'Risultati' }).click();
     await page.getByRole('link', { name: /Qwen3-0\.6B/ }).first().click();
+    await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await page.getByRole('button', { name: 'Rifai questo benchmark' }).click();
     const own = page.getByRole('dialog', { name: 'Un server avviato da GPU Bench sta usando la scheda video' });
     await expect(own).toBeVisible();
