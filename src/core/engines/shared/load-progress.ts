@@ -4,14 +4,12 @@
  * (ServerInfo.loading). Patterns are not anchored: vLLM lines carry "(EngineCore_DP0 pid=255) INFO …"
  * prefixes, llama.cpp lines may carry --log-prefix / --log-timestamps.
  */
-import type { EngineKind } from '../../../contract/engines';
+import { engineBaseOf, isDockerKind, type EngineKind } from '../../../contract/engines';
 import { LOAD_STAGES, type LoadProgress, type LoadStage } from '../../../contract/events';
+import { sglangProgress } from './sglang';
 
 /** What one log line says about the start: the stage and, when the line has it, how far along. */
 export type LoadUpdate = Omit<LoadProgress, 'elapsedMs' | 'expectedMs'>;
-
-const isVllmKind = (kind: EngineKind): boolean => kind === 'vllm-docker' || kind === 'vllm-native';
-const isDockerKind = (kind: EngineKind): boolean => kind === 'llamacpp-docker' || kind === 'vllm-docker';
 
 /** "(EngineCore_DP0 pid=255) INFO 10-06 09:20:23 [default_loader.py:267] msg" → "msg" (also trims). */
 export function logMessage(line: string): string {
@@ -73,10 +71,15 @@ function llamaProgress(line: string): LoadUpdate | undefined {
   return undefined;
 }
 
-/** What `line` says about the start of a `kind` engine; undefined = nothing (the stage stays as it is). */
+/**
+ * What `line` says about the start of a `kind` engine; undefined = nothing (the stage stays as it is).
+ * External endpoints and command programs print nothing GPU Bench knows.
+ */
 export function parseLoadProgress(line: string, kind: EngineKind): LoadUpdate | undefined {
-  if (kind === 'external') return undefined;
-  return isVllmKind(kind) ? vllmProgress(line) : llamaProgress(line);
+  const base = engineBaseOf(kind);
+  if (base === 'vllm') return vllmProgress(line);
+  if (base === 'sglang') return sglangProgress(line);
+  return base === 'llamacpp' ? llamaProgress(line) : undefined;
 }
 
 /** The stage before any engine line: a container is still starting, a process is just launched. */

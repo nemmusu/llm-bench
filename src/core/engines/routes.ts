@@ -20,6 +20,8 @@ export interface LlamaInstallService {
 export interface EnginesRouteDeps {
   registry: EngineRegistry;
   llama: LlamaInstallService;
+  /** lmsysorg/sglang release tags (Docker Hub). */
+  sglang?: { tags(opts?: { refresh?: boolean }): Promise<unknown[]> };
   /** EventHub.publish of the core. */
   publish(e: ServerEvent): void;
   /** Saved per-kind configuration (custom executable, endpoint URL, Docker image…) used for detection and installs. */
@@ -44,6 +46,7 @@ function installerOf(a: EngineAdapter | undefined): Installer | undefined {
  *            saved or recommended one); vllm-native: uv venv (Linux). The last event is stage 'done', or 'error' with `error`.
  *   GET    /api/engines/llamacpp/installed      -> InstalledBuild[]
  *   DELETE /api/engines/llamacpp/installed/:id  -> { ok: true }
+ *   GET    /api/engines/sglang/tags?refresh=1   -> SglangTagInfo[] (lmsysorg/sglang releases, the recommended one marked)
  */
 export function createEnginesRoutes(svc: EnginesRouteDeps): RouteModule {
   let running: Promise<void> | undefined;
@@ -104,6 +107,11 @@ export function createEnginesRoutes(svc: EnginesRouteDeps): RouteModule {
     });
 
     app.get('/api/engines/llamacpp/installed', async (c) => c.json(await svc.llama.listInstalled()));
+
+    app.get('/api/engines/sglang/tags', async (c) => {
+      if (!svc.sglang) throw new AppError('VALIDATION', 'SGLang tags are not available', { params: { reason: 'sglang_tags' } });
+      return c.json(await svc.sglang.tags({ refresh: c.req.query('refresh') === '1' }));
+    });
 
     app.delete('/api/engines/llamacpp/installed/:id', async (c) => {
       await svc.llama.removeBuild(c.req.param('id'));

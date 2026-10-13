@@ -49,6 +49,17 @@ export interface HelpRun {
 }
 
 /**
+ * One plain `--help` (SGLang: argparse prints every option at once). A failure or an empty list gives
+ * no options. `run` must not be called with anything else: without --help the program would start.
+ */
+export async function probeArgparseHelp(run: () => Promise<HelpRun>): Promise<VllmHelp> {
+  const out = await run().catch(() => undefined);
+  if (!out || out.code !== 0) return { flags: new Set(), choices: {} };
+  const help = parseVllmHelp(`${out.stdout}\n${out.stderr}`);
+  return help.flags.size > 1 ? help : { flags: new Set(), choices: {} };
+}
+
+/**
  * `--help=all` first (the full list on v0.10+; older versions reject it), then `--help`. A probe that
  * fails or lists nothing gives an empty help: the tuner then skips every optional dimension.
  */

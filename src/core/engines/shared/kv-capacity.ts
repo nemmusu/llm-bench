@@ -8,8 +8,9 @@
  *              biggest of the lines (SWA models print a smaller cache for the sliding window)
  *              "llama_context: n_seq_max = 4" + "n_ctx_seq = 8192" (older: n_ctx_per_seq): split slots
  */
-import type { EngineKind } from '../../../contract/engines';
+import { engineBaseOf, type EngineKind } from '../../../contract/engines';
 import type { KvCapacity } from '../../../contract/results';
+import { sglangKvCapacity } from './sglang';
 import { parseVllmLoadReport } from './vllm-logs';
 
 const num = (s: string): number => Number(s.replace(/,/g, ''));
@@ -61,7 +62,8 @@ export function llamaKvCapacity(lines: readonly string[]): KvCapacity | undefine
 
 /** The KV capacity an engine's start log reports; undefined when it does not say (external endpoints never do). */
 export function parseKvCapacity(lines: readonly string[], kind: EngineKind): KvCapacity | undefined {
-  if (kind === 'vllm-docker' || kind === 'vllm-native') return vllmKvCapacity(lines);
-  if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return llamaKvCapacity(lines);
-  return undefined;
+  const base = engineBaseOf(kind);
+  if (base === 'vllm') return vllmKvCapacity(lines);
+  if (base === 'sglang') return sglangKvCapacity(lines);
+  return base === 'llamacpp' ? llamaKvCapacity(lines) : undefined;
 }
