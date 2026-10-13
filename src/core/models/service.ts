@@ -4,7 +4,7 @@ import type { FitRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineKind } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import { NINFER_MANIFEST, parseNinferManifest, precisionFromText, repoLayout, type RepoLayout, type SafetensorsVariant } from '../../contract/formats';
-import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFit } from '../../contract/models';
+import { VRAM_RESERVE_MIB, type FitEstimate, type HubFile, type HubModel, type LocalModel, type ModelIdentity, type QuickFit, type VramNow } from '../../contract/models';
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
@@ -164,6 +164,13 @@ export class ModelsService {
       models.push(fit ? { ...m, fit } : m);
     }
     return page.nextCursor ? { models, nextCursor: page.nextCursor } : { models };
+  }
+
+  /** What the card holds right now, for the catalog's "other programs" note; null without an NVIDIA GPU. */
+  async vramNow(): Promise<VramNow | null> {
+    const gpu = await this.opts.gpuInfo();
+    if (!gpu) return null;
+    return { totalMiB: gpu.totalMiB, freeMiB: gpu.freeMiB, busyMiB: Math.max(0, gpu.totalMiB - gpu.freeMiB - (gpu.ownMiB ?? 0)), reserveMiB: VRAM_RESERVE_MIB };
   }
 
   /** Repo card data (downloads, likes, gated, license, formats, params…) of one hub repo. */
