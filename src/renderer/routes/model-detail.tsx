@@ -1,5 +1,5 @@
 import { Link, useLocation, useParams, useRouter } from '@tanstack/react-router';
-import { ArrowLeft, Download, ExternalLink, FileBox, FolderTree, Heart, Lock, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Download, ExternalLink, FileBox, FolderTree, GitCompareArrows, Heart, Lock, RotateCcw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { repoLayout, type RepoLayout } from '../../contract/formats';
 import type { HubFile, HubModel } from '../../contract/models';
@@ -233,10 +233,19 @@ export function ModelDetailPage() {
         </Link>
       }
       actions={
-        <Button onClick={() => openHf(repo)}>
-          <ExternalLink aria-hidden />
-          {t('models.detail.openOnHf')}
-        </Button>
+        <>
+          {/* "Confronta modelli": this one against the others measured on this card. */}
+          <Button asChild>
+            <Link to="/compare" search={{ view: 'models' }}>
+              <GitCompareArrows aria-hidden />
+              {t('compare.openModels')}
+            </Link>
+          </Button>
+          <Button onClick={() => openHf(repo)}>
+            <ExternalLink aria-hidden />
+            {t('models.detail.openOnHf')}
+          </Button>
+        </>
       }
     >
       <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_300px]">

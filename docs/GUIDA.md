@@ -122,7 +122,15 @@ Nella scheda **Come è stato avviato** trovi il comando esatto usato (PowerShell
 
 Nella pagina **Risultati**, la vista **Configurazioni** raggruppa i test per modo di avvio (stesso motore, modello, scheda e impostazioni): una riga per configurazione, dalla più veloce, con la mediana dei test che l'hanno misurata. **Confronta a** sceglie la profondità (quanti token di testo ha già davanti il modello) a cui confrontarle: si vedono solo numeri misurati davvero. **Usa questo preset** porta motore, modello e impostazioni nel Benchmark (con un riquadro che dice da quale test vengono); se il modello non è più sul PC viene riscaricato prima.
 
-Puoi **confrontare** due risultati ed **esportarli** in CSV (anche nel formato per Excel italiano), JSON, Markdown o HTML.
+Ogni velocità dice su cosa è stata misurata: **scrittura** (generazione) o **lettura** (del prompt), e con quanto testo. Per esempio "54,6 tok/s · scrittura con 32.768 token già nel contesto" o "2.244 tok/s · lettura di un prompt da 512 token"; nelle tabelle "Generazione (tok/s) a 32K" o, sotto il numero, "a 32K di contesto". Più il contesto è pieno, più il modello va piano: per questo un numero senza contesto non basta.
+
+### Confronta
+
+Premi **Confronta** accanto a un test (in Risultati), a una configurazione (in Configurazioni), a una combinazione di **Trova le impostazioni migliori** o in cima a un risultato: in fondo alla finestra compare una barra con quello che hai scelto ("3 selezionati · Confronta"), fino a 4, che resta mentre cambi pagina. Con **Confronta modelli** (in Risultati) scegli invece da 2 a 4 modelli: per ognuno GPU Bench prende la configurazione più veloce misurata su questa scheda, e puoi sceglierne un'altra.
+
+Il confronto mette ogni elemento in colonna, con modello, motore, configurazione in parole e data, e per ogni misura evidenzia il numero migliore e dice gli altri in parole ("2,2 volte più lento", "−16%"). Le velocità sono sempre confrontate alla **stessa lunghezza di contesto misurata da tutti**: **Confronta a** offre solo le lunghezze misurate da almeno due, e dove uno non l'ha misurata c'è scritto "non misurato" (mai stime). Ci sono anche i grafici con tutti gli elementi, **Cosa cambia tra loro** con le impostazioni diverse, **Usa questo preset** e **Avvia il server così** per ognuno, e la **Scheda da condividere** su uno di loro con il confronto completo. L'indirizzo della pagina contiene il confronto: puoi riaprirlo o condividerlo così com'è.
+
+Puoi **esportare** i risultati in CSV (anche nel formato per Excel italiano), JSON, Markdown o HTML.
 
 ## 5. Modelli
 

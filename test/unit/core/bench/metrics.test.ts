@@ -192,6 +192,10 @@ describe('aggregateLatency', () => {
     expect(q.decodeTpsEngine?.median).toBe(120);
     expect(q.itlPerChunk).toBe(true);
     expect(q).not.toHaveProperty('draftAcceptance');
+    expect(q).not.toHaveProperty('promptTokensReported');
+    // The prompt tokens the engine counted (calibrated text prompts): their median.
+    const r = aggregateLatency([rm({ promptTokensReported: 4010 }), rm({ promptTokensReported: 4030 }), rm({})], { promptTokens: 4096, outputTokens: 128 });
+    expect(r).toMatchObject({ promptTokens: 4096, promptTokensReported: 4020 });
   });
 });
 

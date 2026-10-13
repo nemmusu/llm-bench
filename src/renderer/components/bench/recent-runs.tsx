@@ -4,6 +4,7 @@ import { spilledRun } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useRuns } from '../../lib/queries-runs';
+import { contextShort } from '../../lib/speed-at';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { Skeleton } from '../ui/skeleton';
 import { Sparkline } from '../ui/sparkline';
@@ -13,7 +14,8 @@ import { SpillBadge } from './spill';
 
 /** The last few completed runs with their generation speed (Benchmark page). */
 export function RecentRuns({ limit = 4 }: { limit?: number }) {
-  const { t, number, relative } = useI18n();
+  const f = useI18n();
+  const { t, number, relative } = f;
   const runs = useRuns();
   const all = runs.data ?? [];
   const items = all.filter((r) => r.status === 'completed').slice(0, limit);
@@ -57,9 +59,15 @@ export function RecentRuns({ limit = 4 }: { limit?: number }) {
                     </span>
                   </div>
                   {history.length > 1 && <Sparkline values={history} width={56} height={22} endDot={false} />}
-                  <span className={cn('w-[74px] text-right text-sm font-semibold tabular-nums', spill ? 'text-warning-text' : 'text-fg')}>
-                    {r.decodeTps === undefined ? '–' : number(r.decodeTps, 1)}
-                    <span className="ml-1 text-2xs font-medium text-fg-3">tok/s</span>
+                  <span className="flex shrink-0 flex-col items-end">
+                    <span className={cn('text-right text-sm font-semibold whitespace-nowrap tabular-nums', spill ? 'text-warning-text' : 'text-fg')}>
+                      {r.decodeTps === undefined ? '–' : number(r.decodeTps, 1)}
+                      <span className="ml-1 text-2xs font-medium text-fg-3">tok/s</span>
+                    </span>
+                    {/* What the speed was measured on: "a 512 token di contesto". */}
+                    {r.decodeTps !== undefined && r.decodeTokens !== undefined && (
+                      <span className="text-2xs whitespace-nowrap text-fg-3">{contextShort({ kind: 'write', tokens: r.decodeTokens, basis: r.speedBasis }, f)}</span>
+                    )}
                   </span>
                 </Link>
               </li>

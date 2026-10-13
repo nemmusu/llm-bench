@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { EngineKind } from '../../../contract/engines';
 import { nominalDepth, type Tuning } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { axisName, tooltipHead } from '../../lib/speed-at';
 import { prefillStat } from '../bench/format';
 import { ChartCard } from '../charts/chart-card';
 import { depthLinesOption } from '../charts/depth-lines';
@@ -53,18 +54,20 @@ export function TuneChart({ tuning, engineKind, order, recommended, marker, titl
     };
   }, [all, ids, tuning, engineKind, label, recommended, metric]);
   const fmt = useCallback((v: number) => (metric === 'decode' ? number(v, 1) : integer(v)), [metric, number, integer]);
+  const metricLabel = t(metric === 'decode' ? 'metrics.decode.label' : 'metrics.prefill.label');
   const build = useCallback(
     (tk: ChartTokens) =>
       depthLinesOption(tk, depths, series, {
         format: (v) => `${fmt(v)} tok/s`,
         axis: integer,
         depthLabel: (d) => depthLabel(d, f),
-        xName: t('tune.chart.depth'),
+        xName: axisName('depth', f),
+        // "a 32.768 token di contesto · Generazione", then one line per combination.
+        tooltipHead: (d) => `${tooltipHead(d, 'depth', f)} · ${metricLabel}`,
         ...(marker === undefined ? {} : { marker }),
       }),
-    [depths, series, fmt, integer, f, t, marker],
+    [depths, series, fmt, integer, f, marker, metricLabel],
   );
-  const metricLabel = t(metric === 'decode' ? 'metrics.decode.label' : 'metrics.prefill.label');
   return (
     <ChartCard
       title={title}

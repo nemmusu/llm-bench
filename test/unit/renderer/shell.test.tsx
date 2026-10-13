@@ -167,9 +167,10 @@ describe('command palette', () => {
     await waitFor(() => expect(api.settings.language).toBe('en'));
     await pick('Passa all’italiano');
     await waitFor(() => expect(api.settings.language).toBe('it'));
-    await pick('Confronta due risultati');
+    await pick('Confronta modelli o test');
     expect(await screen.findByRole('heading', { level: 1, name: 'Confronta' })).toBeTruthy();
     await pick('Avvia benchmark');
     expect(await screen.findByRole('heading', { level: 1, name: 'Benchmark' })).toBeTruthy();
-  });
+    // Eleven trips through the palette and four pages: more than the default 5 s on a busy machine.
+  }, 20_000);
 });

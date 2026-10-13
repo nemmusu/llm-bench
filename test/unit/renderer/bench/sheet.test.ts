@@ -4,7 +4,8 @@ import { summarize } from '../../../../src/core/bench/stats';
 import { createFormatters } from '../../../../src/renderer/i18n';
 import { reportToHtml } from '../../../../src/renderer/lib/export/html';
 import { reportToMarkdown } from '../../../../src/renderer/lib/export/markdown';
-import { modelInWords, redactSecrets, sheetOf, sheetRequest, type SheetInput } from '../../../../src/renderer/lib/export/sheet';
+import { itemName, itemOf } from '../../../../src/renderer/components/compare/compare-model';
+import { modelInWords, redactSecrets, sheetOf, sheetRequest, type SheetCompare, type SheetInput } from '../../../../src/renderer/lib/export/sheet';
 import { IDS, seeded } from './fixtures';
 import { NOW_POINTS, sessionsPoint, teamRuns, withSessions } from './sessions-fixtures';
 
@@ -13,6 +14,11 @@ const en = createFormatters('en');
 const NOW = new Date('2026-10-07T12:00:00.000Z');
 const input = (over: Partial<SheetInput> = {}): SheetInput => ({ run: teamRuns().now, appVersion: '0.3.0', now: NOW, ...over });
 const titles = (r: ReturnType<typeof sheetOf>) => r.sections.map((s) => s.title);
+/** The Compare page's items (oldest first), the sheet about `subject`. */
+const compared = (runs: RunResult[], subject = runs.length - 1): SheetCompare => {
+  const items = runs.map((r) => itemOf(r));
+  return { items, names: items.map((it, i) => itemName(it, i)), subject, depth: 512 };
+};
 
 /** A run whose command, environment and notes are full of secrets that must never leave. */
 function leaky(): RunResult {
@@ -27,7 +33,7 @@ function leaky(): RunResult {
 
 describe('Scheda da condividere: content', () => {
   it('every section of the team page, in order, well written, numbers with units', () => {
-    const r = sheetOf(input({ before: teamRuns().before, service: 'Assistente del team', address: 'http://gpu:8000/v1', notes: 'Riavvio ogni lunedì.\n\nScrivere a Marta.' }), it_);
+    const r = sheetOf(input({ compare: compared([teamRuns().before, teamRuns().now]), service: 'Assistente del team', address: 'http://gpu:8000/v1', notes: 'Riavvio ogni lunedì.\n\nScrivere a Marta.' }), it_);
     expect(r.title).toMatch(/^Assistente del team: /);
     expect(titles(r)).toEqual([
       'Il servizio',
@@ -36,7 +42,7 @@ describe('Scheda da condividere: content', () => {
       'Il contesto si legge una volta sola',
       'Come funziona la coda',
       'Contesto tenuto in memoria',
-      'Confronto con la configurazione precedente',
+      'Confronto con le altre configurazioni',
       'Glossario',
     ]);
     const [service, setup, speed, cache, queue, memory, compare, glossary] = r.sections;
@@ -53,17 +59,25 @@ describe('Scheda da condividere: content', () => {
     expect(cache?.text).toBe('Dal secondo messaggio in poi il server riusa quello che ha già letto (99,7% con 1 sessione, 97,5% con 2 sessioni) e legge solo il testo nuovo: con 1 sessione l’attesa passa da 1 min 53 s a 1,00 s.');
     expect(queue?.paragraphs).toEqual(['Con 2 sessioni insieme ogni messaggio viene letto a 1.783 token/s (con una sessione sola: 1.763 token/s); quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.']);
     expect(memory?.text).toBe('La memoria del motore (KV cache) tiene 889.820 token (bastano per 4 conversazioni da 200.000).');
-    expect(compare?.text).toMatch(/^Stesso modello, stesso PC\. Prima: vLLM .*\. Ora: vLLM /);
-    expect(compare?.table?.head).toEqual(['Misura', 'Prima', 'Ora', 'Differenza']);
+    expect(compare?.text).toBe('Stesso modello, stesso PC: 2 configurazioni a confronto, con le velocità misurate alla stessa lunghezza di contesto.');
+    expect(compare?.paragraphs).toEqual([
+      'A · Qwen3-8B-FP8: vLLM v0.12.0 (CUDA) · Contesto 8.192 · cache KV auto · 4 slot paralleli · memoria GPU 84%, test del 6 ott 2026, 10:00.',
+      expect.stringMatching(/^B · Qwen3-8B-FP8 \(questa scheda\): vLLM /),
+    ]);
+    expect(compare?.table?.head).toEqual(['Misura', 'A · Qwen3-8B-FP8', 'B · Qwen3-8B-FP8', 'Il numero migliore']);
     const row = (label: RegExp) => compare?.table?.rows.find((x) => label.test(x[0] as string));
-    expect(row(/^Lettura del contesto/)?.[3]).toBe('2,2 volte più veloce');
-    expect(row(/^Velocità di scrittura/)?.[3]).toBe('+16%');
-    expect(row(/^Contesto tenuto in memoria/)?.slice(1)).toEqual(['399.806 token', '889.820 token', '2,2 volte di più']);
-    expect(row(/^Attesa prima risposta a/)?.slice(1)).toEqual(['4 min 07 s', '1 min 53 s', '2,2 volte più breve']);
-    expect(row(/^Attesa risposte successive/)?.slice(1)).toEqual(['riletto da capo (4 min 06 s)', '1,00 s', 'prima riletto da capo, ora 1,00 s']);
+    expect(row(/^Lettura del contesto/)?.[3]).toBe('B · Qwen3-8B-FP8: 2,2 volte più veloce');
+    expect(row(/^Velocità di scrittura/)?.[3]).toBe('B · Qwen3-8B-FP8: +16%');
+    expect(row(/^Contesto tenuto in memoria/)?.slice(1)).toEqual(['399.806 token', '889.820 token', 'B · Qwen3-8B-FP8: 2,2 volte di più']);
+    expect(row(/^Contesto tenuto in memoria/)?.[0]).toBe('Contesto tenuto in memoria (token) · quanti token la cache KV tiene insieme, secondo il motore');
+    expect(row(/^Attesa prima risposta a/)?.slice(1)).toEqual(['4 min 07 s', '1 min 53 s', 'B · Qwen3-8B-FP8: 2,2 volte più breve']);
+    expect(row(/^Attesa risposte successive/)?.slice(1)).toEqual(['riletto da capo (4 min 06 s)', '1,00 s', 'B · Qwen3-8B-FP8: 246 volte più breve']);
+    expect(row(/^Generazione/)?.slice(1)).toEqual(['167,9 tok/s', '167,9 tok/s', 'uguale']);
+    expect(row(/^Generazione/)?.[0]).toBe('Generazione (tok/s) · scrittura con 512 token già nel contesto');
+    expect(row(/^Punteggio/)).toBeUndefined();
     expect(glossary?.definitions?.map((d) => d.term)).toEqual(['Lettura del contesto', 'Attesa prima risposta', 'Attesa in coda', 'Contesto riusato', 'Velocità di scrittura']);
     expect(glossary?.after?.[0]).toMatch(/È un’approssimazione\.$/);
-    expect(row(/^Contesto riusato/)?.slice(1)).toEqual(['0%', '99,7%', 'prima 0%, ora 99,7%']);
+    expect(row(/^Contesto riusato/)?.slice(1)).toEqual(['0%', '99,7%', 'B · Qwen3-8B-FP8: 99,7% contro 0%']);
     expect(r.sentence).toBe('Qwen3-8B-FP8 con vLLM v0.12.0 (CUDA) su RTX 5090: legge il contesto a 1.763 token/s e scrive a 31,7 token/s per conversazione (prova con 200.000 token).');
     expect(r.footer).toMatch(/^Scheda creata il .* con GPU Bench 0\.3\.0\./);
     expect(r.meta.at(-1)).toMatch(/^misurato il /);
@@ -104,8 +118,11 @@ describe('Scheda da condividere: content', () => {
   it('a comparison between different PCs or models says so plainly', () => {
     const other = structuredClone(teamRuns().before);
     other.hardware = { ...other.hardware, hostId: 'elsewhere' };
-    const r = sheetOf(input({ before: other }), it_);
-    expect(r.sections.find((s) => s.title === 'Confronto con la configurazione precedente')?.text).toMatch(/^Prima: /);
+    const r = sheetOf(input({ compare: compared([other, teamRuns().now]) }), it_);
+    expect(r.sections.find((s) => s.title === 'Confronto con le altre configurazioni')?.text).toBe('2 configurazioni a confronto, con le velocità misurate alla stessa lunghezza di contesto.');
+    // The same number on both sides.
+    const cold = r.sections.find((s) => s.title === 'Confronto con le altre configurazioni')?.table?.rows.find((x) => (x[0] as string).startsWith('Caricamento a freddo'));
+    expect(cold?.[3]).toBe('uguale');
   });
 
   it('odd machines and launches: no GPU, no driver, a Docker image, default settings, one side without KV capacity', () => {
@@ -129,8 +146,8 @@ describe('Scheda da condividere: content', () => {
     expect(sheetOf({ run: noDriver, appVersion: '0.3.0', now: NOW }, it_).sections[0]!.table!.rows[2]![1]).not.toContain('driver');
     const noKv = structuredClone(teamRuns().before);
     delete noKv.metrics.kvCapacity;
-    const cmp = sheetOf({ run: teamRuns().now, before: noKv, appVersion: '0.3.0', now: NOW }, it_).sections.find((x) => x.title === 'Confronto con la configurazione precedente');
-    expect(cmp?.table?.rows.find((x) => x[0] === 'Contesto tenuto in memoria')?.slice(1)).toEqual(['–', '889.820 token', '–']);
+    const cmp = sheetOf({ run: teamRuns().now, compare: compared([noKv, teamRuns().now]), appVersion: '0.3.0', now: NOW }, it_).sections.find((x) => x.title === 'Confronto con le altre configurazioni');
+    expect(cmp?.table?.rows.find((x) => (x[0] as string).startsWith('Contesto tenuto in memoria'))?.slice(1)).toEqual(['–', '889.820 token', '–']);
   });
 
   it('the model in words', () => {
@@ -157,7 +174,7 @@ describe('Scheda da condividere: never a secret', () => {
     const run = leaky();
     for (const format of ['markdown', 'html'] as const) {
       const req = sheetRequest(
-        { run, before: teamRuns().before, service: 'Team', address: 'http://u:pw@gpu:8000/v1?api_key=abc123', notes: 'Bearer zzz-token-zzz', appVersion: '0.3.0', now: NOW },
+        { run, compare: compared([teamRuns().before, run]), service: 'Team', address: 'http://u:pw@gpu:8000/v1?api_key=abc123', notes: 'Bearer zzz-token-zzz', appVersion: '0.3.0', now: NOW },
         format,
         it_,
       );

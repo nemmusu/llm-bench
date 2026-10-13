@@ -113,6 +113,14 @@ describe('summaryOf', () => {
       file: 'f.json',
     });
     expect(s).not.toHaveProperty('modelSha256');
+    // What the speeds were measured on: the 512 prompt for generation, the longest for reading.
+    expect(s).toMatchObject({ decodeTokens: 512, speedBasis: 'prompt' });
+    expect(s.prefillTokens).toBe(Math.max(...makeRun().metrics.latency.map((p) => p.promptTokens)));
+    // Calibrated text prompts (chat-only servers): the tokens the engine counted, never the target.
+    const text = makeRun();
+    text.notes = [{ code: 'text_prompts_calibrated' }];
+    text.metrics.latency = text.metrics.latency.map((p) => ({ ...p, promptTokensReported: p.promptTokens + 7 }));
+    expect(summaryOf(text, 'f.json')).toMatchObject({ decodeTokens: 519 });
   });
   it('engine-reported prefill wins; partial runs have partial summaries', () => {
     const withEngine = makeRun();

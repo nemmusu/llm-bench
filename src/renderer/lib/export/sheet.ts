@@ -1,13 +1,12 @@
 /**
  * "Scheda da condividere": a well-written page about a server, for the team that uses it. Built from
- * one result (and the one before it, from the Compare page): the model and the configuration in
- * words, the exact command, how fast it reads and writes, what long conversations wait, what the
- * cache saves, how the queue works, how much context the memory holds, the comparison in words and
- * a glossary. Never any secret: commands are stored redacted, and every text is scrubbed again.
+ * one result (and, from the Compare page, everything it was compared with): the model and the
+ * configuration in words, the exact command, how fast it reads and writes, what long conversations
+ * wait, what the cache saves, how the queue works, how much context the memory holds, the comparison
+ * in words and a glossary. Never any secret: commands are stored redacted, and every text is scrubbed again.
  */
 import type { RunResult } from '../../../contract/results';
-import { metricRows } from '../../components/bench/compare-rows';
-import { rowWords } from '../../components/bench/compare-words';
+import { compareRows, engineName, rowLead, type CompareItem } from '../../components/compare/compare-model';
 import { engineLabelOf, headlinePoint, MIB_PER_GB, modelLabelOf, prefillStat, shortGpuName, slug } from '../../components/bench/format';
 import { launchLabelOf } from '../../components/presets/config-label';
 import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsRows, sessionsSentences, sessionsTable, soloPoint } from '../../components/bench/sessions-view';
@@ -17,11 +16,20 @@ import { reportToMarkdown } from './markdown';
 import type { Report, ReportSection } from './report';
 import type { SaveRequest } from './save';
 
+/** The Compare page's items (2–4), their names ("A · Qwen3 8B") and the depth they are compared at. */
+export interface SheetCompare {
+  items: readonly CompareItem[];
+  names: readonly string[];
+  depth?: number | undefined;
+  /** The item the sheet is about (its run is SheetInput.run). */
+  subject: number;
+}
+
 export interface SheetInput {
-  /** The result the sheet is about ("Ora" in a comparison). */
+  /** The result the sheet is about (in a comparison: the item chosen in the dialog). */
   run: RunResult;
-  /** The configuration before ("Prima"), from the Compare page. */
-  before?: RunResult;
+  /** From the Compare page: every item, the one the sheet is about included. */
+  compare?: SheetCompare;
   /** Typed by the user in the export dialog (all optional). */
   service?: string;
   address?: string;
@@ -142,21 +150,27 @@ function speedSections(run: RunResult, f: Formatters): ReportSection[] {
   return out;
 }
 
-function comparisonSection(before: RunResult, run: RunResult, f: Formatters): ReportSection {
+/**
+ * "Confronto": every compared item in one table, the speeds at the same measured context (said in the
+ * row), and who does best against the runner-up, in words.
+ */
+function comparisonSection(c: SheetCompare, f: Formatters): ReportSection {
   const { t, dateTime } = f;
-  const rows = metricRows(before, run, f).map((r) => {
-    const words = rowWords(r, f);
-    const cell = (v: number | undefined, reread: boolean | undefined) => (v === undefined ? '–' : reread ? `${t('longConversations.compare.reread')} (${r.format(v)})` : r.format(v));
-    return [r.label, cell(r.a, r.reread?.a), cell(r.b, r.reread?.b), words ? (words.direction === 'same' ? t('compare.same') : words.text) : '–'];
+  const rows = compareRows(c.items, c.depth, f).map((r) => {
+    const lead = rowLead(r, f);
+    const cell = (v: number | undefined, i: number) => (v === undefined ? '–' : r.reread?.[i] ? `${t('longConversations.compare.reread')} (${r.format(v)})` : r.format(v));
+    const who = !lead ? '–' : lead.tie ? t('compare.same') : t('sheet.compare.lead', { name: c.names[lead.winner]!, diff: lead.diff });
+    return [r.context ? `${r.label} · ${r.context}` : r.label, ...r.values.map(cell), who];
   });
-  const same = before.hardware.hostId === run.hardware.hostId && before.model.weakKey === run.model.weakKey;
+  const same = c.items.every((it) => it.run.hardware.hostId === c.items[0]!.run.hardware.hostId && it.run.model.weakKey === c.items[0]!.run.model.weakKey);
+  const config = (it: CompareItem) => launchLabelOf(it.params, it.run.engine.kind, f, { blockCount: it.run.model.facts?.blockCount, tags: it.combo?.tags }).text;
   return {
     title: t('sheet.sections.compare'),
-    text: t(same ? 'sheet.compare.sameMachine' : 'sheet.compare.intro', {
-      before: `${engineLabelOf(before.engine)}, ${dateTime(before.createdAt)}`,
-      now: `${engineLabelOf(run.engine)}, ${dateTime(run.createdAt)}`,
-    }),
-    table: { head: [t('sheet.compare.metric'), t('longConversations.compare.before'), t('longConversations.compare.now'), t('sheet.compare.difference')], rows, numericFrom: 1 },
+    text: t(same ? 'sheet.compare.sameMachine' : 'sheet.compare.intro', { n: c.items.length }),
+    paragraphs: c.items.map((it, i) =>
+      t(i === c.subject ? 'sheet.compare.itemThis' : 'sheet.compare.item', { name: c.names[i]!, engine: engineName(it.run.engine, f), config: config(it), date: dateTime(it.run.createdAt) }),
+    ),
+    table: { head: [t('sheet.compare.metric'), ...c.names, t('sheet.compare.best')], rows, numericFrom: 1 },
   };
 }
 
@@ -208,7 +222,7 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
   if (run.metrics.kvCapacity) {
     sections.push({ title: t('sheet.sections.memory'), text: t('sheet.memory.body', { value: kvCapacityText(run.metrics.kvCapacity, f) }) });
   }
-  if (input.before) sections.push(comparisonSection(input.before, run, f));
+  if (input.compare) sections.push(comparisonSection(input.compare, f));
   if (sessionsOf(run).length) {
     sections.push({ title: t('sheet.sections.glossary'), definitions: sessionsGlossary(f), after: [t('longConversations.proportional')] });
   }

@@ -3,6 +3,7 @@
  * evenly spaced like the grid they come from. A line stops where its configuration stops.
  */
 import { axisStyle, type ChartOption, type ChartTokens } from './echarts';
+import { tooltipHtml, tooltipSentence, yOf, type AxisParam } from './tooltip';
 
 export interface DepthSeries {
   name: string;
@@ -22,6 +23,15 @@ export interface DepthLinesOpts {
   xName: string;
   /** Depth to mark with a vertical line (the compared one). */
   marker?: number;
+  /**
+   * The tooltip's first line for a depth, e.g. "a 32.768 token di contesto": the series values follow,
+   * each with its color. Default: the values only.
+   */
+  tooltipHead?: (depth: number) => string;
+  /** Join the measured points across depths an item did not measure (the dots still mark what was measured). */
+  connectNulls?: boolean;
+  /** The whole tooltip as one sentence (one line, one run): "a 32.768 token di contesto: scrittura …, lettura …". */
+  tooltipText?: (depth: number) => string;
 }
 
 export function depthLinesOption(tk: ChartTokens, depths: readonly number[], series: readonly DepthSeries[], o: DepthLinesOpts): ChartOption {
@@ -29,7 +39,7 @@ export function depthLinesOption(tk: ChartTokens, depths: readonly number[], ser
   const many = series.length > 1;
   const markerAt = o.marker === undefined ? -1 : depths.indexOf(o.marker);
   return {
-    grid: { left: 8, right: 16, top: many ? 40 : 16, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+    grid: { left: 8, right: 16, top: many ? 40 : 16, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'all' },
     ...(many
       ? {
           legend: {
@@ -47,7 +57,27 @@ export function depthLinesOption(tk: ChartTokens, depths: readonly number[], ser
           },
         }
       : {}),
-    tooltip: { trigger: 'axis', valueFormatter: (v) => (v === null || v === undefined ? '–' : o.format(Number(v))) },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v: unknown) => (v === null || v === undefined ? '–' : o.format(Number(v))),
+      ...(o.tooltipText || o.tooltipHead
+        ? {
+            formatter: (params: unknown) => {
+              const list = params as AxisParam[];
+              const depth = depths[list[0]!.dataIndex]!;
+              if (o.tooltipText) return tooltipSentence(o.tooltipText(depth));
+              return tooltipHtml(
+                tk,
+                o.tooltipHead!(depth),
+                list.map((p) => {
+                  const v = yOf(p.value);
+                  return { name: p.seriesName, value: v === null ? '–' : o.format(v), color: p.color };
+                }),
+              );
+            },
+          }
+        : {}),
+    },
     xAxis: {
       type: 'category',
       data: depths.map(o.depthLabel),
@@ -65,7 +95,7 @@ export function depthLinesOption(tk: ChartTokens, depths: readonly number[], ser
         type: 'line' as const,
         name: s.name,
         data: [...s.values],
-        connectNulls: false,
+        connectNulls: o.connectNulls === true,
         symbol: 'circle',
         symbolSize: s.emphasis ? 8 : 6,
         lineStyle: { width: s.emphasis ? 2.75 : 1.75, color, type: i >= tk.series.length ? ('dashed' as const) : ('solid' as const) },

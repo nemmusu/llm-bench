@@ -10,6 +10,7 @@ import { App } from '../../../src/renderer/app';
 import { TooltipProvider } from '../../../src/renderer/components/ui/tooltip';
 import { I18nProvider, type Lang } from '../../../src/renderer/i18n';
 import type { ApiClient } from '../../../src/renderer/lib/api';
+import { setCompareSelection } from '../../../src/renderer/lib/compare-selection';
 import { ApiProvider } from '../../../src/renderer/lib/api-context';
 import { SettingsProvider } from '../../../src/renderer/lib/settings';
 import { createAppRouter } from '../../../src/renderer/routes/router';
@@ -22,6 +23,8 @@ afterEach(() => {
   cleanup();
   document.documentElement.removeAttribute('data-theme');
   document.documentElement.removeAttribute('data-density');
+  // What a test picked for "Confronta" stays in the module (and the storage) of the next one otherwise.
+  setCompareSelection([]);
 });
 
 export interface FakeApi extends ApiClient {

@@ -86,14 +86,14 @@ test('in English: the full preview before any download, the first run, reading t
     await expect(page.getByText('Other PC')).toBeHidden();
     await page.getByRole('switch', { name: 'This PC only' }).click();
 
-    // Compare it with an older run.
-    await page.getByRole('checkbox', { name: /^Select Qwen3-4B-Q4_K_M/ }).click();
-    await page.getByRole('checkbox', { name: /^Select Gemma 4 31B/ }).click();
-    await page.getByRole('button', { name: 'Compare', exact: true }).click();
+    // Compare it with an older run: "Compare" on each row, then the tray.
+    await page.getByRole('button', { name: /^Compare Qwen3-4B-Q4_K_M/ }).click();
+    await page.getByRole('button', { name: /^Compare Gemma 4 31B/ }).click();
+    await page.getByRole('region', { name: 'To compare' }).getByRole('button', { name: 'Compare', exact: true }).click();
     await expect(h1(page, 'Compare')).toBeVisible();
-    await expect(page.getByRole('table', { name: 'Compare' }).getByRole('row', { name: /Generation/ })).toBeVisible();
-    await page.getByRole('switch', { name: 'Differences only' }).click();
-    await expect(page.getByRole('table', { name: 'What changes between the two' })).toContainText('Qwen3-4B-Q4_K_M');
+    await expect(page.getByRole('table', { name: 'Comparison, measurement by measurement' }).getByRole('row', { name: /^Generation \(tok\/s\)/ })).toContainText('writing with 512 tokens already in context');
+    await page.getByRole('button', { name: /What changes between them/ }).click();
+    await expect(page.getByRole('table', { name: 'What changes between them' })).toContainText('Qwen3-4B-Q4_K_M');
     await scan(page, 'compare in English');
   } finally {
     await gb.close();

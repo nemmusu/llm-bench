@@ -1,8 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import type { LaunchParams } from '../../../contract/engines';
-import { spilledRun, type RunResult, type Stat, type ValidityFlag } from '../../../contract/results';
+import { promptsCalibrated, spilledRun, type RunResult, type Stat, type ValidityFlag } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { contextWords, firstTokenWords, usersWords } from '../../lib/speed-at';
 import { Callout } from '../ui/callout';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
@@ -129,10 +130,19 @@ function RunSummaryCard({ run }: { run: RunResult }) {
   );
 }
 
-function KpiGrid({ k, totalMiB, sharedMiB }: { k: Kpis; totalMiB: number | undefined; sharedMiB: number | undefined }) {
+function KpiGrid({ k, totalMiB, sharedMiB, usersPrompt }: { k: Kpis; totalMiB: number | undefined; sharedMiB: number | undefined; usersPrompt: number | undefined }) {
   const f = useI18n();
   const { t, number, integer, percent } = f;
   const cv = (s: Stat | undefined) => (s && s.n > 1 ? t('result.variation', { cv: percent(s.cv, 1) }) : undefined);
+  // What every speed was measured on: the headline prompt (it is also what is in the context while writing).
+  const tokens = k.promptTokens;
+  // What the number was measured on, on its own line; the rest (words per second, spread) under it.
+  const hint = (context: string, ...rest: (string | undefined)[]) => (
+    <>
+      <span className="block text-fg-2">{context}</span>
+      <span className="block">{rest.filter(Boolean).join(' · ')}</span>
+    </>
+  );
   const gb = (mib: number) => `${number(mib / MIB_PER_GB, 1)} GB`;
   const vramHint = [
     // A spill: what did not fit, first.
@@ -150,7 +160,7 @@ function KpiGrid({ k, totalMiB, sharedMiB }: { k: Kpis; totalMiB: number | undef
         help={t('metrics.decode.help')}
         value={k.decode ? number(k.decode.median, 1) : '–'}
         unit="tok/s"
-        hint={k.decode ? [`≈ ${integer(k.wordsPerSec!)} ${t('units.wordsPerSec')}`, cv(k.decode)].filter(Boolean).join(' · ') : undefined}
+        hint={k.decode ? hint(contextWords({ kind: 'write', tokens: tokens! }, f), `≈ ${integer(k.wordsPerSec!)} ${t('units.wordsPerSec')}`, cv(k.decode)) : undefined}
         {...(k.decode && k.decode.values.length > 1 ? { sparkline: k.decode.values } : {})}
       />
       <StatTile
@@ -158,10 +168,16 @@ function KpiGrid({ k, totalMiB, sharedMiB }: { k: Kpis; totalMiB: number | undef
         help={t('metrics.prefill.help')}
         value={k.prefill ? integer(k.prefill.median) : '–'}
         unit="tok/s"
-        hint={k.promptTokens === undefined ? undefined : t('result.promptOf', { n: integer(k.promptTokens) })}
+        hint={tokens === undefined ? undefined : contextWords({ kind: 'read', tokens }, f)}
         {...(k.prefill && k.prefill.values.length > 1 ? { sparkline: k.prefill.values } : {})}
       />
-      <StatTile label={t('metrics.ttft.label')} help={t('metrics.ttft.help')} value={k.ttft ? integer(k.ttft.median) : '–'} unit="ms" hint={cv(k.ttft)} />
+      <StatTile
+        label={t('metrics.ttft.label')}
+        help={t('metrics.ttft.help')}
+        value={k.ttft ? integer(k.ttft.median) : '–'}
+        unit="ms"
+        hint={k.ttft ? hint(firstTokenWords(tokens!, 'prompt', f), cv(k.ttft)) : undefined}
+      />
       <StatTile
         label={t('metrics.efficiency.label')}
         help={t('metrics.efficiency.help')}
@@ -189,7 +205,7 @@ function KpiGrid({ k, totalMiB, sharedMiB }: { k: Kpis; totalMiB: number | undef
         help={t('metrics.concurrency.help')}
         value={k.concurrency ? integer(k.concurrency.aggregateTps) : '–'}
         unit="tok/s"
-        hint={k.concurrency ? t('units.users', { n: k.concurrency.level }) : undefined}
+        hint={k.concurrency ? usersWords(k.concurrency.level, k.concurrency.promptTokens ?? usersPrompt, f) : undefined}
       />
     </section>
   );
@@ -219,6 +235,7 @@ export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: O
     engines: () => void navigate({ to: '/engines' }),
   };
   const spill = run.metrics.spill;
+  const usersStep = run.scenario.steps.find((s) => s.kind === 'concurrency');
   // The spill has its own card, first: not once more among the other warnings.
   const flags = spill ? run.validity.filter((v) => v !== 'shared_memory_spill') : run.validity;
   const hasWarnings = flags.length > 0 || run.notes.length > 0;
@@ -252,15 +269,15 @@ export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: O
           </section>
         )}
       </div>
-      <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} sharedMiB={spill?.sharedPeakMiB} />
+      <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} sharedMiB={spill?.sharedPeakMiB} usersPrompt={usersStep?.kind === 'concurrency' ? usersStep.promptTokens : undefined} />
       <LongConversations run={run} />
       {(run.metrics.latency.length > 0 || run.metrics.concurrency.length > 0) && (
         <div className="grid gap-section lg:grid-cols-2">
-          {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} />}
+          {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} calibrated={promptsCalibrated(run)} />}
           {run.metrics.concurrency.length > 0 && <ConcurrencyChart run={run} />}
         </div>
       )}
-      {contextSweepOf(run).length > 0 && <ContextSweepChart points={contextSweepOf(run)} />}
+      {contextSweepOf(run).length > 0 && <ContextSweepChart points={contextSweepOf(run)} calibrated={promptsCalibrated(run)} />}
       {run.telemetry && run.telemetry.t.length > 0 && <TimelineChart telemetry={run.telemetry} totalMiB={gpu?.memoryTotalMiB} powerLimitW={gpu?.powerLimitW} />}
     </div>
   );

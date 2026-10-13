@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
-import { diffRows } from '../../../../src/renderer/components/bench/compare-rows';
+import { diffRows } from '../../../../src/renderer/components/compare/compare-diff';
+import { itemOf } from '../../../../src/renderer/components/compare/compare-model';
 import { EMPTY_ENGINE_FORM, engineConfigOf, engineFormOf } from '../../../../src/renderer/components/bench/engine-form';
 import { engineKindOfLabel } from '../../../../src/renderer/components/bench/live-now';
 import { engineName } from '../../../../src/renderer/components/bench/load-progress';
@@ -65,7 +66,7 @@ describe('engine helpers for SGLang, command engines and forks', () => {
   it('compare: the RoPE scaling in words', () => {
     const a = seeded(IDS.full);
     const b = { ...a, launch: { ...a.launch, params: launchParamsSchema.parse({ ropeScaling: { type: 'yarn', factor: 4, originalContext: 32768 } }) } };
-    const row = diffRows(a, b, f).find((r) => r.label === 'Estensione del contesto (RoPE)');
-    expect(row).toMatchObject({ a: 'Automatico', b: 'yarn ×4 (32768)', differs: true });
+    const row = diffRows([itemOf(a), itemOf(b)], f).find((r) => r.label === 'Estensione del contesto (RoPE)');
+    expect(row).toMatchObject({ values: ['Automatico', 'yarn ×4 (32768)'], differs: true });
   });
 });

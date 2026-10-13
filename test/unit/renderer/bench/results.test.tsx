@@ -40,19 +40,27 @@ describe('results list', () => {
     const { router } = renderApp('/results', api);
     expect(await screen.findByText('10 risultati')).toBeTruthy();
     expect(screen.getByText('Altro PC')).toBeTruthy();
-    // Speeds with their unit, the context of each test, and the most users served at once (when measured).
-    expect(screen.getByRole('columnheader', { name: /Contesto/ })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: /Utenti paralleli/ })).toBeTruthy();
+    // Units in every header; every speed says what it was measured on; the most users served at once (when measured).
+    for (const name of ['Generazione (tok/s)', 'Lettura prompt (tok/s)', 'Contesto (token)', 'Più utenti (tok/s)', 'VRAM picco (GB)']) {
+      expect(screen.getByRole('columnheader', { name })).toBeTruthy();
+    }
     const mistral = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
-    expect(within(mistral).getAllByText('tok/s').length).toBe(2);
+    expect(within(mistral).getByText('a 512 token di contesto')).toBeTruthy();
+    expect(within(mistral).getByText('prompt da 512 token')).toBeTruthy();
     expect(within(mistral).getByText('1.024')).toBeTruthy();
     expect(within(mistral).getAllByText('–').length).toBeGreaterThan(0);
+    // The card next to the engine; the score next to the profile.
+    expect(within(mistral).getByText(/llama\.cpp b11438 \(CUDA 13\.4\) · RTX 5090/)).toBeTruthy();
     const gemma = screen.getByRole('link', { name: /Gemma 4 31B/ }).closest('tr')!;
     expect(within(gemma).getByText('8.192')).toBeTruthy();
-    expect(within(gemma).getByText('4 utenti')).toBeTruthy();
+    expect(within(gemma).getByText('prompt da 4K')).toBeTruthy();
+    expect(within(gemma).getByText('Standard · punteggio 486')).toBeTruthy();
+    expect(within(gemma).getByText('4 utenti · prompt da 512 token')).toBeTruthy();
     // What each user got, then everyone together.
-    expect(within(gemma).getByText(/^\d+ tok\/s ciascuno · [\d.]+ tok\/s in tutto$/)).toBeTruthy();
-    expect(screen.getAllByText('Annullato').length).toBeGreaterThan(0);
+    expect(within(gemma).getByText(/^\d+ ciascuno · [\d.]+ in tutto$/)).toBeTruthy();
+    // What went wrong sits next to the model.
+    const cancelled = screen.getByRole('link', { name: /Qwen3 14B/ }).closest('tr')!;
+    expect(within(cancelled).getByText('Annullato')).toBeTruthy();
     await userEvent.type(screen.getByRole('textbox', { name: 'Cerca' }), 'gemma');
     expect(screen.getByText('1 risultato')).toBeTruthy();
     await userEvent.clear(screen.getByRole('textbox', { name: 'Cerca' }));
@@ -70,7 +78,7 @@ describe('results list', () => {
     expect(screen.getByText('1 risultato')).toBeTruthy();
     await choose('Stato', 'Tutti gli stati');
     // Header sorting.
-    await userEvent.click(screen.getByRole('button', { name: /Punteggio/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Lettura prompt/ }));
     // A model link and a row both open the detail.
     await userEvent.click(screen.getByRole('link', { name: /Gemma 4 31B/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${IDS.gemma}`));
@@ -80,21 +88,32 @@ describe('results list', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${IDS.quick}`));
   });
 
-  it('compares two selected runs, older first', async () => {
+  it('"Confronta" on each row fills the tray; it opens the comparison, older first', async () => {
     const api = benchApi();
     const { router } = renderApp('/results', api);
     await screen.findByText('9 risultati');
-    expect((screen.getByRole('button', { name: 'Confronta' }) as HTMLButtonElement).disabled).toBe(true);
+    // Selecting rows (export, delete) is not comparing them.
     await userEvent.click(screen.getByRole('checkbox', { name: /Seleziona Gemma 4 31B/ }));
     expect(screen.getByText('9 risultati · 1 selezionato')).toBeTruthy();
-    await userEvent.click(screen.getByRole('checkbox', { name: /Seleziona Qwen3 30B A3B/ }));
-    expect(screen.getByText('9 risultati · 2 selezionati')).toBeTruthy();
-    await userEvent.click(screen.getByRole('checkbox', { name: /Seleziona Mistral/ }));
-    expect((screen.getByRole('button', { name: 'Confronta' }) as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.click(screen.getByRole('checkbox', { name: /Seleziona Mistral/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confronta' }));
+    expect(screen.queryByRole('region', { name: 'Da confrontare' })).toBeNull();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Seleziona Gemma 4 31B/ }));
+    expect(screen.getByText('9 risultati')).toBeTruthy();
+    // A failed run measured nothing: nothing to compare.
+    const failed = screen.getByRole('link', { name: /Llama 3\.3 70B/ }).closest('tr')!;
+    expect(within(failed).queryByRole('button', { name: /^Confronta/ })).toBeNull();
+    const gemma = screen.getByRole('button', { name: /^Confronta Gemma 4 31B/ });
+    await userEvent.click(gemma);
+    expect(gemma.getAttribute('aria-pressed')).toBe('true');
+    // The row did not open.
+    expect(router.state.location.pathname).toBe('/results');
+    const tray = screen.getByRole('region', { name: 'Da confrontare' });
+    expect(within(tray).getByText('1 selezionato')).toBeTruthy();
+    expect(within(tray).getByText('Scegline almeno un altro')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: /^Confronta Qwen3 30B A3B/ }));
+    expect(within(tray).getByText('2 selezionati')).toBeTruthy();
+    await userEvent.click(within(tray).getByRole('button', { name: 'Confronta' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/compare'));
-    expect(router.state.location.search).toEqual({ a: IDS.moe, b: IDS.gemma });
+    expect(router.state.location.search).toEqual({ ids: `${IDS.moe},${IDS.gemma}` });
   });
 
   it('exports a selection as a .gpubench file', async () => {
@@ -209,6 +228,8 @@ describe('results list', () => {
     act(() => api.emit({ type: 'runs.changed' }));
     expect(await screen.findByText('1 risultato')).toBeTruthy();
     expect(screen.queryByText('Altro PC')).toBeNull();
+    // One card in the whole history: no need to repeat it on every row.
+    expect(screen.getByText('llama.cpp b11438 (CUDA 13.4)')).toBeTruthy();
     expect(HOST).toBe('WORKSTATION');
   });
 });

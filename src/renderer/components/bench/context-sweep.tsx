@@ -1,7 +1,8 @@
 /** "Velocità al crescere del contesto": the context sweep of a run, as a chart and as tables. */
 import { useCallback, useState } from 'react';
-import { nominalDepth, type LatencyPoint } from '../../../contract/results';
+import { contextTokensOf, nominalDepth, type LatencyPoint } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { axisName, pointTooltip } from '../../lib/speed-at';
 import { ChartCard } from '../charts/chart-card';
 import { depthLinesOption } from '../charts/depth-lines';
 import { EChart } from '../charts/echart';
@@ -14,7 +15,7 @@ import { MeasureTable, type MeasureColumn } from './measure-table';
 const byDepth = (points: readonly LatencyPoint[]) => [...points].sort((a, b) => a.promptTokens - b.promptTokens);
 
 /** Generation (or prompt reading) speed at each depth, with the numbers behind "Mostra tabella". */
-export function ContextSweepChart({ points }: { points: readonly LatencyPoint[] }) {
+export function ContextSweepChart({ points, calibrated = false }: { points: readonly LatencyPoint[]; calibrated?: boolean }) {
   const f = useI18n();
   const { t, number, integer } = f;
   const [metric, setMetric] = useState<'decode' | 'prefill'>('decode');
@@ -30,10 +31,15 @@ export function ContextSweepChart({ points }: { points: readonly LatencyPoint[] 
           format: (v) => `${metric === 'decode' ? number(v, 1) : integer(v)} tok/s`,
           axis: integer,
           depthLabel: (d) => depthLabel(d, f),
-          xName: t('tune.chart.depth'),
+          xName: axisName('depth', f),
+          // "a 32.768 token di contesto: scrittura 54,6 tok/s, lettura 2.244 tok/s".
+          tooltipText: (d) => {
+            const p = sorted.find((q) => nominalDepth(q.promptTokens) === d)!;
+            return pointTooltip(contextTokensOf(p, calibrated), 'depth', { write: p.decodeTps.median, read: prefillStat(p).median }, f);
+          },
         },
       ),
-    [sorted, metric, t, number, integer, f],
+    [sorted, metric, t, number, integer, f, calibrated],
   );
   return (
     <ChartCard

@@ -4,6 +4,7 @@
  * categorical colors in fixed order.
  */
 import { axisStyle, type ChartOption, type ChartTokens } from './echarts';
+import { tooltipSentence, type AxisParam } from './tooltip';
 
 export interface PhaseBand {
   start: number;
@@ -124,16 +125,26 @@ export function barOption(
   tk: ChartTokens,
   categories: readonly string[],
   values: readonly number[],
-  opts: { name: string; format: (v: number) => string; xName?: string; axis?: (v: number) => string },
+  opts: {
+    name: string;
+    format: (v: number) => string;
+    xName?: string;
+    axis?: (v: number) => string;
+    /** The tooltip as one sentence for a category ("prompt da 512 token: scrittura 54,6 tok/s, lettura 2.244 tok/s"). */
+    tooltipText?: (index: number) => string;
+  },
 ): ChartOption {
   const ax = axisStyle(tk);
   const peak = Math.max(...values);
+  const text = opts.tooltipText;
   return {
-    grid: { left: 8, right: 8, top: 28, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+    grid: { left: 8, right: 8, top: 28, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'all' },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: tk.band } },
-      valueFormatter: (v) => opts.format(Number(v)),
+      ...(text
+        ? { formatter: (params: unknown) => tooltipSentence(text((params as AxisParam[])[0]!.dataIndex)) }
+        : { valueFormatter: (v: unknown) => opts.format(Number(v)) }),
     },
     xAxis: {
       type: 'category',
@@ -188,7 +199,7 @@ export function concurrencyOption(
     endLabel: { show: endLabel, color: tk.fg2, fontSize: 11, formatter: (p: { value: unknown }) => opts.format((p.value as [number, number])[1]) },
   });
   return {
-    grid: { left: 8, right: 64, top: 36, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+    grid: { left: 8, right: 64, top: 36, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'all' },
     legend: {
       top: 0,
       left: 0,

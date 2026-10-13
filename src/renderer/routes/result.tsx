@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Copy, GitCompareArrows } from 'lucide-react';
+import { ArrowLeft, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { configParamsOf } from '../../contract/configs';
@@ -8,6 +8,8 @@ import type { StartRunRequest } from '../../contract/api';
 import { launchParamsSchema, type LaunchParams } from '../../contract/engines';
 import type { RunResult } from '../../contract/results';
 import { saveDraft } from '../components/bench/run-context';
+import { entryOfRun } from '../components/compare/compare-entries';
+import { CompareToggle } from '../components/compare/compare-tray';
 import { recommendedIndex } from '../components/tune/tune-logic';
 import { ErrorCard } from '../components/bench/error-card';
 import { ExportMenu } from '../components/bench/export-menu';
@@ -186,10 +188,8 @@ function ResultView({ run }: { run: RunResult }) {
       actions={
         <>
           {presets && <PresetActions run={run} combo={combo} />}
-          <Button onClick={() => void navigate({ to: '/compare', search: { a: run.id } })}>
-            <GitCompareArrows aria-hidden />
-            {t('result.compareWith')}
-          </Button>
+          {/* Into the comparison (a tune run: its recommended combination); the tray at the bottom opens it. */}
+          {run.status !== 'failed' && <CompareToggle entry={entryOfRun(run, combo, f)} />}
           <ExportMenu run={run} />
         </>
       }

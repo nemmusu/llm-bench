@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { LatencyPoint, RunResult } from '../../../contract/results';
+import { contextTokensOf, type LatencyPoint, type RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { axisName, pointTooltip } from '../../lib/speed-at';
 import { barOption, concurrencyOption, timelineOption } from '../charts/builders';
 import { ChartCard } from '../charts/chart-card';
 import { EChart } from '../charts/echart';
@@ -11,8 +12,9 @@ import { MIB_PER_GB, prefillStat } from './format';
 import { phaseBands } from './phases';
 
 /** Generation / prompt-reading speed per prompt length. */
-export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
-  const { t, number, integer } = useI18n();
+export function PromptChart({ points, calibrated = false }: { points: readonly LatencyPoint[]; calibrated?: boolean }) {
+  const f = useI18n();
+  const { t, number, integer } = f;
   const [metric, setMetric] = useState<'decode' | 'prefill'>('decode');
   const build = useCallback(
     (tk: ChartTokens) => {
@@ -21,10 +23,17 @@ export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
         tk,
         points.map((p) => integer(p.promptTokens)),
         points.map((p) => (metric === 'decode' ? p.decodeTps : prefillStat(p)).median),
-        { name: t(`metrics.${metric}.label`), format: fmt, xName: t('result.promptTokens'), axis: integer },
+        {
+          name: t(`metrics.${metric}.label`),
+          format: fmt,
+          xName: axisName('prompt', f),
+          axis: integer,
+          // "prompt da 512 token: scrittura 54,6 tok/s, lettura 2.244 tok/s".
+          tooltipText: (i) => pointTooltip(contextTokensOf(points[i]!, calibrated), 'prompt', { write: points[i]!.decodeTps.median, read: prefillStat(points[i]!).median }, f),
+        },
       );
     },
-    [points, metric, t, number, integer],
+    [points, metric, t, number, integer, f, calibrated],
   );
   return (
     <ChartCard
@@ -43,7 +52,7 @@ export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
         />
       }
       table={{
-        columns: [t('result.promptTokens'), `${t('metrics.decode.label')} (tok/s)`, `${t('metrics.prefill.label')} (tok/s)`, `${t('metrics.ttft.label')} (ms)`],
+        columns: [axisName('prompt', f), `${t('metrics.decode.label')} (tok/s)`, `${t('metrics.prefill.label')} (tok/s)`, `${t('metrics.ttft.label')} (ms)`],
         numeric: [0, 1, 2, 3],
         rows: points.map((p) => [integer(p.promptTokens), number(p.decodeTps.median, 1), integer(prefillStat(p).median), integer(p.ttftMs.median)]),
       }}

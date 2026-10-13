@@ -14,6 +14,9 @@ import { apiErrorData, useRun } from '../../lib/queries-runs';
 import { ErrorCard } from '../bench/error-card';
 import { countKey, MIB_PER_GB, shortGpuName, summaryModelLabel } from '../bench/format';
 import { SpillBadge } from '../bench/spill';
+import { entryOfConfig } from '../compare/compare-entries';
+import { CompareToggle } from '../compare/compare-tray';
+import { headerAt } from '../../lib/speed-at';
 import { configLabelOf } from '../presets/config-label';
 import { shortDate, tokensShort } from '../presets/format';
 import { PresetActions } from '../presets/preset-actions';
@@ -89,6 +92,9 @@ export function ConfigsView() {
   const columns = useMemo(() => {
     const col = columnHelper<Row>();
     const dash = <span className="text-fg-3">–</span>;
+    // Every number of a speed column is measured at the compared depth: the header says which (a table
+    // has configurations, each measured at least one depth, so there is one).
+    const at = (label: string) => headerAt(label, depth as number, f);
     /** A number at the compared depth; the column only when some configuration has it. */
     const atDepth = (id: string, header: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<Row>[] =>
       rows.some((r) => r.point !== undefined && pick(r.point) !== undefined)
@@ -97,7 +103,7 @@ export function ConfigsView() {
               (r) => r.point && pick(r.point),
               {
                 id,
-                header: () => <UnitHeader text={t(header)} />,
+                header: () => <UnitHeader text={at(t(header))} />,
                 meta: NUMERIC,
                 sortUndefined: 'last',
                 cell: (c) => {
@@ -152,7 +158,7 @@ export function ConfigsView() {
         : []),
       col.accessor((r) => r.point?.decodeTps, {
         id: 'decode',
-        header: () => <UnitHeader text={t('configs.columns.decode')} />,
+        header: () => <UnitHeader text={at(t('configs.columns.decode'))} />,
         meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
@@ -204,7 +210,12 @@ export function ConfigsView() {
         // Always in sight: on a narrow window the numbers scroll under it.
         meta: { className: 'sticky right-0 bg-surface shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.18)] group-hover:bg-surface-2' },
         header: () => <span className="sr-only">{t('configs.columns.actions')}</span>,
-        cell: (c) => <RowPreset entry={c.row.original.entry} depth={depth} />,
+        cell: (c) => (
+          <span className="flex items-start gap-2">
+            <RowPreset entry={c.row.original.entry} depth={depth} />
+            <CompareToggle compact entry={entryOfConfig(c.row.original.entry, depth, f)} also={c.row.original.entry.sources.map((s) => (s.combo === undefined ? { runId: s.runId } : { runId: s.runId, combo: s.combo }))} />
+          </span>
+        ),
       }),
     ] as DataTableColumn<Row>[];
   }, [rows, entries, depth, f, t, number, integer, date]);

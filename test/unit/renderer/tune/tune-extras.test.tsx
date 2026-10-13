@@ -58,7 +58,7 @@ describe('results list', () => {
     const row = (await screen.findAllByRole('row')).find((r) => r.textContent?.includes('6 combinazioni'))!;
     expect(row.textContent).toContain('Trova le impostazioni migliori · 6 combinazioni');
     expect(within(row).getByText('cache q4_0')).toBeTruthy();
-    expect(screen.getByText(/· 1 combinazione$/)).toBeTruthy();
+    expect(screen.getByText(/· 1 combinazione( · punteggio [\d.]+)?$/)).toBeTruthy();
   });
 });
 
@@ -129,7 +129,7 @@ describe('normal results with the new measurements', () => {
     await waitFor(() => expect(charts.options.length).toBeGreaterThan(before));
     const prefill = charts.options.at(-1) as { series: { data: number[] }[] };
     expect(prefill.series[0]!.data).toEqual([9000, 8400, 6000]);
-    expect(exerciseFormatters(prefill).join(' ')).toContain('12 tok/s');
+    expect(exerciseFormatters(prefill).join(' ')).toContain('a 1.024 token di contesto: scrittura 190,0 tok/s, lettura 9.000 tok/s');
     for (const b of screen.getAllByRole('button', { name: 'Mostra tabella' })) await userEvent.click(b);
     const sweep = screen.getByRole('table', { name: /Velocità al crescere del contesto/ });
     expect(within(sweep).getAllByRole('row')[3]!.textContent).toContain('32.624');
