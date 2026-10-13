@@ -164,14 +164,27 @@ Per un **Programma con API OpenAI** scrivi il comando come in un terminale. GPU 
 
 Per i modelli Bonsai (quantizzazioni PQ2_0 e PTQ1_0) il Benchmark ti propone il motore pronto **Fork PrismML di llama.cpp**: devi solo dirgli dove si trova il suo llama-server.
 
+### NInfer (solo RTX 5090)
+
+NInfer è un motore fatto apposta per i modelli Qwen 3.6 e 3.8 su una sola RTX 5090. Legge solo i suoi modelli `.ninfer` (per esempio `neroued/Qwen3.8-27B-nvfp4-NInfer`, che trovi in **Modelli**).
+
+- **Linux**: nella scheda **NInfer** della pagina **Motori** indica la cartella di NInfer (per esempio `~/ninfer`), oppure premi **Compila NInfer…**.
+- **Windows**: NInfer gira dentro WSL 2. Scegli la distribuzione (per esempio Ubuntu-24.04) e indica dove si trova NInfer come lo vede Linux. GPU Bench legge la distribuzione e basta: non cambia niente al suo interno, avvia solo il suo ninfer-serve e ferma solo quello.
+- **Compila NInfer…**: GPU Bench controlla cosa serve (git, CMake, Ninja, un compilatore C++20, CUDA 13.1, le librerie FFmpeg, libcurl). Se manca qualcosa ti dà il comando `sudo apt install …` da eseguire tu: GPU Bench non installa pacchetti di sistema. Poi ti mostra i comandi esatti (`git clone`, `cmake`) e parte solo quando confermi.
+- **Impostazioni pronte**: nel Benchmark, con un modello `.ninfer`, scegli **Consigliata da NInfer** (contesto 240K, KV fp8, 2 utenti, MTP 3) oppure **Provata su RTX 5090** (64K per richiesta, KV int8 condivisa da 128K, 2 utenti, visione, MTP 3). Valgono anche per **Avvia solo il server**.
+- I test leggono ogni prompt per intero e rispondono senza "thinking", come con gli altri motori; un server invece tiene la cache delle conversazioni di NInfer.
+- NInfer non dice in quanti token si divide un testo: GPU Bench tara la lunghezza dei prompt sui conteggi che NInfer restituisce, e lo scrive nelle note del risultato.
+- **Modelli su Windows**: un modello sul disco di Windows si carica più lentamente da WSL. Per caricamenti veloci tienilo dentro WSL e aggiungi la sua cartella (`\\wsl.localhost\Ubuntu-24.04\…`) in **Impostazioni → Cartelle dei modelli**.
+
 ### Aggiornare i motori
 
-Le schede di vLLM, SGLang e dei motori personalizzati ti dicono se c'è una versione più nuova, per esempio "Aggiornamento disponibile: v0.5.21 → v0.5.22 · 9,8 GB". Prima di aggiornare GPU Bench ti mostra i comandi esatti che eseguirà, e parte solo quando confermi.
+Le schede di vLLM, SGLang, NInfer e dei motori personalizzati ti dicono se c'è una versione più nuova, per esempio "Aggiornamento disponibile: v0.5.21 → v0.5.22 · 9,8 GB". Prima di aggiornare GPU Bench ti mostra i comandi esatti che eseguirà, e parte solo quando confermi.
 
 - **vLLM e SGLang in Docker**: scarica la versione nuova dell'immagine e la sceglie per i prossimi test. Quella di prima resta sul PC: puoi tornarci con **Usa** nell'elenco delle versioni.
 - **vLLM e SGLang installati sul PC (Linux)**: aggiorna il loro ambiente con uv, alla versione più recente pubblicata.
 - **Un motore personalizzato in Docker**: scarica la versione più nuova dell'immagine. Se l'immagine non è su Docker Hub, GPU Bench non può sapere se ce n'è una più nuova, ma può scaricarla di nuovo.
 - **Un fork di llama.cpp compilato da te da una cartella git**: **Controlla aggiornamenti** ti dice quanti commit nuovi ci sono. **Aggiorna** esegue `git pull --ff-only` e poi ricompila con `cmake --build`. Se nella cartella ci sono modifiche tue non salvate, GPU Bench non tocca niente e te lo dice.
+- **NInfer**: come un fork in una cartella git, su Windows dentro la sua distribuzione WSL. Prima di ricompilare mette da parte il programma di adesso: se la compilazione non riesce, lo rimette al suo posto e riporta la cartella al commit di prima, così NInfer funziona come prima. Se i tuoi modelli `.ninfer` sono in un formato più vecchio di quello che legge il tuo NInfer, la scheda te li elenca con il comando di NInfer per convertirli.
 - **Tutto il resto** (un programma tuo, un fork installato in altro modo): lo aggiorni con i suoi strumenti.
 
 ## 7. Misura "a freddo" reale
