@@ -17,7 +17,7 @@ const paramsB = z.coerce.number().min(0).max(100_000).optional();
 
 const searchQuerySchema = z.object({
   q: z.string().max(200).default(''),
-  format: z.enum(['gguf', 'safetensors', 'any']).default('any'),
+  format: z.enum(['gguf', 'safetensors', 'ninfer', 'any']).default('any'),
   sort: z.enum(['downloads', 'likes', 'lastModified', 'createdAt', 'trendingScore']).default('downloads'),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   author: z
@@ -41,6 +41,8 @@ const hubFitBodySchema = z.object({
   engine: engineKindSchema,
   revision: revisionSchema,
   params: launchParamsSchema.optional(),
+  /** 'ninfer': the repo's NInfer artifacts (judged with llama.cpp's KV math until NInfer has its own). */
+  format: z.literal('ninfer').optional(),
 });
 
 /** "owner/name" from the route params, validated so it cannot address other hub paths. */
@@ -94,7 +96,9 @@ export function createModelsRoutes(svc: ModelsService): RouteModule {
     app.post('/api/models/hub/:owner/:name/fit', async (c) => {
       const repo = repoParam(c);
       const body = await parseBody(c, hubFitBodySchema);
-      return c.json(await svc.hubFit(repo, body.engine, { ...(body.revision ? { revision: body.revision } : {}), ...(body.params ? { params: body.params } : {}) }));
+      return c.json(
+        await svc.hubFit(repo, body.engine, { ...(body.revision ? { revision: body.revision } : {}), ...(body.params ? { params: body.params } : {}), ...(body.format ? { format: body.format } : {}) }),
+      );
     });
     app.post('/api/models/fit', async (c) => c.json(await svc.fit(await parseBody(c, fitRequestSchema))));
     app.delete('/api/models/local/:id', async (c) => {

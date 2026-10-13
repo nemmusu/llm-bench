@@ -23,6 +23,7 @@ import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
 import { createCustomEngineRoutes } from './engines/custom/routes';
 import { FitCalibrator, type ModelKey } from './models/calibration';
+import { vllmRepoFiles } from './downloads/service';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
 import { engineBaseOf, isDockerKind, type EngineKind } from '../contract/engines';
@@ -128,6 +129,8 @@ export function parseArgvEnv(value: string | undefined): string[] | undefined {
 export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
   const getLocal = async (id: string): Promise<LocalModel | undefined> => {
     const m = await ms.models.get(id).catch(() => undefined);
+    // A download stopped halfway is listed, never run: the engine would fail on the missing files.
+    if (m?.incomplete) throw new AppError('MODEL_NOT_FOUND', 'The model is not complete yet', { params: { id, reason: 'incomplete', have: m.incomplete.have, total: m.incomplete.total } });
     if (!m || m.identity.sha256 || m.identity.format !== 'gguf' || !m.paths[0]) return m;
     const sha256 = await ms.models.hashes.enqueue(m.paths[0]).catch(() => undefined);
     if (sha256) m.identity.sha256 = sha256;
@@ -137,7 +140,7 @@ export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
     getLocal,
     async findByRepo(repo) {
       const all = await ms.models.list().catch(() => []);
-      return all.find((m) => m.identity.repo === repo && m.identity.format === 'safetensors');
+      return all.find((m) => m.identity.repo === repo && m.identity.format === 'safetensors' && !m.incomplete);
     },
     async findGguf(repo, file) {
       const m = await ms.models.findGguf(repo, file).catch(() => undefined);
@@ -298,6 +301,24 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   if (deps.platform === 'linux') evictor = createLinuxEvictor(deps);
   else if (deps.platform === 'win32') evictor = windowsStandby = new WindowsStandbyEvictor(deps);
 
+  /**
+   * VRAM held right now by engines GPU Bench started (a server left running): in use, but not by "other
+   * programs" (the fit's busyMiB). Read only while one runs, and at most every 2 s.
+   */
+  let ownVram: { at: number; value: Promise<number> } | undefined;
+  const ownVramMiB = (): Promise<number> => {
+    const now = deps.clock.now();
+    if (ownVram && now - ownVram.at < 2000) return ownVram.value;
+    const value = (async () => {
+      const pids = new Set((await ownership.list().catch(() => [])).filter((r) => r.kind === 'process').map((r) => r.pid));
+      if (pids.size === 0) return 0;
+      const users = await ctx.telemetry.otherGpuUsers([]).catch(() => []);
+      return users.filter((u) => pids.has(u.pid)).reduce((a, u) => a + (u.memMiB ?? 0), 0);
+    })();
+    ownVram = { at: now, value };
+    return value;
+  };
+
   const runs = new RunsRepo(async () => (await ctx.settings.get()).resultsDir || deps.paths.resultsDir);
   // "Stima tarata su N misure": VRAM peaks of past runs on this GPU correct the fit estimates.
   const calibrator = new FitCalibrator(runs, () => bench.here());
@@ -310,7 +331,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
           gpuInfo: async () => {
             const g = (await ctx.telemetry.snapshot().catch(() => []))[0];
             if (!g?.memTotalMiB) return undefined;
-            return { totalMiB: g.memTotalMiB, freeMiB: g.memTotalMiB - (g.memUsedMiB ?? 0) };
+            const own = await ownVramMiB();
+            return { totalMiB: g.memTotalMiB, freeMiB: g.memTotalMiB - (g.memUsedMiB ?? 0), ...(own > 0 ? { ownMiB: own } : {}) };
           },
           // Hashing every local model at start-up would read tens of GB; models are hashed when benchmarked.
           autoHash: false,
@@ -328,7 +350,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const local = await models?.findByRepo?.(req.model.repo);
       if (!local) {
         const files = await modelServices.models.hubFiles(req.model.repo, req.model.revision).catch(() => []);
-        const bytes = files.filter((f) => !/\.(gguf|pth|pt|bin)$/i.test(f.path) && !f.path.startsWith('original/')).reduce((n, f) => n + f.sizeBytes, 0);
+        // Exactly what the download will fetch (the root model folder's runtime files).
+        const fetched = new Set(vllmRepoFiles(files));
+        const bytes = files.filter((f) => fetched.has(f.path)).reduce((n, f) => n + f.sizeBytes, 0);
         out.push({ kind: 'model', label: req.model.repo, ...(bytes > 0 ? { bytes } : {}) });
       }
     }

@@ -34,12 +34,17 @@ export interface ModelFactsEx extends ModelFacts {
    * a separate output.weight (with tied embeddings the same tensor is also uploaded as output).
    */
   cpuOnlyFraction?: number;
+  /** A GGUF holding only an MTP / NextN head (speculative-decoding add-on), not a model of its own. */
+  mtpOnly?: boolean;
 }
 
 /** GPU memory as the fit estimator sees it. */
 export interface GpuMem {
   totalMiB: number;
+  /** Free right now: total minus what every process holds. */
   freeMiB: number;
+  /** Of what is in use, what GPU Bench's own engines hold (a server it started): not "other programs". */
+  ownMiB?: number;
 }
 
 export type GpuInfoFn = () => Promise<GpuMem | undefined>;

@@ -4,9 +4,16 @@ import { GGMLFileQuantizationType, parseGGUFQuantLabel } from '@huggingface/gguf
  * Quant label from a file name ("gemma-4-31B-it-UD-Q4_K_XL.gguf" → "UD-Q4_K_XL"). The Unsloth
  * "UD-" prefix is kept because a repo can ship both "UD-Q4_K_M" and "Q4_K_M". Both the scanner
  * and the hub client use this, so weak keys of a download and of its hub listing agree.
+ * Beyond llama.cpp's own types: PrismML's ternary PQ2_0 / PTQ1_0 (only its fork reads them; read
+ * before the generic parser, which would call PQ2_0 "Q2_0") and community labels that start like a
+ * quant ("…-Q4LynnStyle-MTP.gguf" → "Q4LynnStyle").
  */
 export function quantFromFilename(name: string): string | undefined {
-  return parseGGUFQuantLabel(name);
+  const prism = /(?:^|[-_.(])(PT?Q\d+_\d+)(?=[-_.)]|$)/i.exec(name);
+  if (prism) return (prism[1] as string).toUpperCase();
+  const known = parseGGUFQuantLabel(name);
+  if (known) return known;
+  return /(?:^|[-_.(])((?:UD-)?I?Q\d[A-Za-z0-9_]*)(?=[-_.)]|$)/i.exec(name.replace(/\.gguf$/i, ''))?.[1];
 }
 
 /** Name of a GGUF `general.file_type` value (llama_ftype), e.g. 15 → "Q4_K_M". */
@@ -39,10 +46,12 @@ const BYTES_PER_PARAM: Record<string, number> = {
 };
 
 const FAMILIES: [RegExp, number][] = [
+  [/^(FP32|F32)/, 4.0],
+  [/^(FP16|F16|BF16)/, 2.0],
   [/^(FP8|INT8|W8A8|Q8)/, 1.05],
   [/^Q6/, 0.8],
   [/^Q5/, 0.68],
-  [/^(Q4|IQ4|MXFP4|NVFP4|AWQ|GPTQ|BNB)/, 0.58],
+  [/^(Q4|IQ4|MXFP4|NVFP4|AWQ|GPTQ|BNB|INT4)/, 0.58],
   [/^(Q3|IQ3)/, 0.48],
   [/^(Q2|IQ2)/, 0.37],
   [/^(IQ1|TQ1|TQ2|Q1)/, 0.25],

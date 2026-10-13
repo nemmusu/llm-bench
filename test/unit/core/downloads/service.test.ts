@@ -25,11 +25,29 @@ async function waitFor(check: () => boolean, ms = 8000): Promise<void> {
 }
 
 describe('vllmRepoFiles', () => {
-  it('keeps what vLLM needs and drops other formats and originals', () => {
-    const f = (p: string) => ({ path: p, sizeBytes: 1, kind: 'other' as const });
-    const files = ['config.json', 'model-00001-of-00002.safetensors', 'pytorch_model-00001-of-00002.bin', 'original/consolidated.00.pth', 'original/params.json', 'onnx/model.onnx', 'x.gguf', 'tokenizer.json', 'flax_model.msgpack', 'README.md'].map(f);
-    expect(vllmRepoFiles(files)).toEqual(['config.json', 'model-00001-of-00002.safetensors', 'tokenizer.json', 'README.md']);
-    expect(vllmRepoFiles([f('pytorch_model.bin'), f('config.json')])).toEqual(['pytorch_model.bin', 'config.json']);
+  const f = (p: string) => ({ path: p, sizeBytes: 1, kind: (/\.(safetensors|bin)$/.test(p) ? 'weights' : 'other') as 'weights' | 'other' });
+  it('keeps exactly what vLLM / SGLang read: no other formats, originals, READMEs, pictures or videos', () => {
+    const files = [
+      'config.json',
+      'model-00001-of-00002.safetensors',
+      'pytorch_model-00001-of-00002.bin',
+      'original/consolidated.00.pth',
+      'original/params.json',
+      'onnx/model.onnx',
+      'x.gguf',
+      'tokenizer.json',
+      'flax_model.msgpack',
+      'README.md',
+      'assets/liberty.mp4',
+      'LICENSE',
+    ].map(f);
+    expect(vllmRepoFiles(files)).toEqual(['config.json', 'model-00001-of-00002.safetensors', 'tokenizer.json']);
+    expect(vllmRepoFiles([f('pytorch_model.bin'), f('config.json')])).toEqual(['config.json', 'pytorch_model.bin']);
+  });
+
+  it('a repo whose only model is in a folder downloads that folder; several folders and no root: nothing', () => {
+    expect(vllmRepoFiles([f('FP8/config.json'), f('FP8/model.safetensors'), f('README.md')])).toEqual(['FP8/config.json', 'FP8/model.safetensors']);
+    expect(vllmRepoFiles([f('FP8/config.json'), f('FP8/model.safetensors'), f('BF16/config.json'), f('BF16/model.safetensors')])).toEqual([]);
   });
 });
 
@@ -101,14 +119,16 @@ describe('DownloadService', () => {
     expect(dedupe(states('job-1'))).toEqual(['queued', 'running', 'done']);
     expect(readFileSync(path.join(job.dest, Q4))).toEqual(hub.file(REPO, Q4).bytes);
     const sidecar = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
-    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } } });
+    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } }, planned: [Q4] });
     expect(completed.map((j) => j.id)).toEqual(['job-1']);
     const persisted = JSON.parse(readFileSync(path.join(dir, 'data', 'downloads.json'), 'utf8'));
     expect(persisted.jobs[0]).toMatchObject({ revision: 'main', done: [Q4], commit: hub.repo(REPO).sha, job: { state: 'done' } });
     // Second file of the same repo: the sidecar is merged.
     await svc.add({ repo: REPO, revision: 'main', files: [Q8], label: 'Q8 please' });
     await svc.idle();
-    expect(Object.keys(JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8')).files).sort()).toEqual([Q4, Q8]);
+    const merged = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
+    expect(Object.keys(merged.files).sort()).toEqual([Q4, Q8]);
+    expect(merged.planned).toEqual([Q4, Q8]);
     expect(svc.list()[1]?.label).toBe('Q8 please');
   });
 
@@ -116,11 +136,74 @@ describe('DownloadService', () => {
     const svc = service();
     const job = await svc.add({ repo: 'Qwen/Qwen3-0.6B', revision: 'main', files: ['*'] });
     expect(job.label).toBe('Qwen/Qwen3-0.6B');
-    expect(job.files.map((f) => f.path).sort()).toEqual(['README.md', 'config.json', 'generation_config.json', 'merges.txt', 'model.safetensors', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json']);
+    // Never the README, the GGUF next to it or the PyTorch originals.
+    expect(job.files.map((f) => f.path).sort()).toEqual(['config.json', 'generation_config.json', 'merges.txt', 'model.safetensors', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json']);
     await svc.idle();
     expect(svc.list()[0]?.state).toBe('done');
     expect(existsSync(path.join(models(), 'Qwen', 'Qwen3-0.6B', 'model.safetensors'))).toBe(true);
     expect(existsSync(path.join(models(), 'Qwen', 'Qwen3-0.6B', 'original'))).toBe(false);
+    expect(existsSync(path.join(models(), 'Qwen', 'Qwen3-0.6B', 'Qwen3-0.6B-F16.gguf'))).toBe(false);
+  });
+
+  it('a mixed repo: a GGUF download never pulls the safetensors, a variant download only its folder', async () => {
+    hub.addRepo({
+      id: 'mixed/Both',
+      files: [
+        { path: 'README.md', content: '# both' },
+        { path: 'GGUF/Both-Q4_K_M.gguf', size: 4096 },
+        { path: 'GGUF/mmproj-F16.gguf', size: 1024 },
+        { path: 'FP8/config.json', content: '{}' },
+        { path: 'FP8/model.safetensors', size: 2048 },
+        { path: 'BF16/config.json', content: '{}' },
+        { path: 'BF16/model.safetensors', size: 8192 },
+      ],
+    });
+    const svc = service();
+    await svc.add({ repo: 'mixed/Both', revision: 'main', files: ['GGUF/Both-Q4_K_M.gguf', 'GGUF/mmproj-F16.gguf'] });
+    await svc.add({ repo: 'mixed/Both', revision: 'main', files: ['FP8/config.json', 'FP8/model.safetensors'] });
+    await svc.idle();
+    const dest = path.join(models(), 'mixed', 'Both');
+    expect(existsSync(path.join(dest, 'GGUF', 'Both-Q4_K_M.gguf'))).toBe(true);
+    expect(existsSync(path.join(dest, 'FP8', 'model.safetensors'))).toBe(true);
+    expect(existsSync(path.join(dest, 'BF16'))).toBe(false);
+    expect(existsSync(path.join(dest, 'README.md'))).toBe(false);
+    const cdn = hub.requests.filter((r) => r.origin === 'cdn' || r.url.includes('/resolve/')).map((r) => r.url);
+    expect(cdn.some((u) => u.includes('BF16'))).toBe(false);
+  });
+
+  it('checks an NInfer artifact against its SHA256SUMS', async () => {
+    hub.addRepo({ id: 'neroued/Tiny-NInfer', files: [{ path: 'tiny.ninfer', size: 4096, lfs: false }, { path: 'Tiny.SHA256SUMS', content: 'later' }] });
+    const good = hub.file('neroued/Tiny-NInfer', 'tiny.ninfer').sha256;
+    hub.addRepo({ id: 'neroued/Tiny-NInfer', files: [{ path: 'tiny.ninfer', size: 4096, lfs: false }, { path: 'Tiny.SHA256SUMS', content: `${good}  tiny.ninfer\n` }] });
+    hub.addRepo({ id: 'neroued/Bad-NInfer', files: [{ path: 'bad.ninfer', size: 4096, lfs: false }, { path: 'Bad.SHA256SUMS', content: `${'0'.repeat(64)}  bad.ninfer\n` }] });
+    const svc = service();
+    await svc.add({ repo: 'neroued/Tiny-NInfer', revision: 'main', files: ['tiny.ninfer', 'Tiny.SHA256SUMS'] });
+    await svc.add({ repo: 'neroued/Bad-NInfer', revision: 'main', files: ['bad.ninfer', 'Bad.SHA256SUMS'] });
+    await svc.idle();
+    const [tiny, bad] = svc.list();
+    expect(tiny?.state).toBe('done');
+    expect(bad).toMatchObject({ state: 'failed', error: { code: 'DOWNLOAD_CHECKSUM' } });
+    expect(existsSync(path.join(models(), 'neroued', 'Bad-NInfer', 'bad.ninfer'))).toBe(false);
+  });
+
+  it('records what a job set out to fetch, and forgets what a cancelled job never finished', async () => {
+    hub.addRepo({ id: 'shards/Big', files: [{ path: 'config.json', content: '{}' }, ...[1, 2, 3].map((i) => ({ path: `model-0000${i}-of-00003.safetensors`, size: 64 * 1024 }))] });
+    hub.behavior.throttleBytesPerSec = 64 * 1024;
+    const svc = service();
+    const job = await svc.add({ repo: 'shards/Big', revision: 'main', files: ['*'] });
+    const sidecarOf = () => JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8')) as { planned?: string[]; files: Record<string, unknown> };
+    await waitFor(() => existsSync(path.join(job.dest, DOWNLOAD_SIDECAR)) && Object.keys(sidecarOf().files).length >= 1);
+    expect(sidecarOf().planned).toEqual(['config.json', 'model-00001-of-00003.safetensors', 'model-00002-of-00003.safetensors', 'model-00003-of-00003.safetensors']);
+    await svc.cancel(job.id);
+    hub.behavior.throttleBytesPerSec = 0;
+    // Only what finished stays planned: the folder reads as the shards it really has.
+    expect(sidecarOf().planned).toEqual(Object.keys(sidecarOf().files).sort());
+    // A queued job cancelled before it ran leaves no sidecar behind.
+    const quiet = service({ maxParallel: 0 });
+    const q = await quiet.add({ repo: 'shards/Big', revision: 'main', files: ['model-00003-of-00003.safetensors'] });
+    rmSync(path.join(q.dest, DOWNLOAD_SIDECAR));
+    expect((await quiet.cancel(q.id)).state).toBe('cancelled');
+    expect(existsSync(path.join(q.dest, DOWNLOAD_SIDECAR))).toBe(false);
   });
 
   it('validates requests', async () => {

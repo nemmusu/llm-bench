@@ -101,11 +101,13 @@ export async function readLocalGgufFacts(paths: string[]): Promise<ModelFactsEx>
   let head: GgufHeader | undefined;
   let params = 0;
   let bytes = 0;
+  let tensors = 0;
   for (const p of paths) {
     const h = await parseGgufHeader(localUri(p), localRangeFetch(p));
     head ??= h;
     params += h.parameterCount;
     bytes += h.fileSize as number;
+    tensors += h.tensorCount;
   }
   if (!head) throw new AppError('MODEL_NOT_FOUND', 'No GGUF file given');
   return factsFromGguf(head.metadata, {
@@ -113,6 +115,7 @@ export async function readLocalGgufFacts(paths: string[]): Promise<ModelFactsEx>
     fileBytes: bytes,
     fileName: path.basename(paths[0] as string),
     cpuOnlyBytes: head.hasOutputTensor ? head.tokenEmbdBytes : undefined,
+    tensorCount: tensors,
   });
 }
 
@@ -229,6 +232,8 @@ export interface GgufFactsOptions {
   fileName?: string;
   /** Weights llama.cpp keeps in RAM: token_embd when output.weight is separate. */
   cpuOnlyBytes?: number;
+  /** Tensors in the file(s): an MTP head alone has a handful, a whole model several per layer. */
+  tensorCount?: number;
 }
 
 /** Maps GGUF KV metadata to facts. Pure: works on metadata from local or remote headers. */
@@ -266,6 +271,10 @@ export function factsFromGguf(md: Record<string, unknown>, opts: GgufFactsOption
 
   const blockCount = num(get('block_count'));
   set('blockCount', blockCount);
+  // An MTP / NextN head saved alone keeps the model's metadata (all its blocks) but only the head's
+  // tensors (18 for a 65-block Qwen3.8 27B, against 866 in the whole model): an add-on, not a model.
+  const nextn = num(get('nextn_predict_layers')) ?? 0;
+  if (nextn > 0 && blockCount && opts.tensorCount !== undefined && opts.tensorCount < blockCount) facts.mtpOnly = true;
   if (blockCount) {
     const shapes = layerShapes(get, arch, blockCount, keyLength ?? 128, valueLength ?? 128);
     const groups = groupLayers(shapes);
