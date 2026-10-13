@@ -2,10 +2,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { FolderOpen, Gauge, HardDrive, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import type { EngineConfig, EngineKind, EngineStatus } from '../../../contract/engines';
-import type { LocalModel } from '../../../contract/models';
+import type { LocalModel, ModelUpdate } from '../../../contract/models';
 import { isNinferKind, ninferKindFor } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
-import { useDeleteModel, useEngineStatuses, useLibraryModels, useSystemInfo } from '../../lib/queries-library';
+import { useDeleteModel, useEngineStatuses, useLibraryModels, useModelUpdates, useSystemInfo } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { useStartFlow } from '../bench/start-flow';
 import { Badge } from '../ui/badge';
@@ -16,9 +16,11 @@ import { EmptyState } from '../ui/empty-state';
 import { Skeleton } from '../ui/skeleton';
 import { Tooltip } from '../ui/tooltip';
 import { DockerVolumeAction, useVolumeSupport } from './docker-volume';
+import { DownloadDialog, type DownloadChoice } from './download-dialog';
 import { ErrorCallout } from './error-callout';
 import { ForkBadge, FormatBadge, type ModelFormat } from './formats';
 import { FitFor, TriedFor } from './model-badges';
+import { CheckUpdates, ModelUpdateInfo } from './model-updates';
 
 /**
  * The engine a local model is served with: a GGUF with the llama.cpp last used (else the native one),
@@ -46,13 +48,18 @@ const SECTIONS: readonly ModelFormat[] = ['gguf', 'safetensors', 'ninfer'];
 
 function LocalRow({
   m,
+  news,
   onDelete,
   onServe,
+  onDownload,
   inDocker,
 }: {
   m: LocalModel;
+  /** What the last update check found for it (a changed file, a missing mmproj / MTP). */
+  news: ModelUpdate | undefined;
   onDelete: (m: LocalModel) => void;
   onServe: (m: LocalModel) => void;
+  onDownload: (c: DownloadChoice) => void;
   inDocker: boolean | undefined;
 }) {
   const { t, bytes, number } = useI18n();
@@ -90,7 +97,7 @@ function LocalRow({
           ) : (
             <>
               <FitFor req={{ localId: m.id, engine: fitEngineOf(id.format) }} />
-              <TriedFor weakKey={id.weakKey} sha256={id.sha256} />
+              <TriedFor weakKey={id.weakKey} sha256={id.sha256} previous={m.previous} />
             </>
           )}
           {id.format === 'gguf' && <ForkBadge model={id} weakKey={id.weakKey} label={id.displayName} />}
@@ -100,6 +107,7 @@ function LocalRow({
             </Badge>
           ))}
         </div>
+        {!incomplete && <ModelUpdateInfo m={m} update={news} onDownload={onDownload} />}
         {inDocker !== undefined && !incomplete && <DockerVolumeAction model={m} copied={inDocker} />}
       </div>
       <div className="flex items-center gap-1">
@@ -136,7 +144,9 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   const platform = useSystemInfo().data?.os.platform;
   const { settings } = useSettings();
   const flow = useStartFlow();
+  const updates = useModelUpdates();
   const [target, setTarget] = useState<LocalModel>();
+  const [choice, setChoice] = useState<DownloadChoice>();
   /** "Avvia server": this model with the recommended settings for this card (the core picks them). */
   const serve = (m: LocalModel) => {
     const engine = serveEngineFor(m, settings.lastEngine, engines.data, platform);
@@ -164,6 +174,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         </Card>
       ) : (
         <div className="flex flex-col gap-section">
+          {all.some((m) => m.identity.repo !== undefined) && <CheckUpdates className="-mb-4 self-end" />}
           {groups.map((g) => (
             <section key={g.format} aria-labelledby={`local-${g.format}`} data-format-section={g.format}>
               <div className="mb-2.5 flex flex-wrap items-center gap-2">
@@ -179,8 +190,10 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
                     <LocalRow
                       key={m.id}
                       m={m}
+                      news={updates.data?.models.find((u) => u.modelId === m.id)}
                       onDelete={setTarget}
                       onServe={serve}
+                      onDownload={setChoice}
                       inDocker={volumes.enabled && m.identity.format === 'gguf' ? volumes.copied.has(m.id) : undefined}
                     />
                   ))}
@@ -199,6 +212,7 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         cancelLabel={t('common.cancel')}
         onConfirm={() => del.mutate((target as LocalModel).id)}
       />
+      <DownloadDialog choice={choice} onOpenChange={(o) => !o && setChoice(undefined)} />
       {flow.ui}
     </>
   );

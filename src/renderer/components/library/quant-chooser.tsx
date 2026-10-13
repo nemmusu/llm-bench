@@ -1,11 +1,12 @@
-import { Download, FolderTree, Sparkles } from 'lucide-react';
+import { Check, Download, FolderTree, Sparkles } from 'lucide-react';
 import { RadioGroup as R } from 'radix-ui';
 import { useId, useState } from 'react';
 import { NINFER_CONTAINER_VERSION } from '../../../contract/formats';
-import type { HubFile } from '../../../contract/models';
+import type { HubFile, LocalFileState } from '../../../contract/models';
 import type { HubFitResult } from '../../../contract/views';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { useDownloadPlan } from '../../lib/queries-library';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -45,19 +46,31 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
   const { t, bytes } = useI18n();
   const detail = useFitDetail();
   const [picked, setPicked] = useState<string>();
-  const [extra, setExtra] = useState<string[]>([]);
+  // Undefined until the user ticks something: then the extras a downloaded quant lacks are ticked by default.
+  const [extra, setExtra] = useState<string[]>();
   const extraId = useId();
   // A pick that is not among the choices any more (the list was refreshed) falls back to the best one.
   const selected = picked !== undefined && fit.choices.some((c) => c.groupKey === picked) ? picked : (fit.best ?? (fit.choices[0] as Choice).groupKey);
   const choice = fit.choices.find((c) => c.groupKey === selected) as Choice;
-  const extraFiles = format === 'gguf' ? extras.filter((f) => extra.includes(f.path)) : [];
+  // What the PC already has of every choice and extra (one plan for all of them).
+  const all = [...new Set([...fit.choices.flatMap((c) => c.files.map((f) => f.path)), ...extras.map((f) => f.path)])];
+  const plan = useDownloadPlan({ repo, revision: 'main', files: all }).data;
+  const localOf = new Map<string, LocalFileState>(plan?.files.map((f) => [f.path, f.local]));
+  const here = (f: HubFile) => localOf.get(f.path) === 'have' || localOf.get(f.path) === 'check';
+  const onPc = (c: Choice) => plan !== undefined && c.files.every(here);
+  const ticked = extra ?? (onPc(choice) ? extras.filter((f) => !here(f)).map((f) => f.path) : []);
+  const extraFiles = format === 'gguf' ? extras.filter((f) => ticked.includes(f.path)) : [];
   const name = repo.split('/')[1] as string;
   const label = (c: Choice) => {
     if (format === 'ninfer') return fileName(c.groupKey);
     if (format === 'safetensors') return c.quant ?? t('models.detail.wholeRepo');
     return c.quant ?? fileName(c.groupKey);
   };
-  const size = choice.sizeBytes + extraFiles.reduce((a, f) => a + f.sizeBytes, 0);
+  // Only what the PC does not have yet is fetched (and counted).
+  const fetched = [...choice.files, ...extraFiles].filter((f) => !here(f));
+  const sum = (files: HubFile[]) => files.reduce((a, f) => a + f.sizeBytes, 0);
+  const size = choice.sizeBytes - sum(choice.files.filter(here)) + sum(extraFiles.filter((f) => !here(f)));
+  const what = fetched.map((f) => (f.kind === 'mmproj' || f.kind === 'mtp' ? t(`downloads.what.${f.kind}`) : fileName(f.path))).join(', ');
 
   const download = () =>
     onDownload({
@@ -105,6 +118,12 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
               {format === 'gguf' && c.files.length > 1 && <span className="text-xs text-fg-3">{t('models.detail.parts', { n: c.files.length })}</span>}
               {c.manifest && c.manifest.components.length > 0 && <span className="text-xs text-fg-3">{t('models.detail.components', { list: c.manifest.components.join(', ') })}</span>}
               <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                {onPc(c) && (
+                  <Badge tone="success" size="sm">
+                    <Check aria-hidden />
+                    {t('models.detail.alreadyHere')}
+                  </Badge>
+                )}
                 {c.groupKey === fit.best && !unsupported && (
                   <Badge tone="accent" size="sm">
                     <Sparkles aria-hidden />
@@ -136,13 +155,14 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
             <div key={f.path} className="flex items-center gap-2 text-sm">
               <Checkbox
                 id={`${extraId}-${i}`}
-                checked={extra.includes(f.path)}
-                onCheckedChange={(on) => setExtra((x) => (on === true ? [...x, f.path] : x.filter((p) => p !== f.path)))}
+                checked={ticked.includes(f.path)}
+                onCheckedChange={(on) => setExtra(on === true ? [...ticked, f.path] : ticked.filter((p) => p !== f.path))}
               />
               <label htmlFor={`${extraId}-${i}`} className="flex flex-wrap gap-x-2">
                 <span className="font-mono text-xs text-fg">{fileName(f.path)}</span>
                 <span className="text-fg-3">
                   {t(`models.aux.${f.kind as 'mmproj'}`)} · {bytes(f.sizeBytes)}
+                  {here(f) && ` · ${t('models.detail.onPc')}`}
                 </span>
               </label>
             </div>
@@ -150,10 +170,18 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
         </fieldset>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <p className="max-w-prose text-sm text-fg-2">{format === 'ninfer' ? t('fit.approximate') : t(`fit.hint.${choice.fit.level}`)}</p>
-        <Button variant="primary" size="lg" className="ml-auto" onClick={download}>
+        <p className="max-w-prose text-sm text-fg-2">
+          {onPc(choice)
+            ? size > 0
+              ? t('models.detail.haveModel', { what, size: bytes(size) })
+              : t('models.detail.haveAll')
+            : format === 'ninfer'
+              ? t('fit.approximate')
+              : t(`fit.hint.${choice.fit.level}`)}
+        </p>
+        <Button variant="primary" size="lg" className="ml-auto" onClick={download} disabled={fetched.length === 0}>
           <Download aria-hidden />
-          {t('models.detail.download', { quant: label(choice), size: bytes(size) })}
+          {fetched.length === 0 ? t('models.detail.alreadyHere') : t('models.detail.download', { quant: label(choice), size: bytes(size) })}
         </Button>
       </div>
     </div>
