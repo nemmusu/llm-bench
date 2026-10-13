@@ -67,18 +67,18 @@ async function previewSuggestion(page) {
   await page.getByText('Il modello non è ancora sul PC', { exact: false }).waitFor({ timeout: 30000 });
 }
 
-/** "Avvia solo il server" on the Benchmark page: the confirmation with the context chosen for this card and the command. */
+/** "Avvia solo il server" on the Benchmark page: "Avvia un server" with the Benchmark's choices and the exact command. */
 async function openServeConfirm(page) {
   await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Avvia il server' });
-  await dialog.getByText(/^[\d.]+ token$/).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { level: 1, name: 'Avvia un server' }).waitFor({ timeout: 30000 });
+  await page.getByRole('region', { name: 'Comando esatto' }).waitFor({ timeout: 30000 });
 }
 
-/** The server started from that confirmation, ready: its address for other programs. */
+/** The server started from there, ready: the Server page with its address for other programs. */
 async function openServeReady(page) {
   await openServeConfirm(page);
-  await page.getByRole('button', { name: 'Avvia server' }).click();
-  await page.getByRole('dialog', { name: 'Il server è pronto' }).getByText('Indirizzo compatibile OpenAI').waitFor({ timeout: 90000 });
+  await page.getByRole('button', { name: /^(Avvia|Scarica e avvia)$/ }).click();
+  await page.getByRole('region', { name: /^Server .* sulla porta \d+$/ }).getByText('Acceso', { exact: true }).first().waitFor({ timeout: 90000 });
 }
 
 /**
@@ -376,7 +376,7 @@ const SCREENS = [
   // An older two-run link (?a=&b=): the same comparison as ?ids=.
   { n: 13, name: 'compare', route: `/compare?a=${COMPARE_A}&b=${RESULT_ID}`, wait: 'Chi va più veloce', small: true, full: true, after: forgetPicks },
   { n: 14, name: 'result-failed', route: `/results/${FAILED_ID}`, wait: 'Cosa fare' },
-  { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Scegli la versione da scaricare', settle: 1500 },
+  { n: 16, name: 'model', route: REFERENCE_PAGE, wait: 'Per llama.cpp (GGUF)', settle: 1500 },
   { n: 18, name: 'models-local', route: '/models', wait: 'Fai il benchmark' },
   { n: 19, name: 'serve-ready', route: '/', wait: 'Pronto a misurare', act: openServeReady, after: stopServers },
   { n: 20, name: 'results-configs', route: '/results?view=configs', wait: 'Confronta a', settle: 1500, small: true },
@@ -1574,6 +1574,7 @@ async function main() {
   const { proc, info } = await startCore(dataDir, world.env);
   const browser = await chromium.launch();
   const written = [];
+  const failed = [];
   try {
     for (const theme of ['light', 'dark']) {
       for (const size of [
@@ -1591,32 +1592,42 @@ async function main() {
         for (const s of SCREENS) {
           if (only && !only.includes(s.name)) continue;
           if (size.suffix && !s.small) continue;
-          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [], ...s.settings });
-          if (s.route === 'LIVE') await openLiveRun(page, info);
-          else await page.goto(`${info.url}#${s.route}`);
-          await page.getByText(s.wait).first().waitFor({ timeout: 30000 });
-          await page.evaluate(() => document.fonts.ready);
-          if (s.tab) {
-            await page.getByRole('tab', { name: s.tab }).click();
-            await page.evaluate(() => document.activeElement?.blur?.());
+          // A scene that no longer matches the app is reported at the end; the others still render.
+          try {
+            await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [], ...s.settings });
+            if (s.route === 'LIVE') await openLiveRun(page, info);
+            else await page.goto(`${info.url}#${s.route}`);
+            await page.getByText(s.wait).first().waitFor({ timeout: 30000 });
+            await page.evaluate(() => document.fonts.ready);
+            if (s.tab) {
+              await page.getByRole('tab', { name: s.tab }).click();
+              await page.evaluate(() => document.activeElement?.blur?.());
+            }
+            if (s.click) await page.getByRole(s.click.role, { name: s.click.name }).click();
+            if (s.keys) await page.keyboard.press(s.keys);
+            if (s.act) await s.act(page);
+            await page.waitForTimeout(s.settle ?? 900);
+            // Move the pointer away so no hover state or tooltip leaks into the image.
+            await page.mouse.move(size.w - 4, size.h - 4);
+            const file = path.join(outDir, `${s.n}-${s.name}-${theme}${size.suffix}.png`);
+            await shoot(page, file);
+            written.push(file);
+            if (!size.suffix && (s.full || ['benchmark', 'result', 'run'].includes(s.name))) {
+              const fullFile = file.replace(/\.png$/, '-full.png');
+              await shoot(page, fullFile, { full: true });
+              written.push(fullFile);
+            }
+            // Screens that changed what is on the page leave it fresh for the next ones.
+            if (s.after) await s.after(info, page);
+            if (s.act) await page.reload();
+          } catch (e) {
+            failed.push(`${s.n}-${s.name}-${theme}${size.suffix}: ${String(e?.message ?? e).split(/\r?\n/)[0]}`);
+            await page.screenshot({ path: path.join(outDir, `${s.n}-${s.name}-${theme}${size.suffix}-FAILED.png`) }).catch(() => undefined);
+            await Promise.resolve()
+              .then(() => s.after?.(info, page))
+              .catch(() => undefined);
+            await page.reload().catch(() => undefined);
           }
-          if (s.click) await page.getByRole(s.click.role, { name: s.click.name }).click();
-          if (s.keys) await page.keyboard.press(s.keys);
-          if (s.act) await s.act(page);
-          await page.waitForTimeout(s.settle ?? 900);
-          // Move the pointer away so no hover state or tooltip leaks into the image.
-          await page.mouse.move(size.w - 4, size.h - 4);
-          const file = path.join(outDir, `${s.n}-${s.name}-${theme}${size.suffix}.png`);
-          await shoot(page, file);
-          written.push(file);
-          if (!size.suffix && (s.full || ['benchmark', 'result', 'run'].includes(s.name))) {
-            const fullFile = file.replace(/\.png$/, '-full.png');
-            await shoot(page, fullFile, { full: true });
-            written.push(fullFile);
-          }
-          // Screens that changed what is on the page leave it fresh for the next ones.
-          if (s.after) await s.after(info, page);
-          if (s.act) await page.reload();
         }
         await context.close();
       }
@@ -1637,6 +1648,10 @@ async function main() {
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
   for (const f of written) console.log(path.relative(root, f));
+  if (failed.length) {
+    console.error([`${failed.length} scenes failed:`, ...failed].join('\n'));
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) => {
