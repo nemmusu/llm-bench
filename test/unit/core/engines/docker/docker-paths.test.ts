@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../../src/contract/engines';
 import { DockerCli } from '../../../../../src/core/docker/cli';
 import type { DockerEnvironment } from '../../../../../src/core/docker/environment';
+import { DockerHubClient } from '../../../../../src/core/docker/hub';
 import type { ImageService } from '../../../../../src/core/docker/images';
 import { LlamaDockerAdapter } from '../../../../../src/core/engines/llamacpp-docker/adapter';
 import { containerPaths, HOST_PATH_OPTIONS, VLLM_JSON_MODEL_OPTIONS } from '../../../../../src/core/engines/shared/docker-paths';
@@ -86,6 +87,7 @@ describe('Docker engines mount the files their arguments name', () => {
       cli: new DockerCli({ proc, platform: 'linux', env: {}, override: ['docker'] }),
       environment: { status: async () => ({ state: 'running' }), noteGpuFailure: () => undefined } as unknown as DockerEnvironment,
       images: { inspect: async () => undefined } as unknown as ImageService,
+      hub: new DockerHubClient({ fetch: routeFetch({}), baseUrl: 'https://hub.test', clock: steppingClock() }),
       createClient: () => ({}) as never,
     };
   };
