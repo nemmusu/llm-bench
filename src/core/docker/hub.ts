@@ -99,11 +99,16 @@ export class DockerHubClient {
     return out;
   }
 
-  /** Download size of one Hub image, undefined for other registries or unknown tags. */
-  async imageSize(ref: string | ImageRef, signal?: AbortSignal): Promise<number | undefined> {
+  /** One Hub tag (its digest and download size), undefined for other registries or unknown tags. */
+  async tagInfo(ref: string | ImageRef, signal?: AbortSignal): Promise<HubTag | undefined> {
     const r = typeof ref === 'string' ? parseImageRef(ref) : ref;
     if (!isDockerHub(r) || r.digest !== undefined) return undefined;
     const body = (await this.getJson(`${this.base()}/v2/repositories/${r.repository}/tags/${r.tag ?? 'latest'}`, signal)) as HubTagJson | undefined;
-    return body ? toTag(body)?.sizeBytes : undefined;
+    return body ? toTag(body) : undefined;
+  }
+
+  /** Download size of one Hub image, undefined for other registries or unknown tags. */
+  async imageSize(ref: string | ImageRef, signal?: AbortSignal): Promise<number | undefined> {
+    return (await this.tagInfo(ref, signal))?.sizeBytes;
   }
 }

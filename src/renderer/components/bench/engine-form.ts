@@ -1,10 +1,12 @@
 /** Engine choice ⇄ EngineConfig (custom executable, Docker image, external endpoint…). */
-import type { ApiFlavor, EngineConfig, EngineKind } from '../../../contract/engines';
+import { isDockerKind, type ApiFlavor, type EngineConfig, type EngineKind } from '../../../contract/engines';
 
 export interface EngineForm {
   executable: string;
   image: string;
   vllmPath: string;
+  /** sglang-native: the Python of an environment with SGLang, or its folder. */
+  sglangPath: string;
   baseUrl: string;
   apiKey: string;
   flavor: ApiFlavor;
@@ -14,9 +16,10 @@ export interface EngineForm {
 
 export type EngineField = keyof EngineForm;
 
-export const EMPTY_ENGINE_FORM: EngineForm = { executable: '', image: '', vllmPath: '', baseUrl: '', apiKey: '', flavor: 'openai', modelName: '' };
+export const EMPTY_ENGINE_FORM: EngineForm = { executable: '', image: '', vllmPath: '', sglangPath: '', baseUrl: '', apiKey: '', flavor: 'openai', modelName: '' };
 
-export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'ninfer-native', 'ninfer-wsl', 'external'];
+/** The built-in engines in the Benchmark choice ('command' engines are custom engines only); NInfer only where it runs. */
+export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native', 'ninfer-native', 'ninfer-wsl', 'external'];
 
 export function isHttpUrl(text: string): boolean {
   try {
@@ -44,8 +47,9 @@ export function engineConfigOf(kind: EngineKind, form: EngineForm, expert: boole
   }
   if (!expert) return { config, invalid };
   if (kind === 'llamacpp-native' && form.executable.trim()) config.executable = form.executable.trim();
-  if ((kind === 'llamacpp-docker' || kind === 'vllm-docker') && form.image.trim()) config.image = form.image.trim();
+  if (isDockerKind(kind) && form.image.trim()) config.image = form.image.trim();
   if (kind === 'vllm-native' && form.vllmPath.trim()) config.vllmPath = form.vllmPath.trim();
+  if (kind === 'sglang-native' && form.sglangPath.trim()) config.sglangPath = form.sglangPath.trim();
   return { config, invalid };
 }
 
@@ -56,6 +60,7 @@ export function engineFormOf(config: EngineConfig | undefined): EngineForm {
     executable: config?.executable ?? '',
     image: config?.image ?? '',
     vllmPath: config?.vllmPath ?? '',
+    sglangPath: config?.sglangPath ?? '',
     baseUrl: config?.baseUrl ?? '',
     flavor: config?.flavor ?? 'openai',
   };

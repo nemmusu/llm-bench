@@ -1,4 +1,5 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import type { EngineConfig, EngineStatus, LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
@@ -11,6 +12,7 @@ import type { ImageService } from '../../docker/images';
 import type { EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, ProgressSink } from '../types';
 import type { ModelClientFactory } from './client';
 import { loadEngineCompat, type EngineCompat } from './compat';
+import { containerPaths, HOST_PATH_OPTIONS, VLLM_JSON_MODEL_OPTIONS, type ContainerArgs, type HostMount } from './docker-paths';
 
 export type DockerAdapterDeps = Pick<CoreDeps, 'clock' | 'proc' | 'fetch' | 'platform' | 'log' | 'paths'>;
 
@@ -153,5 +155,19 @@ export abstract class DockerEngineAdapter implements EngineAdapter {
   /** Docker Desktop (Windows/macOS) serves bind mounts through its VM share: slow first reads. */
   protected slowShare(bindMount: boolean): boolean {
     return bindMount && this.o.deps.platform !== 'linux';
+  }
+
+  /**
+   * The extra arguments with the host files they name (a draft model, an image projector) where the
+   * container sees them: under the model's mounted folder, else in read-only mounts of their own.
+   */
+  protected containerArgs(args: readonly string[], base: keyof typeof HOST_PATH_OPTIONS, mounted: readonly HostMount[]): ContainerArgs {
+    return containerPaths(args, {
+      options: HOST_PATH_OPTIONS[base],
+      ...(base === 'vllm' ? { jsonModelOptions: VLLM_JSON_MODEL_OPTIONS } : {}),
+      host: this.o.deps.platform === 'win32' ? path.win32 : path.posix,
+      mounted,
+      exists: existsSync,
+    });
   }
 }

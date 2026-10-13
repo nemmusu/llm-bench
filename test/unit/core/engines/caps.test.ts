@@ -127,7 +127,7 @@ describe('CapsProbe', () => {
     return { proc, run };
   }
 
-  it('runs --version/--help once per binary identity (path + size + mtime)', async () => {
+  it('runs --version/--help once per binary identity (path + size + mtime + environment)', async () => {
     const { proc, run } = runner({ code: 0, stdout: HELP, stderr: '', timedOut: false });
     let mtimeMs = 1;
     const probe = new CapsProbe(proc, 5000, async () => ({ size: 10, mtimeMs }));
@@ -137,11 +137,16 @@ describe('CapsProbe', () => {
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[0]?.slice(0, 2)).toEqual(['node', ['cli.mjs', '--version']]);
     expect(run.mock.calls[0]?.[2]).toEqual({ timeoutMs: 5000, env: { X: '1' } });
-    const v = await probe.version(['node', 'cli.mjs']);
+    const v = await probe.version(['node', 'cli.mjs'], { X: '1' });
     expect(v).toMatchObject({ ok: true, build: 'b10997', code: 0 });
+    expect(run).toHaveBeenCalledTimes(2);
     mtimeMs = 2; // binary replaced
-    await probe.probe(['node', 'cli.mjs']);
+    await probe.probe(['node', 'cli.mjs'], { X: '1' });
     expect(run).toHaveBeenCalledTimes(4);
+    // A fork's own variables change what it says: the same binary with another environment is asked again.
+    await probe.probe(['node', 'cli.mjs'], { X: '2' });
+    expect(run).toHaveBeenCalledTimes(6);
+    expect(run.mock.calls[5]?.[2]).toEqual({ timeoutMs: 5000, env: { X: '2' } });
   });
 
   it('a failing --help is an error and is not cached; a broken --version is ok:false', async () => {

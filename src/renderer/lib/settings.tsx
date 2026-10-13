@@ -34,7 +34,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const settings = query.data ?? fallback;
 
   const { mutate } = useMutation({
-    mutationFn: (patch: Partial<Settings>) => api.put<Settings>('/api/settings', patch),
+    // Custom engines are saved through their own API (/api/engines/custom): never sent here, so a stale
+    // list in this cache cannot undo an engine just added or removed.
+    mutationFn: ({ customEngines: _engines, ...patch }: Partial<Settings>) => api.put<Settings>('/api/settings', patch),
     // One save at a time, in order: each carries the full object, so the last one wins correctly.
     scope: { id: 'settings' },
     onSuccess: (saved) => {

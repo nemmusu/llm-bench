@@ -7,6 +7,8 @@ import { render, type RenderResult } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
 import { vi } from 'vitest';
 import type { SystemResponse } from '../../../../src/contract/api';
+import { customEngineIdFor, customEngineKindOf, customEngineSchema, type CustomEngine, type CustomEngineCheck, type CustomEngineDraft, type CustomEngineInfo } from '../../../../src/contract/custom-engines';
+import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
@@ -282,6 +284,12 @@ export interface World {
   builds: InstalledBuild[];
   docker: DockerStatusDetail;
   volumes: string[];
+  /** GET /api/engines/custom (the saved engines with their checks). */
+  custom: CustomEngineInfo[];
+  /** POST /api/engines/custom/check ("Prova"). */
+  customCheck: (draft: CustomEngineDraft) => CustomEngineCheck;
+  /** GET …/update by target ('sglang-docker', 'custom:<id>'); absent = up to date. `fetch=1` reads `<target>?fetch`. */
+  updates: Record<string, EngineUpdateCheck>;
   cold: { method: 'linux-fadvise' | 'windows-standby' | 'none'; automatic: boolean; windowsTaskInstalled?: boolean };
 }
 
@@ -305,6 +313,9 @@ export function world(over: Partial<World> = {}): World {
     builds: BUILDS(),
     docker: { state: 'running', version: '29.8.0' },
     volumes: [],
+    custom: [],
+    customCheck: () => customCheck(),
+    updates: {},
     cold: { method: 'windows-standby', automatic: false, windowsTaskInstalled: false },
     ...over,
   };
@@ -319,6 +330,36 @@ export interface LibApi extends ApiClient {
   on(route: string, h: Handler): void;
   emit(e: ServerEvent): void;
   setConnected(ok: boolean): void;
+}
+
+/** What "Prova" answers by default: a llama.cpp fork that runs and lacks -ub. */
+export function customCheck(over: Partial<CustomEngineCheck> = {}): CustomEngineCheck {
+  return {
+    kind: 'llamacpp-native',
+    status: { kind: 'llamacpp-native', available: true, installed: true, version: 'b7001', problems: [], supported: true },
+    flagCount: 411,
+    missing: [{ flag: '-ub', setting: 'ubatchSize', effect: 'default' }],
+    ...over,
+  };
+}
+
+/** A saved engine and its list entry, as the core would store and check it. */
+export function customInfo(engine: CustomEngine, check: CustomEngineCheck = customCheck({ kind: customEngineKindOf(engine) })): CustomEngineInfo {
+  return { engine, kind: customEngineKindOf(engine), config: { kind: customEngineKindOf(engine), customEngineId: engine.id }, check };
+}
+
+function saveCustom(w: World, draft: CustomEngineDraft, id?: string): CustomEngine {
+  const engine = customEngineSchema.parse({ ...draft, id: id ?? customEngineIdFor(draft.name, w.custom.map((i) => i.engine.id)) });
+  const others = w.custom.filter((i) => i.engine.id !== engine.id);
+  w.custom = [...others, customInfo(engine)];
+  w.settings = { ...w.settings, customEngines: w.custom.map((i) => i.engine) };
+  return engine;
+}
+
+/** An engine's update check: the world's, else up to date. */
+function updateOf(w: World, target: string, q: URLSearchParams): EngineUpdateCheck {
+  const key = q.get('fetch') === '1' && w.updates[`${target}?fetch`] ? `${target}?fetch` : target;
+  return w.updates[key] ?? { target, method: 'docker-pull', state: 'current', commands: [], checkedAt: '2026-10-13T10:00:00.000Z' };
 }
 
 export const fail = (code: AppErrorData['code'], status = 400, message: string = code): never => {
@@ -403,6 +444,30 @@ export function libApi(w: World = world()): LibApi {
       { name: 'v0.9.0', supportsGpu: false },
       ...Array.from({ length: 6 }, (_, i) => ({ name: `v0.2${i}.0` })),
     ],
+    'GET /api/engines/sglang/tags': () => [
+      { name: 'v0.5.21-cu130', cuda: '13.0', sizeBytes: 15e9, lastUpdated: '2026-10-01T00:00:00Z' },
+      { name: 'v0.5.21', recommended: true, sizeBytes: 15e9 },
+      ...Array.from({ length: 6 }, (_, i) => ({ name: `v0.5.${i}` })),
+    ],
+    'GET /api/engines/custom': () => w.custom,
+    'GET /api/engines/custom/*/update': (_b, q, p) => updateOf(w, `custom:${decodeURIComponent(p.split('/').at(-2) as string)}`, q),
+    'POST /api/engines/custom/*/update': () => ({ ok: true }),
+    'GET /api/engines/*/update': (_b, q, p) => updateOf(w, p.split('/').at(-2) as string, q),
+    'POST /api/engines/*/update': () => ({ ok: true }),
+    'POST /api/engines/custom/check': (b) => w.customCheck(b as CustomEngineDraft),
+    'POST /api/engines/custom': (b) => saveCustom(w, b as CustomEngineDraft),
+    'PUT /api/engines/custom/*': (b, _q, p) => saveCustom(w, b as CustomEngineDraft, decodeURIComponent(p.split('/').pop() as string)),
+    'POST /api/engines/custom/*/duplicate': (b, _q, p) => {
+      const id = decodeURIComponent(p.split('/').at(-2) as string);
+      const source = w.custom.find((i) => i.engine.id === id)!.engine;
+      return saveCustom(w, { ...source, name: (b as { name: string }).name });
+    },
+    'DELETE /api/engines/custom/*': (_b, _q, p) => {
+      const id = decodeURIComponent(p.split('/').pop() as string);
+      w.custom = w.custom.filter((i) => i.engine.id !== id);
+      w.settings = { ...w.settings, customEngines: w.settings.customEngines.filter((e) => e.id !== id) };
+      return { ok: true };
+    },
     'GET /api/docker/model-volumes': () => ({ localIds: w.volumes }),
     'POST /api/docker/model-volumes': () => ({ ok: true }),
     'DELETE /api/docker/model-volumes/*': (_b, _q, p) => {

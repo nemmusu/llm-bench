@@ -24,6 +24,8 @@ import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } 
 import { createCustomEngineRoutes } from './engines/custom/routes';
 import { createNinferRoutes } from './engines/ninfer/routes';
 import { createNinferServices, type NinferServices } from './engines/ninfer/setup';
+import { createEngineUpdateRoutes } from './engines/updates/routes';
+import { EngineUpdates } from './engines/updates/service';
 import { FitCalibrator, type ModelKey } from './models/calibration';
 import { vllmRepoFiles } from './downloads/service';
 import { createModelServices, type ModelServices } from './models/setup';
@@ -81,6 +83,8 @@ export interface CoreServices {
   sglangDocker: SglangDockerAdapter;
   /** NInfer: both adapters, its WSL processes, the guided build (engines/ninfer). */
   ninfer: NinferServices;
+  /** "Aggiorna" on the engine cards (vLLM, SGLang, custom engines). */
+  updates: EngineUpdates;
   /** Models copied into Docker volumes (fast loads with Docker Desktop). */
   modelVolumes: ModelVolumes;
   models?: ModelsLookup;
@@ -324,6 +328,17 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       customEngines,
     ),
   );
+  const updates = new EngineUpdates({
+    registry,
+    settings: ctx.settings,
+    images: docker.images,
+    hub: docker.hub,
+    tags: { 'vllm-docker': (o) => vllmDocker.tags(o), 'sglang-docker': (o) => sglangDocker.tags(o) },
+    tools: { proc: deps.proc, git: deps.endpoints.git ?? ['git'], cmake: deps.endpoints.cmake ?? ['cmake'] },
+    fetch: deps.fetch,
+    pypi: deps.endpoints.pypi ?? 'https://pypi.org',
+    clock: deps.clock,
+  });
   const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
   void docker.env.cleanupOrphans().catch(() => undefined);
@@ -402,7 +417,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const status = await adapter.detect(req.engine);
       // Docker answers but the image is not there yet: it is pulled before the run (never part of the load time).
       if (status.problems.includes('ENGINE_NOT_INSTALLED') && status.location) {
-        const plan = await adapter.installPlan?.(req.engine).catch(() => undefined);
+        // Docker adapters always pull their image (DockerEngineAdapter.installPlan).
+        const installPlan = adapter.installPlan as NonNullable<CustomEngineAdapter['installPlan']>;
+        const plan = await installPlan(req.engine).catch(() => undefined);
         out.push({ kind: 'image', label: status.location, ...(plan?.bytes ? { bytes: plan.bytes } : {}) });
       }
     }
@@ -527,6 +544,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     vllmDocker,
     sglangDocker,
     ninfer,
+    updates,
     modelVolumes,
     ...(models ? { models } : {}),
     runs,
@@ -584,6 +602,13 @@ export function serviceModules(s: CoreServices): RouteModule[] {
       })(app, ctx),
     (app, ctx) => createCustomEngineRoutes({ settings: ctx.settings, registry: s.registry })(app, ctx),
     (app, ctx) => createNinferRoutes(s.ninfer.routes({ publish: (e) => ctx.hub.publish(e), shutdown: ctx.shutdown }))(app, ctx),
+    (app, ctx) =>
+      createEngineUpdateRoutes({
+        updates: s.updates,
+        publish: (e) => ctx.hub.publish(e),
+        busy: () => s.bench.active() !== undefined || s.serve.busy(),
+        shutdown: ctx.shutdown,
+      })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>

@@ -107,6 +107,11 @@ export interface CoreEndpoints {
   dockerInstaller?: string;
   /** wsl.exe stand-in (tests, E2E: a fake that runs the fake NInfer), as an argv prefix. */
   wsl?: string[];
+  /** PyPI (https://pypi.org): the newest vLLM / SGLang releases for the update check. */
+  pypi?: string;
+  /** git and cmake, to update an engine built from a git checkout (default from PATH). */
+  git?: string[];
+  cmake?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

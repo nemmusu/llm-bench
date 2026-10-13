@@ -5,6 +5,7 @@
 import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { ActiveRun, RunPlan, ServerInfo, ServerPlan, StartServerRequest, SystemResponse } from '../../../../src/contract/api';
+import type { CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
@@ -172,6 +173,8 @@ export interface World {
   fit: FitEstimate;
   /** Overrides by "METHOD /path" (exact) or "METHOD /prefix*" (prefix); throw an ApiError to fail. */
   routes: Record<string, Handler>;
+  /** GET /api/engines/custom (the saved engines with their checks). */
+  custom: CustomEngineInfo[];
 }
 
 export interface BenchApi extends FakeApi {
@@ -192,6 +195,7 @@ export function defaultWorld(): World {
     serverPlan: () => serverPlanFor(),
     fit: FIT,
     routes: {},
+    custom: [],
   };
 }
 
@@ -221,6 +225,7 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
       return summaries(world.runs).filter((r) => r.modelWeakKey === weakKey);
     }
     if (bare === '/api/servers') return world.servers;
+    if (bare === '/api/engines/custom') return world.custom;
     if (bare === '/api/setup/check') return { checkedAt: '2026-10-06T10:00:00.000Z', canBenchmark: true, platform: 'win32', items: [{ id: 'llamacpp', state: 'missing', required: true, params: {}, ...(world.installBytes === null ? {} : { action: { kind: 'install-llamacpp', bytes: world.installBytes } }) }] };
     const run = /^\/api\/runs\/([^/]+)$/.exec(bare);
     if (run) {

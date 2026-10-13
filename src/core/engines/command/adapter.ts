@@ -112,8 +112,9 @@ export class CommandAdapter implements EngineAdapter {
       const program = await this.program(cfg);
       return { kind: this.kind, available: true, installed: true, location: program, variant: 'openai', problems: [], supported: true };
     } catch (e) {
+      // program() only throws AppErrors that say why (reason, path).
       const err = toAppErrorData(e);
-      return { kind: this.kind, available: false, installed: false, problems: [err.code], ...(err.params ? { problemParams: err.params } : {}), supported: true };
+      return { kind: this.kind, available: false, installed: false, problems: [err.code], problemParams: err.params as NonNullable<typeof err.params>, supported: true };
     }
   }
 

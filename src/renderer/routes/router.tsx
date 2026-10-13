@@ -2,7 +2,7 @@ import { createHashHistory, createRootRoute, createRoute, createRouter, type Rou
 import { AppShell } from '../components/shell/app-shell';
 import { BenchmarkPage } from './benchmark';
 import { ComparePage, validateCompareSearch } from './compare';
-import { EnginesPage } from './engines';
+import { EnginesPage, validateEnginesSearch } from './engines';
 import { ModelDetailPage } from './model-detail';
 import { ModelsPage } from './models';
 import { MonitorPage } from './monitor';
@@ -42,7 +42,7 @@ const routeTree = rootRoute.addChildren([
     }),
   }),
   createRoute({ getParentRoute: () => rootRoute, path: '/models/hub/$owner/$name', component: ModelDetailPage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/engines', component: EnginesPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/engines', component: EnginesPage, validateSearch: validateEnginesSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: '/monitor', component: MonitorPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsPage }),
 ]);

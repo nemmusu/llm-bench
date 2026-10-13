@@ -33,7 +33,8 @@ const STATE_TONE: Record<DownloadJob['state'], 'accent' | 'neutral' | 'success' 
 /** What an install-like operation is, in words. */
 export function installLabel(t: ReturnType<typeof useI18n>['t'], e: InstallEvent): string {
   if (e.image) return t('downloads.kinds.image', { image: e.image });
-  const kinds = ['llamacpp-native', 'docker-desktop', 'docker-linux', 'uv', 'vllm-native', 'docker-volume'] as const;
+  if (e.kind.startsWith('update:')) return t('downloads.kinds.update', { name: e.label ?? e.kind.slice('update:'.length) });
+  const kinds = ['llamacpp-native', 'docker-desktop', 'docker-linux', 'uv', 'vllm-native', 'sglang-native', 'docker-volume'] as const;
   return (kinds as readonly string[]).includes(e.kind) ? t(`downloads.kinds.${e.kind as (typeof kinds)[number]}`) : e.kind;
 }
 

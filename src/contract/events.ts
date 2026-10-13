@@ -202,6 +202,8 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     steps: z.number().optional(),
     /** Docker image being pulled. */
     image: z.string().optional(),
+    /** What is being updated, in words ("PrismML", "SGLang (Docker)"): the engine updates' events. */
+    label: z.string().optional(),
     /** Docker Desktop state while starting (starting, running…) and whether it is unusually slow. */
     state: z.string().optional(),
     slow: z.boolean().optional(),

@@ -86,7 +86,8 @@ export class CustomEngineAdapter implements EngineAdapter {
       r = await this.resolve(cfg);
     } catch (e) {
       const err = toAppErrorData(e);
-      return { kind: this.kind, available: false, installed: false, problems: [err.code], ...(err.params ? { problemParams: err.params } : {}), supported: true, customEngineId: cfg?.customEngineId as string };
+      // resolve() only throws AppErrors that name the engine (reason, id).
+      return { kind: this.kind, available: false, installed: false, problems: [err.code], problemParams: err.params as NonNullable<typeof err.params>, supported: true, customEngineId: cfg?.customEngineId as string };
     }
     if (!r) return this.inner.detect(cfg);
     return { ...(await this.inner.detect(r.cfg)), customEngineId: r.engine.id };

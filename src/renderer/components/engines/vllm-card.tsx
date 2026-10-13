@@ -19,6 +19,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
+import { EngineUpdatePanel } from './engine-update';
 
 export const VLLM_REPO = 'vllm/vllm-openai';
 const PREVIEW = 6;
@@ -91,6 +92,7 @@ export function VllmDockerCard() {
           {all ? t('models.curated.less') : t('engines.vllm.allTags', { n: list.length })}
         </Button>
       )}
+      <EngineUpdatePanel target="vllm-docker" name={t('engines.kinds.vllm-docker')} enabled={running} />
       {save.isError && <ErrorCallout error={save.error} />}
     </EngineCard>
   );
@@ -137,6 +139,7 @@ export function VllmNativeCard() {
       }
     >
       {supported && status?.version && <p className="text-sm text-fg-2">{t('engines.vllm.nativeVersion', { version: status.version })}</p>}
+      <EngineUpdatePanel target="vllm-native" name={t('engines.kinds.vllm-native')} enabled={supported && status?.available === true} />
       {event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'ENGINE_INSTALL_FAILED', message: key }} />}
     </EngineCard>
   );

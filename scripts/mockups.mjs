@@ -15,6 +15,7 @@
 // impostazioni migliori" scenes (--only=tune-run,tune-result) run a real search on the fake engine.
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
+import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -141,6 +142,33 @@ function thisHostId() {
  * after `act` the page is reloaded so the next screens start clean; `after(info)` undoes what it
  * started in the core), and which sizes to render.
  */
+/** The fake engine stands in for every custom engine (GPUBENCH_LLAMA_LAUNCHER runs it with node). */
+const FAKE_ENGINE_CLI = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
+const CUSTOM_ENGINES = [
+  {
+    id: 'prismml',
+    name: 'PrismML',
+    base: 'llamacpp',
+    run: { mode: 'native', path: FAKE_ENGINE_CLI },
+    extraArgs: ['--ternary-kernels', 'on'],
+    // The fake engine's fork mode: its own --version, no -ub.
+    env: { FAKE_ENGINE_HELP: 'fork' },
+    notes: 'Compilato da github.com/PrismML con CUDA 13.',
+    match: { names: ['bonsai'], quants: ['PQ2_0', 'PTQ1_0'] },
+    template: 'prismml-bonsai',
+  },
+  { id: 'sglang-team', name: 'SGLang del team', base: 'sglang', run: { mode: 'docker', image: 'ghcr.io/team/sglang:v0.5.21-fp4' }, extraArgs: [], env: {}, notes: '' },
+  {
+    id: 'my-server',
+    name: 'Il mio server',
+    base: 'openai-server',
+    run: { mode: 'command', template: `"${process.execPath}" "${FAKE_ENGINE_CLI}" serve {model} --port {port} --served-model-name {alias}`, api: 'completions' },
+    extraArgs: [],
+    env: {},
+    notes: '',
+  },
+];
+
 const SCREENS = [
   { n: 1, name: 'welcome', route: '/welcome', wait: 'Controllo del sistema' },
   { n: 2, name: 'benchmark', route: '/', wait: 'Pronto a misurare', small: true },
@@ -174,7 +202,51 @@ const SCREENS = [
   { n: 27, name: 'benchmark-tune', route: '/', wait: 'Pronto a misurare', act: chooseTune, small: true, full: true },
   // A run that spilled into shared memory (the real numbers of the 0.3.0 report). Live: spillScenes, 31-33.
   { n: 30, name: 'result-spill', route: `/results/${SPILL_ID}`, wait: 'Il modello non è entrato tutto nella memoria della scheda', small: true, full: true },
+  // "Motori personalizzati" and SGLang on the Engines page: a llama.cpp fork that lacks -ub, an SGLang fork image
+  // not pulled yet, a program with an OpenAI API.
+  { n: 40, name: 'engines-custom', route: '/engines', wait: 'Motori personalizzati', settings: { customEngines: CUSTOM_ENGINES }, act: showCustomEngines, small: true, full: true },
+  // "Aggiungi motore": a llama.cpp fork, its "Prova" (version, the flag it lacks).
+  { n: 41, name: 'engines-add', route: '/engines', wait: 'Motori personalizzati', settings: { customEngines: [] }, act: addForkDialog, small: true },
+  // The Bonsai suggestion: a Bonsai model chosen, no fork indicated yet.
+  { n: 42, name: 'benchmark-bonsai', route: '/', wait: 'Pronto a misurare', settings: { customEngines: [] }, act: chooseBonsai, small: true },
+  // The deep link of that suggestion: "Aggiungi motore" filled from the PrismML template.
+  { n: 43, name: 'engines-template', route: `/engines?customTemplate=prismml-bonsai&modelName=${encodeURIComponent('Ternary-Bonsai-8B PQ2_0')}`, wait: 'Serve per Ternary-Bonsai-8B PQ2_0', settings: { customEngines: [] }, small: true },
+  // The engine choice with the custom engines under their base.
+  { n: 44, name: 'benchmark-engines', route: '/', wait: 'Pronto a misurare', settings: { customEngines: CUSTOM_ENGINES }, act: openEngineChoice, small: true },
 ];
+
+/** The custom engines section, scrolled into view once every check has answered. */
+async function showCustomEngines(page) {
+  const section = page.getByRole('region', { name: 'Motori personalizzati' }).or(page.locator('section[aria-labelledby="custom-engines-title"]'));
+  await section.first().scrollIntoViewIfNeeded();
+  await page.getByText('Questo motore non conosce alcune impostazioni di GPU Bench').first().waitFor({ timeout: 30000 });
+}
+
+/** "Aggiungi motore" → fork of llama.cpp → where it is → "Prova". */
+async function addForkDialog(page) {
+  await page.getByRole('button', { name: 'Aggiungi motore' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Aggiungi un motore' });
+  await dialog.getByRole('radio', { name: /Fork di llama\.cpp/ }).click();
+  await dialog.getByRole('button', { name: 'Avanti' }).click();
+  await dialog.getByLabel('Nome').fill('PrismML');
+  await dialog.getByLabel('Il programma llama-server').fill(FAKE_ENGINE_CLI);
+  // The dialog cannot set the probe environment before "Opzioni": the fake answers as a plain build here.
+  await dialog.getByRole('button', { name: 'Prova' }).click();
+  await dialog.getByText(/Funziona/).first().waitFor({ timeout: 30000 });
+}
+
+/** A Bonsai model on the Benchmark page: the suggestion of the PrismML fork. */
+async function chooseBonsai(page) {
+  await chooseModel(page, /Bonsai/);
+  await page.getByText('Questo modello richiede il fork PrismML di llama.cpp').waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Scopri di più' }).click();
+}
+
+/** The engine choice opened: custom engines under the engine they are built on. */
+async function openEngineChoice(page) {
+  await page.getByRole('combobox', { name: 'Cambia motore' }).click();
+  await page.getByRole('option', { name: /PrismML/ }).waitFor({ timeout: 10000 });
+}
 
 /** Slow enough that the live screen is mid-run when it is photographed. */
 const LIVE_PROFILE = { loadMsCold: 2600, loadMsWarm: 900, prefillTps: 8900, decodeTps: 46, tokensPerChunk: 1 };
@@ -350,6 +422,13 @@ async function fakeWorld(dataDir) {
     ],
   });
   const dockerApi = await startFakeDockerApi({ images: {} });
+  // Docker Hub tags (vLLM and SGLang cards): recorded listings, never the real site.
+  const tagFixture = (name) => readFileSync(path.join(root, 'test', 'fixtures', 'docker', name));
+  const dockerHub = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(tagFixture((req.url ?? '').includes('lmsysorg') ? 'hub-tags-sglang.json' : 'hub-tags-vllm.json'));
+  });
+  await new Promise((resolve) => dockerHub.listen(0, '127.0.0.1', resolve));
   const models = path.join(dataDir, 'models', 'local');
   mkdirSync(models, { recursive: true });
   writeFileSync(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 8B', sizeLabel: '8B' }), totalSize: 96 * 1024 }));
@@ -357,6 +436,8 @@ async function fakeWorld(dataDir) {
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
   writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
   seedNinfer(models);
+  // A PrismML Bonsai model (ternary weights: only the PrismML fork of llama.cpp reads them).
+  writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
   const results = path.join(dataDir, 'results');
   mkdirSync(results, { recursive: true });
   const seeds = path.join(root, 'test', 'fixtures', 'runs');
@@ -383,6 +464,7 @@ async function fakeWorld(dataDir) {
     GPUBENCH_GITHUB_API: github.url,
     GPUBENCH_HF_ENDPOINT: hub.url,
     GPUBENCH_DOCKER_HOST: dockerApi.socketPath,
+    GPUBENCH_DOCKERHUB: `http://127.0.0.1:${dockerHub.address().port}`,
     GPUBENCH_DOCKER: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-docker', 'fake-docker.mjs')]),
     FAKE_DOCKER_STATE: path.join(dataDir, 'fake-docker'),
     GPUBENCH_NVIDIA_SMI: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-nvidia-smi', 'fake-nvidia-smi.mjs')]),
@@ -397,7 +479,7 @@ async function fakeWorld(dataDir) {
     FAKE_WSL_CONFIG: path.join(dataDir, 'fake-wsl.json'),
   };
   writeFileSync(env.FAKE_WSL_CONFIG, '{}');
-  return { env, profileFile, modelsDir: models, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
+  return { env, profileFile, modelsDir: models, close: () => Promise.all([github.close(), hub.close(), dockerApi.close(), new Promise((r) => dockerHub.close(r))]) };
 }
 
 function startCore(dataDir, extraEnv) {
