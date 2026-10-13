@@ -33,6 +33,7 @@ async function useBuild(page: Page): Promise<Locator> {
   await openPage(page, 'Motori');
   const card = page.getByRole('region', { name: 'NInfer', exact: true });
   await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04', { timeout: 20_000 });
+  await card.getByRole('button', { name: 'Ho già NInfer: indica la cartella' }).click();
   await card.getByRole('textbox', { name: 'Dove si trova NInfer' }).fill('/home/user/ninfer');
   await card.getByRole('button', { name: 'Controlla e usa' }).click();
   await expect(card.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
@@ -60,6 +61,9 @@ test('NInfer through WSL: find the build, run a Rapido benchmark with its recomm
     await expect(card.getByText('solo RTX 5090 · Linux / WSL')).toBeVisible();
     await expect(card.getByText('Da configurare')).toBeVisible({ timeout: 20_000 });
     await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04');
+    // Not there yet: LLM Bench offers to download and build it; this build is the user's own.
+    await expect(card.getByRole('button', { name: 'Scarica e compila NInfer' })).toBeVisible();
+    await card.getByRole('button', { name: 'Ho già NInfer: indica la cartella' }).click();
     await card.getByRole('textbox', { name: 'Dove si trova NInfer' }).fill('/home/user/nowhere');
     await card.getByRole('button', { name: 'Controlla e usa' }).click();
     await expect(card.getByText('ninfer-serve non è qui: /home/user/nowhere/build/apps/ninfer-serve')).toBeVisible({ timeout: 20_000 });
@@ -163,6 +167,42 @@ test('NInfer "Aggiorna" like the other engines: new commits, the exact commands,
     await expect(card.getByText('Aggiornato a 4f2a9c1')).toBeVisible({ timeout: 30_000 });
     await expect(card.getByText('4f2a9c1d0e8b')).toBeVisible({ timeout: 20_000 });
     await expect(card.getByText('Hai l’ultima versione (4f2a9c1)')).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await gb.close();
+    rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test('NInfer not on the PC yet: "Scarica e compila NInfer" downloads and builds it inside WSL, then it is ready with no other step', async () => {
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-dl-'));
+  const gb = await launchApp({
+    userData,
+    env: {
+      GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
+      FAKE_WSL_STATE: path.join(userData, 'fake-wsl'),
+      // A distro without NInfer: nothing cloned, nothing built.
+      FAKE_WSL_CONFIG: JSON.stringify({ checkouts: [], builds: [] }),
+    },
+  });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await openPage(page, 'Motori');
+    const card = page.getByRole('region', { name: 'NInfer', exact: true });
+    await expect(card.getByText(/NInfer non è ancora su questo PC/)).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04');
+    await card.getByRole('button', { name: 'Scarica e compila NInfer' }).click();
+    // Checked at once: the exact commands, what it downloads and how long it takes.
+    const dialog = page.getByRole('dialog', { name: 'Scarica e compila NInfer' });
+    await expect(dialog.getByText('Da scaricare: circa 27,9 MB.')).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByText('Compilazione: circa 10 minuti con 16 core.')).toBeVisible();
+    await expect(dialog.getByRole('region', { name: 'Comandi che eseguirò' })).toContainText('https://github.com/Neroued/ninfer.git /home/user/ninfer');
+    await scan(page, 'download and build NInfer');
+    await dialog.getByRole('button', { name: 'Scarica e compila' }).click();
+    await expect(page.getByText('NInfer è pronto: /home/user/ninfer/build/apps/ninfer-serve')).toBeVisible({ timeout: 60_000 });
+    // Saved by itself: the card is ready, nothing else to do.
+    await expect(card.getByText('Pronto')).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByText('/home/user/ninfer/build/apps/ninfer-serve')).toBeVisible();
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

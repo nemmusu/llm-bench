@@ -15,6 +15,8 @@
 //   FAKE_WSL_STATE   state dir (config.json with what the guided build added, procs.json); default <tmp>/gpubench-fake-wsl
 //   FAKE_WSL_CONFIG  inline JSON or a file, merged over the defaults: { noWsl, distros: [{ name, default, version, state }],
 //                    home, builds: [ninfer-serve paths], checkouts: [dirs], prereqs: { git: "git version 2.43.0", … ("" = missing) },
+//                    origins: { dir: clone URL } (a checkout cloned from a repository with "ninfer-all" in it is NInfer-all:
+//                    its ninfer-serve prints NInfer-all's help and reads GGUF-NInfer artifacts), cpus,
 //                    commit, stepMs, failStage: 'clone' | 'configure' | 'pull' | 'build',
 //                    branch ("master", "HEAD" = detached), upstream ("origin/master", null = none),
 //                    incoming: [{ sha, title }] (to pull, newest first), ahead, dirty: [tracked files changed],
@@ -60,7 +62,14 @@ const DEFAULTS = {
   offline: false,
   tools: ['tools/upgrade_ninfer_v2_to_v3.py'],
   kept: [],
+  origins: {},
+  cpus: 16,
 };
+
+const OFFICIAL = 'https://github.com/Neroued/ninfer.git';
+/** The checkout a ninfer-serve was built in, and whether it is NInfer-all (cloned from it). */
+const checkoutOfServe = (serve) => serve.replace(/\/build\/apps\/ninfer-serve$/, '');
+const isAll = (cfg, dir) => /ninfer-all/i.test(cfg.origins?.[dir] ?? '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = (s) => process.stdout.write(s);
@@ -121,7 +130,8 @@ function list(cfg) {
 /** LLM Bench's probe: the help (exit code after it) and the checkout's commit. */
 function probe(cfg, serve, repo) {
   if (cfg.builds.includes(serve)) {
-    out(readFileSync(new URL('../../fixtures/ninfer/help.stdout.txt', import.meta.url), 'utf8'));
+    const help = isAll(cfg, checkoutOfServe(serve)) ? 'help-all.stdout.txt' : 'help.stdout.txt';
+    out(readFileSync(new URL(`../../fixtures/ninfer/${help}`, import.meta.url), 'utf8'));
     out('##gpubench-help 0\n');
   } else {
     out(`sh: 2: ${serve}: not found\n##gpubench-help 127\n`);
@@ -134,7 +144,14 @@ function probe(cfg, serve, repo) {
 function prereqs(cfg, dir) {
   const d = dir.startsWith('~') ? `${cfg.home}${dir.slice(1)}` : dir;
   const p = cfg.prereqs;
-  const lines = [`##home ${cfg.home}`, ...['git', 'cmake', 'ninja', 'compiler', 'pkg-config', 'nvcc', 'cuda', 'ffmpeg', 'curl'].map((k) => `##${k} ${p[k] ?? ''}`), `##checkout ${cfg.checkouts.includes(d) ? 'yes' : ''}`];
+  const checkout = cfg.checkouts.includes(d);
+  const lines = [
+    `##home ${cfg.home}`,
+    ...['git', 'cmake', 'ninja', 'compiler', 'pkg-config', 'nvcc', 'cuda', 'ffmpeg', 'curl'].map((k) => `##${k} ${p[k] ?? ''}`),
+    `##cpus ${cfg.cpus ?? ''}`,
+    `##checkout ${checkout ? 'yes' : ''}`,
+    `##origin ${checkout ? (cfg.origins?.[d] ?? OFFICIAL) : ''}`,
+  ];
   out(`${lines.join('\n')}\n`);
   return 0;
 }
@@ -202,7 +219,8 @@ async function launched(cfg, distro, vars, program, args) {
       err(`sh: 1: exec: ${program}: not found\n`);
       return 127;
     }
-    const child = spawn(process.execPath, [NINFER, ...args], { env: { ...env, ...vars }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const variant = isAll(cfg, checkoutOfServe(program)) ? { FAKE_NINFER_VARIANT: 'all' } : {};
+    const child = spawn(process.execPath, [NINFER, ...args], { env: { ...env, ...vars, ...variant }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     err(`gpubench-pid ${child.pid}\n`);
     setProc(child.pid, { distro, env: Object.entries(vars).map(([k, v]) => `${k}=${v}`) });
     child.stdout.pipe(process.stdout);
@@ -228,7 +246,8 @@ async function launched(cfg, distro, vars, program, args) {
         err('fatal: unable to access the repository\n');
         return 128;
       }
-      save({ checkouts: [...new Set([...config().checkouts, dir])] });
+      const now = config();
+      save({ checkouts: [...new Set([...now.checkouts, dir])], origins: { ...now.origins, [dir]: args[args.length - 2] } });
       return 0;
     }
     if (program === 'git' && args[2] === 'pull') {

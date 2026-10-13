@@ -59,7 +59,7 @@ import { runSessions } from './steps/sessions';
 import { cpuOffloaded, spillOf, spillPossible, type NormalDecode } from './spill';
 import { runSweep } from './sweep';
 import { createTuner } from './tune-run';
-import type { LabEngine, LaunchGuard, LaunchMemory, Tuner, TuneLab, TunerInput } from './tuner';
+import { nothingLoaded, type LabEngine, type LaunchGuard, type LaunchMemory, type Tuner, type TuneLab, type TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 import { STALL_RULES, watchStream, type StallRules } from './watchdog';
 
@@ -913,6 +913,12 @@ export class BenchRunner {
       // Cancelled, or a failure that would repeat on every launch: the result keeps what the search knew.
       s.tuning = tuner.interrupted(s.signal.aborted ? 'cancelled' : 'failed');
       throw e;
+    }
+    // Not one launch reached a verdict (each failed to start): the run fails with why, never "completed" with nothing measured.
+    const none = nothingLoaded(s.tuning);
+    if (none) {
+      s.tuning = tuner.interrupted('failed');
+      throw new AppError(none.code, none.message, { ...(none.params ? { params: none.params } : {}), ...(none.detail ? { detail: none.detail } : {}) });
     }
   }
 

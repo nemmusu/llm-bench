@@ -77,9 +77,15 @@ export const ropeScalingSchema = z.object({
 });
 export type RopeScaling = z.infer<typeof ropeScalingSchema>;
 
-/** NInfer KV-cache storage (--kv-dtype): bf16 (its default), int8 (group-64), fp8, nvfp4, k8v4 (K int8, V 4-bit). */
+/**
+ * NInfer KV-cache storage (--kv-dtype) of the official build: bf16 (its default), int8 (group-64), fp8,
+ * nvfp4, k8v4 (K int8, V 4-bit). Variants add their own (NInfer-all: rk8v4, rk4v4, rk4v4-e8, rk2v4-e8):
+ * a launch may name any value its build's --help lists (core/engines/ninfer: the probe reads them).
+ */
 export const NINFER_KV_DTYPES = ['bf16', 'int8', 'fp8', 'nvfp4', 'k8v4'] as const;
-export type NinferKvDtype = (typeof NINFER_KV_DTYPES)[number];
+/** A --kv-dtype value: one of the official ones, or a variant's (a short lower-case word: it becomes a CLI argument). */
+export type NinferKvDtype = string;
+export const NINFER_KV_DTYPE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 /** NInfer speculative decoding (--spec): the model's MTP head, DFlash (35B-A3B), DFlash2 (Qwen3.8-27B); 'off' = none. */
 export const NINFER_SPECS = ['off', 'mtp', 'dflash', 'dflash2'] as const;
 export type NinferSpec = (typeof NINFER_SPECS)[number];
@@ -93,7 +99,7 @@ export type NinferSpec = (typeof NINFER_SPECS)[number];
 export const ninferParamsSchema = z.object({
   /** --kv-capacity: tokens of the KV pool shared by every request, or 'auto' (all the memory left, 1 GiB spare). Unset = --max-context. */
   kvCapacity: z.union([z.number().int().positive(), z.literal('auto')]).optional(),
-  kvDtype: z.enum(NINFER_KV_DTYPES).optional(),
+  kvDtype: z.string().regex(NINFER_KV_DTYPE).optional(),
   spec: z.enum(NINFER_SPECS).optional(),
   /** --draft-tokens: MTP 1..5, DFlash / DFlash2 1..15. */
   draftTokens: z.number().int().min(1).max(15).optional(),

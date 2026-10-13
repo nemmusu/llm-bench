@@ -13,11 +13,10 @@
  *    marker are recorded and checked before any signal (wsl.ts).
  */
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import type { EngineConfig, EngineStatus, LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
-import { NINFER_FILE, NINFER_MANIFEST, parseNinferManifest, type NinferManifest } from '../../../contract/formats';
-import { ninferGpuSupported, ninferMemory, NINFER_SERVE_PATH, type NinferKind, type NinferSettings } from '../../../contract/ninfer';
+import { NINFER_FILE, NINFER_MANIFEST, ninferManifestFromName, parseNinferManifest, type NinferManifest } from '../../../contract/formats';
+import { ninferGpuSupported, ninferMemory, NINFER_SERVE_PATH, ninferServeOf, type NinferKind, type NinferSettings } from '../../../contract/ninfer';
 import type { EngineIdentity } from '../../../contract/results';
 import type { EvictResult } from '../../cache/evictor';
 import { createLinuxEvictor } from '../../cache/evictor';
@@ -77,15 +76,32 @@ export interface NinferWhere {
 export interface NinferProbe {
   ok: boolean;
   flags: Set<string>;
+  /** The --kv-dtype values its help lists (official: bf16 int8 fp8 nvfp4 k8v4; NInfer-all adds rk8v4…); absent = not said. */
+  kvDtypes?: string[];
   /** Full commit hash of the checkout, when known. */
   commit?: string;
   /** Why it cannot be used (ENGINE_NOT_INSTALLED with a reason). */
   error?: AppError;
 }
 
+/**
+ * The --kv-dtype values a help lists, in its order. The official build prints them in its usage line
+ * ("[--kv-dtype bf16|int8|fp8|nvfp4|k8v4]"), NInfer-all in an option table over two lines ("--kv-dtype T
+ * KV storage: bf16 (default), int8, fp8, rk8v4,\n rk4v4, rk4v4-e8, rk2v4-e8, nvfp4 or k8v4"): the words
+ * after the flag up to the next option, those with a digit in them (a type name always has its bits).
+ */
+export function kvDtypesOfHelp(help: string): string[] | undefined {
+  const at = help.search(/--kv-dtype\b/);
+  if (at < 0) return undefined;
+  const rest = help.slice(at + '--kv-dtype'.length);
+  const end = rest.search(/(?:^|[\s[])--[a-z]/m);
+  const words = (end < 0 ? rest : rest.slice(0, end)).split(/[\s|,[\]()]+/).filter((w) => /^[a-z0-9][a-z0-9_-]*$/.test(w) && /\d/.test(w));
+  return words.length ? [...new Set(words)] : undefined;
+}
+
 /** A plan that also says how to reach the process later (start, stop, eviction). */
 export interface NinferLaunchPlan extends LaunchPlan {
-  ninfer: { distro?: string; kvTokens?: number; bytesPerToken?: number };
+  ninfer: { distro?: string; kvTokens?: number; bytesPerToken?: number; build?: string };
   /** The model is read through 9p (/mnt/<drive>): loads are much slower (validity 'slow_shared_filesystem'). */
   slowSharedFilesystem?: boolean;
 }
@@ -117,19 +133,12 @@ export function parseProbe(out: RunOutput, where: NinferWhere): NinferProbe {
   const flags = new Set(helpText.match(/--[a-z][a-z0-9-]*/g) ?? []);
   const commit = /##gpubench-commit ([0-9a-f]{7,40})/.exec(text)?.[1];
   const ours = help[1] === '0' && trustedFlags('ninfer', flags) !== undefined && flags.has('--kv-dtype');
-  return { ok: ours, flags, ...(commit ? { commit } : {}), ...(ours ? {} : { error: notInstalled('ninfer_not_found', { path: where.serve }) }) };
+  const kvDtypes = ours ? kvDtypesOfHelp(helpText) : undefined;
+  return { ok: ours, flags, ...(kvDtypes ? { kvDtypes } : {}), ...(commit ? { commit } : {}), ...(ours ? {} : { error: notInstalled('ninfer_not_found', { path: where.serve }) }) };
 }
 
-/** ninfer-serve of a path: the program itself, or a checkout / build folder holding it. */
-export function serveOf(p: string): { serve: string; repo?: string } {
-  const clean = p.trim().replace(/\/+$/, '');
-  if (path.posix.basename(clean) === 'ninfer-serve') {
-    const repo = clean.endsWith(`/${NINFER_SERVE_PATH}`) ? clean.slice(0, -NINFER_SERVE_PATH.length - 1) : undefined;
-    return { serve: clean, ...(repo ? { repo } : {}) };
-  }
-  if (path.posix.basename(clean) === 'build') return { serve: `${clean}/apps/ninfer-serve`, repo: path.posix.dirname(clean) };
-  return { serve: `${clean}/${NINFER_SERVE_PATH}`, repo: clean };
-}
+/** ninfer-serve of a path: the program itself, or a checkout / build folder holding it (contract/ninfer.ts, the card reads it too). */
+export const serveOf = ninferServeOf;
 
 /** The .ninfer artifact of a model, and its manifest next to it (when the library found one). */
 export function artifactOf(model: ModelTarget): { file: string; manifest?: string } {
@@ -142,12 +151,15 @@ export function artifactOf(model: ModelTarget): { file: string; manifest?: strin
   return { file, ...(manifest ? { manifest } : {}) };
 }
 
-/** The artifact's size and manifest: what the VRAM estimate and the tuner's choices are made from. */
-export async function ninferArtifactInfo(model: ModelTarget): Promise<{ bytes: number; manifest?: NinferManifest; label: string }> {
+/**
+ * The artifact's size and manifest: what the VRAM estimate and the tuner's choices are made from.
+ * Without a manifest ("senza manifest"), what the file name says (an "MTP" in it: the MTP head).
+ */
+export async function ninferArtifactInfo(model: ModelTarget): Promise<{ bytes: number; manifest: NinferManifest; label: string; noManifest?: true }> {
   const { file, manifest } = artifactOf(model);
   const bytes = await fs.stat(file).then((s) => s.size, () => model.identity.sizeBytes ?? 0);
   const parsed = manifest ? await readJsonFile(manifest).then(parseNinferManifest, () => undefined) : undefined;
-  return { bytes, label: model.identity.displayName, ...(parsed ? { manifest: parsed } : {}) };
+  return { bytes, label: model.identity.displayName, ...(parsed ? { manifest: parsed } : { manifest: ninferManifestFromName(file), noManifest: true as const }) };
 }
 
 export class NinferAdapter implements EngineAdapter {
@@ -241,6 +253,8 @@ export class NinferAdapter implements EngineAdapter {
     return {
       ...(probe?.commit ? { version: probe.commit.slice(0, 12), build: probe.commit.slice(0, 12) } : {}),
       flags: probe?.flags ?? new Set(),
+      // The KV types this build takes: the tuner's ladder and the check of a launch's --kv-dtype.
+      ...(probe?.kvDtypes ? { choices: { '--kv-dtype': probe.kvDtypes } } : {}),
       tokenIdsInPrompt: false,
       // NInfer adds llama.cpp-style timings to the last chunk of every Chat Completions stream.
       timings: true,
@@ -281,13 +295,18 @@ export class NinferAdapter implements EngineAdapter {
     // probe() never rejects: a build that does not answer is a probe that says so.
     const probe = where ? await this.probe(where) : undefined;
     const commit = probe?.commit?.slice(0, 12);
+    // A KV type this build does not list (a variant's rk8v4 on the official NInfer): said before anything starts.
+    const kvDtype = params.ninfer?.kvDtype;
+    if (kvDtype !== undefined && probe?.kvDtypes && !probe.kvDtypes.includes(kvDtype)) {
+      throw new AppError('ENGINE_BAD_FLAG', `This NInfer build does not take --kv-dtype ${kvDtype}`, { params: { flag: '--kv-dtype', value: kvDtype, values: probe.kvDtypes.join(', '), reason: 'kv_dtype_unsupported' } });
+    }
     const engine: EngineIdentity = { kind: this.kind, name: 'NInfer', executable: serve, ...(commit ? { version: commit, build: commit } : {}), ...(distro ? { variant: distro } : {}) };
     const env = { ...params.env };
     const argv = this.wsl
       ? wslLaunchArgv((this.o.wsl as NonNullable<NinferAdapterOptions['wsl']>).argv, { distro: distro ?? '<distro>', serve, args, env, marker: opts.marker })
       : [...(this.o.launcherPrefix ?? []), serve, ...args];
     const size = await fs.stat(file).then((s) => s.size, () => 0);
-    const mem = ninferMemory({ artifactBytes: size, manifest: await this.manifestOf(manifest), label: model.identity.displayName, params });
+    const mem = ninferMemory({ artifactBytes: size, manifest: (await this.manifestOf(manifest)) ?? ninferManifestFromName(file), label: model.identity.displayName, params });
     const capacity = params.ninfer?.kvCapacity;
     const kvTokens = typeof capacity === 'number' ? capacity : capacity === undefined ? params.contextSize : undefined;
     return {
@@ -303,7 +322,7 @@ export class NinferAdapter implements EngineAdapter {
       modelFiles: [this.wsl ? modelPath : file],
       modelBytes: size > 0 ? size : (model.identity.sizeBytes ?? 0),
       marker: opts.marker,
-      ninfer: { ...(distro ? { distro } : {}), ...(kvTokens !== undefined ? { kvTokens } : {}), bytesPerToken: mem.bytesPerToken },
+      ninfer: { ...(distro ? { distro } : {}), ...(kvTokens !== undefined ? { kvTokens } : {}), bytesPerToken: mem.bytesPerToken, ...(commit ? { build: commit } : {}) },
       ...(slow ? { slowSharedFilesystem: true } : {}),
       ...(!where ? { pending: ['engine' as const] } : {}),
     };
@@ -382,6 +401,7 @@ export class NinferAdapter implements EngineAdapter {
           ...(p.ninfer?.kvTokens !== undefined ? { kvTokens: p.ninfer.kvTokens } : {}),
           ...(p.ninfer?.bytesPerToken !== undefined ? { bytesPerToken: p.ninfer.bytesPerToken } : {}),
           ...(distro ? { distro } : {}),
+          ...(p.ninfer?.build ? { build: p.ninfer.build } : {}),
         }),
       startSignal: signal,
       ...(this.o.pollMs !== undefined ? { pollMs: this.o.pollMs } : {}),

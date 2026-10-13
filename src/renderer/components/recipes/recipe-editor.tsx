@@ -113,7 +113,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
   };
 
   // Engines a recipe can prefer: LLM Bench's own, the saved custom engines, and the templates for this model.
-  const templates = CUSTOM_ENGINE_TEMPLATES.filter((x) => templateForModel(target.ref)?.id === x.id || form.engine === `template:${x.id}`);
+  const templates = CUSTOM_ENGINE_TEMPLATES.filter((x) => templateForModel(target.template)?.id === x.id || form.engine === `template:${x.id}`);
   const engineOptions = [
     { value: 'default', label: t('recipes.editor.engineDefault') },
     ...ENGINE_KINDS.filter((k) => k !== 'external' && k !== 'command').map((k) => ({ value: `builtin:${k}`, label: t(`benchmark.engines.${k}`) })),

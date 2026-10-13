@@ -55,7 +55,7 @@ describe('prerequisites and commands', () => {
   it('builds the exact steps', () => {
     expect(buildSteps('/home/u/ninfer', { existing: false, nvcc: '/usr/local/cuda/bin/nvcc' }).map((s) => [s.stage, s.argv.join(' ')])).toEqual([
       ['clone', 'git clone --progress https://github.com/Neroued/ninfer.git /home/u/ninfer'],
-      ['configure', 'cmake -S /home/u/ninfer -B /home/u/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc'],
+      ['configure', 'cmake -S /home/u/ninfer -B /home/u/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc'],
       ['build', 'cmake --build /home/u/ninfer/build -j'],
     ]);
     expect(buildSteps('/n', { existing: true, nvcc: '/usr/bin/nvcc' }).map((s) => s.stage)).toEqual(['configure', 'build']);
@@ -99,7 +99,7 @@ describe('the guided build in a WSL distro', () => {
       dir: '/home/user/ninfer',
       servePath: '/home/user/ninfer/build/apps/ninfer-serve',
       existing: true,
-      commands: ['cmake -S /home/user/ninfer -B /home/user/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc', 'cmake --build /home/user/ninfer/build -j'],
+      commands: ['cmake -S /home/user/ninfer -B /home/user/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc', 'cmake --build /home/user/ninfer/build -j'],
       cudaFromNvidia: false,
       ready: true,
     });
@@ -188,7 +188,7 @@ describe('the guided build on Linux', () => {
     expect(err).toMatchObject({ code: 'ENGINE_INSTALL_FAILED', params: { reason: 'ninfer_build', stage: 'build' } });
     expect(spawned).toEqual([
       'git clone --progress https://github.com/Neroued/ninfer.git /opt/ninfer',
-      'cmake -S /opt/ninfer -B /opt/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc',
+      'cmake -S /opt/ninfer -B /opt/ninfer/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc',
       'cmake --build /opt/ninfer/build -j',
     ]);
     expect(proc.calls[0]).toMatchObject({ cmd: '/bin/sh', args: ['-c', expect.stringContaining('##home'), 'sh', '/opt/ninfer'] });

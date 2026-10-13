@@ -8,7 +8,8 @@
  * on Docker Hub, else the same tag pulled again) or a llama.cpp fork built from a git checkout
  * (`git pull --ff-only`, then `cmake --build`); 'ninfer-native' / 'ninfer-wsl', NInfer's git checkout
  * (on Linux, or inside the chosen WSL distro), the same way, its previous build kept aside until the
- * new one is built. Anything else is updated with its own tools.
+ * new one is built; a NInfer variant (`custom:<id>`, base 'ninfer') its own checkout the same way. Anything
+ * else is updated with its own tools.
  */
 import { z } from 'zod';
 import { ninferArtifactUpgradeSchema } from './ninfer';

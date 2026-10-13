@@ -1,0 +1,51 @@
+usage: ./build/apps/ninfer-serve <model.ninfer> [options]
+
+Serves the OpenAI Responses/Chat Completions and Anthropic Messages APIs.
+
+SERVER
+  --host H                      listen address (default 127.0.0.1)
+  --port N                      listen port (default 8080)
+  --api-key KEY                 require this bearer key on every request
+  --model-id ID                 the model name requests use (default: the artifact's metadata.name)
+  --log-stats-interval-ms N     periodic throughput logs; 0 disables (default 5000)
+  --log-level L                 trace, debug, info, warning, error, critical or off
+
+CAPACITY
+  --max-context N               one request's ceiling, prompt + output (default 8192)
+  --kv-capacity N               tokens of the KV pool shared by every request, or auto
+  --max-concurrency N           requests decoded together, 1..8 (default 1)
+  --max-pending-requests N      requests waiting for a lane
+
+KV CACHE
+  --kv-dtype T                  KV storage: bf16 (default), int8, fp8, rk8v4,
+                                rk4v4, rk4v4-e8, rk2v4-e8, nvfp4 or k8v4
+  --gdn-state-fp16              keep the recurrent GDN state in fp16
+
+CONTEXT CACHE
+  --no-prefix-reuse             disable compatible-prefix caching (enabled by default)
+  --device-state-slots N        checkpoint capacity beyond active lanes
+  --host-state-slots N          host state slots (default 8)
+  --host-kv-mib N               host KV, MiB (default 8192)
+
+SPECULATIVE DECODING
+  --spec B                      speculative decoding backend: mtp, dflash or dflash2
+  --draft-tokens N              drafts per round, 1..15
+  --lm-head-draft               the optimized proposal head
+  --adaptive-mtp                adapt the MTP draft length to its acceptance
+
+WEIGHTS
+  --lm-head-q4                  store the output head as Q4 while loading (+0.69% perplexity)
+  --lm-head-q6                  store the output head as Q6 while loading (+0.01% perplexity)
+  --embedding-q4                store the token embedding as Q4 while loading
+  --embedding-q6                store the token embedding as Q6 while loading
+
+VISION
+  --vision                      accept images and video and load the Vision GPU allocations
+  --vision-cpu                  --vision with --vision-residency cpu
+
+THINKING
+  --no-thinking                 answer without thinking
+  --preserve-thinking           retain closed-turn assistant reasoning in later prompts
+
+  --help                        this help
+  --version                     the build's version

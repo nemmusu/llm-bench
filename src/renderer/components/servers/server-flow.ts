@@ -6,7 +6,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { StartServerRequest } from '../../../contract/api';
 import type { ConfigEntry, DepthPoint } from '../../../contract/configs';
-import { customEngineKindOf, type CustomEngineInfo, type MissingFlag } from '../../../contract/custom-engines';
+import { CUSTOM_BASE_FORMATS, customEngineKindOf, type CustomEngineInfo, type MissingFlag } from '../../../contract/custom-engines';
 import type { EngineConfig, EngineKind, EngineStatus, LaunchParams } from '../../../contract/engines';
 import type { LocalModel, ModelIdentity } from '../../../contract/models';
 import type { ServerModel, ServerNetwork, ServerPreset, ServerSettingsSource } from '../../../contract/servers';
@@ -64,13 +64,6 @@ function builtinKinds(format: ModelFormat, platform: string): EngineKind[] {
 }
 
 /** The formats a custom engine reads, by its base (a command template never reads a .ninfer artifact). */
-const BASE_FORMATS: Record<CustomEngineInfo['engine']['base'], readonly ModelFormat[]> = {
-  llamacpp: ['gguf'],
-  vllm: ['safetensors'],
-  sglang: ['safetensors'],
-  'openai-server': ['gguf', 'safetensors'],
-};
-
 export interface EngineChoice {
   /** "builtin:llamacpp-native", "custom:prismml-fork". */
   key: string;
@@ -97,7 +90,7 @@ export function engineKeyOf(config: Pick<EngineConfig, 'kind' | 'customEngineId'
 export function engineChoices(format: ModelFormat, statuses: readonly EngineStatus[], customs: readonly CustomEngineInfo[], platform: string): EngineChoice[] {
   const unsupported = (kind: EngineKind) => statuses.find((s) => s.kind === kind)?.supported === false;
   const custom = customs
-    .filter((c) => BASE_FORMATS[c.engine.base].includes(format))
+    .filter((c) => CUSTOM_BASE_FORMATS[c.engine.base].includes(format))
     .map((c): EngineChoice => {
       const kind = customEngineKindOf(c.engine);
       return {

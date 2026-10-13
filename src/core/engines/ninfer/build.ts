@@ -1,16 +1,23 @@
 /**
- * Guided build of NInfer (no binary release: it runs from its build tree). On Linux, or inside a WSL
- * distro the user picked, and only after the user has seen the exact commands and confirmed them:
+ * Guided build of NInfer (no binary release: it runs from its build tree), the official one or a
+ * variant (NInfer-all, a fork of the user's: any repository with the same CMake build). On Linux, or
+ * inside a WSL distro the user picked, and only after the user has seen the exact commands and
+ * confirmed them:
  *
- *   git clone https://github.com/Neroued/ninfer.git <dir>        (skipped when <dir> is a checkout)
- *   cmake -S <dir> -B <dir>/build -G Ninja -DCMAKE_BUILD_TYPE=Release [-DCMAKE_CUDA_COMPILER=…/nvcc]
+ *   git clone --progress [--branch <b>] <repo> <dir>              (skipped when <dir> is a checkout)
+ *   cmake -S <dir> -B <dir>/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a
+ *         [-DCMAKE_CUDA_COMPILER=…/nvcc]
  *   cmake --build <dir>/build -j
  *
- * Prerequisites are checked first (one read-only script); what is missing is listed with its apt
- * packages and a "sudo apt install …" line to copy: LLM Bench never installs system packages, and never
- * changes anything else in the distro. Progress comes from git's and ninja's own lines ("[12/345]").
+ * The architecture is the RTX 5090's (sm_120a): the official build defaults to it, NInfer-all to sm_86.
+ * Prerequisites are checked first (one read-only script, which also counts the CPU cores and reads a
+ * checkout's origin); what is missing is listed with its apt packages and a "sudo apt install …" line to
+ * copy: LLM Bench never installs system packages, and never changes anything else in the distro. A
+ * folder holding a checkout of another repository is never built. Progress comes from git's and ninja's
+ * own lines ("[12/345]").
  */
-import { NINFER_REPO_URL, NINFER_SERVE_PATH, type NINFER_BUILD_STAGES, type NinferBuildPlan, type NinferBuildRequest, type NinferKind, type NinferPrereq } from '../../../contract/ninfer';
+import type { GitSource } from '../../../contract/custom-engines';
+import { NINFER_DEFAULT_DIR, NINFER_SERVE_PATH, NINFER_SOURCE, type NINFER_BUILD_STAGES, type NinferBuildPlan, type NinferBuildRequest, type NinferKind, type NinferPrereq } from '../../../contract/ninfer';
 import { AppError } from '../../../contract/errors';
 import type { ManagedProcess, ProcessRunner } from '../../deps';
 import type { ProgressSink } from '../types';
@@ -33,8 +40,10 @@ export const PREREQ_SCRIPT = [
   'echo "##cuda $([ -n "$nvcc" ] && "$nvcc" --version 2>/dev/null | tail -n 2 | head -n 1)"',
   'echo "##ffmpeg $(pkg-config --modversion libavformat libavcodec libavutil libswscale 2>/dev/null | tr \'\\n\' \' \')"',
   'echo "##curl $(pkg-config --modversion libcurl 2>/dev/null)"',
+  'echo "##cpus $(nproc 2>/dev/null)"',
   'd="$1"; [ "${d#\\~}" != "$d" ] && d="$HOME${d#\\~}"',
   'echo "##checkout $( [ -f "$d/CMakeLists.txt" ] && [ -d "$d/.git" ] && echo yes)"',
+  'echo "##origin $(git -C "$d" remote get-url origin 2>/dev/null)"',
 ].join('\n');
 
 /** apt packages per prerequisite (Ubuntu / Debian). CUDA: NVIDIA's repository (Ubuntu's own toolkit is too old for sm_120a). */
@@ -70,6 +79,10 @@ export interface PrereqReport {
   home?: string;
   nvcc?: string;
   checkout: boolean;
+  /** The checkout's origin URL, when the folder is one. */
+  origin?: string;
+  /** CPU cores (nproc). */
+  cpus?: number;
   prereqs: NinferPrereq[];
 }
 
@@ -91,15 +104,53 @@ export function parsePrereqs(stdout: string): PrereqReport {
   });
   const home = values.get('home');
   const nvcc = values.get('nvcc');
-  return { ...(home ? { home } : {}), ...(nvcc ? { nvcc } : {}), checkout: values.get('checkout') === 'yes', prereqs };
+  const origin = values.get('origin');
+  const cpus = Number(values.get('cpus'));
+  return {
+    ...(home ? { home } : {}),
+    ...(nvcc ? { nvcc } : {}),
+    checkout: values.get('checkout') === 'yes',
+    ...(origin ? { origin } : {}),
+    ...(Number.isInteger(cpus) && cpus > 0 ? { cpus } : {}),
+    prereqs,
+  };
+}
+
+/** Two repository URLs name the same repository (case, a ".git" and a trailing slash aside). */
+export function sameRepo(a: string, b: string): boolean {
+  const norm = (u: string) =>
+    u
+      .trim()
+      .toLowerCase()
+      .replace(/\/+$/, '')
+      .replace(/\.git$/, '');
+  return norm(a) === norm(b);
+}
+
+/** "owner/repo" of a GitHub URL (its size can be asked); undefined for any other host. */
+export function githubRepoOf(url: string): string | undefined {
+  const m = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i.exec(url.trim());
+  return m ? `${m[1]}/${m[2]}` : undefined;
+}
+
+/**
+ * How long a compile takes, minutes (approximate): NInfer's CUDA kernels for sm_120a take about 160
+ * core-minutes (about 10 minutes on 16 cores); unknown cores count as 8.
+ */
+export function buildMinutes(cpus: number | undefined): number {
+  return Math.max(3, Math.round(160 / (cpus ?? 8)));
 }
 
 /** Exact argv of the build steps; the folder must be absolute (a ~ is expanded with the user's home first). */
-export function buildSteps(dir: string, o: { existing: boolean; nvcc?: string | undefined }): { stage: NinferBuildStage; argv: string[] }[] {
+export function buildSteps(dir: string, o: { existing: boolean; nvcc?: string | undefined; source?: GitSource | undefined }): { stage: NinferBuildStage; argv: string[] }[] {
   const nvccOnPath = o.nvcc === undefined || !o.nvcc.startsWith('/usr/local/cuda/');
+  const source = o.source ?? NINFER_SOURCE;
   return [
-    ...(o.existing ? [] : [{ stage: 'clone' as const, argv: ['git', 'clone', '--progress', NINFER_REPO_URL, dir] }]),
-    { stage: 'configure', argv: ['cmake', '-S', dir, '-B', `${dir}/build`, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', ...(nvccOnPath ? [] : [`-DCMAKE_CUDA_COMPILER=${o.nvcc}`])] },
+    ...(o.existing ? [] : [{ stage: 'clone' as const, argv: ['git', 'clone', '--progress', ...(source.branch ? ['--branch', source.branch] : []), source.url, dir] }]),
+    {
+      stage: 'configure',
+      argv: ['cmake', '-S', dir, '-B', `${dir}/build`, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CUDA_ARCHITECTURES=120a', ...(nvccOnPath ? [] : [`-DCMAKE_CUDA_COMPILER=${o.nvcc}`])],
+    },
     { stage: 'build', argv: ['cmake', '--build', `${dir}/build`, '-j'] },
   ];
 }
@@ -123,6 +174,8 @@ export interface NinferBuilderOptions {
   /** ninfer-wsl: wsl.exe and our process records (a cancelled build is stopped inside the distro). */
   wsl?: { argv: readonly string[]; processes: WslProcesses };
   newMarker: () => string;
+  /** What cloning a GitHub repository downloads ("owner/repo" → bytes); undefined when it cannot be said. */
+  repoBytes?: (repo: string) => Promise<number | undefined>;
 }
 
 export class NinferBuilder {
@@ -144,7 +197,7 @@ export class NinferBuilder {
 
   private async inspect(req: NinferBuildRequest): Promise<{ plan: NinferBuildPlan; steps: ReturnType<typeof buildSteps> }> {
     const run = this.runner(req.distro);
-    const wanted = (req.dir ?? '~/ninfer').trim();
+    const wanted = (req.dir ?? NINFER_DEFAULT_DIR).trim();
     const out = await run('/bin/sh', ['-c', PREREQ_SCRIPT, 'sh', wanted], { timeoutMs: 60_000 });
     const report = parsePrereqs(out.stdout);
     if (report.home === undefined) {
@@ -155,18 +208,33 @@ export class NinferBuilder {
     if (!dir.startsWith('/')) throw new AppError('VALIDATION', 'The folder must be an absolute Linux path', { params: { reason: 'ninfer_dir', dir } });
     const missing = report.prereqs.filter((p) => !p.found);
     const apt = missing.filter((p) => p.id !== 'cuda').flatMap((p) => p.packages);
-    const steps = buildSteps(dir, { existing: report.checkout, nvcc: report.nvcc });
+    // A variant without a repository of its own can only be built where its checkout already is.
+    if (req.variant && !req.source && !report.checkout) {
+      throw new AppError('VALIDATION', 'A variant without a repository is built in its own checkout only', { params: { reason: 'ninfer_no_source', dir } });
+    }
+    const source = req.source ?? NINFER_SOURCE;
+    // A checkout of another repository than the one asked for (the official NInfer where NInfer-all was asked for):
+    // never built as that one. Without a repository named (a checkout of the user's, built in place) it is taken as it is.
+    const otherRepo = report.checkout && report.origin !== undefined && req.source !== undefined && !sameRepo(report.origin, req.source.url) ? report.origin : undefined;
+    const steps = buildSteps(dir, { existing: report.checkout, nvcc: report.nvcc, source });
+    const github = report.checkout ? undefined : githubRepoOf(source.url);
+    const downloadBytes = github && this.o.repoBytes ? await this.o.repoBytes(github).catch(() => undefined) : undefined;
     const plan: NinferBuildPlan = {
       kind: this.o.kind,
       ...(req.distro ? { distro: req.distro } : {}),
       dir,
       servePath: `${dir}/${NINFER_SERVE_PATH}`,
       existing: report.checkout,
+      source,
+      ...(otherRepo ? { otherRepo } : {}),
       commands: steps.map((st) => shellLine(st.argv)),
       prereqs: report.prereqs,
       ...(apt.length ? { aptCommand: `sudo apt install ${apt.join(' ')}` } : {}),
       cudaFromNvidia: missing.some((p) => p.id === 'cuda'),
-      ready: missing.length === 0,
+      ...(downloadBytes !== undefined ? { downloadBytes } : {}),
+      ...(report.cpus ? { cpus: report.cpus } : {}),
+      minutes: buildMinutes(report.cpus),
+      ready: missing.length === 0 && otherRepo === undefined,
     };
     return { plan, steps };
   }
@@ -174,6 +242,7 @@ export class NinferBuilder {
   /** Runs the confirmed plan's steps; progress per step (stage, done/total). Returns the ninfer-serve path. */
   async build(req: NinferBuildRequest, progress: ProgressSink, signal: AbortSignal): Promise<string> {
     const { plan, steps } = await this.inspect(req);
+    if (plan.otherRepo) throw new AppError('ENGINE_INSTALL_FAILED', 'The folder holds another repository', { params: { reason: 'ninfer_other_repo', origin: plan.otherRepo, dir: plan.dir } });
     if (!plan.ready) {
       throw new AppError('ENGINE_INSTALL_FAILED', 'Prerequisites are missing', { params: { reason: 'ninfer_prereqs', missing: plan.prereqs.filter((p) => !p.found).map((p) => p.id).join(',') } });
     }

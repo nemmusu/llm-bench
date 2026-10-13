@@ -178,14 +178,18 @@ describe('model rules', () => {
   });
 
   it('suggests the first matching engine, else the built-in template', () => {
-    const a = saved({ id: 'a', match: { names: ['qwen'], quants: [] } });
-    const b = saved({ id: 'b', match: { names: ['bonsai'], quants: [] } });
+    const a = saved({ id: 'a', match: { names: ['qwen'], quants: [], layouts: [] } });
+    const b = saved({ id: 'b', match: { names: ['bonsai'], quants: [], layouts: [] } });
     expect(customEngineForModel([a, b, saved({ id: 'c' })], bonsai)?.id).toBe('b');
     expect(customEngineForModel([a], bonsai)).toBeUndefined();
     expect(templateForModel(bonsai)?.id).toBe('prismml-bonsai');
     expect(templateForModel({ displayName: 'x', file: 'x-PTQ1_0.gguf' })?.id).toBe('prismml-bonsai');
     expect(templateForModel({ displayName: 'Qwen3-8B', file: 'Qwen3-8B-Q4_K_M.gguf' })).toBeUndefined();
-    expect(CUSTOM_ENGINE_TEMPLATES.every((t) => customEngineDraftSchema.safeParse({ name: t.id, base: t.base, run: { mode: 'native', path: 'x' }, match: t.match }).success)).toBe(true);
+    expect(
+      CUSTOM_ENGINE_TEMPLATES.every(
+        (t) => customEngineDraftSchema.safeParse({ name: t.id, base: t.base, run: t.base === 'ninfer' ? { mode: 'ninfer', path: 'x', source: t.source } : { mode: 'native', path: 'x' }, match: t.match }).success,
+      ),
+    ).toBe(true);
   });
 });
 

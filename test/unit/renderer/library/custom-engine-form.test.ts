@@ -23,6 +23,29 @@ describe('custom engine form', () => {
     expect(draftOf(form({ name: 'x', path: 'p' })).draft).not.toHaveProperty('match');
   });
 
+  it('a NInfer variant: its build, its distro, its repository', () => {
+    const tpl = CUSTOM_ENGINE_TEMPLATES.find((t) => t.id === 'ninfer-all')!;
+    const fromTemplate = formOfTemplate(tpl, 'NInfer-all');
+    expect(fromTemplate).toMatchObject({ base: 'ninfer', mode: 'ninfer', repoUrl: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master', names: 'GGUF-NInfer', templateId: 'ninfer-all' });
+    expect(draftOf({ ...fromTemplate, path: '/home/u/ninfer-all', distro: 'Ubuntu-24.04' }).draft?.run).toEqual({
+      mode: 'ninfer',
+      path: '/home/u/ninfer-all',
+      distro: 'Ubuntu-24.04',
+      source: { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' },
+    });
+    // No distro (Linux), no repository: just where it is.
+    expect(draftOf(form({ base: 'ninfer', mode: 'ninfer', name: 'n', path: '/opt/n' })).draft?.run).toEqual({ mode: 'ninfer', path: '/opt/n' });
+    expect(draftOf(form({ base: 'ninfer', mode: 'ninfer', name: 'n', path: '/opt/n', repoUrl: 'https://x.org/n.git', branch: ' ' })).draft?.run).toEqual({ mode: 'ninfer', path: '/opt/n', source: { url: 'https://x.org/n.git' } });
+    // Not a repository, a branch that is an option, no path.
+    expect(draftOf(form({ base: 'ninfer', mode: 'ninfer', name: 'n', repoUrl: 'ftp://x', branch: '-b' })).problems).toEqual({ path: { key: 'required' }, repoUrl: { key: 'badRepo' }, branch: { key: 'badBranch' } });
+    // Edited: the form of a saved variant, with and without its repository and distro.
+    const saved = customEngineSchema.parse({ id: 'v', name: 'V', base: 'ninfer', run: { mode: 'ninfer', path: '/p', distro: 'Debian', source: { url: 'https://github.com/a/b.git', branch: 'dev' } } });
+    expect(formOf(saved)).toMatchObject({ mode: 'ninfer', path: '/p', distro: 'Debian', repoUrl: 'https://github.com/a/b.git', branch: 'dev' });
+    expect(formOf(customEngineSchema.parse({ id: 'w', name: 'W', base: 'ninfer', run: { mode: 'ninfer', path: '/q' } }))).toMatchObject({ distro: '', repoUrl: '', branch: '' });
+    expect(modeFor('ninfer', 'native')).toBe('ninfer');
+    expect(modeFor('llamacpp', 'ninfer')).toBe('native');
+  });
+
   it('a Docker image, a command template and its API', () => {
     expect(draftOf(form({ base: 'sglang', mode: 'docker', name: 's', image: 'me/sglang:1', templateId: 't' })).draft).toMatchObject({ run: { mode: 'docker', image: 'me/sglang:1' }, template: 't' });
     expect(draftOf(form({ base: 'openai-server', mode: 'native', name: 'o', template: 'srv --port {port}', api: 'chat' })).draft?.run).toEqual({ mode: 'command', template: 'srv --port {port}', api: 'chat' });

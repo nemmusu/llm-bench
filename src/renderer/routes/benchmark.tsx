@@ -7,7 +7,7 @@ import type { Settings } from '../../contract/settings';
 import { customEngineConfigOf, customEngineKindOf } from '../../contract/custom-engines';
 import type { EngineKind } from '../../contract/engines';
 import { customEngineLabel, customEngineWhere } from '../components/engines/custom-engine-check';
-import { EngineSuggestion } from '../components/engines/engine-suggestion';
+import { EngineSuggestion, unreadableFor } from '../components/engines/engine-suggestion';
 import { useCustomEngines } from '../lib/queries-engines';
 import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
@@ -201,9 +201,9 @@ function BenchmarkScreen() {
   const [previousTune, setPreviousTune] = useState<RunPlan['previousTune']>(undefined);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // NInfer: a result's own settings when its preset brought them, else NInfer's recommended ones.
+  // NInfer: a result's own settings when its preset brought them, else the user's pick, else (below) the default one.
   const draftNinfer = draft?.params?.ninfer;
-  const [ninferChoice, setNinferChoice] = useState<NinferChoice>(draftNinfer ? 'run' : 'ninfer-recommended');
+  const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(draftNinfer ? 'run' : undefined);
 
   const statusOf = (k: EngineKind) => engines.data?.find((e) => e.kind === k);
   // A saved custom engine whose kind runs here (vLLM / SGLang native only on Linux).
@@ -227,8 +227,13 @@ function BenchmarkScreen() {
       ? picked
       : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
-  // NInfer: the built-in settings of a .ninfer model (NInfer's README quick start, one tested on an RTX 5090).
-  const ninferPresets = isNinferKind(effEngine) && option?.source === 'local' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.local.identity.displayName }) : [];
+  // NInfer: the built-in settings of a .ninfer model (its model card's, NInfer's README quick start, one tested on an RTX 5090).
+  const ninferPresets =
+    isNinferKind(effEngine) && option?.source === 'local'
+      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.local.identity.displayName, repo: option.local.identity.repo, file: option.local.identity.file })
+      : [];
+  // A variant of NInfer runs its model card's settings by default (they may need its own KV type); NInfer itself its recommended ones.
+  const ninferChoice: NinferChoice = ninferPicked ?? (effCustom?.base === 'ninfer' && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended');
   const ninferRun = ninferChoice === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
   const ninferPreset = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChoice)?.params ?? ninferRun) : undefined;
 
@@ -534,8 +539,17 @@ function BenchmarkScreen() {
             model={
               option && !external
                 ? option.source === 'local'
-                  ? { displayName: option.local.identity.displayName, repo: option.local.identity.repo, file: option.local.identity.file, quant: option.local.identity.quant, weakKey: option.local.identity.weakKey }
-                  : { displayName: option.name, repo: option.curated.repo, file: option.curated.file, quant: option.quant }
+                  ? {
+                      displayName: option.local.identity.displayName,
+                      repo: option.local.identity.repo,
+                      file: option.local.identity.file,
+                      quant: option.local.identity.quant,
+                      format: option.local.identity.format,
+                      weakKey: option.local.identity.weakKey,
+                      // What an engine could not read for it before ("gguf_blocks_v1"): the variant that reads it is proposed.
+                      unreadable: unreadableFor(runs.data, option.local.identity.weakKey),
+                    }
+                  : { displayName: option.name, repo: option.curated.repo, file: option.curated.file, quant: option.quant, format: option.curated.engine === 'vllm' ? 'safetensors' : 'gguf' }
                 : undefined
             }
             current={config}

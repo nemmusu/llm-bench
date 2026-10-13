@@ -165,13 +165,46 @@ describe('BenchRunner — tune runs', () => {
     expect(t.capacity[0]).toMatchObject({ kvType: 'auto', measuredMax: 5120 });
   });
 
+  it('a model the engine build cannot read ends the run at its first launch, with that error', async () => {
+    let starts = 0;
+    const unsupported = new AppError('ENGINE_MODEL_UNSUPPORTED', 'NInfer cannot read this model (layout gguf_blocks_v1)', {
+      params: { engine: 'NInfer', reason: 'layout', value: 'gguf_blocks_v1', template: 'ninfer-all', variant: 'NInfer-all' },
+    });
+    // Windows: the search starts with its reference launch (the user's three "tune 1/2/3 (reference)").
+    const s = setup({ adapter: { failStart: () => (++starts, unsupported) } });
+    const run = await s.runner.run(tuneInput({ spillPossible: true }), new AbortController().signal);
+    expect(starts).toBe(1);
+    expect(run.tuning?.attempts.map((a) => [a.stage, a.outcome, a.error?.code])).toEqual([['reference', 'error', 'ENGINE_MODEL_UNSUPPORTED']]);
+    expect(run.status).toBe('failed');
+    expect(run.error).toMatchObject({ code: 'ENGINE_MODEL_UNSUPPORTED', params: { value: 'gguf_blocks_v1', template: 'ninfer-all' } });
+    expect(run.tuning?.stoppedBy).toBe('failed');
+  });
+
+  it('a search where no launch ever started is never "completed": it fails with the last launch\'s error', async () => {
+    const s = setup({ adapter: { failStart: () => new AppError('ENGINE_EXITED', 'ninfer-serve exited with 1', { params: { code: '1' } }) } });
+    const run = await s.runner.run(tuneInput({ spillPossible: true }), new AbortController().signal);
+    expect(run.status).toBe('failed');
+    expect(run.error).toMatchObject({ code: 'ENGINE_EXITED', params: { code: '1' } });
+    expect(run.tuning?.attempts.length).toBeGreaterThan(0);
+    expect(run.tuning?.attempts.every((a) => a.outcome === 'error')).toBe(true);
+    expect(run.tuning?.stoppedBy).toBe('failed');
+    expect(run.tuning?.combinations).toEqual([]);
+    // An error that says no more than its words and its log: the same.
+    const bare = setup({ adapter: { failStart: () => new AppError('ENGINE_EXITED', 'exited', { detail: 'last lines' }) } });
+    expect((await bare.runner.run(tuneInput(), new AbortController().signal)).error).toEqual({ code: 'ENGINE_EXITED', message: 'exited', detail: 'last lines' });
+    // Out of memory everywhere is a finding (nothing fits), not a failure to start.
+    const oom = setup({ adapter: { failStart: () => new AppError('ENGINE_OOM', 'cudaMalloc failed: out of memory') } });
+    expect((await oom.runner.run(tuneInput(), new AbortController().signal)).status).toBe('completed');
+  });
+
   it('failures that repeat on every launch fail the run; cancelling stops it', async () => {
     const bad = setup({ adapter: { failStart: () => new AppError('ENGINE_BAD_FLAG', 'Rejected argument: -ctk', { params: { flag: '-ctk' } }) } });
     const failed = await bad.runner.run(tuneInput(), new AbortController().signal);
     expect(failed.status).toBe('failed');
     expect(failed.error).toMatchObject({ code: 'ENGINE_BAD_FLAG', params: { flag: '-ctk' } });
-    // What the search knew is kept (here: nothing measured yet).
-    expect(failed.tuning?.attempts).toEqual([]);
+    // What the search knew is kept: nothing measured yet, the launch that failed with its error.
+    expect(failed.tuning?.attempts).toHaveLength(1);
+    expect(failed.tuning?.attempts[0]).toMatchObject({ outcome: 'error', error: { code: 'ENGINE_BAD_FLAG' }, points: [] });
 
     const ac = new AbortController();
     const cancelStart = setup({

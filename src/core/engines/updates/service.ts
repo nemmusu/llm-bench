@@ -46,8 +46,12 @@ export interface EngineUpdatesDeps {
   /** PyPI answers are kept this long (default 10 min). */
   ttlMs?: number;
   /** NInfer's own update of its git checkout, on Linux or inside WSL (core/engines/ninfer/update.ts). */
-  ninfer?: Record<'ninfer-native' | 'ninfer-wsl', { plan(opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> }>;
+  ninfer?: Record<'ninfer-native' | 'ninfer-wsl', NinferPlanner>;
+  /** The same for a NInfer variant (a custom engine of base 'ninfer'): its own checkout. */
+  ninferVariant?: (engine: CustomEngine) => NinferPlanner;
 }
+
+type NinferPlanner = { plan(opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> };
 
 type Target = { kind: 'builtin'; engine: UpdatableKind } | { kind: 'custom'; id: string };
 
@@ -131,6 +135,8 @@ export class EngineUpdates {
     }
     const engine = await this.custom(t.id);
     const kind = customEngineKindOf(engine);
+    // A NInfer variant: git pull + rebuild in its checkout, as NInfer's own (its previous build kept aside).
+    if (engine.run.mode === 'ninfer') return this.d.ninferVariant ? this.d.ninferVariant(engine).plan(opts) : { check: { ...this.base(target, 'none'), state: 'none', reason: 'tools' } };
     if (engine.run.mode === 'docker') {
       return this.docker(target, installer(baseOf(this.d.registry, kind)), expandCustom(engine, { kind }), opts, undefined, async (image) => {
         const list = (await this.d.settings.get()).customEngines;

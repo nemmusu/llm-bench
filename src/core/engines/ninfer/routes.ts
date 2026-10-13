@@ -7,12 +7,25 @@
  *   POST /api/engines/ninfer/check       (EngineConfig of a NInfer kind) -> EngineStatus
  *   POST /api/engines/ninfer/build-plan  (NinferBuildRequest) -> NinferBuildPlan
  *   POST /api/engines/ninfer/build       (NinferBuildStart) -> { ok: true }; 'engine.install' events, the
- *        last one 'done' (result.ninferPath, saved as the build of that kind) or 'error'.
+ *        last one 'done' (result.ninferPath, saved as the build of that kind, or as the variant's custom
+ *        engine: result.customEngineId) or 'error'.
  */
+import { customEngineIdFor, customEngineSchema, customEngineTemplate, type CustomEngine, type GitSource } from '../../../contract/custom-engines';
 import { engineConfigSchema, type EngineConfig, type EngineStatus } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
-import { isNinferKind, ninferBuildRequestSchema, ninferBuildStartSchema, type NinferBuildPlan, type NinferBuildRequest, type NinferDistros, type NinferKind, type NinferSettings } from '../../../contract/ninfer';
+import {
+  isNinferKind,
+  ninferBuildEventKind,
+  ninferBuildRequestSchema,
+  ninferBuildStartSchema,
+  type NinferBuildPlan,
+  type NinferBuildRequest,
+  type NinferDistros,
+  type NinferKind,
+  type NinferSettings,
+  type NinferVariantTarget,
+} from '../../../contract/ninfer';
 import type { RouteModule } from '../../server/app';
 import { parseBody } from '../../server/http-error';
 import type { ProgressSink } from '../types';
@@ -21,8 +34,11 @@ export interface NinferRouteDeps {
   distros(): Promise<NinferDistros>;
   check(kind: NinferKind, cfg: EngineConfig): Promise<EngineStatus>;
   builder(kind: NinferKind): { plan(req: NinferBuildRequest): Promise<NinferBuildPlan>; build(req: NinferBuildRequest, progress: ProgressSink, signal: AbortSignal): Promise<string> };
-  /** settings.ninfer, updated after a successful build. */
-  saveBuild(kind: NinferKind, where: { path: string; distro?: string }): Promise<void>;
+  /**
+   * After a successful build: settings.ninfer for the official NInfer; for a variant (req.variant), its
+   * custom engine (created or updated), whose id it resolves with.
+   */
+  saveBuild(kind: NinferKind, where: { path: string; distro?: string }, req: NinferBuildRequest): Promise<string | undefined>;
   /** Shared with the update: a build is running (one compile of NInfer at a time). */
   jobs: { building: boolean };
   publish(e: ServerEvent): void;
@@ -39,6 +55,29 @@ export function withBuild(saved: NinferSettings | undefined, kind: NinferKind, w
   return out;
 }
 
+/**
+ * settings.customEngines with the variant a build made: the engine `variant.id` (else the one made from
+ * `variant.template`) gets the new ninfer-serve, distro and source, the rest of it kept; with neither, a
+ * new engine named `variant.name` (with the template's rules, when it came from one). Returns its id.
+ */
+export function withVariantBuild(
+  engines: readonly CustomEngine[],
+  variant: NinferVariantTarget,
+  where: { path: string; distro?: string },
+  source: GitSource | undefined,
+): { engines: CustomEngine[]; id: string } {
+  const run = { mode: 'ninfer' as const, path: where.path, ...(where.distro ? { distro: where.distro } : {}), ...(source ? { source } : {}) };
+  const existing = engines.find((e) => e.id === variant.id) ?? engines.find((e) => e.base === 'ninfer' && variant.template !== undefined && e.template === variant.template);
+  if (existing) {
+    const updated = customEngineSchema.parse({ ...existing, run });
+    return { engines: engines.map((e) => (e.id === existing.id ? updated : e)), id: existing.id };
+  }
+  const tpl = customEngineTemplate(variant.template);
+  const id = customEngineIdFor(variant.name, engines.map((e) => e.id));
+  const engine = customEngineSchema.parse({ id, name: variant.name, base: 'ninfer', run, ...(tpl ? { match: tpl.match, template: tpl.id } : {}) });
+  return { engines: [...engines, engine], id };
+}
+
 export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
   /** The guided build in the background, as 'engine.install' events of its kind. */
   const build = (req: NinferBuildRequest): void => {
@@ -48,14 +87,23 @@ export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
       const ac = new AbortController();
       const onShutdown = () => ac.abort();
       d.shutdown?.addEventListener('abort', onShutdown, { once: true });
-      // Build progress is steps (ninja's "[12/345]", git's percent), not bytes.
+      // Build progress is steps (ninja's "[12/345]", git's percent), not bytes. A variant's build has its own kind.
+      const kind = ninferBuildEventKind(req);
       const emit = (p: { stage: string; bytesDone: number; bytesTotal?: number }, extra: Partial<InstallEvent> = {}) =>
-        d.publish({ type: 'engine.install', kind: req.kind, stage: p.stage, bytesDone: p.bytesDone, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}), ...extra });
+        d.publish({
+          type: 'engine.install',
+          kind,
+          stage: p.stage,
+          bytesDone: p.bytesDone,
+          ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}),
+          ...(req.variant ? { label: req.variant.name } : {}),
+          ...extra,
+        });
       try {
         emit({ stage: 'resolve', bytesDone: 0 });
         const serve = await d.builder(req.kind).build(req, emit, ac.signal);
-        await d.saveBuild(req.kind, { path: serve, ...(req.distro ? { distro: req.distro } : {}) });
-        emit({ stage: 'done', bytesDone: 0 }, { result: { ninferPath: serve, ...(req.distro ? { distro: req.distro } : {}) } });
+        const id = await d.saveBuild(req.kind, { path: serve, ...(req.distro ? { distro: req.distro } : {}) }, req);
+        emit({ stage: 'done', bytesDone: 0 }, { result: { ninferPath: serve, ...(req.distro ? { distro: req.distro } : {}), ...(id ? { customEngineId: id } : {}) } });
       } catch (e) {
         emit({ stage: 'error', bytesDone: 0 }, { error: toAppErrorData(e) });
       } finally {

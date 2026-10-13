@@ -1,12 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Boxes, Copy, FlaskConical, GitBranch, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
+import { Boxes, Copy, Cpu, FlaskConical, GitBranch, Hammer, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { customUpdateTarget } from '../../../contract/engine-updates';
 import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
+import { NINFER_VARIANT_BUILD, ninferServeOf, type NinferKind } from '../../../contract/ninfer';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
+import { activeEvent, useInstallEvent } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { saveDraft } from '../bench/run-context';
 import { ErrorCallout } from '../library/error-callout';
@@ -20,11 +22,15 @@ import { CustomEngineDialog } from './custom-engine-dialog';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
 import { EngineUpdatePanel } from './engine-update';
+import { NinferBuildDialog } from './ninfer-build-dialog';
+import { ninferNotBuilt } from './ninfer-problem';
+import { InstallProgress } from '../setup/install-progress';
 
 const ICONS: Record<CustomEngineBase, ReactNode> = {
   llamacpp: <GitBranch />,
   vllm: <Boxes />,
   sglang: <FlaskConical />,
+  ninfer: <Cpu />,
   'openai-server': <Terminal />,
 };
 
@@ -46,6 +52,8 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
   const list = useCustomEngines();
   const [editing, setEditing] = useState<Editing | undefined>(template ? { kind: 'new', template, fromLink: true } : undefined);
   const engines = list.data ?? [];
+  // A NInfer variant being built (its dialog may be closed): its progress stays here.
+  const building = activeEvent(useInstallEvent(NINFER_VARIANT_BUILD));
 
   return (
     <section aria-labelledby="custom-engines-title" className="flex flex-col gap-4">
@@ -62,6 +70,7 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
         </Button>
       </div>
       {list.isError && <ErrorCallout error={list.error} />}
+      {building && <InstallProgress event={building} label={t('ninfer.variant.building', { name: building.label ?? 'NInfer' })} />}
       {list.isPending ? (
         <Skeleton className="h-32" />
       ) : engines.length === 0 ? (
@@ -120,6 +129,10 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
   const tone = required || (!status.available && !missingEngine) ? 'danger' : missingEngine || lacking ? 'warning' : 'success';
   const statusText = missingEngine ? t('engines.status.notInstalled') : !status.available ? t('engines.status.broken') : required ? t('engines.custom.check.requiredTitle') : t('engines.status.ready');
   const rules = [...(e.match?.names ?? []), ...(e.match?.quants ?? [])];
+  // A NInfer variant whose checkout is there but not built (or broken): compiled in place, as NInfer's own.
+  const [build, setBuild] = useState(false);
+  const ninfer = e.run.mode === 'ninfer' ? e.run : undefined;
+  const notBuilt = ninfer !== undefined && ninferNotBuilt(status);
 
   return (
     <EngineCard
@@ -152,6 +165,12 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
             <Play aria-hidden />
             {t('engines.custom.useInBenchmark')}
           </Button>
+          {notBuilt && (
+            <Button size="sm" variant="primary" onClick={() => setBuild(true)}>
+              <Hammer aria-hidden />
+              {t('ninfer.variant.build')}
+            </Button>
+          )}
           <Button size="sm" onClick={onEdit}>
             <Pencil aria-hidden />
             {t('engines.custom.edit')}
@@ -184,6 +203,17 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
         {customEngineWhere(e)}
       </p>
       <CheckView check={info.check} baseLabel={t(`engines.custom.bases.${e.base}`)} run={e.run} />
+      {ninfer && (
+        <NinferBuildDialog
+          open={build}
+          onOpenChange={setBuild}
+          kind={info.kind as NinferKind}
+          distro={ninfer.distro}
+          // Offered only for a checkout not built yet: its commit was read, so its folder is known.
+          dir={ninferServeOf(ninfer.path).repo as string}
+          variant={{ id: e.id, name: e.name, ...(e.template ? { template: e.template } : {}), source: ninfer.source }}
+        />
+      )}
       {e.run.mode === 'docker' && info.check.status.problems[0] === 'ENGINE_NOT_INSTALLED' && (
         <PullButton engine={info.kind as 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker'} image={e.run.image} label={t('engines.custom.pullImage')} />
       )}

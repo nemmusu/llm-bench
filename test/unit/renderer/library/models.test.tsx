@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { rowFormatOf } from '../../../../src/renderer/components/library/formats';
 import { serveEngineFor } from '../../../../src/renderer/components/library/local-models';
 import { bridge, curated, ENGINES, fail, GPU, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
@@ -124,6 +125,24 @@ describe('models: on your PC', () => {
     // A Bonsai quant only the PrismML fork reads: one click to set that engine up.
     const fork = within(screen.getByRole('list', { name: 'Per llama.cpp (GGUF)' })).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ });
     expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');
+  });
+
+  it('a GGUF-NInfer artifact without a manifest: "senza manifest", and "Richiede NInfer-all" one click away', async () => {
+    const gguf = localModel('gg', {
+      identity: {
+        displayName: 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP',
+        format: 'ninfer',
+        quant: 'Q6_K',
+        repo: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer',
+        file: 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer',
+        facts: { noManifest: true, components: ['text', 'mtp'], paramsB: 27 },
+      },
+    });
+    renderLib('/models', libApi(world({ local: [gguf] })));
+    const list = await screen.findByRole('list', { name: 'Per NInfer (RTX 5090)' });
+    expect(within(list).getByText('senza manifest')).toBeTruthy();
+    const link = within(list).getByRole('link', { name: /Richiede NInfer-all/ });
+    expect(link.getAttribute('href')).toContain('customTemplate=ninfer-all');
   });
 
   it('serves each format with its engine', () => {
@@ -431,19 +450,27 @@ describe('models: download', () => {
           hubModel('mlx-community/Q-4bit', { formats: ['other'], otherFormats: ['MLX'] }),
           hubModel('odd/Unknown-Format', { formats: ['other'] }),
           hubModel('prism-ml/Ternary-Bonsai-2-27B-gguf', { formats: ['gguf'] }),
+          hubModel('nerkyor/Qwen3.8-27B-GGUF-NInfer', { formats: ['ninfer'] }),
+          hubModel('mixed/Tiny-Mixed-GGUF-NInfer', { formats: ['gguf', 'ninfer'] }),
         ],
       }),
     );
     renderLib('/models?tab=download&engine=any', api);
     const list = await screen.findByRole('list', { name: 'Modelli trovati' });
-    expect(await within(list).findByText('Richiede una RTX 5090')).toBeTruthy();
+    expect(await within(list).findAllByText('Richiede una RTX 5090')).toHaveLength(2);
     expect(within(list).getAllByText('non supportato')).toHaveLength(2);
     expect(within(list).getByText('Altro formato')).toBeTruthy();
     // Nothing LLM Bench runs: no verdict, and no "size unknown" either.
     const mlx = within(list).getAllByRole('listitem').find((li) => within(li).queryByRole('link', { name: 'mlx-community/Q-4bit' })) as HTMLElement;
     expect(within(mlx).queryByText('Dimensione non indicata')).toBeNull();
     expect(within(list).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ }).getAttribute('href')).toContain('modelName=prism-ml');
+    expect(within(list).getAllByRole('link', { name: /Richiede NInfer-all/ }).map((a) => a.getAttribute('href'))).toEqual([expect.stringContaining('modelName=nerkyor')]);
     expect(screen.queryByText(/^Ora altri programmi usano/)).toBeNull();
+    // A "…-GGUF-NInfer" repo: NInfer-all for its NInfer artifacts, never for the plain GGUFs of a mixed one.
+    expect(rowFormatOf(['gguf', 'safetensors', 'ninfer'], 'any')).toBe('gguf');
+    expect(rowFormatOf(['gguf', 'ninfer'], 'ninfer')).toBe('ninfer');
+    expect(rowFormatOf(['ninfer'], 'gguf')).toBe('ninfer');
+    expect(rowFormatOf(['other'], 'any')).toBeUndefined();
     // Without a GPU: no note at all.
     const none = libApi(world({ system: system({ gpus: [] }), snapshot: [], search: [] }));
     renderLib('/models?tab=download', none);

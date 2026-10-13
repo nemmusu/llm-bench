@@ -130,6 +130,8 @@ export function updateSteps(dir: string, serve: string, from: string | undefined
 
 export interface NinferUpdaterOptions {
   kind: NinferKind;
+  /** The update target it answers for (default its kind; a variant: "custom:<id>"). */
+  target?: string;
   builder: Pick<NinferBuilder, 'runner' | 'step'>;
   /** The saved build (adapter.where()). */
   where(): Promise<NinferWhere | undefined>;
@@ -155,7 +157,7 @@ export class NinferUpdater {
   async plan(opts: { fetch?: boolean } = {}): Promise<{ check: EngineUpdateCheck; run?: NinferUpdateRun }> {
     const where = await this.o.where();
     const base: EngineUpdateCheck = {
-      target: this.o.kind,
+      target: this.o.target ?? this.o.kind,
       method: 'git',
       state: 'blocked',
       commands: [],

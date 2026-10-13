@@ -19,7 +19,7 @@ import { Callout } from '../components/ui/callout';
 import { Card } from '../components/ui/card';
 import { HelpTip } from '../components/ui/help-tip';
 import { Skeleton } from '../components/ui/skeleton';
-import { useI18n } from '../i18n';
+import { errorText, useI18n } from '../i18n';
 import { useServers } from '../lib/queries-runs';
 import { useCustomEngines } from '../lib/queries-engines';
 import { usePresetMutations, useServerActions, useServerNotices, useServerPresets, useServersLiveRefresh } from '../lib/queries-servers';
@@ -87,7 +87,7 @@ export function ServersPage() {
       <div className="flex flex-col gap-section">
         {(notices.data ?? []).map((n) => (
           <Callout key={n.id} tone="danger" title={t(`servers.notices.${n.kind}`, { name: n.name })} action={{ label: t('servers.notices.dismiss'), onClick: () => void actions.dismissNotice(n) }}>
-            {t(`errors.${n.error.code}.title`)}. {t(`errors.${n.error.code}.what`)}
+            {errorText({ t }, n.error.code, n.error.params).title}. {errorText({ t }, n.error.code, n.error.params).what}
           </Callout>
         ))}
 

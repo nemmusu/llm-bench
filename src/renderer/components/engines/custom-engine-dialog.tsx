@@ -1,10 +1,11 @@
-import { Boxes, FlaskConical, FolderOpen, GitBranch, Terminal } from 'lucide-react';
+import { Boxes, Cpu, FlaskConical, FolderOpen, GitBranch, Terminal } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { CUSTOM_ENGINE_BASES, COMMAND_PLACEHOLDERS, type CustomEngine, type CustomEngineBase, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCheckCustomEngine, useSaveCustomEngine } from '../../lib/queries-engines';
 import { useSystemInfo } from '../../lib/queries-library';
+import { useNinferKind } from '../../lib/queries-ninfer';
 import { ErrorCallout } from '../library/error-callout';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -13,6 +14,7 @@ import { SegmentedControl } from '../ui/segmented-control';
 import { Stepper, type StepState } from '../ui/stepper';
 import { CheckView } from './custom-engine-check';
 import { draftOf, EMPTY_FORM, formOf, formOfTemplate, modeFor, type CustomEngineForm, type FieldProblem, type FormField } from './custom-engine-form';
+import { NinferVariantWhere, useDefaultDistro } from './ninfer-variant';
 
 export interface CustomEngineDialogProps {
   open: boolean;
@@ -30,6 +32,7 @@ const BASE_ICONS: Record<CustomEngineBase, ReactNode> = {
   llamacpp: <GitBranch />,
   vllm: <Boxes />,
   sglang: <FlaskConical />,
+  ninfer: <Cpu />,
   'openai-server': <Terminal />,
 };
 
@@ -37,7 +40,7 @@ const STEPS = ['kind', 'where', 'options'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Fields checked before leaving a step. */
-const STEP_FIELDS: Record<Step, readonly FormField[]> = { kind: [], where: ['name', 'path', 'image', 'template'], options: ['extraArgs', 'env', 'names'] };
+const STEP_FIELDS: Record<Step, readonly FormField[]> = { kind: [], where: ['name', 'path', 'image', 'template', 'repoUrl', 'branch'], options: ['extraArgs', 'env', 'names'] };
 
 /**
  * "Aggiungi motore": what kind of engine, where it is (with "Prova": its version and the LLM Bench
@@ -68,7 +71,11 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
   // vLLM and SGLang have no Windows build: there they are Docker images only.
   const nativeBlocked = linuxOnlyNative && (form.base === 'vllm' || form.base === 'sglang');
   const effMode = nativeBlocked && mode === 'native' ? 'docker' : mode;
-  const effForm = { ...form, mode: effMode };
+  // A NInfer variant runs where NInfer does: in WSL on Windows (its distro: the one chosen, else the default one).
+  const ninferKind = useNinferKind();
+  const defaultDistro = useDefaultDistro(form.base === 'ninfer' ? ninferKind : undefined);
+  const distro = effMode === 'ninfer' && ninferKind === 'ninfer-wsl' ? form.distro || defaultDistro || '' : '';
+  const effForm = { ...form, mode: effMode, distro };
   const { draft, problems } = draftOf(effForm);
 
   const set = (patch: Partial<CustomEngineForm>) => {
@@ -115,7 +122,7 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
   const baseLabel = t(`engines.custom.bases.${form.base}`);
   const at = STEPS.indexOf(step);
   const stateOf = (i: number): StepState => (i < at ? 'done' : i === at ? 'current' : 'pending');
-  const examples: Record<CustomEngineBase, string> = { llamacpp: 'ghcr.io/me/llama.cpp:fork', vllm: 'me/vllm-fork:latest', sglang: 'me/sglang-fork:latest', 'openai-server': '' };
+  const examples: Record<CustomEngineBase, string> = { llamacpp: 'ghcr.io/me/llama.cpp:fork', vllm: 'me/vllm-fork:latest', sglang: 'me/sglang-fork:latest', ninfer: '', 'openai-server': '' };
 
   return (
     <DialogContent
@@ -171,7 +178,7 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
               )}
             </Field>
 
-            {form.base !== 'openai-server' && (
+            {form.base !== 'openai-server' && form.base !== 'ninfer' && (
               <div className="flex flex-col gap-2">
                 <SegmentedControl<'native' | 'docker'>
                   label={t('engines.custom.dialog.mode')}
@@ -184,6 +191,21 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
                 />
                 {nativeBlocked && <p className="text-xs text-fg-3">{t('engines.custom.dialog.nativeLinuxOnly', { base: form.base === 'vllm' ? 'vLLM' : 'SGLang' })}</p>}
               </div>
+            )}
+
+            {effMode === 'ninfer' && ninferKind && (
+              <NinferVariantWhere
+                form={effForm}
+                set={set}
+                kind={ninferKind}
+                hint={hint}
+                problem={problem}
+                editingId={editing?.id}
+                onBuilt={(name) => {
+                  toast.success(t('ninfer.variant.ready', { name }));
+                  onOpenChange(false);
+                }}
+              />
             )}
 
             {effMode === 'native' && (

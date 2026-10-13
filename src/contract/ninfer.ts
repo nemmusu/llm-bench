@@ -11,16 +11,23 @@
  *
  *   GET  /api/engines/ninfer/distros          -> NinferDistros (Windows: WSL and its distros)
  *   POST /api/engines/ninfer/check            (EngineConfig) -> EngineStatus ("Indica dove si trova")
- *   POST /api/engines/ninfer/build-plan       (NinferBuildRequest) -> NinferBuildPlan (commands, prerequisites)
+ *   POST /api/engines/ninfer/build-plan       (NinferBuildRequest) -> NinferBuildPlan (commands, prerequisites,
+ *        download size, time estimate)
  *   POST /api/engines/ninfer/build            (NinferBuildStart) -> { ok: true }; progress as 'engine.install'
- *        events (kind = the NInfer kind, stage clone | configure | build | done | error, step/steps,
- *        result.ninferPath at 'done'). Nothing is installed with apt: missing packages are only listed.
+ *        events (kind = ninferBuildEventKind: the NInfer kind, or 'ninfer-variant' for a variant; stage
+ *        clone | configure | build | done | error, step/steps, result.ninferPath at 'done'). Nothing is
+ *        installed with apt: missing packages are only listed. The official build is saved as
+ *        settings.ninfer, a variant's (request.variant, cloned from request.source) as its custom engine.
+ *
+ * Variants and forks of NInfer (NInfer-all, ninfer-fusion-kvmem…) are custom engines of base 'ninfer'
+ * (contract/custom-engines.ts): the same adapter, with their own build, --help and extra arguments.
  *
  * Launch settings: LaunchParams.contextSize → --max-context, parallel → --max-concurrency, and
  * LaunchParams.ninfer (contract/engines.ts) for the rest. Where its build is: EngineConfig.ninferPath /
  * wslDistro, else settings.ninfer.
  */
 import { z } from 'zod';
+import { CUSTOM_ENGINE_ID, gitSourceSchema, type GitSource } from './custom-engines';
 import { engineBaseOf, engineStatusSchema, type EngineKind, type LaunchParams, type NinferKvDtype, type NinferParams, type NinferSpec } from './engines';
 import type { FitEstimate, FitLevel } from './models';
 
@@ -41,6 +48,23 @@ export function ninferKindFor(platform: string): NinferKind | undefined {
 export const NINFER_REPO_URL = 'https://github.com/Neroued/ninfer.git';
 /** Where the server binary is inside a checkout (no install target: it runs from the build tree). */
 export const NINFER_SERVE_PATH = 'build/apps/ninfer-serve';
+
+/**
+ * ninfer-serve of a Linux path: the program itself, or a checkout / build folder holding it; `repo` is
+ * the checkout when the path is one or ends in build/apps/ninfer-serve.
+ */
+export function ninferServeOf(p: string): { serve: string; repo?: string } {
+  const clean = p.trim().replace(/\/+$/, '');
+  const slash = clean.lastIndexOf('/');
+  const base = clean.slice(slash + 1);
+  if (base === 'ninfer-serve') {
+    const repo = clean.endsWith(`/${NINFER_SERVE_PATH}`) ? clean.slice(0, -NINFER_SERVE_PATH.length - 1) : undefined;
+    return { serve: clean, ...(repo ? { repo } : {}) };
+  }
+  // "<checkout>/build": its parent is the checkout (as path.posix.dirname: "/" for "/build", "." for "build").
+  if (base === 'build') return { serve: `${clean}/apps/ninfer-serve`, repo: slash < 0 ? '.' : clean.slice(0, slash) || '/' };
+  return { serve: `${clean}/${NINFER_SERVE_PATH}`, repo: clean };
+}
 /** Official artifacts on Hugging Face (one .ninfer + "<Repo>.artifact-manifest.json" + "<Repo>.SHA256SUMS" each). */
 export const NINFER_OFFICIAL_REPOS = [
   'neroued/Qwen3.8-27B-nvfp4-NInfer',
@@ -114,12 +138,27 @@ const KV_ELEMENTS: Record<NinferFamily, { text: number; mtp: number }> = {
 };
 
 /** Bytes per KV element: int8 and fp8 carry a 16-bit scale per 64 values, nvfp4 an 8-bit one per 16, k8v4 = int8 K + 4-bit V. */
-const KV_BYTES: Record<NinferKvDtype, number> = { bf16: 2, int8: 1 + 2 / 64, fp8: 1 + 2 / 64, nvfp4: 0.5 + 1 / 16, k8v4: (1 + 2 / 64 + 0.5 + 1 / 16) / 2 };
+const KV_BYTES: Record<string, number> = { bf16: 2, int8: 1 + 2 / 64, fp8: 1 + 2 / 64, nvfp4: 0.5 + 1 / 16, k8v4: (1 + 2 / 64 + 0.5 + 1 / 16) / 2 };
+
+/**
+ * Bytes per KV element of a --kv-dtype: the official types exactly; a variant's "[r]k<K>v<V>[-e8]"
+ * (NInfer-all rk8v4: K 8-bit, V 4-bit, rotated) from its bit widths with the same scale overhead as
+ * the official ones (a 16-bit scale per 64 values at 8 bits, an 8-bit one per 16 below); anything else
+ * as bf16 (the estimate is then on the safe side).
+ */
+export function ninferKvBytes(dtype: NinferKvDtype): number {
+  const known = KV_BYTES[dtype];
+  if (known !== undefined) return known;
+  const kv = /^r?k(\d)v(\d)(?:-e8)?$/.exec(dtype);
+  if (!kv) return 2;
+  const side = (bits: number) => bits / 8 + (bits >= 8 ? 2 / 64 : 1 / 16);
+  return (side(Number(kv[1])) + side(Number(kv[2]))) / 2;
+}
 
 /** KV bytes one token takes (checked against NInfer's own "capacity | KV … | runtime" lines: int8 35 KiB on Qwen3.8-27B). */
 export function ninferKvBytesPerToken(family: NinferFamily, dtype: NinferKvDtype = 'bf16', spec: NinferSpec = 'off'): number {
   const e = KV_ELEMENTS[family];
-  return (e.text + (spec === 'mtp' ? e.mtp : 0)) * KV_BYTES[dtype];
+  return (e.text + (spec === 'mtp' ? e.mtp : 0)) * ninferKvBytes(dtype);
 }
 
 const MIB = 1024 * 1024;
@@ -273,7 +312,7 @@ export function ninferMaxKvTokens(mem: NinferMemory, roomMiB: number, min = 1024
 
 // ---- built-in settings ("preimpostate") -----------------------------------------------------------
 
-export const NINFER_PRESET_IDS = ['ninfer-recommended', 'rtx5090-tested'] as const;
+export const NINFER_PRESET_IDS = ['model-card', 'ninfer-recommended', 'rtx5090-tested'] as const;
 export type NinferPresetId = (typeof NINFER_PRESET_IDS)[number];
 
 export interface NinferPreset {
@@ -283,19 +322,42 @@ export interface NinferPreset {
 }
 
 /**
+ * Settings a model card recommends for a family of .ninfer artifacts, matched like custom-engine rules
+ * (repo, file or name containing `names`). GGUF-NInfer (nerkyor's GGUF-converted artifacts, for
+ * NInfer-all): "--max-context 102400 --kv-capacity 409600 --kv-dtype rk8v4 --max-concurrency 4 --spec mtp
+ * --draft-tokens 3", as their card's run example.
+ */
+export const NINFER_CARD_PRESETS: readonly { names: readonly string[]; params: NinferPreset['params'] }[] = [
+  { names: ['GGUF-NInfer'], params: { contextSize: 102_400, parallel: 4, ninfer: { kvCapacity: 409_600, kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 3 } } },
+];
+
+/** What the presets look at: the artifact's metadata name, its label, and (for model-card presets) its repo and file. */
+export interface NinferPresetModel {
+  name?: string | undefined;
+  label?: string | undefined;
+  repo?: string | undefined;
+  file?: string | undefined;
+}
+
+/**
  * Built-in settings for an NInfer model, by its family:
+ *  - 'model-card' ("Consigliata dalla scheda del modello"), first, when the model's card has its own
+ *    (NINFER_CARD_PRESETS);
  *  - 'ninfer-recommended' ("Consigliata da NInfer"): NInfer's README quick start, 240K per request in a
  *    240K fp8 pool, 2 users, MTP 3 with the optimized head, thinking history kept (35B-A3B: DFlash 7,
  *    as the README says for that model);
  *  - 'rtx5090-tested' ("Provata su RTX 5090"): 64K per request in a shared 128K int8 pool, 2 users,
  *    vision on, MTP 3 with the optimized head (about 27 GB of VRAM with Qwen3.8-27B NVFP4). 27B models only.
  */
-export function ninferPresetsFor(model: { name?: string | undefined; label?: string | undefined }): NinferPreset[] {
+export function ninferPresetsFor(model: NinferPresetModel): NinferPreset[] {
   const family = ninferFamilyOf(model.name ?? model.label);
   const cache = { deviceStateSlots: 2, hostStateSlots: 8, hostKvMib: 8192 } as const;
   const speculative: Pick<NinferParams, 'spec' | 'draftTokens' | 'lmHeadDraft'> =
     family === 'moe-35b-a3b' ? { spec: 'dflash', draftTokens: 7, lmHeadDraft: true } : { spec: 'mtp', draftTokens: 3, lmHeadDraft: true };
+  const text = [model.repo, model.file, model.label, model.name].filter((s): s is string => s !== undefined).join('\n').toLowerCase();
+  const card = NINFER_CARD_PRESETS.find((c) => c.names.some((n) => text.includes(n.toLowerCase())));
   const out: NinferPreset[] = [
+    ...(card ? [{ id: 'model-card' as const, params: card.params }] : []),
     {
       id: 'ninfer-recommended',
       params: { contextSize: 240_000, parallel: 2, ninfer: { kvCapacity: 240_000, kvDtype: 'fp8', ...cache, ...speculative, preserveThinking: true } },
@@ -389,12 +451,33 @@ export const ninferPrereqSchema = z.object({
 });
 export type NinferPrereq = z.infer<typeof ninferPrereqSchema>;
 
+/** The official repository as a build source (the guided build's default). */
+export const NINFER_SOURCE: GitSource = { url: NINFER_REPO_URL };
+/** Where the guided build puts the official checkout when the user does not say. */
+export const NINFER_DEFAULT_DIR = '~/ninfer';
+
+/**
+ * A NInfer variant the guided build makes (contract/custom-engines.ts, base 'ninfer'): once built, the
+ * custom engine `id` gets the new ninfer-serve (and distro, source); without an id, the one made from
+ * `template` (else a new one named `name`, with the template's rules) is created or updated.
+ */
+export const ninferVariantTargetSchema = z.object({
+  id: z.string().regex(CUSTOM_ENGINE_ID).optional(),
+  template: z.string().min(1).max(60).optional(),
+  name: z.string().trim().min(1).max(60),
+});
+export type NinferVariantTarget = z.infer<typeof ninferVariantTargetSchema>;
+
 export const ninferBuildRequestSchema = z.object({
   kind: ninferKindSchema,
   /** ninfer-wsl: the distro to build in. */
   distro: z.string().min(1).optional(),
   /** Where the checkout goes (a Linux path; default ~/ninfer). An existing checkout is built in place. */
   dir: z.string().min(1).optional(),
+  /** The repository to clone (and its branch); absent = the official NInfer. */
+  source: gitSourceSchema.optional(),
+  /** A variant: the custom engine the build is saved as (absent = the official NInfer, settings.ninfer). */
+  variant: ninferVariantTargetSchema.optional(),
 });
 export type NinferBuildRequest = z.infer<typeof ninferBuildRequestSchema>;
 
@@ -402,14 +485,22 @@ export type NinferBuildRequest = z.infer<typeof ninferBuildRequestSchema>;
 export const ninferBuildStartSchema = ninferBuildRequestSchema.extend({ confirm: z.literal(true) });
 export type NinferBuildStart = z.infer<typeof ninferBuildStartSchema>;
 
+/** The 'engine.install' kind of a build's progress: the official build's is its NInfer kind, every variant's this one. */
+export const NINFER_VARIANT_BUILD = 'ninfer-variant';
+export const ninferBuildEventKind = (req: Pick<NinferBuildRequest, 'kind' | 'variant'>): string => (req.variant ? NINFER_VARIANT_BUILD : req.kind);
+
 export const ninferBuildPlanSchema = z.object({
   kind: ninferKindSchema,
   distro: z.string().optional(),
   /** The checkout folder (absolute Linux path) and the server binary the build makes. */
   dir: z.string(),
   servePath: z.string(),
-  /** The folder already holds an NInfer checkout: it is built as it is (no clone). */
+  /** The folder already holds a checkout: it is built as it is (no clone). */
   existing: z.boolean(),
+  /** What is cloned (or what the existing checkout should be). */
+  source: gitSourceSchema,
+  /** The folder holds a checkout of another repository (its origin): nothing is built there. */
+  otherRepo: z.string().optional(),
   /** Exactly what runs, one line per step (clone, configure, build), ready to copy. */
   commands: z.array(z.string()),
   prereqs: z.array(ninferPrereqSchema),
@@ -417,6 +508,11 @@ export const ninferBuildPlanSchema = z.object({
   aptCommand: z.string().optional(),
   /** CUDA is missing or too old: its toolkit (13.1 validated) comes from NVIDIA's repository, not Ubuntu's. */
   cudaFromNvidia: z.boolean(),
+  /** What the clone downloads (GitHub's repository size), when known; nothing for a checkout already there. */
+  downloadBytes: z.number().int().nonnegative().optional(),
+  /** CPU cores the compile can use, and how long it should take with them (minutes, approximate). */
+  cpus: z.number().int().positive().optional(),
+  minutes: z.number().int().positive(),
   /** Everything needed is there: the build can start. */
   ready: z.boolean(),
 });

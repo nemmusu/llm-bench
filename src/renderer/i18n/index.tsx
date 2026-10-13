@@ -128,7 +128,21 @@ export type ErrorCatalogIsExhaustive = Assert<Exact<keyof Messages['errors'], Er
 export type ValidityCatalogIsExhaustive = Assert<Exact<keyof Messages['validity'], ValidityFlag>>;
 export type PhaseCatalogIsExhaustive = Assert<Exact<Exclude<keyof Messages['phases'], 'state'>, RunPhase>>;
 
+/**
+ * The "what to do" of an error with a reason of its own (errors.<code>.why.<reason>): a model the engine
+ * cannot read (its format with a variant that reads it, its architecture, its container version), a
+ * KV type the build does not have.
+ */
+function whyKey(code: ErrorCode, params?: Params): MessageKey | undefined {
+  const reason = params?.reason;
+  if (code === 'ENGINE_MODEL_UNSUPPORTED') {
+    if (params?.variant !== undefined && (reason === 'layout' || reason === 'format')) return 'errors.ENGINE_MODEL_UNSUPPORTED.why.variant';
+    if (reason === 'architecture' || reason === 'container') return `errors.ENGINE_MODEL_UNSUPPORTED.why.${reason}`;
+  }
+  return code === 'ENGINE_BAD_FLAG' && reason === 'kv_dtype_unsupported' ? 'errors.ENGINE_BAD_FLAG.why.kvDtype' : undefined;
+}
+
 /** Localized "what happened / what to do" for an error code from the core, with its params (library, package…). */
 export function errorText(f: Pick<Formatters, 't'>, code: ErrorCode, params?: Params): { title: string; what: string } {
-  return { title: f.t(`errors.${code}.title`, params), what: f.t(`errors.${code}.what`, params) };
+  return { title: f.t(`errors.${code}.title`, params), what: f.t(whyKey(code, params) ?? `errors.${code}.what`, params) };
 }

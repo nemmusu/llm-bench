@@ -51,6 +51,16 @@ export const ERROR_CODES = [
   'ENGINE_UPDATE_FAILED',
   /** The engine runs on one GPU model only (NInfer: an RTX 5090); params engine, gpu. */
   'ENGINE_GPU_UNSUPPORTED',
+  /**
+   * This build of the engine cannot read this model, on every launch: a weight layout or format it
+   * does not know (NInfer "unknown tensor layout: gguf_blocks_v1"), an older or newer container
+   * (.ninfer v2), an architecture it does not know (llama.cpp "unknown model architecture", vLLM /
+   * SGLang "architectures … are not supported"). Params: engine (its name), reason ('layout' | 'format'
+   * | 'container' | 'architecture'), value, build (commit / version, when known), template and variant
+   * (a built-in custom-engine template that reads it, e.g. 'ninfer-all' / "NInfer-all"), command (NInfer's
+   * own upgrade tool for an older container).
+   */
+  'ENGINE_MODEL_UNSUPPORTED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

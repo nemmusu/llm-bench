@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 const engine = (o: Partial<CustomEngine> & Pick<CustomEngine, 'id' | 'name' | 'base' | 'run'>): CustomEngine => customEngineSchema.parse(o);
-const prism = engine({ id: 'prismml', name: 'PrismML', base: 'llamacpp', run: { mode: 'native', path: '/prism/llama-server' }, match: { names: ['bonsai'], quants: [] } });
+const prism = engine({ id: 'prismml', name: 'PrismML', base: 'llamacpp', run: { mode: 'native', path: '/prism/llama-server' }, match: { names: ['bonsai'], quants: [], layouts: [] } });
 const server = engine({ id: 'srv', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 'srv --port {port}', api: 'completions' } });
 const sglangNative = engine({ id: 'sgn', name: 'SG nativo', base: 'sglang', run: { mode: 'native', path: '/venv' } });
 const bonsai = localModel('bonsai', { displayName: 'Ternary Bonsai 8B', file: 'Ternary-Bonsai-8B-PQ2_0.gguf', quant: 'PQ2_0', weakKey: 'local/bonsai' });

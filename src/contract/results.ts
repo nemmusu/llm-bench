@@ -470,7 +470,7 @@ export const tuneVariantSchema = z.record(z.string(), tuneDimValueSchema);
 export type TuneVariant = z.infer<typeof tuneVariantSchema>;
 
 /** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8, NInfer bf16 / int8 / fp8 / k8v4 / nvfp4. */
-export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8', 'bf16', 'int8', 'k8v4', 'nvfp4'] as const;
+export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8', 'bf16', 'int8', 'k8v4', 'rk8v4', 'nvfp4'] as const;
 export const tuneKvTypeSchema = z.enum(TUNE_KV_TYPES);
 export type TuneKvType = z.infer<typeof tuneKvTypeSchema>;
 
@@ -854,6 +854,12 @@ export const runSummarySchema = z.object({
   speedBasis: z.enum(['prompt', 'depth']).optional(),
   parallelPromptTokens: z.number().int().optional(),
   validity: z.array(validityFlagSchema).default([]),
+  /**
+   * The run failed because its engine could not read the model (ENGINE_MODEL_UNSUPPORTED): the weight
+   * layout, format or architecture it did not know ("gguf_blocks_v1"). The Benchmark page proposes the
+   * engines that read it (custom-engine rules `layouts`).
+   */
+  unreadable: z.string().optional(),
   /** Which file this summary came from (results folder may be shared). */
   file: z.string(),
 });

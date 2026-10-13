@@ -274,9 +274,16 @@ export function memoryError(e: AppErrorData): boolean {
   return e.code === 'ENGINE_OOM' || (e.code === 'MODEL_TOO_LARGE' && e.params?.reason === 'kv-cache');
 }
 
-/** Failures that would repeat on every launch: the search stops and the run fails with them. */
+/**
+ * Failures that would repeat on every launch: the search stops at the first one and the run fails
+ * with it. Among them, those that are a property of the model and the engine build together (every
+ * setting fails the same): a model the build cannot read (ENGINE_MODEL_UNSUPPORTED: an unknown weight
+ * layout, container version or architecture, for every engine), a GPU the engine does not run on.
+ */
 export const FATAL_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   'CANCELLED',
+  'ENGINE_MODEL_UNSUPPORTED',
+  'ENGINE_GPU_UNSUPPORTED',
   'ENGINE_NOT_INSTALLED',
   'ENGINE_START_FAILED',
   'ENGINE_BAD_FLAG',
@@ -296,6 +303,16 @@ export const FATAL_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   'GPU_NOT_FOUND',
   'VRAM_BUSY',
 ]);
+
+/**
+ * A search where no launch ever reached a verdict (none loaded, none ran out of memory or spilled: each
+ * failed for another reason) found nothing about this model: the run must fail, with the last launch's
+ * error, never end "completed" with nothing measured. Undefined when some launch did (or none failed).
+ */
+export function nothingLoaded(t: Pick<Tuning, 'attempts'>): AppErrorData | undefined {
+  if (t.attempts.some((a) => a.outcome === 'ok' || a.outcome === 'oom' || a.outcome === 'spill')) return undefined;
+  return [...t.attempts].reverse().find((a) => a.error !== undefined)?.error;
+}
 
 /** KV cache capacity a failed vLLM start reported ("estimated maximum model length is N"). */
 export function failureHint(e: AppErrorData): number | undefined {
@@ -945,9 +962,13 @@ export class Tuner {
           recordMemory(live.att, live.tripped);
         } else {
           retry = !params && this.stepDown(e);
-          if (!retry && FATAL_CODES.has(e.code)) throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
           live.att.outcome = memoryError(e) ? 'oom' : 'error';
           live.att.error = e;
+          if (!retry && FATAL_CODES.has(e.code)) {
+            // The launch that showed it stays in the list (with its error), then the run fails with it.
+            if (e.code !== 'CANCELLED') this.attempts.push(live.att);
+            throw new AppError(e.code, e.message, { ...(e.params ? { params: e.params } : {}), ...(e.detail ? { detail: e.detail } : {}) });
+          }
           const hint = failureHint(e);
           if (hint !== undefined) live.hint = hint;
         }

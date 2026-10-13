@@ -4,7 +4,7 @@
  * words ("YaRN 300K · MTP · Fork PrismML").
  */
 import type { StartServerRequest } from '../../../contract/api';
-import type { CustomEngine } from '../../../contract/custom-engines';
+import { customEngineTemplate, type CustomEngine } from '../../../contract/custom-engines';
 import type { EngineKind } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import {
@@ -128,9 +128,15 @@ export interface PartsContext {
   engine?: boolean;
 }
 
-/** The name of a built-in template's engine ("Fork PrismML"). */
+/** What sets a template's engine up: a NInfer variant is added ("Aggiungi NInfer-all"), a fork is pointed at. */
+export function templateEngineAction(template: string, f: Pick<Formatters, 't'>): string {
+  const tpl = customEngineTemplate(template);
+  return tpl?.base === 'ninfer' ? f.t('ninfer.variant.add', { name: tpl.label }) : f.t('recipes.engineMissing.action');
+}
+
+/** The name of a built-in template's engine ("Fork PrismML", "NInfer-all"). */
 export function templateEngineName(template: string, f: Pick<Formatters, 't'>): string {
-  return template === 'prismml-bonsai' ? f.t('recipes.templateNames.prismml-bonsai') : template;
+  return template === 'prismml-bonsai' || template === 'ninfer-all' ? f.t(`recipes.templateNames.${template}`) : template;
 }
 
 /** A recipe in words, part by part: "YaRN 300K", "MTP", "Fork PrismML", "2 argomenti". */

@@ -791,6 +791,8 @@ export const it = {
     openLog: 'Apri il log',
     results: 'Torna ai risultati',
     activeRun: 'Vai al test in corso',
+    updateEngine: 'Aggiorna {engine}',
+    addVariant: 'Aggiungi {variant}',
     retry: 'Riprova',
   },
   errors: {
@@ -818,11 +820,26 @@ export const it = {
       title: '{engine} funziona solo con una {gpu}',
       what: 'Questo motore è fatto per una sola scheda: su questo PC non c’è. Usa llama.cpp, vLLM o SGLang con lo stesso modello in un altro formato.',
     },
+    ENGINE_MODEL_UNSUPPORTED: {
+      title: 'Questa versione del motore non sa leggere il modello',
+      what: 'Questo modello usa un formato ({value}) che questa versione di {engine} non sa leggere. Aggiorna {engine}, oppure usa una sua variante che lo legga.',
+      why: {
+        variant: 'Questo modello usa un formato ({value}) che questa versione di {engine} non sa leggere. Serve una variante di {engine} che lo supporti, come {variant}.',
+        architecture: 'Questo modello usa un’architettura ({value}) che questa versione di {engine} non conosce. Aggiorna {engine}, oppure usa un suo fork che la supporti.',
+        container: 'Questo file .ninfer è nel formato {value}, ma questa versione di NInfer legge solo il {needs}: convertilo con lo strumento di NInfer (lo trovi nella scheda NInfer, in Motori) oppure scaricane una versione nuova.',
+      },
+    },
     ENGINE_EXITED: { title: 'Il motore si è chiuso all’improvviso', what: 'Apri il log per capire cosa è successo e riprova.' },
     ENGINE_TIMEOUT: { title: 'Il motore non ha risposto in tempo', what: 'Riprova: la prima volta può servire più tempo. Se capita ancora, prova un modello più piccolo.' },
     ENGINE_OOM: { title: 'Memoria della scheda video insufficiente', what: 'Scegli un modello più piccolo, una quantizzazione più leggera o un contesto più corto.' },
     ENGINE_NO_KERNEL_IMAGE: { title: 'Questa versione del motore non supporta la tua GPU', what: 'Scegli una versione più recente: te ne propongo una compatibile.' },
-    ENGINE_BAD_FLAG: { title: 'Il motore non riconosce un parametro', what: 'Rimuovi l’argomento indicato dagli argomenti extra o aggiorna il motore.' },
+    ENGINE_BAD_FLAG: {
+      title: 'Il motore non riconosce un parametro',
+      what: 'Rimuovi l’argomento indicato dagli argomenti extra o aggiorna il motore.',
+      why: {
+        kvDtype: 'Questa versione di NInfer non ha la cache KV «{value}» (ha: {values}). Scegli un’altra impostazione, oppure usa una variante di NInfer che la offra.',
+      },
+    },
     ENGINE_PORT_IN_USE: { title: 'La porta di rete è già occupata', what: 'Riprova: sceglierò un’altra porta libera.' },
     ENDPOINT_UNREACHABLE: { title: 'Il server indicato non risponde', what: 'Controlla l’indirizzo e che il server sia acceso.' },
     ENDPOINT_INVALID: { title: 'Il server non sembra compatibile', what: 'Serve un server compatibile OpenAI: controlla l’indirizzo e il tipo.' },
@@ -1789,6 +1806,7 @@ export const it = {
       cancelled: 'Test annullato prima della fine',
       failed: 'Test interrotto da un errore',
       body: 'Ho fatto {n} prove. Con «Accurata» provo più combinazioni.',
+      bodyEndedOne: 'Ho fatto 1 prova prima che il test finisse. Qui sotto quello che avevo misurato fin lì.',
       bodyEnded: 'Ho fatto {n} prove prima che il test finisse. Qui sotto quello che avevo misurato fin lì: le combinazioni «misurate in parte» sono confrontate con le stesse regole, le cache non provate lo dicono.',
       bodyLimit: 'Ho fatto {n} prove nel tempo previsto ({limit}). Le combinazioni «misurate in parte» hanno i numeri presi fin lì, confrontati con le stesse regole.',
     },
@@ -2324,6 +2342,7 @@ export const it = {
     dialogHint: 'Benchmark, «Trova le impostazioni migliori» e «Avvia solo il server» li usano da soli: scrivili una volta qui.',
     templateNames: {
       'prismml-bonsai': 'Fork PrismML',
+      'ninfer-all': 'NInfer-all',
     },
     title: 'Comandi per questo modello',
     help: 'Alcuni modelli vanno avviati con comandi particolari, che si scoprono solo leggendo la loro scheda: un contesto più lungo con YaRN, il file MTP per scrivere più in fretta, un fork del motore… Scrivili qui una volta: Benchmark, «Trova le impostazioni migliori» e «Avvia solo il server» li usano da soli.',
@@ -2455,6 +2474,7 @@ export const it = {
         no_file_mtp: 'Accanto al modello non c’è un file MTP o draft: scaricalo dalla pagina del modello.',
         no_file_vision: 'Accanto al modello non c’è un proiettore immagini (mmproj).',
         not_bonsai: 'Solo per i modelli Bonsai di PrismML.',
+        not_gguf_ninfer: 'Solo per i modelli GGUF-NInfer (file .ninfer convertiti da GGUF).',
         format: 'Non serve per questo tipo di modello.',
       },
       yarn: {
@@ -2476,6 +2496,12 @@ export const it = {
       ninfer: {
         title: 'NInfer per i modelli .ninfer',
         body: 'I modelli in formato .ninfer li legge solo NInfer, il motore per i Qwen3.5–3.8 su una RTX 5090: questi comandi lo scelgono al posto di llama.cpp (su Windows dentro WSL).',
+      },
+      'ninfer-all': {
+        title: 'NInfer-all per i modelli GGUF-NInfer',
+        body: 'I modelli GGUF-NInfer conservano i blocchi di quantizzazione di GGUF (formato gguf_blocks_v1), che solo NInfer-all sa leggere: questi comandi lo usano al posto del NInfer ufficiale.',
+        missing: 'Non hai ancora aggiunto NInfer-all.',
+        found: 'Userà {name}.',
       },
       vision: {
         title: 'Modelli con immagini (proiettore mmproj)',
@@ -2780,6 +2806,7 @@ export const it = {
       action: 'Prepara il motore',
       names: {
         'prismml-bonsai': 'il fork PrismML di llama.cpp',
+        'ninfer-all': 'NInfer-all',
       },
     },
     picker: {
@@ -3013,7 +3040,7 @@ export const it = {
     },
     custom: {
       title: 'Motori personalizzati',
-      subtitle: 'Fork di llama.cpp, vLLM o SGLang e altri programmi con API OpenAI. LLM Bench li usa come i motori normali, con le loro opzioni in più.',
+      subtitle: 'Fork di llama.cpp, vLLM o SGLang, varianti di NInfer (come NInfer-all) e altri programmi con API OpenAI. LLM Bench li usa come i motori normali, con le loro opzioni in più.',
       add: 'Aggiungi motore',
       emptyTitle: 'Nessun motore personalizzato',
       emptyBody: 'Servono solo se usi una versione modificata di un motore (un fork) o un tuo programma.',
@@ -3037,12 +3064,14 @@ export const it = {
         llamacpp: 'Fork di llama.cpp',
         vllm: 'Fork di vLLM',
         sglang: 'Fork di SGLang',
+        ninfer: 'Variante di NInfer',
         'openai-server': 'Programma con API OpenAI',
       },
       basesDesc: {
         llamacpp: 'Una versione modificata di llama-server: stesse opzioni, al massimo qualcuna in più.',
         vllm: 'Una versione modificata di vLLM, installata sul PC o in un’immagine Docker.',
         sglang: 'Una versione modificata di SGLang, installata sul PC o in un’immagine Docker.',
+        ninfer: 'Una versione modificata di NInfer (per esempio NInfer-all): lo stesso ninfer-serve, con formati e opzioni in più. Gira come NInfer, su Windows dentro WSL.',
         'openai-server': 'Qualsiasi programma che risponde come OpenAI: LLM Bench lo avvia con il tuo comando, lo misura e lo ferma.',
       },
       dialog: {
@@ -3165,6 +3194,13 @@ export const it = {
         cacheReport: 'il conteggio dei token in cache',
       },
       templates: {
+        'ninfer-all': {
+          name: 'NInfer-all',
+          inSentence: 'NInfer-all',
+          short: 'NInfer-all (modelli GGUF-NInfer)',
+          explain:
+            'I modelli GGUF-NInfer sono file .ninfer convertiti da GGUF che conservano i blocchi di quantizzazione di GGUF (formato gguf_blocks_v1): il NInfer ufficiale non li legge, NInfer-all sì. LLM Bench lo scarica da GitHub (iamwavecut/ninfer-all, ramo master) e lo compila per te, oppure gli dici dove l’hai già.',
+        },
         'prismml-bonsai': {
           name: 'Fork PrismML di llama.cpp',
           inSentence: 'fork PrismML di llama.cpp',
@@ -3297,11 +3333,11 @@ export const it = {
     problems: {
       ninfer_not_found: {
         title: 'ninfer-serve non è qui: {path}',
-        body: 'Controlla il percorso (la cartella di NInfer, o build/apps/ninfer-serve dentro), oppure compila NInfer con «Compila NInfer…».',
+        body: 'Controlla il percorso (la cartella di NInfer, o build/apps/ninfer-serve dentro), oppure lascia fare a LLM Bench con «Scarica e compila NInfer».',
       },
       ninfer_not_built: {
         title: 'NInfer c’è ma non è ancora compilato',
-        body: 'Il codice di NInfer (commit {commit}) è nella cartella, ma manca {path}. Premi «Compila NInfer…»: compilo questa copia così com’è, senza scaricare niente.',
+        body: 'Il codice (commit {commit}) è nella cartella, ma manca {path} o non risponde. Premi «Compila NInfer»: compilo questa copia così com’è, senza scaricare niente.',
       },
       distro_missing: { title: 'La distribuzione {distro} non c’è', body: 'Scegli una delle distribuzioni WSL di questo PC.' },
       wsl_missing: { title: 'WSL non risponde', body: 'Su Windows NInfer gira dentro WSL 2: controlla che sia installato, poi riprova.' },
@@ -3320,8 +3356,6 @@ export const it = {
       commit: 'Versione (commit)',
     },
     build: {
-      open: 'Compila NInfer…',
-      title: 'Compila NInfer',
       description: 'LLM Bench scarica NInfer da GitHub e lo compila {where}. Prima controlla cosa serve: non installa pacchetti di sistema e non tocca nient’altro.',
       whereWsl: 'dentro {distro}',
       whereLinux: 'su questo PC',
@@ -3348,9 +3382,27 @@ export const it = {
       commands: 'Comandi che eseguirò',
       confirmNote: 'Eseguo esattamente questi comandi {where}. Ci vogliono alcuni minuti.',
       confirm: 'Compila',
-      existing: 'In questa cartella c’è già NInfer: lo compilo senza riscaricarlo.',
+      existing: 'Il codice è già in questa cartella: lo compilo senza riscaricarlo.',
       running: 'Compilazione di NInfer',
       done: 'NInfer è pronto: {path}',
+      titleVariant: 'Scarica e compila {name}',
+      titleExisting: 'Compila {name}',
+      descriptionVariant: 'LLM Bench scarica {name} da {repo} e lo compila {where}. Prima controlla cosa serve: non installa pacchetti di sistema e non tocca nient’altro.',
+      source: 'Da: {repo}',
+      sourceBranch: 'Da: {repo} (ramo {branch})',
+      repoLabel: 'Repository git',
+      repoHint: 'L’indirizzo https del repository da scaricare: quello di {name}, o il tuo fork.',
+      repoInvalid: 'Serve un indirizzo https di un repository git, per esempio https://github.com/utente/ninfer-all.git.',
+      branchLabel: 'Ramo',
+      branchHint: 'Vuoto = il ramo predefinito del repository.',
+      download: 'Da scaricare: circa {size}.',
+      time: 'Compilazione: circa {minutes} minuti con {cpus} core.',
+      timeNoCpus: 'Compilazione: circa {minutes} minuti.',
+      nothingToDownload: 'Niente da scaricare: compilo la copia che c’è già.',
+      otherRepo: 'In questa cartella c’è un altro repository ({origin}): scegli un’altra cartella.',
+      confirmDownload: 'Scarica e compila',
+      runningVariant: 'Compilazione di {name}',
+      doneVariant: '{name} è pronto: {path}',
     },
     artifacts: {
       title: 'Modelli da aggiornare',
@@ -3369,6 +3421,7 @@ export const it = {
       title: 'Impostazioni di NInfer',
       hint: 'Come avviare NInfer con questo modello.',
       'ninfer-recommended': 'Consigliata da NInfer: contesto {ctx}, KV {kv}, {users} utenti, {spec}',
+      'model-card': 'Consigliata dalla scheda del modello: {ctx} per richiesta, KV {kv} condivisa da {pool}, {users} utenti, {spec}',
       'rtx5090-tested': 'Provata su RTX 5090: {ctx} per richiesta, KV {kv} condivisa da {pool}, {users} utenti, visione, {spec}',
       run: 'Come nel test da cui viene il preset: {flags}',
       runDesc: 'Le stesse impostazioni di NInfer del risultato che hai scelto.',
@@ -3376,10 +3429,34 @@ export const it = {
       autoDesc: 'Il contesto che serve al test, la cache KV di NInfer (bf16), senza previsione dei token.',
       desc: {
         'ninfer-recommended': 'Quella del README di NInfer: tanto contesto, cache compatta e risposte più veloci grazie alla previsione dei token.',
+        'model-card': 'Le impostazioni dell’esempio sulla scheda del modello. La cache KV {kv} c’è solo in alcune varianti di NInfer (per esempio NInfer-all).',
         'rtx5090-tested': 'Un’impostazione provata su una RTX 5090: circa 27 GB di memoria video, legge anche le immagini.',
       },
       cardTitle: 'Impostazioni pronte',
       cardHint: 'Le scegli nel Benchmark e quando avvii il server, con un modello .ninfer.',
+    },
+    setup: {
+      intro: 'NInfer non è ancora su questo PC. Lo scarico da GitHub e lo compilo io, {where}: prima ti mostro i comandi esatti, quanto scarica e quanto ci vuole.',
+      download: 'Scarica e compila NInfer',
+      have: 'Ho già NInfer: indica la cartella',
+      build: 'Compila NInfer',
+    },
+    variant: {
+      requiresTitle: 'Questo modello richiede {name}',
+      requiresBody: 'Il NInfer ufficiale non legge i suoi pesi. Aggiungi {name}: LLM Bench lo scarica e lo compila per te, e lo usa per questo modello.',
+      add: 'Aggiungi {name}',
+      where: 'Dove si trova, come lo vede Linux',
+      whereHint: 'La cartella della variante (con build/apps/ninfer-serve dentro) o il file ninfer-serve, per esempio {dir}.',
+      buildHere: 'Scarica e compila {name}',
+      buildHint: 'Non ce l’hai ancora? LLM Bench lo scarica da {repo} e lo compila {where}, poi lo salva da solo.',
+      build: 'Compila',
+      ready: '{name} è pronto: lo trovi tra i motori personalizzati.',
+      kvDtypes: 'Cache KV che conosce: {list}',
+      building: 'Compilazione di {name} in corso',
+    },
+    library: {
+      noManifest: 'senza manifest',
+      noManifestHelp: 'Accanto al file non c’è il manifest di NInfer: LLM Bench ne conosce solo nome e dimensione (e la testa MTP, se è nel nome). NInfer legge il resto all’avvio.',
     },
     wslModels: 'I modelli sul disco di Windows si caricano più lentamente da WSL. Per caricamenti veloci tienili dentro WSL e aggiungi la cartella in Impostazioni → Cartelle dei modelli (\\\\wsl.localhost\\{distro}\\…).',
   },

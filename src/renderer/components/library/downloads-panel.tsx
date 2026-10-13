@@ -1,6 +1,7 @@
 import { Download, FolderOpen, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { Dialog as D } from 'radix-ui';
 import type { DownloadJob } from '../../../contract/models';
+import { NINFER_VARIANT_BUILD } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import {
@@ -34,6 +35,9 @@ const STATE_TONE: Record<DownloadJob['state'], 'accent' | 'neutral' | 'success' 
 export function installLabel(t: ReturnType<typeof useI18n>['t'], e: InstallEvent): string {
   if (e.image) return t('downloads.kinds.image', { image: e.image });
   if (e.kind.startsWith('update:')) return t('downloads.kinds.update', { name: e.label ?? e.kind.slice('update:'.length) });
+  // NInfer's guided build, or a variant's (its name is the event's label).
+  if (e.kind === 'ninfer-native' || e.kind === 'ninfer-wsl') return t('ninfer.build.running');
+  if (e.kind === NINFER_VARIANT_BUILD) return t('ninfer.build.runningVariant', { name: e.label ?? 'NInfer' });
   const kinds = ['llamacpp-native', 'docker-desktop', 'docker-linux', 'uv', 'vllm-native', 'sglang-native', 'docker-volume'] as const;
   return (kinds as readonly string[]).includes(e.kind) ? t(`downloads.kinds.${e.kind as (typeof kinds)[number]}`) : e.kind;
 }

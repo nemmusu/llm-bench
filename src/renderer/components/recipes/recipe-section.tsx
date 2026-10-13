@@ -17,7 +17,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { HelpTip } from '../ui/help-tip';
 import { RecipeEditor } from './recipe-editor';
 import { RecipeLibrary } from './recipe-library';
-import { scopeText, templateEngineLink, templateEngineName, type RecipeTarget } from './recipe-model';
+import { scopeText, templateEngineAction, templateEngineLink, templateEngineName, type RecipeTarget } from './recipe-model';
 import { RecipePreview } from './recipe-preview';
 import { useModelRecipe } from './use-model-recipe';
 
@@ -60,7 +60,7 @@ export function EngineMissing({ template, target }: { template: string; target: 
     <Callout
       tone="warning"
       title={f.t('recipes.engineMissing.title')}
-      action={{ label: f.t('recipes.engineMissing.action'), onClick: () => void router.history.push(templateEngineLink(template, target)) }}
+      action={{ label: templateEngineAction(template, f), onClick: () => void router.history.push(templateEngineLink(template, target)) }}
     >
       {f.t('recipes.engineMissing.body', { engine: templateEngineName(template, f) })}
     </Callout>

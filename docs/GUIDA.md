@@ -121,6 +121,8 @@ La ricerca ha un **tempo massimo** (la sua stima, con un po' di margine). Prima 
 
 Se **annulli** la ricerca (o si ferma per un errore), il risultato tiene quello che aveva misurato fino a quel momento, con le stesse regole del tempo finito (**Misurata in parte (test annullato)**). Nella tabella **Contesto massimo per tipo di cache** le cache non ancora provate dicono **Non provato (test annullato)**, quella che stava cercando "Almeno …" con il contesto più grande che era entrato; "Nessun contesto è entrato tutto nella memoria video" compare solo quando ogni contesto provato con quella cache non entrava e la ricerca era finita. Allo stesso modo **Non provato (tempo finito)** e **Non provato (non serviva)** dicono perché una cache non è stata provata.
 
+Alcuni errori si ripeterebbero uguali a ogni avvio, qualunque impostazione si provi: la ricerca si ferma **al primo** e il risultato dice perché. Succede quando il motore non sa leggere il modello (un formato dei pesi o un'architettura che questa versione del motore non conosce, un file .ninfer in un formato vecchio), quando manca un programma o un argomento, quando la scheda non è quella giusta. Una ricerca in cui nessun avvio è riuscito (né caricato, né esaurito la memoria) non finisce mai come "Completato": è **Non riuscito**, con l'errore dell'ultimo avvio.
+
 Solo se il modello non entra nemmeno con 4K di contesto e cache *q4_0*, LLM Bench prova a tenere una parte del modello sulla CPU (*--n-cpu-moe* per i modelli MoE, meno *-ngl* per gli altri): funziona, ma è più lento, e lo trovi segnato così.
 
 In modalità esperto puoi aggiungere il controllo di **fedeltà**: lo stesso testo generato con la cache più precisa e con quella consigliata, per vedere quanti token restano uguali. È un'indicazione, non un test di qualità.
@@ -183,7 +185,7 @@ Per i modelli che richiedono di accettare una licenza (per esempio Llama o Gemma
 
 Alcuni modelli vanno avviati con comandi che si scoprono solo leggendo la loro scheda: un contesto più lungo con YaRN, il file MTP per scrivere più in fretta, un fork del motore. Scrivili una volta, nella sezione **Comandi per questo modello** della pagina del modello o con **Comandi** accanto a un modello di *Sul tuo PC*: Benchmark, *Trova le impostazioni migliori* (come punto di partenza) e *Avvia solo il server* li usano da soli.
 
-- **Scegli da una ricetta pronta**: comandi già scritti, presi dalla documentazione dei motori. *Contesto esteso con YaRN* (300K, 500K: il fattore lo calcola LLM Bench), *Decodifica speculativa con MTP / modello draft* (il file MTP accanto al modello per llama.cpp, il metodo mtp per vLLM, EAGLE per SGLang), *Fork PrismML per modelli Bonsai*, *Modelli con immagini* (il proiettore mmproj), *NInfer per i modelli .ninfer*. «Usa» li aggiunge ai comandi del modello: li rivedi prima di salvare.
+- **Scegli da una ricetta pronta**: comandi già scritti, presi dalla documentazione dei motori. *Contesto esteso con YaRN* (300K, 500K: il fattore lo calcola LLM Bench), *Decodifica speculativa con MTP / modello draft* (il file MTP accanto al modello per llama.cpp, il metodo mtp per vLLM, EAGLE per SGLang), *Fork PrismML per modelli Bonsai*, *Modelli con immagini* (il proiettore mmproj), *NInfer per i modelli .ninfer*, *NInfer-all per i modelli GGUF-NInfer*. «Usa» li aggiunge ai comandi del modello: li rivedi prima di salvare.
 - **Scrivi i comandi**: per quali modelli (solo questo, o tutti quelli il cui nome contiene una parola e, se vuoi, con una certa quantizzazione), il contesto, il motore, il file MTP, il proiettore immagini, gli argomenti in più per ogni motore, le variabili d'ambiente, una nota e il link alla scheda. Sotto vedi il **comando completo** che ne viene fuori, mentre scrivi.
 - Una ricetta che vale solo per questo modello vince su una che vale per tutta la famiglia. Salvarla vuota la rimuove.
 - Se la ricetta usa un fork che non hai ancora indicato, **Indica dove si trova il fork** apre la pagina Motori con il fork già scelto per quel modello.
@@ -213,7 +215,7 @@ I modelli scaricati per vLLM servono anche a SGLang: non li scarichi due volte.
 
 Nella pagina **Motori**, sotto **Motori personalizzati**, premi **Aggiungi motore**:
 
-1. **Tipo**: un fork di llama.cpp, di vLLM o di SGLang, oppure un **Programma con API OpenAI**.
+1. **Tipo**: un fork di llama.cpp, di vLLM o di SGLang, una **Variante di NInfer** (vedi sotto), oppure un **Programma con API OpenAI**.
 2. **Dove si trova**: il programma sul PC, un'immagine Docker o, per un programma tuo, il comando che lo avvia. **Prova** legge versione e opzioni (`--version`, `--help`) senza caricare nessun modello.
 3. **Opzioni**: argomenti in più e variabili d'ambiente da usare a ogni avvio, e i modelli per cui vuoi usarlo (parole nel nome, quantizzazioni).
 
@@ -227,13 +229,26 @@ Per i modelli Bonsai (quantizzazioni PQ2_0 e PTQ1_0) il Benchmark ti propone il 
 
 NInfer è un motore fatto apposta per i modelli Qwen 3.6 e 3.8 su una sola RTX 5090. Legge solo i suoi modelli `.ninfer` (per esempio `neroued/Qwen3.8-27B-nvfp4-NInfer`, che trovi in **Modelli**).
 
-- **Linux**: nella scheda **NInfer** della pagina **Motori** indica la cartella di NInfer (per esempio `~/ninfer`), oppure premi **Compila NInfer…**.
-- **Windows**: NInfer gira dentro WSL 2. Scegli la distribuzione (per esempio Ubuntu-24.04) e indica dove si trova NInfer come lo vede Linux. LLM Bench legge la distribuzione e basta: non cambia niente al suo interno, avvia solo il suo ninfer-serve e ferma solo quello.
-- **Compila NInfer…**: LLM Bench controlla cosa serve (git, CMake, Ninja, un compilatore C++20, CUDA 13.1, le librerie FFmpeg, libcurl). Se manca qualcosa ti dà il comando `sudo apt install …` da eseguire tu: LLM Bench non installa pacchetti di sistema. Poi ti mostra i comandi esatti (`git clone`, `cmake`) e parte solo quando confermi.
+- **Scarica e compila NInfer**: il pulsante principale della scheda **NInfer** in **Motori**, quando NInfer non c'è ancora. LLM Bench controlla subito cosa serve (git, CMake, Ninja, un compilatore C++20, CUDA 13.1, le librerie FFmpeg, libcurl) e ti dice quanto scarica (per esempio "circa 27,9 MB") e quanto ci vorrà a compilarlo ("circa 10 minuti con 16 core"). Se manca qualcosa ti dà il comando `sudo apt install …` da eseguire tu: LLM Bench non installa pacchetti di sistema. Poi ti mostra i comandi esatti (`git clone`, `cmake`, per la RTX 5090: `-DCMAKE_CUDA_ARCHITECTURES=120a`) e parte solo quando confermi. Finita la compilazione NInfer è salvato da solo: la scheda dice **Pronto**, senza altri passaggi. La cartella è `~/ninfer`; puoi sceglierne un'altra.
+- **Ho già NInfer: indica la cartella**: se l'hai compilato tu, scrivi la sua cartella (per esempio `~/ninfer`) e premi **Controlla e usa**.
+- **Linux**: tutto succede su questo PC. **Windows**: NInfer gira dentro WSL 2: scegli la distribuzione (per esempio Ubuntu-24.04); i percorsi sono quelli che vede Linux. LLM Bench legge la distribuzione e basta: non cambia niente al suo interno, avvia solo il suo ninfer-serve e ferma solo quello.
+- **Compila NInfer**: se nella cartella c'è il codice di NInfer ma non è compilato (o il programma non risponde), la scheda lo dice e lo compila lì, senza scaricare niente.
 - **Impostazioni pronte**: nel Benchmark, con un modello `.ninfer`, scegli **Consigliata da NInfer** (contesto 240K, KV fp8, 2 utenti, MTP 3) oppure **Provata su RTX 5090** (64K per richiesta, KV int8 condivisa da 128K, 2 utenti, visione, MTP 3). Valgono anche per **Avvia solo il server**.
 - I test leggono ogni prompt per intero e rispondono senza "thinking", come con gli altri motori; un server invece tiene la cache delle conversazioni di NInfer.
 - NInfer non dice in quanti token si divide un testo: LLM Bench tara la lunghezza dei prompt sui conteggi che NInfer restituisce, e lo scrive nelle note del risultato.
 - **Modelli su Windows**: un modello sul disco di Windows si carica più lentamente da WSL. Per caricamenti veloci tienilo dentro WSL e aggiungi la sua cartella (`\\wsl.localhost\Ubuntu-24.04\…`) in **Impostazioni → Cartelle dei modelli**.
+- **Senza manifest**: un file `.ninfer` senza il suo manifest accanto (come i modelli GGUF-NInfer) compare lo stesso nei **Modelli**, segnato **senza manifest**: LLM Bench ne conosce il nome, la dimensione e, se il nome lo dice, la testa MTP; il resto lo legge NInfer all'avvio.
+
+#### Varianti di NInfer (NInfer-all e altri fork)
+
+Alcuni modelli `.ninfer` li legge solo una variante di NInfer. Per esempio i modelli **GGUF-NInfer** (file `.ninfer` convertiti da GGUF, come quelli di nerkyor) conservano i blocchi di quantizzazione di GGUF (formato `gguf_blocks_v1`): il NInfer ufficiale non li sa leggere, **NInfer-all** sì ([github.com/iamwavecut/ninfer-all](https://github.com/iamwavecut/ninfer-all), ramo `master`).
+
+- Se avvii un modello così con il NInfer ufficiale, il test si ferma al primo avvio e dice: *Questo modello usa un formato (gguf_blocks_v1) che questa versione di NInfer non sa leggere. Serve una variante di NInfer che lo supporti, come NInfer-all.* Sotto ci sono **Aggiungi NInfer-all** e **Aggiorna NInfer**.
+- Già nel Benchmark, scegliendo un modello GGUF-NInfer (o un modello che un test precedente non è riuscito a leggere), LLM Bench ti avvisa: **Questo modello richiede NInfer-all · Aggiungi NInfer-all**.
+- **Aggiungi NInfer-all** apre **Aggiungi motore** già compilato: nome, distribuzione WSL, il repository e il ramo. **Scarica e compila NInfer-all** lo scarica e lo compila in `~/ninfer-all` (i comandi esatti, quanto scarica, quanto ci vuole) e lo salva da solo come motore personalizzato. Se hai già una variante (o un tuo fork, per esempio ninfer-fusion-kvmem) scrivi dove si trova e premi **Prova**; puoi anche scrivere l'indirizzo del tuo repository e farlo compilare a LLM Bench.
+- Una variante funziona come NInfer: impostazioni pronte, *Trova le impostazioni migliori*, caricamento, server, con i suoi argomenti in più (per esempio `--vision-cpu`). **Prova** legge dal suo `--help` le cache KV che conosce (NInfer-all aggiunge `rk8v4`, `rk4v4`…): si possono usare, e la ricerca prova anche `rk8v4`.
+- Per i modelli GGUF-NInfer c'è l'impostazione **Consigliata dalla scheda del modello**: 100K per richiesta, cache KV `rk8v4` condivisa da 400K, 4 utenti, MTP 3 (`--max-context 102400 --kv-capacity 409600 --kv-dtype rk8v4 --max-concurrency 4 --spec mtp --draft-tokens 3`). Con NInfer-all è quella scelta all'inizio; con il NInfer ufficiale non funziona (non ha la cache `rk8v4`) e LLM Bench lo dice prima di avviare.
+- Nella pagina del modello, **Comandi per questo modello** → *NInfer-all per i modelli GGUF-NInfer* sceglie NInfer-all per quel modello; **Avvia solo il server** lo sceglie da solo.
 
 ### Aggiornare i motori
 
@@ -243,7 +258,7 @@ Le schede di vLLM, SGLang, NInfer e dei motori personalizzati ti dicono se c'è 
 - **vLLM e SGLang installati sul PC (Linux)**: aggiorna il loro ambiente con uv, alla versione più recente pubblicata.
 - **Un motore personalizzato in Docker**: scarica la versione più nuova dell'immagine. Se l'immagine non è su Docker Hub, LLM Bench non può sapere se ce n'è una più nuova, ma può scaricarla di nuovo.
 - **Un fork di llama.cpp compilato da te da una cartella git**: **Controlla aggiornamenti** ti dice quanti commit nuovi ci sono. **Aggiorna** esegue `git pull --ff-only` e poi ricompila con `cmake --build`. Se nella cartella ci sono modifiche tue non salvate, LLM Bench non tocca niente e te lo dice.
-- **NInfer**: come un fork in una cartella git, su Windows dentro la sua distribuzione WSL. Prima di ricompilare mette da parte il programma di adesso: se la compilazione non riesce, lo rimette al suo posto e riporta la cartella al commit di prima, così NInfer funziona come prima. Se i tuoi modelli `.ninfer` sono in un formato più vecchio di quello che legge il tuo NInfer, la scheda te li elenca con il comando di NInfer per convertirli.
+- **NInfer** (e ogni sua variante, come NInfer-all, nella sua cartella): come un fork in una cartella git, su Windows dentro la sua distribuzione WSL. **Aggiorna** scarica le modifiche (`git pull`) e ricompila in un solo passaggio; se il programma manca o non risponde, la scheda offre **Compila NInfer** per ricompilarlo lì. Prima di ricompilare mette da parte il programma di adesso: se la compilazione non riesce, lo rimette al suo posto e riporta la cartella al commit di prima, così NInfer funziona come prima. Se i tuoi modelli `.ninfer` sono in un formato più vecchio di quello che legge il tuo NInfer, la scheda te li elenca con il comando di NInfer per convertirli.
 - **Tutto il resto** (un programma tuo, un fork installato in altro modo): lo aggiorni con i suoi strumenti.
 
 ## 7. Misura "a freddo" reale
@@ -267,6 +282,7 @@ In **Impostazioni → Cartella dei risultati** puoi scegliere una cartella condi
 | "La memoria video è occupata" | Chiudi gli altri programmi che usano la GPU (giochi, altri modelli, macchine virtuali) oppure premi **Continua comunque** |
 | "Memoria video esaurita" | Scegli un modello più piccolo o una versione più compressa; in modalità esperto riduci il contesto |
 | "Il motore non ha risposto in tempo" | Riprova; se succede ancora, il modello probabilmente non entra nella memoria video: usa la cache q4_0, meno contesto o **Trova le impostazioni migliori** |
+| "Questa versione del motore non sa leggere il modello" | Il modello usa un formato o un'architettura che il motore non conosce. Premi **Aggiorna** sulla scheda del motore, oppure usa la variante che il messaggio propone (per i modelli GGUF-NInfer: **Aggiungi NInfer-all**) |
 | "Docker non è avviato" | Premi **Avvia Docker** |
 | "Serve accettare la licenza" | Apri la pagina del modello su Hugging Face, accetta e salva il tuo token in Impostazioni |
 

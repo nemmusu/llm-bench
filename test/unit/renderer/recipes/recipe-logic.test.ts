@@ -108,6 +108,7 @@ describe('a recipe in words', () => {
     expect(recipeParts(recipe({ engine: { type: 'template', template: 'prismml-bonsai' } }), f, { customEngines: [] })).toEqual(['Fork PrismML (da indicare)']);
     expect(recipeParts(recipe({ engine: { type: 'custom', id: 'gone' } }), f, ctx)).toEqual(['gone (da indicare)']);
     expect(templateEngineName('other', f)).toBe('other');
+    expect(templateEngineName('ninfer-all', f)).toBe('NInfer-all');
   });
 
   it('who it is for', () => {

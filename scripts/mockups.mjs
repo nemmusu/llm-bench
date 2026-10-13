@@ -1169,7 +1169,7 @@ const NINFER_SIZES = [
  * two new commits and an older artifact to upgrade (47), and the confirmation (48). Light and dark, 1440 and 1024.
  */
 async function ninferScenes(browser, info, world, written) {
-  const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch', 'ninfer-update', 'ninfer-update-dialog'];
+  const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch', 'ninfer-update', 'ninfer-update-dialog', ...NINFER_ALL_SCENES];
   const want = (name) => !only || only.includes(name);
   if (!names.some(want)) return;
   const shotAll = async (n, name, route, wait, opts = {}) => {
@@ -1204,9 +1204,9 @@ async function ninferScenes(browser, info, world, written) {
   };
   const openBuild = async (page) => {
     await showCard(page);
-    await card(page).getByRole('button', { name: 'Compila NInfer…' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Compila NInfer' });
-    await dialog.getByRole('button', { name: 'Controlla', exact: true }).click();
+    // "Scarica e compila NInfer": the plan is checked as soon as the dialog opens.
+    await card(page).getByRole('button', { name: 'Scarica e compila NInfer' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Scarica e compila NInfer' });
     await dialog.getByRole('region', { name: 'Comandi che eseguirò' }).waitFor({ timeout: 30000 });
   };
   /** NInfer (WSL) and the .ninfer model on the Benchmark page, its settings in view. */
@@ -1289,6 +1289,7 @@ async function ninferScenes(browser, info, world, written) {
       await shotAll(48, 'ninfer-update-dialog', '/engines', 'Motori', { act: openUpdate });
       writeFileSync(world.env.FAKE_WSL_CONFIG, '{}');
     }
+    await ninferAllScenes(browser, info, world, written, shotAll, want);
   } finally {
     await idle(info).catch(() => undefined);
     await stopServers(info).catch(() => undefined);
@@ -1296,6 +1297,97 @@ async function ninferScenes(browser, info, world, written) {
   }
 }
 
+const NINFER_ALL_SCENES = ['ninfer-model-error', 'ninfer-all-add', 'ninfer-all-build', 'ninfer-all-card', 'benchmark-ninfer-all'];
+const GGUF_NINFER = 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP';
+
+/** The user's GGUF-NInfer artifact: no manifest next to it, in the "GGUF-NInfer" folder of its repo. */
+function seedGgufNinfer(models) {
+  const repoDir = path.join(models, 'nerkyor', 'Qwen3.8-27B-Coder390-EfficientThink-GGUF-NInfer');
+  const dir = path.join(repoDir, 'GGUF-NInfer');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, `${GGUF_NINFER}.ninfer`), Buffer.alloc(65_536));
+  // As LLM Bench's own download leaves it: the repo it came from.
+  writeFileSync(path.join(repoDir, '.gpubench-download.json'), JSON.stringify({ repo: 'nerkyor/Qwen3.8-27B-Coder390-EfficientThink-GGUF-NInfer', files: {} }));
+}
+
+/**
+ * A GGUF-NInfer artifact (NInfer configured in WSL): "Trova le impostazioni migliori" with the official
+ * NInfer stopped at its first launch, with what to do (70); "Aggiungi NInfer-all" from that error (71)
+ * and its download and build (72); NInfer-all once built, a custom engine (73); the Benchmark with it and
+ * the model card's settings (74).
+ */
+async function ninferAllScenes(browser, info, world, written, shotAll, want) {
+  if (!NINFER_ALL_SCENES.some(want)) return;
+  seedGgufNinfer(world.modelsDir);
+  await api(info, 'POST', '/api/models/rescan');
+  // The model card's settings (409,600 tokens of rk8v4 KV for 4 users) fit this pretend card.
+  writeFileSync(world.profileFile, JSON.stringify({ ...NINFER_PROFILE, ninfer: { freeMiB: 60_000 } }));
+  const chooseEngine = async (page, name) => {
+    await page.getByRole('combobox', { name: 'Cambia motore' }).click();
+    const options = page.getByRole('option', { name: /^NInfer \(WSL\)/ });
+    await (name ? page.getByRole('option', { name }) : options.first()).click();
+    // The GGUF-NInfer artifact (other .ninfer models are in the library too).
+    const current = page.getByRole('button', { name: new RegExp(`Cambia modello: ${GGUF_NINFER}`) });
+    if (!(await current.waitFor({ timeout: 3000 }).then(() => true, () => false))) {
+      await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+      const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
+      await picker.getByRole('radio', { name: new RegExp(GGUF_NINFER) }).click();
+      await picker.getByRole('button', { name: 'Conferma' }).click();
+      await current.waitFor({ timeout: 30000 });
+    }
+  };
+  if (want('ninfer-model-error')) {
+    await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true, lastModelId: undefined });
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce', locale: 'it-IT' });
+    const page = await context.newPage();
+    await page.goto(`${info.url}#/`);
+    await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+    await chooseEngine(page);
+    await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    await page.getByRole('heading', { level: 1, name: new RegExp(GGUF_NINFER) }).waitFor({ timeout: 120000 });
+    const runId = decodeURIComponent(new URL(page.url()).hash.split('/').pop() ?? '');
+    await context.close();
+    await shotAll(70, 'ninfer-model-error', `/results/${runId}`, 'Cosa fare');
+  }
+  const link = `/engines?customTemplate=ninfer-all&modelName=${encodeURIComponent(`${GGUF_NINFER} Q6_K`)}`;
+  await shotAll(71, 'ninfer-all-add', link, 'Serve per');
+  await shotAll(72, 'ninfer-all-build', link, 'Serve per', {
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Scarica e compila NInfer-all' }).click();
+      await page.getByRole('dialog', { name: 'Scarica e compila NInfer-all' }).getByRole('region', { name: 'Comandi che eseguirò' }).waitFor({ timeout: 30000 });
+    },
+  });
+  if (want('ninfer-all-card') || want('benchmark-ninfer-all')) {
+    // Built through the same route the dialog uses; saved as its custom engine by the core.
+    await api(info, 'POST', '/api/engines/ninfer/build', {
+      kind: 'ninfer-wsl',
+      distro: 'Ubuntu-24.04',
+      dir: '~/ninfer-all',
+      source: { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' },
+      variant: { template: 'ninfer-all', name: 'NInfer-all' },
+      confirm: true,
+    });
+    for (let i = 0; i < 120 && !(await api(info, 'GET', '/api/settings')).customEngines?.some((e) => e.id === 'ninfer-all'); i++) await sleep(500);
+    await shotAll(73, 'ninfer-all-card', '/engines', 'Motori personalizzati', {
+      act: async (page) => {
+        const saved = page.getByRole('region', { name: 'NInfer-all', exact: true });
+        await saved.getByText(/Cache KV che conosce/).waitFor({ timeout: 30000 });
+        await saved.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      },
+      full: true,
+    });
+    await shotAll(74, 'benchmark-ninfer-all', '/', 'Pronto a misurare', {
+      act: async (page) => {
+        await chooseEngine(page, /NInfer-all/);
+        const settings = page.getByRole('radiogroup', { name: 'Impostazioni di NInfer' });
+        await settings.getByRole('radio', { name: /Consigliata dalla scheda del modello/ }).waitFor({ timeout: 30000 });
+        await settings.scrollIntoViewIfNeeded();
+      },
+      full: true,
+    });
+  }
+}
 
 async function shoot(page, file, { full } = {}) {
   if (full) {

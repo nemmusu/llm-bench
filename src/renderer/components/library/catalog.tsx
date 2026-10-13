@@ -21,7 +21,7 @@ import type { CatalogState } from './catalog-search';
 import { RowFacts, RowTitle, rowClass } from './catalog-rows';
 import { CuratedRows, curatedFor } from './curated-list';
 import { ErrorCallout } from './error-callout';
-import { ENGINE_FILTERS, ForkBadge, FormatBadges, formatOfEngine, type CatalogFormat, type EngineFilter } from './formats';
+import { ENGINE_FILTERS, ForkBadge, FormatBadges, formatOfEngine, rowFormatOf, type CatalogFormat, type EngineFilter } from './formats';
 import { bucketRange, triedModels, type SizeBucket, type TriedModel } from './helpers';
 
 /** Authors offered in the filter, by format: the big GGUF quantizers, the labs that publish weights, NInfer's builders. */
@@ -120,7 +120,7 @@ function HubRow({ m, tried, engine, gpu }: { m: HubModel; tried: TriedModel | un
       {/* Each format the repo ships, with its engine: mixed repos show them side by side. */}
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <FormatBadges m={m} engine={engine} />
-        <ForkBadge model={{ displayName: name, repo: m.repo }} label={m.repo} />
+        <ForkBadge model={{ displayName: name, repo: m.repo, format: rowFormatOf(m.formats, engine) }} label={m.repo} />
         {(engine === 'ninfer' || ninferOnly) && m.formats.includes('ninfer') && gpu !== undefined && !ninferGpuSupported({ name: gpu.name, computeCapability: gpu.computeCapability, memTotalMiB: gpu.memoryTotalMiB }) && (
           <Badge tone="warning" size="sm" className="relative z-10">
             {t('models.needs5090')}

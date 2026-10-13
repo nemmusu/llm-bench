@@ -30,7 +30,9 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
   const n = tuning.attempts.length;
   const body =
     why === 'cancelled' || why === 'failed'
-      ? t('tune.stopped.bodyEnded', { n })
+      ? n === 1
+        ? t('tune.stopped.bodyEndedOne')
+        : t('tune.stopped.bodyEnded', { n })
       : tuning.limitSeconds !== undefined
         ? t('tune.stopped.bodyLimit', { n, limit: duration(tuning.limitSeconds * 1000) })
         : t('tune.stopped.body', { n });

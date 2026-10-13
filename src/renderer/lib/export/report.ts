@@ -8,7 +8,7 @@ import { kpisOf, sentenceKey } from '../../components/bench/kpis';
 import { noteText } from '../../components/bench/notes';
 import { launchSummaryParts } from '../../components/bench/summary';
 import { validityBody } from '../../components/bench/validity';
-import type { Formatters } from '../../i18n';
+import { errorText, type Formatters } from '../../i18n';
 
 export interface ReportTable {
   head: string[];
@@ -58,7 +58,7 @@ export function reportOf(run: RunResult, f: Formatters): Report {
   if (run.error) {
     sections.push({
       title: t(`result.status.${run.status}`),
-      callouts: [{ title: t(`errors.${run.error.code}.title`), body: `${t(`errors.${run.error.code}.what`)} (${run.error.message})` }],
+      callouts: [{ title: errorText(f, run.error.code, run.error.params).title, body: `${errorText(f, run.error.code, run.error.params).what} (${run.error.message})` }],
     });
   }
 

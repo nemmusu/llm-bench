@@ -393,7 +393,16 @@ describe('ModelsService', () => {
     // Without manifest facts or a known size it still answers.
     writeFileSync(path.join(lib(), 'bare.ninfer'), 'x');
     const bare = (await svc.rescan()).find((m) => m.identity.displayName === 'bare')!;
+    expect(bare.identity.facts).toMatchObject({ noManifest: true, components: ['text'] });
     expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
+    // A manifest that lists no parts: none known.
+    const emptyDir = path.join(lib(), 'x', 'Empty-NInfer');
+    mkdirSync(emptyDir, { recursive: true });
+    writeFileSync(path.join(emptyDir, 'empty.ninfer'), Buffer.alloc(1024));
+    writeFileSync(path.join(emptyDir, 'E.artifact-manifest.json'), JSON.stringify({ artifact: { filename: 'empty.ninfer', components: [] } }));
+    const empty = (await svc.rescan()).find((m) => m.identity.displayName === 'empty')!;
+    expect(empty.identity.facts).not.toHaveProperty('components');
+    expect((await svc.fit({ localId: empty.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
   });
 
   it('what the card holds right now, without the engines LLM Bench started', async () => {

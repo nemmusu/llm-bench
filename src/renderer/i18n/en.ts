@@ -789,6 +789,8 @@ export const en: Messages = {
     openLog: 'Open the log',
     results: 'Back to results',
     activeRun: 'Go to the running test',
+    updateEngine: 'Update {engine}',
+    addVariant: 'Add {variant}',
     retry: 'Try again',
   },
   errors: {
@@ -816,11 +818,26 @@ export const en: Messages = {
       what: 'This engine is made for one card only, and this PC does not have it. Use llama.cpp, vLLM or SGLang with the same model in another format.',
     },
     ENGINE_START_FAILED: { title: 'The engine did not start', what: 'Open the log for details, or try simpler settings.' },
+    ENGINE_MODEL_UNSUPPORTED: {
+      title: 'This version of the engine cannot read the model',
+      what: 'This model uses a format ({value}) that this version of {engine} cannot read. Update {engine}, or use a variant of it that reads it.',
+      why: {
+        variant: 'This model uses a format ({value}) that this version of {engine} cannot read. It needs a variant of {engine} that supports it, such as {variant}.',
+        architecture: 'This model has an architecture ({value}) that this version of {engine} does not know. Update {engine}, or use a fork of it that supports it.',
+        container: 'This .ninfer file is in format {value}, but this version of NInfer only reads {needs}: convert it with NInfer’s tool (on the NInfer card, in Engines) or download a newer version of it.',
+      },
+    },
     ENGINE_EXITED: { title: 'The engine closed unexpectedly', what: 'Open the log to see what happened and try again.' },
     ENGINE_TIMEOUT: { title: 'The engine did not answer in time', what: 'Try again: the first time can take longer. If it happens again, try a smaller model.' },
     ENGINE_OOM: { title: 'Not enough graphics memory', what: 'Choose a smaller model, a lighter quantization or a shorter context.' },
     ENGINE_NO_KERNEL_IMAGE: { title: 'This engine version does not support your GPU', what: 'Choose a newer version: I will suggest a compatible one.' },
-    ENGINE_BAD_FLAG: { title: 'The engine does not recognize a parameter', what: 'Remove the reported argument from the extra arguments or update the engine.' },
+    ENGINE_BAD_FLAG: {
+      title: 'The engine does not recognize a parameter',
+      what: 'Remove the reported argument from the extra arguments or update the engine.',
+      why: {
+        kvDtype: 'This version of NInfer has no “{value}” KV cache (it has: {values}). Choose another setting, or use a variant of NInfer that offers it.',
+      },
+    },
     ENGINE_PORT_IN_USE: { title: 'The network port is already in use', what: 'Try again: I will pick another free port.' },
     ENDPOINT_UNREACHABLE: { title: 'The server does not answer', what: 'Check the address and that the server is running.' },
     ENDPOINT_INVALID: { title: 'The server does not look compatible', what: 'An OpenAI-compatible server is needed: check the address and type.' },
@@ -1787,6 +1804,7 @@ export const en: Messages = {
       cancelled: 'Test cancelled before the end',
       failed: 'Test stopped by an error',
       body: 'I made {n} attempts. With “Thorough” I try more combinations.',
+      bodyEndedOne: 'I made 1 attempt before the test ended. Below is what I had measured so far.',
       bodyEnded: 'I made {n} attempts before the test ended. Below is what I had measured so far: the “partly measured” combinations are compared by the same rules, the caches not tried say so.',
       bodyLimit: 'I made {n} attempts in the expected time ({limit}). The “partly measured” combinations have the numbers taken so far, compared by the same rules.',
     },
@@ -2322,6 +2340,7 @@ export const en: Messages = {
     dialogHint: 'Benchmark, “Find the best settings” and “Start only the server” use them by themselves: write them here once.',
     templateNames: {
       'prismml-bonsai': 'PrismML fork',
+      'ninfer-all': 'NInfer-all',
     },
     title: 'Commands for this model',
     help: 'Some models need special commands you only find in their model card: a longer context with YaRN, the MTP file to write faster, a fork of the engine… Write them here once: Benchmark, “Find the best settings” and “Start only the server” use them by themselves.',
@@ -2453,6 +2472,7 @@ export const en: Messages = {
         no_file_mtp: 'There is no MTP or draft file next to the model: download it from the model page.',
         no_file_vision: 'There is no image projector (mmproj) next to the model.',
         not_bonsai: 'Only for PrismML’s Bonsai models.',
+        not_gguf_ninfer: 'Only for GGUF-NInfer models (.ninfer files converted from GGUF).',
         format: 'Not needed for this kind of model.',
       },
       yarn: {
@@ -2474,6 +2494,12 @@ export const en: Messages = {
       ninfer: {
         title: 'NInfer for .ninfer models',
         body: 'Models in the .ninfer format are read only by NInfer, the engine for Qwen3.5–3.8 on one RTX 5090: these commands choose it instead of llama.cpp (inside WSL on Windows).',
+      },
+      'ninfer-all': {
+        title: 'NInfer-all for GGUF-NInfer models',
+        body: 'GGUF-NInfer models keep GGUF’s quantization blocks (format gguf_blocks_v1), which only NInfer-all can read: these commands use it instead of the official NInfer.',
+        missing: 'You have not added NInfer-all yet.',
+        found: 'It will use {name}.',
       },
       vision: {
         title: 'Models with images (mmproj projector)',
@@ -2778,6 +2804,7 @@ export const en: Messages = {
       action: 'Set up the engine',
       names: {
         'prismml-bonsai': 'the PrismML fork of llama.cpp',
+        'ninfer-all': 'NInfer-all',
       },
     },
     picker: {
@@ -3011,7 +3038,7 @@ export const en: Messages = {
     },
     custom: {
       title: 'Custom engines',
-      subtitle: 'Forks of llama.cpp, vLLM or SGLang and other programs with an OpenAI API. LLM Bench uses them like the regular engines, with their extra options.',
+      subtitle: 'Forks of llama.cpp, vLLM or SGLang, variants of NInfer (like NInfer-all) and other programs with an OpenAI API. LLM Bench uses them like the regular engines, with their extra options.',
       add: 'Add engine',
       emptyTitle: 'No custom engines',
       emptyBody: 'You only need them if you use a modified version of an engine (a fork) or a program of your own.',
@@ -3035,12 +3062,14 @@ export const en: Messages = {
         llamacpp: 'llama.cpp fork',
         vllm: 'vLLM fork',
         sglang: 'SGLang fork',
+        ninfer: 'NInfer variant',
         'openai-server': 'Program with an OpenAI API',
       },
       basesDesc: {
         llamacpp: 'A modified llama-server: the same options, at most a few more.',
         vllm: 'A modified vLLM, installed on the PC or in a Docker image.',
         sglang: 'A modified SGLang, installed on the PC or in a Docker image.',
+        ninfer: 'A modified version of NInfer (for example NInfer-all): the same ninfer-serve, with more formats and options. It runs like NInfer, inside WSL on Windows.',
         'openai-server': 'Any program that answers like OpenAI: LLM Bench starts it with your command, measures it and stops it.',
       },
       dialog: {
@@ -3163,6 +3192,13 @@ export const en: Messages = {
         cacheReport: 'the cached token count',
       },
       templates: {
+        'ninfer-all': {
+          name: 'NInfer-all',
+          inSentence: 'NInfer-all',
+          short: 'NInfer-all (GGUF-NInfer models)',
+          explain:
+            'GGUF-NInfer models are .ninfer files converted from GGUF that keep GGUF’s quantization blocks (format gguf_blocks_v1): the official NInfer cannot read them, NInfer-all can. LLM Bench downloads it from GitHub (iamwavecut/ninfer-all, branch master) and builds it for you, or you tell it where you already have it.',
+        },
         'prismml-bonsai': {
           name: 'PrismML fork of llama.cpp',
           inSentence: 'PrismML fork of llama.cpp',
@@ -3295,11 +3331,11 @@ export const en: Messages = {
     problems: {
       ninfer_not_found: {
         title: 'ninfer-serve is not here: {path}',
-        body: 'Check the path (the NInfer folder, or build/apps/ninfer-serve inside it), or build NInfer with “Build NInfer…”.',
+        body: 'Check the path (the NInfer folder, or build/apps/ninfer-serve inside it), or let LLM Bench do it with “Download and build NInfer”.',
       },
       ninfer_not_built: {
         title: 'NInfer is there but not built yet',
-        body: 'NInfer’s code (commit {commit}) is in the folder, but {path} is missing. Press “Build NInfer…”: I build this copy as it is, without downloading anything.',
+        body: 'The code (commit {commit}) is in the folder, but {path} is missing or does not answer. Press “Build NInfer”: I build this copy as it is, without downloading anything.',
       },
       distro_missing: { title: 'There is no {distro} distribution', body: 'Pick one of this PC’s WSL distributions.' },
       wsl_missing: { title: 'WSL does not answer', body: 'On Windows NInfer runs inside WSL 2: check that it is installed, then try again.' },
@@ -3318,8 +3354,6 @@ export const en: Messages = {
       commit: 'Version (commit)',
     },
     build: {
-      open: 'Build NInfer…',
-      title: 'Build NInfer',
       description: 'LLM Bench downloads NInfer from GitHub and builds it {where}. It checks what is needed first: it installs no system packages and touches nothing else.',
       whereWsl: 'inside {distro}',
       whereLinux: 'on this PC',
@@ -3346,9 +3380,27 @@ export const en: Messages = {
       commands: 'Commands I will run',
       confirmNote: 'I run exactly these commands {where}. It takes a few minutes.',
       confirm: 'Build',
-      existing: 'NInfer is already in this folder: I build it without downloading it again.',
+      existing: 'The code is already in this folder: I build it without downloading it again.',
       running: 'Building NInfer',
       done: 'NInfer is ready: {path}',
+      titleVariant: 'Download and build {name}',
+      titleExisting: 'Build {name}',
+      descriptionVariant: 'LLM Bench downloads {name} from {repo} and builds it {where}. It checks what is needed first: it installs no system packages and touches nothing else.',
+      source: 'From: {repo}',
+      sourceBranch: 'From: {repo} (branch {branch})',
+      repoLabel: 'Git repository',
+      repoHint: 'The https address of the repository to download: {name}’s, or your fork.',
+      repoInvalid: 'An https address of a git repository is needed, for example https://github.com/user/ninfer-all.git.',
+      branchLabel: 'Branch',
+      branchHint: 'Empty = the repository’s default branch.',
+      download: 'To download: about {size}.',
+      time: 'Build: about {minutes} minutes with {cpus} cores.',
+      timeNoCpus: 'Build: about {minutes} minutes.',
+      nothingToDownload: 'Nothing to download: I build the copy that is already there.',
+      otherRepo: 'This folder holds another repository ({origin}): choose another folder.',
+      confirmDownload: 'Download and build',
+      runningVariant: 'Building {name}',
+      doneVariant: '{name} is ready: {path}',
     },
     artifacts: {
       title: 'Models to upgrade',
@@ -3367,6 +3419,7 @@ export const en: Messages = {
       title: 'NInfer settings',
       hint: 'How to start NInfer with this model.',
       'ninfer-recommended': 'Recommended by NInfer: {ctx} context, {kv} KV, {users} users, {spec}',
+      'model-card': 'Recommended by the model card: {ctx} per request, {kv} KV shared from {pool}, {users} users, {spec}',
       'rtx5090-tested': 'Tested on an RTX 5090: {ctx} per request, {kv} KV shared from {pool}, {users} users, vision, {spec}',
       run: 'As in the test the preset comes from: {flags}',
       runDesc: 'The same NInfer settings as the result you picked.',
@@ -3374,10 +3427,34 @@ export const en: Messages = {
       autoDesc: 'The context the test needs, NInfer’s KV cache (bf16), no token prediction.',
       desc: {
         'ninfer-recommended': 'The one in NInfer’s README: lots of context, a compact cache and faster answers thanks to token prediction.',
+        'model-card': 'The settings of the example on the model card. The {kv} KV cache exists only in some variants of NInfer (for example NInfer-all).',
         'rtx5090-tested': 'A setting tested on an RTX 5090: about 27 GB of video memory, it also reads images.',
       },
       cardTitle: 'Ready-made settings',
       cardHint: 'You pick them in Benchmark and when you start the server, with a .ninfer model.',
+    },
+    setup: {
+      intro: 'NInfer is not on this PC yet. I download it from GitHub and build it for you, {where}: first I show you the exact commands, how much it downloads and how long it takes.',
+      download: 'Download and build NInfer',
+      have: 'I already have NInfer: choose its folder',
+      build: 'Build NInfer',
+    },
+    variant: {
+      requiresTitle: 'This model needs {name}',
+      requiresBody: 'The official NInfer cannot read its weights. Add {name}: LLM Bench downloads and builds it for you, and uses it for this model.',
+      add: 'Add {name}',
+      where: 'Where it is, as Linux sees it',
+      whereHint: 'The variant’s folder (with build/apps/ninfer-serve inside) or the ninfer-serve file, for example {dir}.',
+      buildHere: 'Download and build {name}',
+      buildHint: 'Don’t have it yet? LLM Bench downloads it from {repo} and builds it {where}, then saves it by itself.',
+      build: 'Build',
+      ready: '{name} is ready: you find it among the custom engines.',
+      kvDtypes: 'KV caches it knows: {list}',
+      building: 'Building {name}',
+    },
+    library: {
+      noManifest: 'no manifest',
+      noManifestHelp: 'There is no NInfer manifest next to the file: LLM Bench only knows its name and size (and the MTP head, when its name says so). NInfer reads the rest when it starts.',
     },
     wslModels: 'Models on the Windows disk load more slowly from WSL. For fast loads keep them inside WSL and add the folder in Settings → Model folders (\\\\wsl.localhost\\{distro}\\…).',
   },

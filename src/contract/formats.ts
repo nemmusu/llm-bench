@@ -170,6 +170,17 @@ export function parseNinferManifest(raw: unknown): NinferManifest | undefined {
   return out;
 }
 
+/**
+ * What an artifact without a manifest tells by its name alone: the text model, plus the speculative
+ * heads its name announces ("…-Q6_K-MTP.ninfer": MTP; "DFlash2", "DFlash"). Vision is never assumed.
+ */
+export function ninferManifestFromName(fileName: string): NinferManifest {
+  const name = fileName.replace(/^.*[\\/]/, '');
+  const has = (re: RegExp) => re.test(name);
+  const components = ['text', ...(has(/(^|[^a-z])mtp([^a-z]|$)/i) ? ['mtp'] : []), ...(has(/dflash-?2/i) ? ['dflash2'] : has(/dflash/i) ? ['dflash'] : [])];
+  return { components };
+}
+
 /** "<sha256>  <file>" lines of a SHA256SUMS file, by file name (a leading "*" or "./" is dropped); none without a file. */
 export function parseSha256Sums(text: string | undefined): Map<string, string> {
   const out = new Map<string, string>();

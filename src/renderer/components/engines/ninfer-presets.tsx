@@ -33,7 +33,7 @@ export function NinferPresetPicker({ presets, run, value, onChange }: NinferPres
       </div>
       <p className="text-sm text-fg-2">{t('ninfer.presets.hint')}</p>
       <SegmentedControl<NinferChoice> label={t('ninfer.presets.title')} value={value} onValueChange={onChange} layout="list" options={options} />
-      <p className="text-sm text-fg-3">{chosen ? t(`ninfer.presets.desc.${chosen.id}`) : value === 'run' ? t('ninfer.presets.runDesc') : t('ninfer.presets.autoDesc')}</p>
+      <p className="text-sm text-fg-3">{chosen ? t(`ninfer.presets.desc.${chosen.id}`, { kv: chosen.params.ninfer.kvDtype as string }) : value === 'run' ? t('ninfer.presets.runDesc') : t('ninfer.presets.autoDesc')}</p>
     </Card>
   );
 }

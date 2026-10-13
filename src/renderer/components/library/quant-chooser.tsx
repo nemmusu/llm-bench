@@ -130,7 +130,7 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
                     {t('models.detail.best')}
                   </Badge>
                 )}
-                {format === 'gguf' && <ForkBadge model={{ displayName: name, repo, file: fileName(first.path), quant: c.quant }} weakKey={c.weakKey} label={`${name} ${label(c)}`} />}
+                {format === 'gguf' && <ForkBadge model={{ displayName: name, repo, file: fileName(first.path), quant: c.quant, format }} weakKey={c.weakKey} label={`${name} ${label(c)}`} />}
                 {unsupported && (
                   <Badge tone="warning" size="sm">
                     {t('models.needs5090')}

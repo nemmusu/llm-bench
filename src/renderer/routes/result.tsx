@@ -144,6 +144,7 @@ function ResultView({ run }: { run: RunResult }) {
   const errorCard = run.error ? (
     <ErrorCard
       error={run.error}
+      model={{ weakKey: run.model.weakKey, name: [run.model.displayName, run.model.quant].filter(Boolean).join(' ') }}
       handlers={{ retry: () => doRerun(), continueAnyway: () => doRerun(true), openLog: () => setTab('log') }}
       extra={
         run.error.code !== 'CANCELLED' && (

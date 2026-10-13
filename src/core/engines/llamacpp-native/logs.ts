@@ -45,6 +45,8 @@ const BAD_FLAG = [
 ];
 const PORT = /couldn't bind|address already in use|bind failed|failed to bind/i;
 const MODEL = /failed to load model|error loading model|failed to open GGUF file|gguf_init_from_file.*failed/i;
+const ARCH = /unknown model architecture: '?([\w.-]+)'?/i;
+const GGML_TYPE = /invalid ggml type (\d+)/i;
 
 /** Last lines kept in AppError.detail (shown under "Dettagli"). */
 const DETAIL_LINES = 25;
@@ -74,6 +76,16 @@ export function diagnoseExit(lines: readonly string[], exit: ExitInfo): AppError
     }
   }
   if (find(PORT) !== undefined) return new AppError('ENGINE_PORT_IN_USE', 'The port is already in use', { params, detail });
+  // "unknown model architecture: 'qwen35'": this build is older than the model (a newer build, or a fork, reads it).
+  const arch = lines.map((l) => ARCH.exec(l)?.[1]).find((a) => a !== undefined);
+  if (arch !== undefined) {
+    return new AppError('ENGINE_MODEL_UNSUPPORTED', `llama.cpp does not know the architecture ${arch}`, { params: { ...params, engine: 'llama.cpp', reason: 'architecture', value: arch }, detail });
+  }
+  // "tensor '…' has invalid ggml type 42": a quantization this build does not know (a newer one, or a fork's, like PrismML's PQ2_0).
+  const type = lines.map((l) => GGML_TYPE.exec(l)?.[1]).find((a) => a !== undefined);
+  if (type !== undefined) {
+    return new AppError('ENGINE_MODEL_UNSUPPORTED', `llama.cpp does not know the tensor type ${type}`, { params: { ...params, engine: 'llama.cpp', reason: 'format', value: `ggml type ${type}` }, detail });
+  }
   const model = find(MODEL);
   if (model !== undefined) return new AppError('MODEL_INVALID', `Model failed to load: ${model.trim()}`, { params, detail });
   return new AppError('ENGINE_EXITED', `Engine exited with ${params.code}`, { params, detail });
