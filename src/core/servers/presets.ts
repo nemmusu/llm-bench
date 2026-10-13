@@ -108,5 +108,6 @@ export function presetRequest(p: ServerPreset): StartServerRequest {
     ...(p.port !== undefined ? { port: p.port } : {}),
     network: p.network,
     presetId: p.id,
+    ...(p.recipe !== undefined ? { recipe: p.recipe } : {}),
   };
 }

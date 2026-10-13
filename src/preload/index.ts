@@ -13,6 +13,7 @@ const bridge: DesktopBridge = {
   saveHfToken: (token) => ipcRenderer.invoke('gpubench:hf-token-save', token) as Promise<{ ok: boolean; secure: boolean }>,
   clearHfToken: () => ipcRenderer.invoke('gpubench:hf-token-clear') as Promise<void>,
   saveFile: (opts) => ipcRenderer.invoke('gpubench:save-file', opts) as Promise<string | null>,
+  shellInfo: () => ipcRenderer.invoke('gpubench:shell-info') as Promise<{ tray: boolean }>,
 };
 
 contextBridge.exposeInMainWorld('gpubench', bridge);

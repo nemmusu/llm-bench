@@ -103,6 +103,9 @@ describe('server presets', () => {
     expect(presetRequest(a)).toEqual({ engine: a.engine, model: a.model, params: a.params, port: 8080, network: 'lan', presetId: a.id });
     const { port: _port, ...noPort } = a;
     expect(presetRequest(noPort)).not.toHaveProperty('port');
+    // "Senza la ricetta del modello" is remembered.
+    const plain = await p.create({ ...input, name: 'Senza ricetta', recipe: { use: false } });
+    expect(presetRequest(plain).recipe).toEqual({ use: false });
   });
 
   it('settings.json: an invalid preset is dropped on read, never the whole file', () => {

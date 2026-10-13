@@ -11,4 +11,6 @@ export interface DesktopBridge {
   clearHfToken(): Promise<void>;
   /** Shows the native "Save as" dialog and writes `content` (exports). Resolves to the path, or null if cancelled. */
   saveFile(opts: { defaultName: string; content: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null>;
+  /** The desktop's capabilities: `tray` false = no notification area (some Linux desktops): closing minimizes instead. */
+  shellInfo(): Promise<{ tray: boolean }>;
 }

@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { engineConfigSchema, launchParamsSchema } from './engines';
 import { appErrorSchema } from './errors';
+import { recipeChoiceSchema } from './recipes';
 
 /** Who can reach a server: this PC only (127.0.0.1), or other devices on the local network too (0.0.0.0, with the API key). */
 export const serverNetworkSchema = z.enum(['local', 'lan']);
@@ -71,6 +72,8 @@ export const serverPresetInputSchema = z.object({
   /** "Avvia all'apertura di GPU Bench": started when the app opens. Off unless the user turns it on. */
   autoStart: z.boolean().default(false),
   source: serverSettingsSourceSchema.optional(),
+  /** "Comandi per questo modello" (contract/recipes.ts): absent = the model's recipe, if it has one; { use: false } = without. */
+  recipe: recipeChoiceSchema.optional(),
 });
 export type ServerPresetInput = z.input<typeof serverPresetInputSchema>;
 
