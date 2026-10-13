@@ -99,6 +99,12 @@ describe('Docker that does not answer: the banner', () => {
       const dialog = await screen.findByRole('dialog', { name: 'Non sono riuscito a riavviare Docker' });
       expect(within(dialog).getByText(text)).toBeTruthy();
       await userEvent.click(within(dialog).getByRole('button', { name: 'Riprova' }));
+      // A normal restart can be tried again, unless Docker Desktop cannot be restarted from here at all.
+      const again = within(await screen.findByRole('dialog', { name: 'Non sono riuscito a riavviare Docker' })).queryByRole('button', { name: 'Riavvia Docker' });
+      if (reason === 'restart-failed') {
+        await userEvent.click(again!);
+        await waitFor(() => expect(posted(api, '/api/docker/restart')).toHaveLength(2));
+      } else expect(again).toBeNull();
       view.unmount();
     }
   });

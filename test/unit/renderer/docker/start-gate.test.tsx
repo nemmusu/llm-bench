@@ -62,6 +62,15 @@ describe('the start flow with a Docker engine', () => {
     expect(await h1('Test in corso')).toBeTruthy();
   });
 
+  it('an earlier restart that needed the last resort says nothing once Docker is simply off', async () => {
+    const api = vllmBench({ state: 'stopped' });
+    renderApp('/', api);
+    await screen.findAllByText('≈ 1 min 35 s');
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-restart', stage: 'error', bytesDone: 0, error: { code: 'DOCKER_NOT_RESPONDING', message: 'x', params: { reason: 'needs-deep' } } }));
+    await userEvent.click(screen.getByRole('button', { name: 'Avvia benchmark' }));
+    expect(await screen.findByRole('dialog', { name: 'Docker è spento' })).toBeTruthy();
+  });
+
   it('starting (asked elsewhere): it waits, then carries on', async () => {
     const api = vllmBench({ state: 'starting', startingForMs: 40_000 });
     await startBenchmark(api);

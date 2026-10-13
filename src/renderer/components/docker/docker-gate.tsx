@@ -137,11 +137,13 @@ export function useDockerGate({ engineLabel, onReady, autoRestart }: DockerGateO
     fireRestart();
   });
 
-  // A restart that did not bring Docker back says what to try next wherever it was asked from
-  // (the banner, the tray, the Engines page); other failures only where they were asked for.
+  // A restart that did not bring Docker back says what to try next wherever it was asked from (the
+  // banner, the tray, the Engines page) while Docker still does not answer; other failures only where
+  // they were asked for.
   const restartError = actions.restartEvent?.stage === 'error' ? actions.restartEvent.error : undefined;
   const startError = mine === 'start' && actions.startEvent?.stage === 'error' ? actions.startEvent.error : undefined;
-  const failure: AppErrorData | undefined = startError ?? (restartError && (mine === 'restart' || restartError.code === 'DOCKER_NOT_RESPONDING') ? restartError : undefined);
+  const stillStuck = restartError?.code === 'DOCKER_NOT_RESPONDING' && state === 'not-responding';
+  const failure: AppErrorData | undefined = startError ?? (restartError && (mine === 'restart' || stillStuck) ? restartError : undefined);
   const reason = failure?.params?.reason;
 
   const restartButton = (
@@ -200,7 +202,17 @@ export function useDockerGate({ engineLabel, onReady, autoRestart }: DockerGateO
       title: t('dockerFix.failed.title'),
       description: t(reason === 'no-desktop-cli' ? 'dockerFix.failed.noCli' : 'dockerFix.failed.body'),
       body: <DockerCause windows={control} />,
-      actions: retryButton,
+      // Once Docker Desktop was closed and opened by hand (or the PC restarted): look again. Without its
+      // CLI plugin there is nothing to restart from here.
+      actions:
+        reason === 'no-desktop-cli' ? (
+          retryButton
+        ) : (
+          <>
+            <Button onClick={retry}>{t('dockerFix.retry')}</Button>
+            {restartButton}
+          </>
+        ),
     };
   }
   if (failure && failure.code !== 'DOCKER_NOT_RESPONDING' && failure.code !== 'CANCELLED') {
