@@ -15,7 +15,8 @@ export interface EngineStepProps {
 export function EngineStep({ choices, value, onChange, customs }: EngineStepProps) {
   const f = useI18n();
   const { t } = f;
-  const describe = (c: EngineChoice) => t(`benchmark.engineDesc.${c.kind}`);
+  // A custom engine says what it is built on ("Fork di llama.cpp"), as in the Benchmark's engine choice.
+  const describe = (c: EngineChoice) => (c.base ? t(`engines.custom.bases.${c.base}`) : t(`benchmark.engineDesc.${c.kind}`));
   return (
     <div className="flex flex-col gap-2">
       <Select<string>

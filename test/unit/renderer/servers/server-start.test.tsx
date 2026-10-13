@@ -8,6 +8,7 @@ import type { CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { DownloadJob } from '../../../../src/contract/models';
 import { renderApp } from '../helpers';
 import { apiError, benchApi, curatedModel, deferred, localModel, serverInfo, serverPlanFor, serverPreset } from '../bench/world';
+import { engineChoices } from '../../../../src/renderer/components/servers/server-flow';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -375,22 +376,32 @@ describe('Avvia un server: model, engine, port and network', () => {
       check: { kind: 'llamacpp-native', status: { kind: 'llamacpp-native', available: true, installed: true, problems: [], supported: true }, flagCount: 120, missing: [{ flag: '-ub', setting: 'ubatchSize', effect: 'default' }, { flag: '-m', setting: 'model', effect: 'required' }] },
     };
     const command: CustomEngineInfo = {
-      engine: { schema: 1, id: 'mine', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 'srv --port {port}' }, extraArgs: [], env: {}, notes: '' },
+      engine: { schema: 1, id: 'mine', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 'srv --port {port}', api: 'chat' }, extraArgs: [], env: {}, notes: '' },
       kind: 'command',
       config: { kind: 'command', customEngineId: 'mine' },
       check: { kind: 'command', status: { kind: 'command', available: true, installed: true, problems: [], supported: true }, flagCount: 0, missing: [] },
     };
     const vllmFork: CustomEngineInfo = { ...fork, engine: { ...fork.engine, id: 'v', name: 'vLLM fork', base: 'vllm', run: { mode: 'docker', image: 'me/vllm:1' } }, kind: 'vllm-docker', config: { kind: 'vllm-docker', customEngineId: 'v' } };
-    const api = benchApi({ customEngines: [fork, command, vllmFork] });
+    const api = benchApi({ custom: [fork, command, vllmFork] });
     await openFlow(api);
     await choose('Motore', 'llama.cpp · PrismML fork');
     await waitFor(() => expect(lastPlan(api).engine).toEqual({ kind: 'llamacpp-native', customEngineId: 'prismml' }));
     expect(screen.getByText('PrismML fork non accetta -ub: per queste impostazioni vale il suo valore predefinito.')).toBeTruthy();
     // A command template is the user's own program: it cannot be shared on the network.
-    await choose('Motore', 'Il mio server');
+    await choose('Motore', 'Programma con API OpenAI · Il mio server');
     expect((screen.getByRole('switch', { name: 'Rendi raggiungibile dalla rete locale' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Questo motore è un tuo programma: non posso condividerlo in rete con una chiave.')).toBeTruthy();
     expect(screen.queryByRole('option', { name: /vLLM fork/ })).toBeNull();
+    // Grouped as the Benchmark lists them: each fork right under its base, the user's own programs last.
+    const unsupported = { kind: 'llamacpp-docker' as const, available: false, installed: false, problems: [], supported: false };
+    const dockerFork: CustomEngineInfo = { ...fork, engine: { ...fork.engine, id: 'd', name: 'Docker fork', run: { mode: 'docker', image: 'me/llama:1' } }, kind: 'llamacpp-docker', config: { kind: 'llamacpp-docker', customEngineId: 'd' } };
+    expect(engineChoices('gguf', [unsupported], [command, fork, dockerFork, vllmFork], 'win32').map((c) => [c.key, c.base, c.disabled])).toEqual([
+      ['builtin:llamacpp-native', undefined, false],
+      ['custom:prismml', 'llamacpp', false],
+      ['builtin:llamacpp-docker', undefined, true],
+      ['custom:d', 'llamacpp', true],
+      ['custom:mine', 'openai-server', false],
+    ]);
   });
 
   it('the port: automatic, chosen, invalid, or already in use (by another program or by one of ours)', async () => {

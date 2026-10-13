@@ -6,6 +6,7 @@
 import { Bookmark, Copy, Eye, EyeOff, Globe, Laptop, RotateCcw, ScrollText, Square } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ServerInfo } from '../../../contract/api';
+import type { CustomEngineInfo } from '../../../contract/custom-engines';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useServerApiKey, useServerLog } from '../../lib/queries-servers';
@@ -20,6 +21,7 @@ import { CodeBlock } from '../ui/code-block';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { SegmentedControl } from '../ui/segmented-control';
 import { StatusDot } from '../ui/status-dot';
+import { serverEngineName } from './engine-name';
 import { clientSettings, httpSnippets, masked, pythonSnippet, uptimeParts, type SnippetTarget } from './snippets';
 
 /** Re-renders every `ms` (uptime). */
@@ -132,6 +134,8 @@ function LogDialog({ server, open, onOpenChange }: { server: ServerInfo; open: b
 
 export interface ServerCardProps {
   server: ServerInfo;
+  /** The custom engines, to name a fork as the Benchmark does ("llama.cpp · PrismML"). */
+  customs: readonly CustomEngineInfo[];
   onStop: (s: ServerInfo) => void;
   onRestart: (s: ServerInfo) => void;
   /** "Salva come preset" (servers not started from one). */
@@ -139,7 +143,7 @@ export interface ServerCardProps {
   now: number;
 }
 
-export function ServerCard({ server: s, onStop, onRestart, onSave, now }: ServerCardProps) {
+export function ServerCard({ server: s, customs, onStop, onRestart, onSave, now }: ServerCardProps) {
   const f = useI18n();
   const { t, number } = f;
   const configLabel = useConfigLabel();
@@ -164,7 +168,7 @@ export function ServerCard({ server: s, onStop, onRestart, onSave, now }: Server
             <h3 className="truncate text-md font-semibold text-fg">{name}</h3>
             <p className="truncate text-sm text-fg-2">
               {s.presetName ? `${s.modelLabel} · ` : ''}
-              {prettyEngineLabel(s.engineLabel)}
+              {prettyEngineLabel(serverEngineName(s, customs, f))}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">

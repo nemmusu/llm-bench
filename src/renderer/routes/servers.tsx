@@ -21,7 +21,8 @@ import { HelpTip } from '../components/ui/help-tip';
 import { Skeleton } from '../components/ui/skeleton';
 import { useI18n } from '../i18n';
 import { useServers } from '../lib/queries-runs';
-import { useCustomEngines, usePresetMutations, useServerActions, useServerNotices, useServerPresets, useServersLiveRefresh } from '../lib/queries-servers';
+import { useCustomEngines } from '../lib/queries-engines';
+import { usePresetMutations, useServerActions, useServerNotices, useServerPresets, useServersLiveRefresh } from '../lib/queries-servers';
 
 function SectionTitle({ title, help, count }: { title: string; help: string; count?: number }) {
   return (
@@ -105,7 +106,7 @@ export function ServersPage() {
           ) : list.length ? (
             <div className="grid gap-4 2xl:grid-cols-2">
               {list.map((s) => (
-                <ServerCard key={s.id} server={s} now={now} onStop={(x) => void actions.stop(x)} onRestart={(x) => void actions.restart(x)} onSave={setSaving} />
+                <ServerCard key={s.id} server={s} customs={customs.data ?? []} now={now} onStop={(x) => void actions.stop(x)} onRestart={(x) => void actions.restart(x)} onSave={setSaving} />
               ))}
             </div>
           ) : (

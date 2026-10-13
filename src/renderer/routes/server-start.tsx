@@ -45,7 +45,8 @@ import { HelpTip } from '../components/ui/help-tip';
 import { useI18n } from '../i18n';
 import { useConfigs } from '../lib/queries-configs';
 import { apiErrorData, useBenchEngines, useBenchLocalModels, useBenchSystem, useCurated, useDebounced, useRun } from '../lib/queries-runs';
-import { useCustomEngines, usePresetMutations, useServerPlan, useServerPresets, useServersLiveRefresh } from '../lib/queries-servers';
+import { useCustomEngines } from '../lib/queries-engines';
+import { usePresetMutations, useServerPlan, useServerPresets, useServersLiveRefresh } from '../lib/queries-servers';
 
 function StepCard({ step, title, help, children }: { step: number; title: string; help: string; children: ReactNode }) {
   return (

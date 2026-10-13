@@ -1,12 +1,11 @@
 /**
  * Data hooks of the Server page: running servers, presets, notices, the API key, a server's plan and
- * log, and the custom engines a server can run on. Every hook reads a real core route; the core's
- * 'servers.changed' event refreshes them (useServersLiveRefresh).
+ * log. Every hook reads a real core route; the core's 'servers.changed' event refreshes them
+ * (useServersLiveRefresh). Custom engines come from queries-engines (useCustomEngines).
  */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ServerInfo, ServerPlan, StartServerRequest } from '../../contract/api';
-import type { CustomEngineInfo } from '../../contract/custom-engines';
 import type { ServerApiKeyInfo, ServerLog, ServerNotice, ServerPreset, ServerPresetInput } from '../../contract/servers';
 import { useI18n } from '../i18n';
 import { useApi, useServerEvents } from './api-context';
@@ -15,7 +14,6 @@ import { apiErrorData, SERVERS_KEY } from './queries-runs';
 export const PRESETS_KEY = ['servers', 'presets'] as const;
 export const NOTICES_KEY = ['servers', 'notices'] as const;
 export const API_KEY_KEY = ['servers', 'api-key'] as const;
-export const CUSTOM_ENGINES_KEY = ['servers', 'custom-engines'] as const;
 
 /** Reads servers, presets and notices again whenever the core says something changed. */
 export function useServersLiveRefresh(): void {
@@ -44,12 +42,6 @@ export function useServerNotices() {
 export function useServerApiKey(enabled: boolean) {
   const api = useApi();
   return useQuery({ queryKey: API_KEY_KEY, queryFn: () => api.get<ServerApiKeyInfo>('/api/servers/api-key'), enabled, staleTime: Infinity });
-}
-
-/** GET /api/engines/custom: forks and other OpenAI servers ("Motori personalizzati"). */
-export function useCustomEngines() {
-  const api = useApi();
-  return useQuery({ queryKey: CUSTOM_ENGINES_KEY, queryFn: () => api.get<CustomEngineInfo[]>('/api/engines/custom'), staleTime: 30_000 });
 }
 
 /** POST /api/servers/plan of exactly these choices: command, needs, context, fit, port. */

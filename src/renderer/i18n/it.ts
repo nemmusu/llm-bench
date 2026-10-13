@@ -539,7 +539,6 @@ export const it = {
       },
       engine: {
         label: 'Motore',
-        custom: '{base} · {name}',
         missing: '{engine} non accetta {flags}: per queste impostazioni vale il suo valore predefinito.',
         notInstalled: 'Non ancora installato: lo preparo prima di avviare il server.',
       },

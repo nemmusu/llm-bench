@@ -538,7 +538,6 @@ export const en: Messages = {
       },
       engine: {
         label: 'Engine',
-        custom: '{base} · {name}',
         missing: '{engine} does not take {flags}: for these settings its own default applies.',
         notInstalled: 'Not installed yet: I prepare it before starting the server.',
       },

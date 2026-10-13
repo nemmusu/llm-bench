@@ -73,6 +73,8 @@ export interface EngineChoice {
   kind: EngineKind;
   /** A custom engine's own name ("PrismML fork"); absent for built-in ones. */
   customName?: string;
+  /** What a custom engine is built on ("Fork di llama.cpp"); absent for built-in ones. */
+  base?: CustomEngineInfo['engine']['base'];
   /** Not usable here (the engine is not supported on this OS). */
   disabled: boolean;
   /** Standard settings a fork does not take (left out of its command, its own default applies). */
@@ -83,26 +85,29 @@ export function engineKeyOf(config: Pick<EngineConfig, 'kind' | 'customEngineId'
   return config.customEngineId ? `custom:${config.customEngineId}` : `builtin:${config.kind}`;
 }
 
-/** Built-in engines for the model's files first, then the custom engines (forks, command templates) that read them. */
+/**
+ * The built-in engines for the model's files, each followed by the custom engines built on it, as the
+ * Benchmark page lists them ("llama.cpp", then "llama.cpp · PrismML"); programs of the user's own last.
+ */
 export function engineChoices(format: ModelFormat, statuses: readonly EngineStatus[], customs: readonly CustomEngineInfo[], platform: string): EngineChoice[] {
-  const builtin = builtinKinds(format, platform).map((kind) => ({
-    key: `builtin:${kind}`,
-    config: { kind },
-    kind,
-    disabled: statuses.find((s) => s.kind === kind)?.supported === false,
-    missing: [],
-  }));
+  const unsupported = (kind: EngineKind) => statuses.find((s) => s.kind === kind)?.supported === false;
   const custom = customs
     .filter((c) => BASE_FORMATS[c.engine.base].includes(format))
-    .map((c) => ({
-      key: `custom:${c.engine.id}`,
-      config: c.config,
-      kind: customEngineKindOf(c.engine),
-      customName: c.engine.name,
-      disabled: false,
-      missing: c.check.missing.filter((m) => m.effect === 'default'),
-    }));
-  return [...builtin, ...custom];
+    .map((c): EngineChoice => {
+      const kind = customEngineKindOf(c.engine);
+      return {
+        key: `custom:${c.engine.id}`,
+        config: c.config,
+        kind,
+        customName: c.engine.name,
+        base: c.engine.base,
+        disabled: unsupported(kind),
+        missing: c.check.missing.filter((m) => m.effect === 'default'),
+      };
+    });
+  const kinds = builtinKinds(format, platform);
+  const grouped = kinds.flatMap((kind): EngineChoice[] => [{ key: `builtin:${kind}`, config: { kind }, kind, disabled: unsupported(kind), missing: [] }, ...custom.filter((c) => c.kind === kind)]);
+  return [...grouped, ...custom.filter((c) => !kinds.includes(c.kind))];
 }
 
 /** The format a model is read in: a GGUF for llama.cpp, a .ninfer artifact for NInfer, a Hugging Face folder for vLLM and SGLang. */

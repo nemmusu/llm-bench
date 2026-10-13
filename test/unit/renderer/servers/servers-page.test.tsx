@@ -209,7 +209,7 @@ describe('Server page: presets and notices', () => {
       serverPreset('p1', { name: 'Chat veloce', autoStart: true, source: { kind: 'config', runId: 'r' } }),
       serverPreset('p2', { name: 'Rete', network: 'lan', port: undefined }),
     ];
-    api.world.customEngines = [];
+    api.world.custom = [];
     const success = vi.spyOn(toast, 'success');
     const info = vi.spyOn(toast, 'info');
     renderApp('/servers', api);
@@ -244,9 +244,9 @@ describe('Server page: presets and notices', () => {
   it('a preset on a fork names it; failures are said', async () => {
     const api = benchApi();
     api.world.presets = [serverPreset('p1', { name: 'Bonsai', engine: { kind: 'llamacpp-native', customEngineId: 'prismml' } }), serverPreset('p2', { name: 'Mio', engine: { kind: 'command', customEngineId: 'mine' } })];
-    api.world.customEngines = [
+    api.world.custom = [
       { engine: { schema: 1, id: 'prismml', name: 'PrismML fork', base: 'llamacpp', run: { mode: 'native', path: 'x' }, extraArgs: [], env: {}, notes: '' }, kind: 'llamacpp-native', config: { kind: 'llamacpp-native', customEngineId: 'prismml' }, check: { kind: 'llamacpp-native', status: { kind: 'llamacpp-native', available: true, installed: true, problems: [], supported: true }, flagCount: 1, missing: [] } },
-      { engine: { schema: 1, id: 'mine', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 's --port {port}' }, extraArgs: [], env: {}, notes: '' }, kind: 'command', config: { kind: 'command', customEngineId: 'mine' }, check: { kind: 'command', status: { kind: 'command', available: true, installed: true, problems: [], supported: true }, flagCount: 0, missing: [] } },
+      { engine: { schema: 1, id: 'mine', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 's --port {port}', api: 'chat' }, extraArgs: [], env: {}, notes: '' }, kind: 'command', config: { kind: 'command', customEngineId: 'mine' }, check: { kind: 'command', status: { kind: 'command', available: true, installed: true, problems: [], supported: true }, flagCount: 0, missing: [] } },
     ];
     api.world.routes['PUT /api/servers/presets/p1'] = () => {
       throw apiError('VALIDATION');
@@ -257,10 +257,18 @@ describe('Server page: presets and notices', () => {
     api.world.routes['POST /api/servers/presets/p1/start'] = () => {
       throw apiError('MODEL_NOT_FOUND');
     };
+    // Running on forks: named as the Benchmark names them, with the build the core read (none after a rename).
+    const fork = { kind: 'llamacpp-native' as const, customEngineId: 'prismml' };
+    api.world.servers = [
+      serverInfo('f1', { port: 8090, modelLabel: 'Bonsai 8B', engineLabel: 'PrismML fork b42', request: { engine: fork, model: { localId: 'm1' }, port: 8090 } }),
+      serverInfo('f2', { port: 8091, modelLabel: 'Bonsai 4B', engineLabel: 'Old name b41', request: { engine: fork, model: { localId: 'm1' }, port: 8091 } }),
+    ];
     const error = vi.spyOn(toast, 'error');
     renderApp('/servers', api);
+    expect(within(await card('Server Bonsai 8B sulla porta 8090')).getByText('llama.cpp · PrismML fork b42')).toBeTruthy();
+    expect(within(await card('Server Bonsai 4B sulla porta 8091')).getByText('llama.cpp · PrismML fork')).toBeTruthy();
     expect(await screen.findByText('qwen3-8b model · Q4_K_M · llama.cpp · PrismML fork')).toBeTruthy();
-    expect(screen.getByText('qwen3-8b model · Q4_K_M · Il mio server')).toBeTruthy();
+    expect(screen.getByText('qwen3-8b model · Q4_K_M · Programma con API OpenAI · Il mio server')).toBeTruthy();
     await userEvent.click(screen.getByRole('switch', { name: 'Avvia Bonsai all’apertura di GPU Bench' }));
     await waitFor(() => expect(error).toHaveBeenCalledWith('Alcuni valori non sono validi'));
     await userEvent.click(screen.getByRole('button', { name: 'Avvia il preset Bonsai' }));
