@@ -2026,7 +2026,7 @@ export const en: Messages = {
       engineHint: 'A custom engine (a fork) is used instead of the usual one.',
       engineTemplate: '{name} (to be set up in Engines)',
       args: 'Extra arguments',
-      argsHint: 'Separated by spaces or on several lines; quotes keep a value with spaces together. They go before your expert-mode arguments.',
+      argsHint: 'Separated by spaces or on several lines; quotes keep a value with spaces together, a JSON goes between single quotes (\'{"method":"mtp"}\'). They go before your expert-mode arguments.',
       argsInvalid: 'A quote is not closed.',
       env: 'Environment variables',
       envHint: 'One per line: NAME=value.',

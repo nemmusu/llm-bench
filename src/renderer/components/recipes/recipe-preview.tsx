@@ -20,7 +20,7 @@ export type InlineRecipe = NonNullable<NonNullable<StartServerRequest['recipe']>
 /** The server plan of the model on `kind` with this recipe (an unsaved one inline, a saved one by id). */
 export function useRecipePlan(target: RecipeTarget, kind: EngineKind, recipe: { inline: InlineRecipe } | { id: string } | undefined) {
   const api = useApi();
-  const body: StartServerRequest = { engine: { kind }, model: target.request, ...(recipe ? { recipe: { use: true, ...recipe } } : {}) };
+  const body: StartServerRequest = { engine: { kind }, model: target.request, recipe: { use: true, ...recipe } };
   // Debounced: the editor's preview follows the typing without a request per key.
   const json = useDebounced(JSON.stringify(body), 300);
   return useQuery({

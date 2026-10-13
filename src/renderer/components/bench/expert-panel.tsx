@@ -134,7 +134,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
   /** The context field: the recipe's value as its placeholder, and a line when the user's replaces it. */
   const ctxField = (field: 'contextSize' | 'maxModelLen', label: string) => {
     const typed = parseInteger(p.params[field]);
-    const hint = recipeCtx === undefined || yarnOn ? undefined : typed !== null && typed !== recipeCtx ? t('recipes.expert.replaced', { value: integer(recipeCtx) }) : t('recipes.expert.fromRecipe', { name: recipe?.name ?? '' });
+    const hint = recipe === undefined || recipeCtx === undefined || yarnOn ? undefined : typed !== null && typed !== recipeCtx ? t('recipes.expert.replaced', { value: integer(recipeCtx) }) : t('recipes.expert.fromRecipe', { name: recipe.name });
     return (
       <Text
         label={label}

@@ -3,6 +3,7 @@
  * for this model (target ÷ trained context) and, while one is chosen, the plain warning that quality
  * there is not guaranteed (only speed and memory are measured).
  */
+import { useState } from 'react';
 import { YARN_TARGETS, yarnScaling } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { depthLabel } from '../tune/tune-format';
@@ -38,7 +39,9 @@ export function yarnSegment(value: string): string {
 export function YarnChoice({ value, onChange, trained, allowOff = false, invalid, title = false }: YarnChoiceProps) {
   const f = useI18n();
   const { t, integer, number } = f;
-  const segment = yarnSegment(value);
+  // "Altro" stays chosen while its box is being typed in (even empty for a moment).
+  const [typing, setTyping] = useState(false);
+  const segment = typing ? CUSTOM : yarnSegment(value);
   const target = Number(value);
   const rope = Number.isInteger(target) && target > 0 ? yarnScaling(target, trained) : undefined;
   const unknown = trained === undefined;
@@ -54,7 +57,10 @@ export function YarnChoice({ value, onChange, trained, allowOff = false, invalid
         size="sm"
         label={t('context.yarn.title')}
         value={segment}
-        onValueChange={(v) => onChange(v === OFF ? '' : v === CUSTOM ? String(CUSTOM_DEFAULT) : v)}
+        onValueChange={(v) => {
+          setTyping(v === CUSTOM);
+          onChange(v === OFF ? '' : v === CUSTOM ? String(CUSTOM_DEFAULT) : v);
+        }}
         options={[
           ...(allowOff ? [{ value: OFF, label: t('context.yarn.off') }] : []),
           ...YARN_TARGETS.map((n) => ({ value: String(n), label: depthLabel(n, f), disabled: unknown || (trained as number) >= n })),

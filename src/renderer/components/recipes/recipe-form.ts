@@ -4,6 +4,7 @@
  * (contract/custom-engines.ts splitCommandLine: quotes group, no shell).
  */
 import { splitCommandLine } from '../../../contract/custom-engines';
+import type { RopeScaling } from '../../../contract/engines';
 import {
   DRAFT_AUTO,
   modelEntryRank,
@@ -51,7 +52,14 @@ export interface RecipeForm {
 export type RecipeField = 'name' | 'pattern' | 'yarnTarget' | 'yarnOriginal' | 'contextSize' | 'draftFile' | 'env' | 'notes' | 'link' | `args.${RecipeArgTarget}`;
 
 /** An argument shown back in its textarea: quoted when it holds spaces. */
-const showArg = (a: string): string => (/\s/.test(a) ? `"${a}"` : a);
+/**
+ * An argument as typed back: a JSON value (double quotes inside) between single quotes, one with spaces
+ * or an apostrophe between double quotes; one holding both kinds of quote cannot be written back.
+ */
+export function showArg(a: string): string {
+  if (a.includes('"')) return a.includes("'") ? a : `'${a}'`;
+  return /[\s']/.test(a) ? `"${a}"` : a;
+}
 const showArgs = (args: readonly string[] | undefined): string => (args ?? []).map(showArg).join(' ');
 const num = (n: number | undefined): string => (n === undefined ? '' : String(n));
 
@@ -86,7 +94,8 @@ export function formOfRecipe(r: Partial<ModelRecipe> | undefined, target: Recipe
     quant: match?.quant ?? '',
     models: match?.models ?? [],
     context,
-    yarnTarget: context === 'yarn' ? num(r?.contextSize ?? Math.round((rope?.factor ?? 1) * (rope?.originalContext ?? 0))) : String(YARN_TARGETS[0]),
+    // A YaRN recipe always has its RoPE scaling; without a context its target is factor × original.
+    yarnTarget: context === 'yarn' ? num(r?.contextSize ?? Math.round((rope as RopeScaling).factor * (rope as RopeScaling).originalContext)) : String(YARN_TARGETS[0]),
     yarnOriginal: num(rope?.originalContext ?? trained),
     contextSize: context === 'fixed' ? num(r?.contextSize) : '',
     draft,
@@ -102,6 +111,9 @@ export function formOfRecipe(r: Partial<ModelRecipe> | undefined, target: Recipe
     from: r?.from ?? [],
   };
 }
+
+/** The form field of a recipe key the schema refused (anything else: the name). */
+const SCHEMA_FIELDS: Readonly<Record<string, RecipeField>> = { match: 'pattern', env: 'env', notes: 'notes', draft: 'draftFile', link: 'link' };
 
 function isUrl(text: string): boolean {
   try {
@@ -175,9 +187,8 @@ export function recipeOfForm(form: RecipeForm, target: RecipeTarget): { draft?: 
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i): RecipeField => {
       const key = String(i.path[0]);
-      if (key === 'match') return 'pattern';
       if (key === 'args') return `args.${String(i.path[1])}` as RecipeField;
-      return key === 'env' || key === 'notes' || key === 'draft' ? (key === 'draft' ? 'draftFile' : key) : 'name';
+      return SCHEMA_FIELDS[key] ?? 'name';
     });
     return { invalid: [...new Set(fields)] };
   }

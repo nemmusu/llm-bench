@@ -7,7 +7,7 @@
 import { BookOpen, Cpu, ExternalLink, Gauge, Image, Ruler, Server } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
-import { recipeCustomEngine, RECIPE_TEMPLATES, YARN_TARGETS, yarnScaling, type RecipeTemplate, type RecipeTemplateId } from '../../../contract/recipes';
+import { defaultYarnTarget, recipeCustomEngine, RECIPE_TEMPLATES, YARN_TARGETS, yarnScaling, type RecipeTemplate, type RecipeTemplateId } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { useSettings } from '../../lib/settings';
 import { depthLabel } from '../tune/tune-format';
@@ -56,8 +56,10 @@ function TemplateCard({ template, target, onUse }: { template: RecipeTemplate; t
   const { settings } = useSettings();
   const blocked = template.blocked(target.template);
   const trained = target.template.trainedContext;
-  const targets = trained === undefined ? [] : YARN_TARGETS.filter((n) => n > trained);
-  const [yarn, setYarn] = useState(String(targets[0] ?? YARN_TARGETS[0]));
+  // The offered targets beyond the trained context; a model trained past them all: twice its context.
+  const beyond = trained === undefined ? [] : YARN_TARGETS.filter((n) => n > trained);
+  const targets = beyond.length || trained === undefined ? beyond : [defaultYarnTarget(trained)];
+  const [yarn, setYarn] = useState(String(targets[0]));
   const rope = trained === undefined ? undefined : yarnScaling(Number(yarn), trained);
   const Icon = ICONS[template.id];
   const sets = template.parts.map((p) => t(`recipes.applied.partNames.${p}`)).join(' · ');
@@ -88,7 +90,7 @@ function TemplateCard({ template, target, onUse }: { template: RecipeTemplate; t
                 label={t('recipes.library.yarn.target')}
                 value={yarn}
                 onValueChange={setYarn}
-                options={(targets.length ? targets : YARN_TARGETS).map((n) => ({ value: String(n), label: depthLabel(n, f) }))}
+                options={targets.map((n) => ({ value: String(n), label: depthLabel(n, f) }))}
               />
               {rope && <span className="text-xs text-fg-3 tabular-nums">{t('recipes.library.yarn.factor', { factor: number(rope.factor, 2), trained: integer(trained as number) })}</span>}
             </span>

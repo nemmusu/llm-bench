@@ -2027,7 +2027,7 @@ export const it = {
       engineHint: 'Un motore personalizzato (un fork) viene usato al posto di quello normale.',
       engineTemplate: '{name} (da indicare in Motori)',
       args: 'Argomenti in più',
-      argsHint: 'Separati da spazi o su più righe; le virgolette tengono insieme un valore con spazi. Vanno prima dei tuoi argomenti della modalità esperto.',
+      argsHint: 'Separati da spazi o su più righe; le virgolette tengono insieme un valore con spazi, un JSON va tra apici (\'{"method":"mtp"}\'). Vanno prima dei tuoi argomenti della modalità esperto.',
       argsInvalid: 'Una virgoletta non è chiusa.',
       env: 'Variabili d’ambiente',
       envHint: 'Una per riga: NOME=valore.',

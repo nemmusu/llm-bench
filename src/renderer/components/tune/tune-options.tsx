@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { RunPlan, StartRunRequest } from '../../../contract/api';
-import { YARN_TARGETS } from '../../../contract/recipes';
+import { defaultYarnTarget } from '../../../contract/recipes';
 import { TUNE_MAX_USERS, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal } from '../../../contract/results';
 import { YarnChoice } from '../recipes/yarn-choice';
 import { useI18n } from '../../i18n';
@@ -74,6 +74,8 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
   const users = value.users ?? TUNE_MULTI_DEFAULTS.users;
   const perUser = value.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext;
   const [usersText, setUsersText] = useState(String(users));
+  // The YaRN context as typed: the request keeps the last whole number.
+  const [yarnText, setYarnText] = useState(value.yarnTarget === undefined ? '' : String(value.yarnTarget));
   const usersInvalid = parseUsers(usersText) === undefined;
   const offered = recheckOffered(previous);
   const budget: TuneBudget = value.budget === 'recheck' && !offered ? 'fast' : value.budget;
@@ -183,7 +185,9 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
               disabled={trainedContext === undefined}
               onCheckedChange={(on) => {
                 const { yarnTarget: _off, ...rest } = value;
-                onChange(on ? { ...value, yarnTarget: YARN_TARGETS.find((n) => n > (trainedContext as number)) ?? (trainedContext as number) * 2 } : rest);
+                const first = defaultYarnTarget(trainedContext as number);
+                setYarnText(on ? String(first) : '');
+                onChange(on ? { ...value, yarnTarget: first } : rest);
               }}
               aria-describedby="tune-yarn-hint"
               className="mt-0.5"
@@ -199,8 +203,9 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
           </div>
           {value.yarnTarget !== undefined && (
             <YarnChoice
-              value={String(value.yarnTarget)}
+              value={yarnText}
               onChange={(v) => {
+                setYarnText(v);
                 const n = Number(v);
                 if (Number.isInteger(n) && n > 0) onChange({ ...value, yarnTarget: n });
               }}

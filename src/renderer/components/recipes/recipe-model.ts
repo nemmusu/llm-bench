@@ -46,7 +46,8 @@ export function previewEngines(format: string | undefined): EngineKind[] {
   return ['llamacpp-native'];
 }
 
-const fileName = (p: string | undefined): string | undefined => p?.split(/[\\/]/).pop();
+/** The last part of a path (a split always has one). */
+const fileName = (p: string): string => p.split(/[\\/]/).pop() as string;
 
 /** A model of the library ("Sul tuo PC"). */
 export function targetOfLocal(m: LocalModel, label = m.identity.displayName): RecipeTarget {
@@ -144,7 +145,7 @@ export function recipeParts(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling' |
   else if (rope) parts.push(t(rope.type === 'yarn' ? 'recipes.parts.ropeOnly' : 'recipes.parts.linear', { factor: f.number(rope.factor, 2) }));
   else if (r.contextSize !== undefined) parts.push(t('recipes.parts.context', { ctx: depthLabel(r.contextSize, f) }));
   if (r.draft !== undefined) {
-    const mtp = r.draft === DRAFT_AUTO ? !(o.aux ?? []).some((a) => a.kind === 'draft') : /mtp/i.test(fileName(r.draft) ?? '');
+    const mtp = r.draft === DRAFT_AUTO ? !(o.aux ?? []).some((a) => a.kind === 'draft') : /mtp/i.test(fileName(r.draft));
     parts.push(t(mtp ? 'recipes.parts.mtp' : 'recipes.parts.draft'));
   }
   if (r.mmproj) parts.push(t('recipes.parts.mmproj'));
