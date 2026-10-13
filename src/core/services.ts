@@ -436,6 +436,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const id = model.identity;
       return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);
     },
+    // "Comandi per questo modello": recipes and custom engines are settings.
+    recipes: async () => {
+      const s = await ctx.settings.get();
+      return { recipes: s.modelRecipes, customEngines: s.customEngines };
+    },
   });
 
   return {

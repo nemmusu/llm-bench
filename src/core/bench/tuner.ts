@@ -30,7 +30,7 @@
  *  5. Full context sweep of each type's best combination (and of any screened variant that was the
  *     fastest at one of its depths): what its screening measured is reused, so each deep prompt of a
  *     combination is measured once. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the
- *     exact maximum; "Accurata" doubles.
+ *     exact maximum; "Accurata" doubles; both measure 200K when the context reaches it.
  *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
  *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
  *     the only way to a larger context.
@@ -338,8 +338,10 @@ export interface TunerInput {
   budget: TuneBudget;
   /** Sweep shape (from the profile's context-sweep step): also the answer length of goal 'multi'. */
   sweep: { outputTokens: number; reps: number };
-  /** Trained context of the model (the search never goes above it). */
+  /** Trained context of the model, or with YaRN the extended one (the search never goes above it). */
   modelContext?: number;
+  /** Contexts the capacity search also tries when the estimate allows them (the YaRN targets, 300K / 500K). */
+  contextCandidates?: readonly number[];
   /** VRAM estimate on the free VRAM measured before the search; undefined = no estimate (nothing pruned). */
   predict?: (params: LaunchParams) => FitEstimate | undefined;
   /** A model that does not fit can spill to shared memory (Windows / WDDM) instead of failing. */
@@ -754,6 +756,7 @@ export class Tuner {
     const near = Math.floor(limit / CAPACITY_STEP) * CAPACITY_STEP;
     if (predicted !== undefined && near > this.min && !candidates.includes(near)) candidates.push(near);
     if (this.cap <= limit && !candidates.includes(this.cap)) candidates.push(this.cap);
+    for (const c of this.input.contextCandidates ?? []) if (c > this.min && c <= Math.min(limit, this.cap) && !candidates.includes(c)) candidates.push(c);
     candidates.sort((a, b) => a - b);
     return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }

@@ -228,7 +228,8 @@ export interface RecipeModelRef extends MatchableModel {
   weakKey?: string | undefined;
 }
 
-const baseName = (p: string): string => p.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+/** The last part of a path, lower case (a split always has one). */
+const baseName = (p: string): string => (p.split(/[\\/]/).pop() as string).toLowerCase();
 
 /**
  * How well `entry` names `model`: 4 = same sha256, 3 = same weak key or same repo + file, 2 = same
@@ -244,7 +245,7 @@ export function modelEntryRank(entry: RecipeModel, model: RecipeModelRef): numbe
 
 /** The quantization of a model: its own, else a token of its file name ("Bonsai-8B-PQ2_0.gguf"). */
 function quantTexts(model: RecipeModelRef): string[] {
-  const tokens = (model.file ?? '').split(/[\\/]/).pop()?.split(/[^A-Za-z0-9_]+/) ?? [];
+  const tokens = ((model.file ?? '').split(/[\\/]/).pop() as string).split(/[^A-Za-z0-9_]+/);
   return [...(model.quant !== undefined ? [model.quant] : []), ...tokens].filter(Boolean);
 }
 
@@ -360,7 +361,7 @@ export interface RecipePatch {
 
 const isMtpName = (p: string): boolean => /(^|[^a-z])mtp([^a-z]|$)/i.test(baseName(p));
 
-/** The recipe's settings for one launch (the preferred engine is resolved separately: recipeEngineConfig). */
+/** The recipe's settings for one launch (the preferred engine is resolved separately: recipeCustomEngine). */
 export function recipePatchFor(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling' | 'draft' | 'mmproj' | 'args' | 'env'>, ctx: RecipeLaunchContext): RecipePatch {
   const target = recipeArgTargetOf(ctx.kind);
   const out: RecipePatch = { params: {}, args: [], env: {}, parts: [], skipped: [] };
@@ -370,9 +371,10 @@ export function recipePatchFor(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling
     return out;
   }
   const llama = target === 'llamacpp';
-  if (r.contextSize !== undefined && target !== 'command') {
-    if (llama) out.params.contextSize = r.contextSize;
-    else out.params.maxModelLen = r.contextSize;
+  if (r.contextSize !== undefined) {
+    // vLLM and SGLang read max-model-len; llama.cpp and a command template's {ctx} the context size.
+    if (target === 'vllm' || target === 'sglang') out.params.maxModelLen = r.contextSize;
+    else out.params.contextSize = r.contextSize;
     out.parts.push('context');
   }
   if (r.ropeScaling !== undefined) {

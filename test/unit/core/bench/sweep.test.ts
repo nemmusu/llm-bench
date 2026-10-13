@@ -108,9 +108,18 @@ describe('time of a request at another depth (an RTX 5090 with a 27B Q4 model: r
     expect(requestMsAt(131_072, 128, at1k) / 1000).toBeGreaterThan(90);
   });
 
-  it('the ×4 grid: 1K, 4K, 16K, 64K, 256K', () => {
-    expect(depthGrid(262_000, 4)).toEqual([1024, 4096, 16384, 65536]);
-    expect(depthGrid(262_144, 4)).toEqual([1024, 4096, 16384, 65536, 262_144]);
-    expect(sweepDepths(262_144, 128, { step: 4 })).toEqual([1024, 4096, 16384, 65536, 262_000]);
+  it('the ×4 grid: 1K, 4K, 16K, 64K, 200K, 256K', () => {
+    expect(depthGrid(262_000, 4)).toEqual([1024, 4096, 16384, 65536, 204_800]);
+    expect(depthGrid(262_144, 4)).toEqual([1024, 4096, 16384, 65536, 204_800, 262_144]);
+    expect(sweepDepths(262_144, 128, { step: 4 })).toEqual([1024, 4096, 16384, 65536, 204_800, 262_000]);
+  });
+
+  it('200K is a step of both grids once the context reaches it (the doubling one too), never below', () => {
+    expect(depthGrid(204_799)).toEqual([1024, 4096, 8192, 16384, 32768, 65536, 131_072]);
+    expect(depthGrid(204_800)).toEqual([1024, 4096, 8192, 16384, 32768, 65536, 131_072, 204_800]);
+    expect(sweepDepths(524_288, 128)).toEqual([1024, 4096, 8192, 16384, 32768, 65536, 131_072, 204_800, 262_144, 524_144]);
+    // A 300K YaRN launch: every step up to its own maximum.
+    expect(sweepDepths(307_200, 128, { step: 4 })).toEqual([1024, 4096, 16384, 65536, 204_800, 262_144, 307_056]);
+    expect(nominalDepth(204_800)).toBe(204_800);
   });
 });
