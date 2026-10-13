@@ -1,11 +1,13 @@
-import { ArrowUpCircle, Download, Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LocalModel, ModelUpdate } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
-import { useCheckUpdates, useLibraryModels, useModelUpdates } from '../../lib/queries-library';
+import { useCheckUpdates, useDownloadJobs, useLibraryModels, useModelUpdates } from '../../lib/queries-library';
+import { InstallProgress } from '../setup/install-progress';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Callout } from '../ui/callout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import type { DownloadChoice } from './download-dialog';
@@ -17,32 +19,37 @@ function addTo(m: LocalModel, files: string[], label: string, sizeBytes: number)
 }
 
 /**
- * What the last check found for one local model: "Aggiornamento disponibile" with what changed ("Il file
- * Q4_K_M è cambiato (17,8 → 17,6 GB)") and "Aggiorna", and the parts its repo has and the PC does not
- * ("Aggiungi la parte visione (mmproj, 0,9 GB)", "Aggiungi MTP"). Each opens the download dialog.
+ * What the last check found for one local model, the way an engine card says it: "Aggiornamento
+ * disponibile" with what changed ("Il file Q4_K_M è cambiato (17,8 → 17,6 GB)") and "Aggiorna", and the
+ * parts its repo has and the PC does not ("Aggiungi la parte visione (mmproj, 0,9 GB)", "Aggiungi MTP").
+ * Each opens the download dialog; while that download runs, its progress takes their place.
  */
 export function ModelUpdateInfo({ m, update, onDownload }: { m: LocalModel; update: ModelUpdate | undefined; onDownload: (c: DownloadChoice) => void }) {
   const { t, bytes } = useI18n();
-  if (!update) return null;
+  const jobs = useDownloadJobs();
   const name = m.identity.displayName;
+  // A download into this model's folder (an update, an mmproj): the same progress as an engine's update.
+  const running = jobs.data?.find((j) => ['queued', 'running', 'verifying'].includes(j.state) && j.repo === m.identity.repo && j.dest === m.repoDir);
+  if (running) {
+    const stage = running.state === 'verifying' ? 'verify' : 'download';
+    return (
+      <InstallProgress
+        event={{ type: 'engine.install', kind: 'model-download', stage, bytesDone: running.bytesDone, ...(running.bytesTotal ? { bytesTotal: running.bytesTotal } : {}) }}
+        label={running.label}
+        className="max-w-md"
+      />
+    );
+  }
+  if (!update) return null;
   return (
     <div className="flex flex-col gap-2">
       {update.changed.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <Badge tone="info" size="sm">
-            <ArrowUpCircle aria-hidden />
-            {t('models.updates.available')}
-          </Badge>
-          <ul className="flex flex-col text-xs text-fg-2">
-            {update.changed.map((c) => (
-              <li key={c.path}>{t('models.updates.changed', { name: c.label, old: bytes(c.oldBytes), new: bytes(c.newBytes) })}</li>
-            ))}
-          </ul>
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-label={`${t('models.updates.update')}: ${name}`}
-            onClick={() =>
+        <Callout
+          tone="info"
+          title={t('models.updates.available')}
+          action={{
+            label: t('models.updates.update'),
+            onClick: () =>
               onDownload(
                 addTo(
                   m,
@@ -50,13 +57,15 @@ export function ModelUpdateInfo({ m, update, onDownload }: { m: LocalModel; upda
                   t('models.updates.updateLabel', { name }),
                   update.changed.reduce((a, c) => a + c.newBytes, 0),
                 ),
-              )
-            }
-          >
-            <Download aria-hidden />
-            {t('models.updates.update')}
-          </Button>
-        </div>
+              ),
+          }}
+        >
+          <ul className="flex flex-col">
+            {update.changed.map((c) => (
+              <li key={c.path}>{t('models.updates.changed', { name: c.label, old: bytes(c.oldBytes), new: bytes(c.newBytes) })}</li>
+            ))}
+          </ul>
+        </Callout>
       )}
       {update.extras.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -95,7 +104,7 @@ export function CheckUpdates({ repo, className }: { repo?: string; className?: s
     <div className={cn('flex flex-wrap items-center gap-2 text-sm text-fg-3', className)}>
       <span>{when ? t('models.updates.lastCheck', { when: relative(when) }) : t('models.updates.never')}</span>
       <HelpTip term={t('models.updates.helpTerm')}>{t('models.updates.help')}</HelpTip>
-      <Button size="sm" onClick={run} disabled={check.isPending}>
+      <Button size="sm" variant="ghost" onClick={run} disabled={check.isPending}>
         <RefreshCw aria-hidden className={check.isPending ? 'animate-spin' : undefined} />
         {check.isPending ? t('models.updates.checking') : t('models.updates.check')}
       </Button>

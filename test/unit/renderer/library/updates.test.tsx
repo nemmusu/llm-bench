@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModelUpdate } from '../../../../src/contract/models';
 import { createFormatters } from '../../../../src/renderer/i18n';
-import { bridge, libApi, localModel, renderLib, run, world } from './fake';
+import { bridge, job, libApi, localModel, renderLib, run, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -49,7 +49,8 @@ describe('library: updates and missing parts', () => {
     expect(await screen.findByText('Aggiornamento disponibile')).toBeTruthy();
     expect(screen.getByText(`Il file Q8_0 è cambiato (${bytes(8.2e9)} → ${bytes(8e9)})`)).toBeTruthy();
     expect(screen.getByText(/^Ultimo controllo /)).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Aggiorna: Model m1' }));
+    const row = (await screen.findByText('Model m1')).closest('li') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Aggiorna' }));
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText(`Il modello è già sul PC: scarico solo Model-Q8_0.gguf (${bytes(8e9)}).`)).toBeTruthy();
     expect(within(dialog).getByText(/Il file che hai resta finché quello nuovo non è scaricato e verificato/)).toBeTruthy();
@@ -75,6 +76,25 @@ describe('library: updates and missing parts', () => {
     dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('È già tutto sul PC: non c’è niente da scaricare.')).toBeTruthy();
     expect((within(dialog).getByRole('button', { name: 'Già sul PC' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('while the download into a model’s folder runs, its progress takes the place of the update', async () => {
+    const other = `${DIR}-Other`;
+    const api = libApi(
+      world({
+        local: [mine('m1'), mine('m3', { repoDir: other })],
+        updates: { checking: false, models: [news(), news({ modelId: 'm3' })] },
+        downloads: [
+          job('up', { repo: REPO, dest: DIR, label: 'Model m1 · aggiornamento', state: 'running', bytesDone: 2e9, bytesTotal: 8e9 }),
+          job('eye', { repo: REPO, dest: other, label: 'Model m3 · visione', state: 'verifying', bytesDone: 0, bytesTotal: 0 }),
+          job('old', { repo: REPO, dest: DIR, state: 'done' }),
+        ],
+      }),
+    );
+    renderLib('/models', api);
+    expect(await screen.findByRole('progressbar', { name: 'Model m1 · aggiornamento' })).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Model m3 · visione' })).toBeTruthy();
+    expect(screen.queryByText('Aggiornamento disponibile')).toBeNull();
   });
 
   it('"Controlla aggiornamenti" checks every repo and says what it found', async () => {

@@ -104,7 +104,7 @@ test('a quant without its mmproj, "Aggiungi la parte visione" later, then "Aggio
     await expect(row.getByText(/^Il file Q4_K_M è cambiato \(.+ → .+\)$/)).toBeVisible();
     await scan(page, 'library with an update');
     const beforeUpdate = world.hub.requests.length;
-    await row.getByRole('button', { name: 'Aggiorna: Tiny-Eye-Q4_K_M' }).click();
+    await row.getByRole('button', { name: 'Aggiorna', exact: true }).click();
     const update = page.getByRole('dialog', { name: /^Scaricare Tiny-Eye-Q4_K_M · aggiornamento\?$/ });
     await expect(update.getByText(/Il file che hai resta finché quello nuovo non è scaricato e verificato/)).toBeVisible({ timeout: 20_000 });
     await update.getByRole('button', { name: /^Scarica · / }).click();
