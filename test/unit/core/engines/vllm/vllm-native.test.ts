@@ -91,6 +91,20 @@ describe('VllmNativeAdapter: detection', () => {
 });
 
 describe('VllmNativeAdapter: plan', () => {
+  it('RoPE scaling reads the help to pick the flag; a fork lacking options gets them left out', async () => {
+    const root = tmp();
+    managedVenv(root);
+    const help = '  --host HOST  h\n  --port PORT  p\n  --served-model-name NAME\n  --max-model-len N\n  --gpu-memory-utilization G\n  --seed S\n  --rope-scaling R\n';
+    const proc = scriptedProc((args) => (args.some((a) => a.startsWith('--help')) ? ok(help) : ok('0.6.0\n')));
+    const a = new VllmNativeAdapter({ deps: deps(root, proc), createClient: noClient });
+    const plan = await a.plan({ kind: 'vllm-native' }, repoModel, launchParamsSchema.parse({ ropeScaling: { type: 'yarn', factor: 2, originalContext: 8192 }, parallel: 3 }), { port: 1, marker: 'gpubench-r' });
+    expect(plan.argv.slice(plan.argv.indexOf('--rope-scaling'), plan.argv.indexOf('--rope-scaling') + 2)).toEqual([
+      '--rope-scaling',
+      '{"rope_type":"yarn","factor":2,"original_max_position_embeddings":8192}',
+    ]);
+    expect(plan.unsupported).toEqual([{ flag: '--max-num-seqs', setting: 'parallel', effect: 'default' }]);
+  });
+
   it('builds `vllm serve <repo>` on loopback with the token as a placeholder', async () => {
     const root = tmp();
     const exe = managedVenv(root);

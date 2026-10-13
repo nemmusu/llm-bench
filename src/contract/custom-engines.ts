@@ -33,12 +33,13 @@ export type CommandPlaceholder = (typeof COMMAND_PLACEHOLDERS)[number];
  *   native   llama.cpp: the llama-server executable (or its folder); vLLM: the `vllm` script or its
  *            venv folder; SGLang: the Python of an environment with SGLang, or that venv folder
  *   docker   an image:tag built on the base's official image (same entrypoint and flags)
- *   command  'openai-server' only: the command template
+ *   command  'openai-server' only: the command template, and which OpenAI API it is measured with:
+ *            'completions' (/v1/completions) or 'chat' (/v1/chat/completions, for servers without the former)
  */
 export const customEngineRunSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('native'), path: z.string().trim().min(1) }),
   z.object({ mode: z.literal('docker'), image: z.string().trim().min(1) }),
-  z.object({ mode: z.literal('command'), template: z.string().trim().min(1).max(4000) }),
+  z.object({ mode: z.literal('command'), template: z.string().trim().min(1).max(4000), api: z.enum(['completions', 'chat']).default('completions') }),
 ]);
 export type CustomEngineRun = z.infer<typeof customEngineRunSchema>;
 

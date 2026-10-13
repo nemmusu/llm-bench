@@ -28,7 +28,10 @@ export function expandCustom(engine: CustomEngine, cfg: EngineConfig): CoreEngin
   const out: CoreEngineConfig = { ...cfg };
   const run = engine.run;
   if (run.mode === 'docker') out.image = run.image;
-  else if (run.mode === 'command') out.command = run.template;
+  else if (run.mode === 'command') {
+    out.command = run.template;
+    out.flavor = run.api === 'chat' ? 'openai-chat' : 'openai';
+  }
   else if (engine.base === 'llamacpp') out.executable = run.path;
   else if (engine.base === 'vllm') out.vllmPath = run.path;
   else out.sglangPath = run.path;
@@ -83,7 +86,8 @@ export class CustomEngineAdapter implements EngineAdapter {
       r = await this.resolve(cfg);
     } catch (e) {
       const err = toAppErrorData(e);
-      return { kind: this.kind, available: false, installed: false, problems: [err.code], ...(err.params ? { problemParams: err.params } : {}), supported: true, customEngineId: cfg?.customEngineId as string };
+      // resolve() only throws AppErrors that name the engine (reason, id).
+      return { kind: this.kind, available: false, installed: false, problems: [err.code], problemParams: err.params as NonNullable<typeof err.params>, supported: true, customEngineId: cfg?.customEngineId as string };
     }
     if (!r) return this.inner.detect(cfg);
     return { ...(await this.inner.detect(r.cfg)), customEngineId: r.engine.id };

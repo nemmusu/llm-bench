@@ -16,6 +16,7 @@ import { capsFromOutputs } from '../../../../../src/core/engines/llamacpp-native
 import { BUILTIN_COMPAT, type EngineCompat } from '../../../../../src/core/engines/shared/compat';
 import type { ModelTarget } from '../../../../../src/core/engines/types';
 import { VllmDockerAdapter } from '../../../../../src/core/engines/vllm-docker/adapter';
+import { SglangDockerAdapter } from '../../../../../src/core/engines/sglang-docker/adapter';
 import { fail, json, manualProcess, ok, recordingLog, RESOURCES, routeFetch, scriptedProc, silentLog, steppingClock, tempDir } from '../../docker/helpers';
 
 const LLAMA_FIXTURES = path.resolve(RESOURCES, '..', 'test', 'fixtures', 'llamacpp');
@@ -166,6 +167,16 @@ describe('LlamaDockerAdapter', () => {
     expect(await new LlamaDockerAdapter(broken.common).capabilities({ kind: 'llamacpp-docker' })).toEqual(defaultLlamaCaps());
   });
 
+  it('a fork image without -ub: planned without it, and said', async () => {
+    const forkHelp = readFileSync(path.join(LLAMA_FIXTURES, 'help-fork.stdout.txt'), 'utf8');
+    const image = 'me/llama-prism:dev';
+    const h = make({ handler: (args) => (args.includes('--help') ? ok(forkHelp) : args.includes('--version') ? ok('', version) : ok()), images: present(image) });
+    const { model } = ggufModel();
+    const plan = await new LlamaDockerAdapter(h.common).plan({ kind: 'llamacpp-docker', image }, model, launchParamsSchema.parse({ ubatchSize: 1024 }), { port: 1, marker: 'gpubench-k' });
+    expect(plan.argv).not.toContain('-ub');
+    expect(plan.unsupported).toEqual([{ flag: '-ub', setting: 'ubatchSize', effect: 'default' }]);
+  });
+
   it('logs a failed probe and uses defaults (keyed by ref when the id is empty)', async () => {
     const log = recordingLog();
     const h = make({ handler: (args) => (args.includes('--help') ? fail(127, 'exec failed') : ok()), images: present(LLAMA_IMAGE, ''), log });
@@ -302,6 +313,27 @@ describe('VllmDockerAdapter', () => {
     // Image not pulled yet: no options known.
     expect(await a.capabilities({ kind: 'vllm-docker' })).toEqual({ version: 'v0.31.0', flags: new Set(), choices: {}, tokenIdsInPrompt: true, timings: false, minTokens: true, fitFlag: false });
     expect(await a.capabilities({ kind: 'vllm-docker', image: 'ghcr.io/me/vllm:dev' })).not.toHaveProperty('version');
+  });
+
+  it('RoPE scaling: picks the flag from the image help; a fork image without options leaves them out', async () => {
+    const VLLM = path.resolve(RESOURCES, '..', 'test', 'fixtures', 'vllm');
+    const all = readFileSync(path.join(VLLM, 'help-all.stdout.txt'), 'utf8');
+    // The fixture is abbreviated: current vLLM lists --hf-overrides.
+    const h = make({ images: present('vllm/vllm-openai:v0.31.0'), handler: () => ok(`${all}
+  --hf-overrides HF_OVERRIDES
+`) });
+    const a = new VllmDockerAdapter({ ...h.common, hub });
+    const rope = { type: 'yarn' as const, factor: 4, originalContext: 32768 };
+    const plan = await a.plan({ kind: 'vllm-docker' }, repoModel, launchParamsSchema.parse({ ropeScaling: rope }), { port: 1, marker: 'gpubench-y' });
+    const at = plan.argv.indexOf('--hf-overrides');
+    expect(plan.argv[at + 1]).toBe('{"rope_scaling":{"rope_type":"yarn","factor":4,"original_max_position_embeddings":32768}}');
+    const fork = await a.plan({ kind: 'vllm-docker' }, repoModel, launchParamsSchema.parse({ parallel: 2 }), {
+      port: 1,
+      marker: 'gpubench-y2',
+      knownFlags: new Set(['--host', '--port', '--served-model-name', '--max-model-len', '--gpu-memory-utilization', '--seed']),
+    });
+    expect(fork.argv).not.toContain('--max-num-seqs');
+    expect(fork.unsupported).toEqual([{ flag: '--max-num-seqs', setting: 'parallel', effect: 'default' }]);
   });
 
   it('reads the image’s own options from --help=all (once per image id), --help on older images', async () => {
@@ -460,6 +492,52 @@ describe('Docker adapters: remaining paths', () => {
     const plan = await a.plan({ kind: 'llamacpp-docker' }, model, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-s' });
     const inst = await a.start(plan, new AbortController().signal);
     await expect(inst.waitReady()).rejects.toMatchObject({ code: 'ENGINE_BAD_FLAG', params: { flag: '--bogus' } });
+  });
+
+  it('SGLang: a container without the GPU is noted; a local model; no token, no API, default timings', async () => {
+    const t = tempDir('gb-sx-');
+    cleanups.push(t.cleanup);
+    const identity = { displayName: 'q', format: 'safetensors' as const, source: 'local' as const, files: [], weakKey: 'q' };
+    const model: ModelTarget = { identity, local: { id: 'l', identity, paths: [], auxiliary: [], dir: t.dir, origin: 'library', modifiedAt: '' } };
+    const image = 'lmsysorg/sglang:v0.5.21';
+    const x = exiting('RuntimeError: No CUDA GPUs are available');
+    const h = make({ images: present(image) });
+    const a = new SglangDockerAdapter({ ...h.common, cli: x.cli, deps: { ...h.common.deps, proc: x.proc }, hub, readyTimeoutMs: 1e15 });
+    const plan = await a.plan({ kind: 'sglang-docker' }, model, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-sx' });
+    expect(plan.env).toEqual({});
+    const inst = await a.start(plan, new AbortController().signal);
+    expect((inst.client as unknown as { opts: unknown }).opts).toEqual({ model: 'gpubench-sx' });
+    const err = (await inst.waitReady().catch((e: unknown) => e)) as AppError;
+    expect(err.code).toBe('DOCKER_NO_GPU');
+    expect(err.params).not.toHaveProperty('repo');
+    // docker run itself refused for lack of GPU: noted for the environment check.
+    const g = make({ images: present(image), handler: (args) => (args[0] === 'run' ? fail(125, 'could not select device driver "" with capabilities: [[gpu]]') : fail(1, 'No such container')) });
+    const b = new SglangDockerAdapter({ ...g.common, hub, hfToken: () => 'tok' });
+    const p2 = await b.plan({ kind: 'sglang-docker' }, { identity: { ...identity, repo: 'Qwen/Q', source: 'hf' } }, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-sy' });
+    await expect(b.start(p2, new AbortController().signal)).rejects.toMatchObject({ code: 'DOCKER_NO_GPU' });
+    expect(g.noted).toEqual([image]);
+    // A container that exits after a repo download failed: the repo is named.
+    const y = exiting('RepositoryNotFoundError: 404');
+    const c = new SglangDockerAdapter({ ...h.common, cli: y.cli, deps: { ...h.common.deps, proc: y.proc }, hub, readyTimeoutMs: 1e15, pollMs: 10, stopTimeoutSec: 1 });
+    const p3 = await c.plan({ kind: 'sglang-docker' }, { identity: { ...identity, repo: 'Qwen/Q', source: 'hf' } }, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-sz' });
+    const i3 = await c.start(p3, new AbortController().signal);
+    await expect(i3.waitReady()).rejects.toMatchObject({ code: 'HF_NOT_FOUND', params: { repo: 'Qwen/Q' } });
+  });
+
+  it('SGLang: a custom image without an id, its help cached by name; a pinned revision', async () => {
+    const image = 'me/sglang-fork:dev';
+    const h = make({ images: { [image]: { id: '', repoTags: [image], repoDigests: [], size: 1 } }, handler: (args) => (args.includes('--help') ? ok('  --host HOST  h\n  --port PORT  p\n') : ok()) });
+    const a = new SglangDockerAdapter({ ...h.common, hub });
+    const caps = await a.capabilities({ kind: 'sglang-docker', image });
+    expect(caps).not.toHaveProperty('version');
+    expect([...caps.flags]).toEqual(['--host', '--port']);
+    await a.capabilities({ kind: 'sglang-docker', image });
+    expect(h.proc.calls.filter((c) => c.args.includes('--help'))).toHaveLength(1);
+    const plan = await a.plan({ kind: 'sglang-docker', image }, { identity: { displayName: 'q', format: 'safetensors', source: 'hf', repo: 'Qwen/Q', revision: 'r1', files: [], weakKey: 'q' } }, launchParamsSchema.parse({}), { port: 1, marker: 'gpubench-r' });
+    expect(plan.argv.slice(plan.argv.indexOf('--revision'), plan.argv.indexOf('--revision') + 2)).toEqual(['--revision', 'r1']);
+    // Docker down: no options known.
+    const down = new SglangDockerAdapter({ ...make({ inspectError: new AppError('DOCKER_NOT_RUNNING', 'down') }).common, hub });
+    expect((await down.capabilities({ kind: 'sglang-docker' })).flags.size).toBe(0);
   });
 
   it('vLLM: local model without repo, no API, GPU lookup failing for tags', async () => {

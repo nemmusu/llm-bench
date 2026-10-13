@@ -182,15 +182,16 @@ export interface World {
   /** POST /api/servers/plan; by default serverPlanFor() with the needs of coreNeeds. */
   serverPlan: (body: unknown) => ServerPlan;
   fit: FitEstimate;
-  /** The Server page: saved presets, notices, the API key, custom engines. */
+  /** The Server page: saved presets, notices, the API key. */
   presets: ServerPreset[];
   notices: ServerNotice[];
   apiKey: ServerApiKeyInfo;
-  customEngines: CustomEngineInfo[];
   /** Server logs by id (GET /api/servers/:id/log). */
   logs: Record<string, string[]>;
   /** Overrides by "METHOD /path" (exact) or "METHOD /prefix*" (prefix); throw an ApiError to fail. */
   routes: Record<string, Handler>;
+  /** GET /api/engines/custom (the saved engines with their checks). */
+  custom: CustomEngineInfo[];
 }
 
 export interface BenchApi extends FakeApi {
@@ -213,9 +214,9 @@ export function defaultWorld(): World {
     presets: [],
     notices: [],
     apiKey: { key: 'gpub-test-key-0123456789abcdef', storage: 'encrypted' },
-    customEngines: [],
     logs: {},
     routes: {},
+    custom: [],
   };
 }
 
@@ -279,9 +280,9 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/servers/presets') return world.presets;
     if (bare === '/api/servers/notices') return world.notices;
     if (bare === '/api/servers/api-key') return world.apiKey;
-    if (bare === '/api/engines/custom') return world.customEngines;
     const log = /^\/api\/servers\/([^/]+)\/log$/.exec(bare);
     if (log) return { lines: world.logs[decodeURIComponent(log[1]!)] ?? [] };
+    if (bare === '/api/engines/custom') return world.custom;
     if (bare === '/api/setup/check') return { checkedAt: '2026-10-06T10:00:00.000Z', canBenchmark: true, platform: 'win32', items: [{ id: 'llamacpp', state: 'missing', required: true, params: {}, ...(world.installBytes === null ? {} : { action: { kind: 'install-llamacpp', bytes: world.installBytes } }) }] };
     const run = /^\/api\/runs\/([^/]+)$/.exec(bare);
     if (run) {

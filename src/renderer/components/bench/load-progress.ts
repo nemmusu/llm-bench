@@ -48,7 +48,8 @@ export function finishedStages(track: LoadTrack): { stage: LoadStage; ms: number
 /** "vLLM", "llama.cpp" (no name for an external server). */
 export function engineName(kind: EngineKind): string | undefined {
   if (kind === 'vllm-docker' || kind === 'vllm-native') return 'vLLM';
-  if (kind === 'external') return undefined;
+  if (kind === 'sglang-docker' || kind === 'sglang-native') return 'SGLang';
+  if (kind === 'external' || kind === 'command') return undefined;
   return 'llama.cpp';
 }
 
