@@ -588,6 +588,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     notices,
     // A benchmark's engine is a container when its command is our `docker run` (label gpubench=1).
     dockerRunActive: () => bench.active()?.launch?.command.argv.includes(`${GPUBENCH_LABEL}=1`) === true,
+    measuring: () => bench.active() !== undefined,
     resetApi: () => docker.api.reset(),
     ...timings.control,
     clock: deps.clock,

@@ -29,6 +29,8 @@ export interface DockerControlDeps {
   notices?: { add(kind: ServerNotice['kind'], preset: { id?: string; name: string }, error: unknown): void };
   /** A Docker benchmark is running: its container keeps the watchdog awake too. */
   dockerRunActive?: () => boolean;
+  /** A benchmark is running: unless it uses Docker, the watchdog leaves the PC alone meanwhile. */
+  measuring?: () => boolean;
   /** Forgets the Engine API endpoint chosen before a start or restart. */
   resetApi?: () => void;
   clock: Clock;
@@ -247,8 +249,10 @@ export class DockerControl {
    * call the engine must answer); otherwise the cheap cached status. Tells the tray once when Docker
    * got stuck while in use.
    */
-  async tick(): Promise<DockerStatusDetail> {
+  async tick(): Promise<DockerStatusDetail | undefined> {
     const inUse = this.inUse();
+    // A benchmark that does not use Docker is measuring: no docker CLI in the middle of it.
+    if (!inUse && this.o.measuring?.() === true) return undefined;
     const s = inUse ? await this.o.env.probe(this.o.shutdown) : await this.o.env.status();
     if (s.state === 'not-responding' && inUse && !this.stuckTold) {
       this.stuckTold = true;

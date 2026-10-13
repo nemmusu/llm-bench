@@ -27,7 +27,10 @@ describe('createServices: Docker control', () => {
     const d = (s.dockerControl as unknown as { o: DockerControlDeps }).o;
     expect(d.activeEveryMs).toBe(1234);
     expect(d.dockerRunActive?.()).toBe(false);
+    expect(d.measuring?.()).toBe(false);
     const bench = s.bench as unknown as { active: () => unknown };
+    bench.active = () => ({ runId: 'r' });
+    expect(d.measuring?.()).toBe(true);
     bench.active = () => ({ launch: { command: { argv: ['docker', 'run', '--label', 'gpubench=1', 'img'] } } });
     expect(d.dockerRunActive?.()).toBe(true);
     bench.active = () => ({ launch: { command: { argv: ['llama-server', '-m', 'x'] } } });

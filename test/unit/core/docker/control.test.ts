@@ -325,6 +325,16 @@ describe('the watchdog', () => {
     expect(run.c.inUse()).toBe(true);
   });
 
+  it('leaves the PC alone while a benchmark that does not use Docker measures', async () => {
+    let docker = false;
+    const t = setup({ measuring: () => true, dockerRunActive: () => docker }, {}, { state: 'running' });
+    expect(await t.c.tick()).toBeUndefined();
+    expect(t.fe.calls).toEqual([]);
+    docker = true;
+    expect(await t.c.tick()).toEqual({ state: 'running' });
+    expect(t.fe.calls).toEqual(['probe']);
+  });
+
   it('looks every activeEveryMs while in use or changing, else every idleEveryMs, until shutdown; a failing look is logged', async () => {
     const asked: number[] = [];
     const shutdown = new AbortController();
