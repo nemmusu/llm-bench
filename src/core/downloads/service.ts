@@ -374,14 +374,18 @@ export class DownloadService {
     return this.updateSidecar(rec, (s) => ({ ...s, revision: rec.commit ?? s.revision, files: { ...s.files, [file]: { sha256, sizeBytes: bytes } } }));
   }
 
-  /** Records what this job sets out to fetch (`planned`, merged with earlier jobs into the same folder) before its first byte. */
-  private planSidecar(rec: JobRecord): Promise<void> {
-    return this.updateSidecar(rec, (s) => ({ ...s, planned: [...new Set([...(s.planned ?? []), ...rec.job.files.map((f) => f.path)])].sort() }));
+  /**
+   * Records what a job of several files sets out to fetch (`planned`, merged with earlier jobs into the
+   * same folder) before its first byte. A single file needs no record: until it is complete it is a .part.
+   */
+  private async planSidecar(rec: JobRecord): Promise<void> {
+    if (rec.job.files.length < 2) return;
+    await this.updateSidecar(rec, (s) => ({ ...s, planned: [...new Set([...(s.planned ?? []), ...rec.job.files.map((f) => f.path)])].sort() }));
   }
 
   /** A cancelled job: what it never finished is no longer planned (the folder reads as what it really holds). */
   private async dropPlanned(rec: JobRecord): Promise<void> {
-    if (!(await readSidecar(rec.job.dest))) return;
+    if (!(await readSidecar(rec.job.dest))?.planned) return;
     const unfinished = new Set(rec.job.files.map((f) => f.path).filter((p) => !rec.done.includes(p)));
     await this.updateSidecar(rec, ({ planned, ...s }) => {
       const left = (planned as string[]).filter((p) => !unfinished.has(p));

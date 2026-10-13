@@ -43,16 +43,10 @@ describe('EngineRegistry', () => {
     expect(reg.require('external')).toBe(ext);
     expect(() => reg.require('vllm-native')).toThrow(AppError);
     const all = await reg.detectAll({ 'llamacpp-native': { kind: 'llamacpp-native', executable: 'C:\\x.exe' } });
-    expect(all.map((s) => [s.kind, s.supported, s.problems])).toEqual([
-      ['llamacpp-native', true, []],
-      ['llamacpp-docker', false, []],
-      ['vllm-docker', false, []],
-      ['vllm-native', false, []],
-      ['sglang-docker', false, []],
-      ['sglang-native', false, []],
-      ['external', true, ['ENDPOINT_UNREACHABLE']],
-      ['command', false, []],
-    ]);
+    // Every kind of the contract, in its order: the two with adapters answer, the others are unsupported.
+    expect(all.map((s) => [s.kind, s.supported, s.problems])).toEqual(
+      ENGINE_KINDS.map((k) => (k === 'llamacpp-native' ? [k, true, []] : k === 'external' ? [k, true, ['ENDPOINT_UNREACHABLE']] : [k, false, []])),
+    );
     expect(all[0]?.location).toBe('C:\\x.exe');
     expect((await new EngineRegistry().detectAll()).every((s) => !s.supported)).toBe(true);
   });

@@ -193,11 +193,12 @@ export class ModelScanner {
     const stack: { dir: string; depth: number }[] = [{ dir: root.dir, depth: 0 }];
     while (stack.length > 0 && state.budget > 0) {
       const { dir, depth } = stack.pop() as { dir: string; depth: number };
-      // Missing roots fail realpath; a root that is a file fails readdir. Both are skipped.
-      const real = await maybe(realpath(dir));
-      const entries = real === undefined ? undefined : await maybe(readdir(dir, { withFileTypes: true }));
+      // Missing roots and roots that are files fail readdir: skipped.
+      const entries = await maybe(readdir(dir, { withFileTypes: true }));
       if (!entries) continue;
-      const key = normalizePath(real as string, this.opts.platform);
+      // Some drives cannot resolve real paths (a Linux partition mounted on Windows, some network shares):
+      // the folder as written is the key then.
+      const key = normalizePath((await maybe(realpath(dir))) ?? dir, this.opts.platform);
       if (state.seenDirs.has(key)) continue;
       state.seenDirs.add(key);
       const files: FileInfo[] = [];

@@ -119,7 +119,7 @@ describe('DownloadService', () => {
     expect(dedupe(states('job-1'))).toEqual(['queued', 'running', 'done']);
     expect(readFileSync(path.join(job.dest, Q4))).toEqual(hub.file(REPO, Q4).bytes);
     const sidecar = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
-    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } }, planned: [Q4] });
+    expect(sidecar).toEqual({ repo: REPO, revision: hub.repo(REPO).sha, files: { [Q4]: { sha256: hub.file(REPO, Q4).sha256, sizeBytes: hub.file(REPO, Q4).size } } });
     expect(completed.map((j) => j.id)).toEqual(['job-1']);
     const persisted = JSON.parse(readFileSync(path.join(dir, 'data', 'downloads.json'), 'utf8'));
     expect(persisted.jobs[0]).toMatchObject({ revision: 'main', done: [Q4], commit: hub.repo(REPO).sha, job: { state: 'done' } });
@@ -128,7 +128,8 @@ describe('DownloadService', () => {
     await svc.idle();
     const merged = JSON.parse(readFileSync(path.join(job.dest, DOWNLOAD_SIDECAR), 'utf8'));
     expect(Object.keys(merged.files).sort()).toEqual([Q4, Q8]);
-    expect(merged.planned).toEqual([Q4, Q8]);
+    // One file at a time needs no plan: until it is complete it is a .part.
+    expect(merged).not.toHaveProperty('planned');
     expect(svc.list()[1]?.label).toBe('Q8 please');
   });
 
@@ -198,6 +199,15 @@ describe('DownloadService', () => {
     hub.behavior.throttleBytesPerSec = 0;
     // Only what finished stays planned: the folder reads as the shards it really has.
     expect(sidecarOf().planned).toEqual(Object.keys(sidecarOf().files).sort());
+    // Cancelled before its first file: nothing planned is left at all.
+    hub.addRepo({ id: 'shards/Two', files: [1, 2].map((i) => ({ path: `model-0000${i}-of-00002.safetensors`, size: 256 * 1024 })) });
+    hub.behavior.throttleBytesPerSec = 32 * 1024;
+    const two = await svc.add({ repo: 'shards/Two', revision: 'main', files: ['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'] });
+    const twoSidecar = path.join(two.dest, DOWNLOAD_SIDECAR);
+    await waitFor(() => existsSync(twoSidecar) && existsSync(path.join(two.dest, 'model-00001-of-00002.safetensors.part')));
+    await svc.cancel(two.id);
+    hub.behavior.throttleBytesPerSec = 0;
+    expect(JSON.parse(readFileSync(twoSidecar, 'utf8'))).not.toHaveProperty('planned');
     // A queued job cancelled before it ran leaves no sidecar behind.
     const quiet = service({ maxParallel: 0 });
     const q = await quiet.add({ repo: 'shards/Big', revision: 'main', files: ['model-00003-of-00003.safetensors'] });
