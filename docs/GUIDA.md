@@ -60,16 +60,31 @@ Su Windows, se il modello con il contesto scelto non entra tutto nella memoria v
 
 Questi test sono segnati **RAM condivisa** in Risultati, in Configurazioni e negli Ultimi risultati, e non contano per le stime: durata prevista, memoria, "Provato su questa GPU" e il server consigliato usano solo i test che entravano nella scheda. La stima della memoria ignora anche le misure arrivate al limite della scheda (a meno di 1 GB, o del 3 % sulle schede più grandi, dalla sua memoria totale): lì è la scheda stessa a tagliare il numero, che non dice quanto serviva davvero.
 
-### Usare il modello nei tuoi programmi
+### Usare il modello nei tuoi programmi: la pagina Server
 
-Vuoi solo accendere il modello per una chat, un editor o un assistente, senza test? Premi **Avvia solo il server** accanto ad *Avvia benchmark* (oppure **Avvia server** accanto a un modello in **Modelli → Sul tuo PC**). GPU Bench ti mostra prima cosa farà:
+Vuoi solo accendere il modello per una chat, un editor o un assistente, senza test? Apri **Server** nella barra laterale e premi **Avvia un server**. Ci arrivi anche da **Avvia solo il server** (pagina Benchmark), da **Avvia il server così** (un risultato o una configurazione) e da **Avvia server** (Modelli → Sul tuo PC): la pagina si apre con quelle scelte già fatte. In quattro passi:
 
-- il **contesto**, cioè quanto testo il modello può leggere in una volta: scelto da GPU Bench perché entri bene nella tua scheda (in modalità esperto puoi deciderlo tu);
-- se il modello **entra** nella memoria video, cosa va scaricato prima e il comando esatto.
+1. **Modello**: quelli sul tuo PC partono subito, i consigliati vengono scaricati prima.
+2. **Motore**: llama.cpp, vLLM, SGLang, NInfer o un tuo motore personalizzato (i fork stanno sotto il motore da cui derivano). Se il modello ha dei **comandi suoi** (YaRN, MTP, un fork), il suo motore è già scelto e un interruttore ti lascia avviarlo senza.
+3. **Impostazioni**, da tre fonti:
+   - **Le migliori dai tuoi test**: la scelta di GPU Bench (l'ultimo *Trova le impostazioni migliori*, altrimenti il contesto più grande che entra bene nella scheda) e le configurazioni già provate di questo modello, con i loro numeri (per esempio "54,6 tok/s a 32K");
+   - **I tuoi preset**: quelli salvati per questo modello (con un modello .ninfer anche le impostazioni pronte di NInfer);
+   - **Comandi personalizzati**: contesto, cache e gli altri parametri, più argomenti extra e variabili d'ambiente.
+4. **Porta e rete**: sempre la stessa (vuota = la prima libera da 8080), così gli altri programmi la ritrovano.
 
-Quando il server è pronto copi il suo indirizzo (compatibile OpenAI) e lo incolli nell'altro programma. Il server resta acceso finché non premi **Ferma** nel riquadro **Server attivi** della pagina Benchmark o chiudi GPU Bench; mentre è acceso non puoi fare benchmark.
+A destra vedi sempre cosa verrà avviato: motore, contesto, indirizzo, se entra nella memoria video, cosa va scaricato prima e il **comando esatto**. Poi premi **Avvia** (o **Scarica e avvia**).
 
-Se hai già fatto **Trova le impostazioni migliori** con quel modello su questa scheda, *Avvia solo il server* usa il contesto e le impostazioni consigliate da quel test (te lo dice nella finestra di conferma).
+Nella pagina Server ogni server acceso ha il suo riquadro: l'**URL base** e il **nome del modello** da copiare, esempi pronti (terminale, Python con la libreria OpenAI, le tre impostazioni da incollare in Open WebUI, Continue o Chatbox), da quanto è acceso, la memoria video, **Ferma**, **Riavvia** e **Log**. Mentre un server è acceso non puoi fare benchmark: GPU Bench ti propone di fermarlo prima.
+
+**Preset.** Con **Salva come preset** ricordi modello, motore, impostazioni, argomenti extra e porta: lo riavvii con un clic dalla pagina Server o dall'area di notifica. Segna **Avvia all'apertura di GPU Bench** per farlo partire da solo ogni volta che apri GPU Bench; se non parte, la pagina Server ti dice perché.
+
+**Rete locale (avanzato).** Di solito il server risponde solo a questo PC (127.0.0.1). Con **Rendi raggiungibile dalla rete locale** ascolta su tutte le schede di rete e risponde solo a chi usa la **chiave API** che GPU Bench genera e ti mostra: incollala nei programmi degli altri dispositivi. La chiave è salvata cifrata come il token di Hugging Face (su Linux senza portachiavi GPU Bench te lo dice) e non compare mai nei log. Attivalo solo su reti di cui ti fidi; Windows potrebbe chiederti di consentire l'accesso.
+
+### L'area di notifica
+
+Chiudendo la finestra mentre un server è acceso, GPU Bench resta nell'area di notifica (vicino all'orologio) e il server continua a funzionare; te lo dice una volta. Dall'icona riapri la finestra, copi l'indirizzo di un server, lo fermi o lo riavvii, avvii un preset, fermi tutti i server o esci. **Esci** chiede conferma se ci sono server accesi e li ferma: GPU Bench chiude solo i programmi che ha avviato lui, mai un tuo llama-server.
+
+In **Impostazioni → Area di notifica** scegli cosa fa la chiusura della finestra (restare nell'area di notifica solo con un server acceso, sempre, oppure uscire) e attivi **Avvia GPU Bench all'accesso**: parte nell'area di notifica con i preset segnati *Avvia all'apertura*. Su un desktop Linux senza area di notifica (GNOME senza l'estensione AppIndicator) la finestra si riduce a icona invece di nascondersi.
 
 ### Trova le impostazioni migliori
 
