@@ -28,7 +28,6 @@ function seedNinfer(modelsDir: string): void {
 }
 
 test('NInfer through WSL: find the build, run a Rapido benchmark with its recommended settings, serve and stop', async () => {
-  test.skip(process.platform !== 'win32', 'NInfer through WSL is the Windows journey');
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-'));
   seedNinfer(path.join(userData, 'models', 'local'));
   const gb = await launchApp({
