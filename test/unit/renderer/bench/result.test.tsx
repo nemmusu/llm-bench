@@ -87,6 +87,21 @@ describe('result overview', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
   });
 
+  it('calibrated text prompts: every "prompt da N token" is the count the engine reported', async () => {
+    const run = seeded(IDS.full);
+    run.notes = [...run.notes, { code: 'text_prompts_calibrated' }];
+    run.metrics.latency = run.metrics.latency.map((p) => ({ ...p, promptTokensReported: p.promptTokens - 9 }));
+    run.metrics.contextSweep = [{ ...run.metrics.latency[1]!, promptTokens: 32_624, promptTokensReported: 32_600 }];
+    renderApp(`/results/${IDS.full}`, benchApi({ runs: [run] }));
+    await h1(/Qwen3 8B/);
+    const kpis = screen.getByRole('region', { name: 'Numeri principali' });
+    expect(within(kpis).getByText('lettura di un prompt da 503 token')).toBeTruthy();
+    await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(2));
+    const said = charts.options.flatMap((o) => exerciseFormatters(o)).join(' ');
+    expect(said).toContain('prompt da 119 token: scrittura');
+    expect(said).toContain('a 32.600 token di contesto: scrittura');
+  });
+
   it('warning actions run the test again or open the right page', async () => {
     const api = withLibrary();
     const run = seeded(IDS.full);

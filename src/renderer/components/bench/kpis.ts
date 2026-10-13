@@ -1,5 +1,5 @@
 /** The headline numbers of a run, picked once for the result page, the compare page and the exports. */
-import type { ConcurrencyPoint, RunResult, Stat } from '../../../contract/results';
+import { contextTokensOf, promptsCalibrated, type ConcurrencyPoint, type RunResult, type Stat } from '../../../contract/results';
 import { headlinePoint, peakConcurrency, prefillStat, vramFigure, type VramFigure } from './format';
 
 /** Average words per token (Italian/English prose) used for the plain-language sentence. */
@@ -26,14 +26,15 @@ export interface Kpis {
   wordsPerSec?: number;
 }
 
-export function kpisOf(run: Pick<RunResult, 'metrics'>): Kpis {
+/** `notes`: a run of calibrated text prompts says the tokens the engine counted (contextTokensOf). */
+export function kpisOf(run: Pick<RunResult, 'metrics'> & { notes?: RunResult['notes'] }): Kpis {
   const m = run.metrics;
   const p = headlinePoint(m.latency);
   const vram = vramFigure(m.vram);
   const conc = peakConcurrency(run);
   const out: Kpis = {};
   if (p) {
-    out.promptTokens = p.promptTokens;
+    out.promptTokens = contextTokensOf(p, promptsCalibrated(run));
     out.decode = p.decodeTps;
     out.prefill = prefillStat(p);
     out.ttft = p.ttftMs;

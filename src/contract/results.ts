@@ -240,8 +240,31 @@ export const latencyPointSchema = z.object({
   itlPerChunk: z.boolean(),
   draftAcceptance: z.number().optional(),
   totalMs: statSchema,
+  /**
+   * Median of the prompt tokens the engine itself reported for these requests (usage), when it did.
+   * On chat-only servers prompts are text calibrated to about the target (note 'text_prompts_calibrated'):
+   * there this, not promptTokens, is how much was really read (contextTokensOf).
+   */
+  promptTokensReported: z.number().optional(),
 });
 export type LatencyPoint = z.infer<typeof latencyPointSchema>;
+
+/** The run note of prompts sent as calibrated text (no tokenizer): their token counts are the engine's own. */
+export const CALIBRATED_PROMPTS_NOTE = 'text_prompts_calibrated';
+
+/** The prompts of this run were calibrated text: the tokens really read are the reported ones. */
+export function promptsCalibrated(run: { notes?: readonly { code: string }[] | undefined }): boolean {
+  return (run.notes ?? []).some((n) => n.code === CALIBRATED_PROMPTS_NOTE);
+}
+
+/**
+ * How many tokens a point's prompt really had, for every place that says it ("lettura di un prompt da
+ * N token"): the engine's count for calibrated text prompts, else the exact length GPU Bench built.
+ * Grid depths (nominalDepth) keep using promptTokens, so equal measurements still line up.
+ */
+export function contextTokensOf(p: Pick<LatencyPoint, 'promptTokens' | 'promptTokensReported'>, calibrated: boolean): number {
+  return calibrated && p.promptTokensReported !== undefined ? Math.round(p.promptTokensReported) : p.promptTokens;
+}
 
 export const concurrencyPointSchema = z.object({
   level: z.number().int(),

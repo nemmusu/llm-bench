@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { LatencyPoint, RunResult } from '../../../contract/results';
+import { contextTokensOf, type LatencyPoint, type RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { axisName, pointTooltip } from '../../lib/speed-at';
 import { barOption, concurrencyOption, timelineOption } from '../charts/builders';
@@ -12,7 +12,7 @@ import { MIB_PER_GB, prefillStat } from './format';
 import { phaseBands } from './phases';
 
 /** Generation / prompt-reading speed per prompt length. */
-export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
+export function PromptChart({ points, calibrated = false }: { points: readonly LatencyPoint[]; calibrated?: boolean }) {
   const f = useI18n();
   const { t, number, integer } = f;
   const [metric, setMetric] = useState<'decode' | 'prefill'>('decode');
@@ -29,11 +29,11 @@ export function PromptChart({ points }: { points: readonly LatencyPoint[] }) {
           xName: axisName('prompt', f),
           axis: integer,
           // "prompt da 512 token: scrittura 54,6 tok/s, lettura 2.244 tok/s".
-          tooltipText: (i) => pointTooltip(points[i]!.promptTokens, 'prompt', { write: points[i]!.decodeTps.median, read: prefillStat(points[i]!).median }, f),
+          tooltipText: (i) => pointTooltip(contextTokensOf(points[i]!, calibrated), 'prompt', { write: points[i]!.decodeTps.median, read: prefillStat(points[i]!).median }, f),
         },
       );
     },
-    [points, metric, t, number, integer, f],
+    [points, metric, t, number, integer, f, calibrated],
   );
   return (
     <ChartCard

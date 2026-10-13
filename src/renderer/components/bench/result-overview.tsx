@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import type { LaunchParams } from '../../../contract/engines';
-import { spilledRun, type RunResult, type Stat, type ValidityFlag } from '../../../contract/results';
+import { promptsCalibrated, spilledRun, type RunResult, type Stat, type ValidityFlag } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { contextWords, firstTokenWords, usersWords } from '../../lib/speed-at';
 import { Callout } from '../ui/callout';
@@ -273,11 +273,11 @@ export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: O
       <LongConversations run={run} />
       {(run.metrics.latency.length > 0 || run.metrics.concurrency.length > 0) && (
         <div className="grid gap-section lg:grid-cols-2">
-          {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} />}
+          {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} calibrated={promptsCalibrated(run)} />}
           {run.metrics.concurrency.length > 0 && <ConcurrencyChart run={run} />}
         </div>
       )}
-      {contextSweepOf(run).length > 0 && <ContextSweepChart points={contextSweepOf(run)} />}
+      {contextSweepOf(run).length > 0 && <ContextSweepChart points={contextSweepOf(run)} calibrated={promptsCalibrated(run)} />}
       {run.telemetry && run.telemetry.t.length > 0 && <TimelineChart telemetry={run.telemetry} totalMiB={gpu?.memoryTotalMiB} powerLimitW={gpu?.powerLimitW} />}
     </div>
   );

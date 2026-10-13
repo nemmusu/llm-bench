@@ -3,6 +3,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../../contract/errors';
 import {
+  contextTokensOf,
+  promptsCalibrated,
   RESULT_SCHEMA_VERSION,
   runResultSchema,
   type EngineIdentity,
@@ -97,6 +99,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const context = contextOf(run.launch);
   const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
   const usersStep = run.scenario.steps.find((s) => s.kind === 'concurrency');
+  // Calibrated text prompts: the speeds' context is what the engine counted.
+  const calibrated = promptsCalibrated(run);
   const usersPrompt = busiest?.promptTokens ?? (usersStep?.kind === 'concurrency' ? usersStep.promptTokens : undefined);
   return {
     id: run.id,
@@ -128,8 +132,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(engineBuildOf(e) !== undefined ? { engineBuild: engineBuildOf(e) } : {}),
     ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps, parallelPerUserTps: busiest.perRequestDecodeTpsP50 } : {}),
     ...(busiest && usersPrompt !== undefined ? { parallelPromptTokens: usersPrompt } : {}),
-    ...(head ? { decodeTokens: head.promptTokens, speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
-    ...(prefill ? { prefillTokens: largest!.promptTokens } : {}),
+    ...(head ? { decodeTokens: contextTokensOf(head, calibrated), speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
+    ...(prefill ? { prefillTokens: contextTokensOf(largest!, calibrated) } : {}),
     validity: run.validity,
     file,
   };

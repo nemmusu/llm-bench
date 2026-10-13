@@ -141,6 +141,7 @@ export function aggregateLatency(
   const decodeEngine = defined(results.map((r) => r.decodeTpsEngine));
   const itl = results.flatMap((r) => r.itlMs);
   const draft = mean(defined(results.map((r) => r.draftAcceptance)));
+  const reported = defined(results.map((r) => r.promptTokensReported));
   return {
     promptTokens: shape.promptTokens,
     outputTokens: shape.outputTokens,
@@ -154,6 +155,7 @@ export function aggregateLatency(
     itlPerChunk: results.some((r) => r.itlPerChunk),
     ...(draft !== undefined ? { draftAcceptance: draft } : {}),
     totalMs: summarize(results.map((r) => r.totalMs)),
+    ...(reported.length ? { promptTokensReported: summarize(reported).median } : {}),
   };
 }
 

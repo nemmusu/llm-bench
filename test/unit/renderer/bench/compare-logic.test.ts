@@ -5,7 +5,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigEntry } from '../../../../src/contract/configs';
-import type { RunResult } from '../../../../src/contract/results';
+import { CALIBRATED_PROMPTS_NOTE, contextTokensOf, promptsCalibrated, type RunResult } from '../../../../src/contract/results';
+import { kpisOf } from '../../../../src/renderer/components/bench/kpis';
 import { summarize } from '../../../../src/core/bench/stats';
 import { modelsOf, rankConfigs, rankingDepth, refOfConfig } from '../../../../src/renderer/components/compare/best-config';
 import { speedSeries, usersLinesOption, usersSeries } from '../../../../src/renderer/components/compare/compare-charts';
@@ -117,6 +118,22 @@ describe('speed ↔ context words (speed-at)', () => {
     expect(liveCaption({ kind: 'concurrency' }, it_)).toBeUndefined();
     expect(liveCaption({ kind: 'sessions', promptTokens: 2048 }, it_)).toBe('contesto riempito a 2.048 token');
     expect(liveCaption({ kind: 'sessions' }, it_)).toBeUndefined();
+  });
+});
+
+describe('the tokens a speed was measured on', () => {
+  it('the engine\'s own count for calibrated text prompts, else the exact prompt GPU Bench built', () => {
+    const p = { promptTokens: 4096, promptTokensReported: 4031.5 };
+    expect(contextTokensOf(p, true)).toBe(4032);
+    expect(contextTokensOf(p, false)).toBe(4096);
+    expect(contextTokensOf({ promptTokens: 512 }, true)).toBe(512);
+    expect(promptsCalibrated({ notes: [{ code: 'text_prompts_calibrated' }] })).toBe(true);
+    expect(promptsCalibrated({ notes: [] })).toBe(false);
+    expect(promptsCalibrated({})).toBe(false);
+    const run = seeded(IDS.quick);
+    run.metrics.latency = run.metrics.latency.map((q) => ({ ...q, promptTokensReported: 503 }));
+    expect(kpisOf(run).promptTokens).toBe(512);
+    expect(kpisOf({ ...run, notes: [{ code: CALIBRATED_PROMPTS_NOTE }] }).promptTokens).toBe(503);
   });
 });
 
