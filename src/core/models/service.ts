@@ -72,6 +72,8 @@ export class ModelsService {
   readonly hub: HubClient;
   readonly scanner: ModelScanner;
   readonly hashes: HashQueue;
+  /** sha256 of local files by path + size + mtime (what the background hashing found). */
+  readonly hashCache: HashCache;
   private models: LocalModel[] | undefined;
   private scanning: Promise<LocalModel[]> | undefined;
   private curatedList: Promise<CuratedList> | undefined;
@@ -80,6 +82,7 @@ export class ModelsService {
     const { deps } = opts;
     this.hub = opts.hub ?? new HubClient({ fetch: deps.fetch, baseUrl: deps.endpoints.huggingface, getToken: opts.getToken });
     const hashCache = new HashCache(path.join(deps.paths.cacheDir, 'hashes.json'), deps.platform);
+    this.hashCache = hashCache;
     this.hashes = new HashQueue({ cache: hashCache });
     this.scanner = new ModelScanner({
       platform: deps.platform,
@@ -96,6 +99,19 @@ export class ModelsService {
   /** Where downloads go and the only folder whose models may be deleted from the app. */
   libraryDir(): Promise<string> {
     return this.scanner.libraryDir();
+  }
+
+  /**
+   * The folders on the PC holding a copy of a hub repo (a download sidecar, or <owner>/<repo> in the
+   * library or LM Studio), with the models in each; HF cache copies have no such folder and never count.
+   */
+  async repoFolders(repo: string): Promise<{ dir: string; modelIds: string[] }[]> {
+    const out = new Map<string, string[]>();
+    for (const m of await this.list()) {
+      if (m.identity.repo !== repo || !m.repoDir) continue;
+      out.set(m.repoDir, [...(out.get(m.repoDir) ?? []), m.id]);
+    }
+    return [...out].map(([dir, modelIds]) => ({ dir, modelIds }));
   }
 
   /** Last scan result (scans once on first use). */

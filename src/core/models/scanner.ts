@@ -46,8 +46,8 @@ export const DOWNLOAD_SIDECAR = '.gpubench-download.json';
 export interface DownloadSidecar {
   repo: string;
   revision?: string;
-  /** Files fully downloaded and verified, by path in the repo. */
-  files: Record<string, { sha256?: string; sizeBytes?: number }>;
+  /** Files fully downloaded and verified, by path in the repo; `previous` is the version an update replaced. */
+  files: Record<string, { sha256?: string; sizeBytes?: number; previous?: { sha256?: string; sizeBytes?: number } }>;
   /** Every file a download into this folder set out to fetch (paths in the repo), done or not. */
   planned?: string[];
 }
@@ -358,6 +358,7 @@ export class ModelScanner {
     if (quant) identity.quant = quant;
     if (sha256.sha) identity.sha256 = sha256.sha;
     if (m.facts) identity.facts = m.facts;
+    const previous = previousOf(src, m.files, main);
     return {
       id: modelIdFor(main.path, this.opts.platform),
       identity,
@@ -366,6 +367,8 @@ export class ModelScanner {
       dir,
       origin: root.origin,
       modifiedAt: new Date(mtime).toISOString(),
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
+      ...(previous ? { previous } : {}),
     };
   }
 
@@ -385,6 +388,7 @@ export class ModelScanner {
       origin: root.origin,
       modifiedAt: new Date(Math.max(...p.files.map((f) => f.mtimeMs))).toISOString(),
       incomplete: { have: p.have, total: p.total },
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
     };
   }
 
@@ -479,6 +483,7 @@ export class ModelScanner {
       origin: root.origin,
       modifiedAt: new Date(mtime).toISOString(),
       ...(incomplete ? { incomplete } : {}),
+      ...(src.repoDir ? { repoDir: src.repoDir } : {}),
     };
   }
 
@@ -533,6 +538,7 @@ export class ModelScanner {
         dir: l.dir,
         origin: root.origin,
         modifiedAt: new Date(f.mtimeMs).toISOString(),
+        ...(src.repoDir ? { repoDir: src.repoDir } : {}),
       });
     }
     return out;
@@ -719,6 +725,20 @@ export class ModelScanner {
 /** Resolves to undefined instead of rejecting (missing files, races with deletes). */
 function maybe<T>(p: Promise<T>): Promise<T | undefined> {
   return p.catch(() => undefined);
+}
+
+/**
+ * The version an update replaced (the sidecar keeps the old sha256 and size of each file it swapped):
+ * results measured with it match its sha256 or its weak key ("provato con la versione precedente").
+ */
+function previousOf(src: Source, files: FileInfo[], main: FileInfo): LocalModel['previous'] {
+  const { sidecar, repoDir } = src;
+  if (!sidecar || !repoDir) return undefined;
+  const old = (f: FileInfo) => sidecar.files[path.relative(repoDir, f.path).split(path.sep).join('/')]?.previous;
+  if (!files.some((f) => old(f))) return undefined;
+  const sizeBytes = files.reduce((a, f) => a + (old(f)?.sizeBytes ?? f.size), 0);
+  const sha256 = old(main)?.sha256;
+  return { ...(sha256 ? { sha256 } : {}), weakKey: weakKey({ repo: src.repo, file: main.name, quant: quantFromFilename(main.name), sizeBytes }) };
 }
 
 export async function readSidecar(repoDir: string): Promise<DownloadSidecar | undefined> {

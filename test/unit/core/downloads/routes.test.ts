@@ -13,7 +13,7 @@ describe('downloads routes', () => {
       if (args[0] === 'missing') return Promise.reject(new AppError('VALIDATION', 'Unknown download'));
       return Promise.resolve({ id: String(args[0] ?? 'new'), fn });
     };
-    const svc = { list: () => [{ id: 'a' }], add: rec('add'), pause: rec('pause'), resume: rec('resume'), cancel: rec('cancel') } as unknown as DownloadService;
+    const svc = { list: () => [{ id: 'a' }], add: rec('add'), plan: rec('plan'), pause: rec('pause'), resume: rec('resume'), cancel: rec('cancel') } as unknown as DownloadService;
     const hono = new Hono();
     hono.onError((e, c) => errorResponse(c, e));
     createDownloadsRoutes(svc)(hono, {} as never);
@@ -26,6 +26,11 @@ describe('downloads routes', () => {
     const res = await hono.request('/api/downloads', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo: 'o/r', files: ['x.gguf'] }) });
     expect(res.status).toBe(200);
     expect(calls[0]?.args).toEqual([{ repo: 'o/r', revision: 'main', files: ['x.gguf'] }]);
+    // What a request would do, next to a model of the PC.
+    const plan = await hono.request('/api/downloads/plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo: 'o/r', files: ['mmproj.gguf'], into: 'm1' }) });
+    expect(await plan.json()).toMatchObject({ fn: 'plan' });
+    expect(calls[1]?.args).toEqual([{ repo: 'o/r', revision: 'main', files: ['mmproj.gguf'], into: 'm1' }]);
+    calls.splice(0);
     for (const action of ['pause', 'resume', 'cancel']) {
       expect(await (await hono.request(`/api/downloads/j1/${action}`, { method: 'POST' })).json()).toEqual({ id: 'j1', fn: action });
     }

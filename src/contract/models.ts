@@ -85,6 +85,13 @@ export const localModelSchema = z.object({
    * model is listed ("incompleto (1 di 4 file)") but never benchmarked or served until it is whole.
    */
   incomplete: z.object({ have: z.number().int().min(0), total: z.number().int().min(1) }).optional(),
+  /** The repo's folder (where the download sidecar is, or <library>/<owner>/<repo>): files of the repo go under it by their path. */
+  repoDir: z.string().optional(),
+  /**
+   * The version an update replaced (sha256 of the main file and weak key before): results measured
+   * with it stay as they are, and "Provato" then says they are of the previous version.
+   */
+  previous: z.object({ sha256: z.string().optional(), weakKey: z.string() }).optional(),
 });
 export type LocalModel = z.infer<typeof localModelSchema>;
 
@@ -257,11 +264,30 @@ export type HubSearchPage = z.infer<typeof hubSearchPageSchema>;
 export const downloadStateSchema = z.enum(['queued', 'running', 'paused', 'verifying', 'done', 'failed', 'cancelled']);
 export type DownloadState = z.infer<typeof downloadStateSchema>;
 
+/**
+ * A requested file next to what the PC already holds at the destination:
+ *   have   on the PC and the same (size, and sha256 when the hub gives one): never fetched again;
+ *   check  on the PC with the same size but no known sha256: hashed first, fetched only if it differs;
+ *   update on the PC but another version (size or sha256 changed): fetched, and swapped in once verified;
+ *   get    not on the PC.
+ */
+export const LOCAL_FILE_STATES = ['have', 'check', 'update', 'get'] as const;
+export const localFileStateSchema = z.enum(LOCAL_FILE_STATES);
+export type LocalFileState = z.infer<typeof localFileStateSchema>;
+
 export const downloadJobSchema = z.object({
   id: z.string(),
   label: z.string(),
   repo: z.string().optional(),
-  files: z.array(z.object({ path: z.string(), sizeBytes: z.number().optional(), sha256: z.string().optional() })),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      sizeBytes: z.number().optional(),
+      sha256: z.string().optional(),
+      /** What is already on the PC (DownloadPlan): 'have' files are not fetched and not counted in the bytes. */
+      local: localFileStateSchema.optional(),
+    }),
+  ),
   dest: z.string(),
   state: downloadStateSchema,
   bytesDone: z.number(),
@@ -272,3 +298,51 @@ export const downloadJobSchema = z.object({
   createdAt: z.string(),
 });
 export type DownloadJob = z.infer<typeof downloadJobSchema>;
+
+/** What a download request would do (POST /api/downloads/plan): where it goes, what it fetches, what it skips. */
+export const downloadPlanSchema = z.object({
+  repo: z.string(),
+  /** The repo's folder the files go under: the one already holding them (or the model asked for), else the library's. */
+  dest: z.string(),
+  files: z.array(z.object({ path: z.string(), sizeBytes: z.number(), sha256: z.string().optional(), kind: hubFileSchema.shape.kind.optional(), local: localFileStateSchema })),
+  /** Bytes it fetches: the files not already on the PC ('check' ones only if they turn out different). */
+  bytesToGet: z.number(),
+  /** Bytes of the requested files already on the PC ('have' and 'check'). */
+  bytesHave: z.number(),
+});
+export type DownloadPlan = z.infer<typeof downloadPlanSchema>;
+
+/** A downloaded file whose hub copy changed: "il file Q4_K_M è cambiato (17,8 → 17,6 GB)". */
+export const changedFileSchema = z.object({
+  path: z.string(),
+  /** Quant or kind for the sentence ("Q4_K_M", "mmproj"); else the file name. */
+  label: z.string(),
+  oldBytes: z.number(),
+  newBytes: z.number(),
+});
+export type ChangedFile = z.infer<typeof changedFileSchema>;
+
+/** A part the hub repo has for a local GGUF and the PC does not: "Aggiungi la parte visione (mmproj, 0,9 GB)". */
+export const missingExtraSchema = z.object({ kind: z.enum(['mmproj', 'mtp']), path: z.string(), sizeBytes: z.number() });
+export type MissingExtra = z.infer<typeof missingExtraSchema>;
+
+/** What the last check of a local model's hub repo found (GET /api/models/updates). */
+export const modelUpdateSchema = z.object({
+  modelId: z.string(),
+  repo: z.string(),
+  /** Downloaded files whose hub copy changed (same path, another size or sha256). */
+  changed: z.array(changedFileSchema),
+  /** Vision projector / MTP head the repo has next to this GGUF and the PC does not. */
+  extras: z.array(missingExtraSchema),
+  checkedAt: z.string(),
+});
+export type ModelUpdate = z.infer<typeof modelUpdateSchema>;
+
+export const modelUpdatesSchema = z.object({
+  /** When every repo was last checked (on demand or the daily background check). */
+  checkedAt: z.string().optional(),
+  checking: z.boolean(),
+  /** Only models with something to say (an update or a missing extra). */
+  models: z.array(modelUpdateSchema),
+});
+export type ModelUpdates = z.infer<typeof modelUpdatesSchema>;

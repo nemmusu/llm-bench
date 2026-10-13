@@ -51,6 +51,8 @@ export function createModelServices(ctx: CoreContext, opts: ModelServicesOptions
     onComplete: async () => {
       await models.rescan();
     },
+    repoFolders: (repo) => models.repoFolders(repo),
+    knownSha: (file, sizeBytes, mtimeMs) => models.hashCache.get(file, sizeBytes, mtimeMs),
     signal: ctx.shutdown,
     ...(opts.statfs ? { statfs: opts.statfs } : {}),
   });

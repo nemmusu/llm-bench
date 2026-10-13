@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { ServerEvent } from '../../../../src/contract/events';
@@ -58,6 +58,23 @@ describe('createModelServices (wiring)', () => {
     // The weak key of the downloaded copy equals the one the hub listing announces for it.
     const hubSide = await ms.models.hubFit('ggml-org/Qwen3-0.6B-GGUF', 'llamacpp-native');
     expect(hubSide.choices.map((c) => c.weakKey)).toContain(local[0]?.identity.weakKey);
+    // Plans see the repo's copies on the PC (the models' folders) and what the hash cache knows.
+    const q4 = readFileSync(path.join(dest, 'Qwen3-0.6B-Q4_K_M.gguf'));
+    writeFileSync(path.join(dest, 'Qwen3-0.6B-Q8_0.gguf'), q4);
+    writeFileSync(path.join(t.dir, 'library', 'loose-Q8_0.gguf'), q4);
+    const rescanned = await ms.models.rescan();
+    const folders = await ms.models.repoFolders('ggml-org/Qwen3-0.6B-GGUF');
+    expect(folders).toEqual([{ dir: dest, modelIds: expect.arrayContaining(rescanned.filter((m) => m.identity.repo).map((m) => m.id)) }]);
+    expect(folders[0]?.modelIds).toHaveLength(2);
+    const planRes = await app.request('/api/downloads/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: 'ggml-org/Qwen3-0.6B-GGUF', files: ['Qwen3-0.6B-Q4_K_M.gguf', 'Qwen3-0.6B-Q8_0.gguf'] }),
+    });
+    const plan = (await planRes.json()) as { dest: string; files: { local: string }[] };
+    expect(plan.dest).toBe(dest);
+    // The Q8 copy is not the hub's Q8 (another size): an update.
+    expect(plan.files.map((f) => f.local)).toEqual(['have', 'update']);
     // The HF token pushed into the context is used for gated repos.
     ctx.secrets.hfToken = 'hf_test_token';
     hub.setAccepted('google/gated-demo-it', true);

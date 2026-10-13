@@ -140,6 +140,30 @@ describe('ModelScanner', () => {
     });
     expect(m.identity.facts?.blockCount).toBe(3);
     expect(Date.parse(m.modifiedAt)).toBeGreaterThan(0);
+    // The repo's folder (files of the repo go under it by their path); no update replaced anything.
+    expect(m.repoDir).toBe(repoDir);
+    expect(m).not.toHaveProperty('previous');
+  });
+
+  it('remembers the version an update replaced (sha256 and weak key), for a single file and a split set', async () => {
+    const one = path.join(library, 'o', 'one');
+    gguf(path.join(one, 'one-Q4_K_M.gguf'));
+    const sha = 'd'.repeat(64);
+    writeFileSync(
+      path.join(one, DOWNLOAD_SIDECAR),
+      JSON.stringify({ repo: 'o/one', files: { 'one-Q4_K_M.gguf': { sha256: 'e'.repeat(64), sizeBytes: 8192, previous: { sha256: sha, sizeBytes: 9000 } } } }),
+    );
+    // A split set where only the second part changed: no old sha256 of the main file, the old total size.
+    const two = path.join(library, 'o', 'two');
+    gguf(path.join(two, 'two-Q8_0-00001-of-00002.gguf'));
+    writeGguf(path.join(two, 'two-Q8_0-00002-of-00002.gguf'), { metadata: { 'split.count': 2 }, totalSize: 4096 });
+    writeFileSync(path.join(two, DOWNLOAD_SIDECAR), JSON.stringify({ repo: 'o/two', files: { 'two-Q8_0-00002-of-00002.gguf': { sizeBytes: 4096, previous: { sizeBytes: 5000 } } } }));
+    // A download stopped halfway in the library: listed incomplete, in its repo folder.
+    gguf(path.join(library, 'o', 'three', 'three-Q8_0-00001-of-00002.gguf'));
+    const models = await scanner().scan();
+    expect(byName(models, 'three-Q8_0')).toMatchObject({ incomplete: { have: 1, total: 2 }, repoDir: path.join(library, 'o', 'three') });
+    expect(byName(models, 'one-Q4_K_M')?.previous).toEqual({ sha256: sha, weakKey: 'o/one/one-Q4_K_M.gguf/Q4_K_M/9000' });
+    expect(byName(models, 'two-Q8_0')?.previous).toEqual({ weakKey: `o/two/two-Q8_0-00001-of-00002.gguf/Q8_0/${8192 + 5000}` });
   });
 
   it('ignores sidecar hashes of other sizes, broken sidecars and invalid repo folders', async () => {
@@ -180,6 +204,8 @@ describe('ModelScanner', () => {
     expect(byName(models, 'nolabel')?.identity.quant).toBeUndefined();
     // A split set with parts missing is listed, marked: "incompleto (1 di 3 file)".
     expect(byName(models, 'partial-Q8_0')).toMatchObject({ incomplete: { have: 1, total: 3 }, auxiliary: [], identity: { quant: 'Q8_0', format: 'gguf' } });
+    // An added folder outside any repo layout: no repo folder.
+    expect(byName(models, 'partial-Q8_0')).not.toHaveProperty('repoDir');
     expect(byName(models, 'gap-Q8_0')?.incomplete).toEqual({ have: 1, total: 2 });
     expect(byName(models, 'gemma-4-x-UD-Q4_K_XL')?.incomplete).toBeUndefined();
     const gemma = byName(models, 'gemma-4-x-UD-Q4_K_XL') as LocalModel;
