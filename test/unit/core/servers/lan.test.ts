@@ -142,16 +142,17 @@ describe('notices', () => {
 });
 
 describe('server ports', () => {
-  it('the first port from 8080 free on both 127.0.0.1 and every card, skipping ours; else any free one', async () => {
-    const busy = new Map([
-      ['127.0.0.1:8080', true],
-      ['0.0.0.0:8081', true],
-    ]);
-    const ports = systemPorts(async (port, host) => !busy.has(`${host}:${port}`), async () => 5);
-    expect(await ports.suggest([8082])).toBe(8083);
+  it('the first port from 8080 free on 127.0.0.1, skipping ours; else any free one; never a test listen on every card', async () => {
+    const hosts = new Set<string>();
+    const ports = systemPorts(async (port, host) => {
+      hosts.add(host);
+      return port !== 8080;
+    }, async () => 5);
+    expect(await ports.suggest([8081])).toBe(8082);
     expect(await ports.free(8080)).toBe(false);
-    expect(await ports.free(8081)).toBe(false);
     expect(await ports.free(8084)).toBe(true);
+    // Listening on 0.0.0.0, even for a moment, makes Windows ask about its firewall.
+    expect([...hosts]).toEqual(['127.0.0.1']);
     const full = systemPorts(async () => false, async () => 41_000);
     expect(await full.suggest([])).toBe(41_000);
     expect(DEFAULT_SERVER_PORT + SUGGEST_SPAN).toBe(8180);

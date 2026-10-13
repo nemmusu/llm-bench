@@ -210,9 +210,10 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     return secureStorage();
   }
 
+  /** An OS notification; under the E2E test hooks only recorded (no toasts on the desktop of whoever runs the tests). */
   function notify(title: string, body: string): void {
     s.notifications.push({ title, body });
-    if (e.Notification.isSupported()) new e.Notification({ title, body, icon: appIcon() }).show();
+    if (h.env.GPUBENCH_TEST_HOOKS !== '1' && e.Notification.isSupported()) new e.Notification({ title, body, icon: appIcon() }).show();
   }
 
   function showWindow(): void {

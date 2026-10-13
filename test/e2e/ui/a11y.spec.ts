@@ -10,6 +10,8 @@ import { currentTheme, goToHash, h1, skipWelcome } from './helpers';
 const SCREENS: [hash: string, heading: string | RegExp][] = [
   ['#/welcome', 'Benvenuto in GPU Bench'],
   ['#/', 'Benchmark'],
+  ['#/servers', 'Server'],
+  ['#/servers/new', 'Avvia un server'],
   ['#/results', 'Risultati'],
   ['#/compare', 'Confronta'],
   ['#/models', 'Modelli'],

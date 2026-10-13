@@ -46,6 +46,8 @@ test('the sidebar works with the keyboard only', async ({ gb }) => {
   }
   await expect(first).toBeFocused();
   await page.keyboard.press('Tab');
+  await expect(nav.getByRole('link', { name: 'Server' })).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(nav.getByRole('link', { name: 'Risultati' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(h1(page, 'Risultati')).toBeVisible();

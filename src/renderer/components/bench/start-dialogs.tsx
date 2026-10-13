@@ -191,7 +191,7 @@ function stageKey(stage: string | undefined): 'resolve' | 'download' | 'extract'
 export interface StartDialogsProps {
   flow: Flow;
   onClose: () => void;
-  /** Go: fetch what is missing first (or straight on when nothing is). */
+  /** Go: fetch what is missing first (the confirmation is shown only when something is). */
   onConfirm: (job: Job, opts: FlowOpts) => Promise<void>;
   /** POST the start again (after "Continua comunque", or a retry). */
   onContinue: (job: Job, opts: FlowOpts, pre: Pre) => Promise<void>;

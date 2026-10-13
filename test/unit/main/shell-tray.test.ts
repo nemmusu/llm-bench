@@ -228,6 +228,8 @@ describe('E2E test hooks (GPUBENCH_TEST_HOOKS=1)', () => {
     hooks.closeWindow();
     expect(hooks.windowState()!.destroyed).toBe(false);
     expect(hooks.notifications()).toHaveLength(1);
+    // Recorded for the test, never shown on the desktop.
+    expect(t.shown).toEqual([]);
     hooks.answerQuit(true);
     hooks.clickTray('Esci');
     await tick();

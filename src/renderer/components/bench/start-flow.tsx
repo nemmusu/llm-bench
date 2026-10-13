@@ -267,15 +267,6 @@ export function useStartFlow(): {
     [qc, install, download, planOf, proceed],
   );
 
-  /** "Scarica e avvia" / "Avvia server": fetch what is missing first, or go straight on. */
-  const confirm = useCallback(
-    async (job: Job, opts: FlowOpts) => {
-      if (opts.needs.length) await fetchNeeds(job, opts);
-      else proceed(job, opts, { install: false, download: false });
-    },
-    [fetchNeeds, proceed],
-  );
-
   /**
    * With the plan of this job (if one could be made): a run asks only when something must be
    * fetched first; a server was already confirmed on its page ("Avvia" / "Scarica e avvia").
@@ -351,6 +342,6 @@ export function useStartFlow(): {
   return {
     start,
     serve,
-    ui: <StartDialogs flow={flow} onClose={close} onConfirm={confirm} onContinue={post} onStopServers={stopServersAndStart} onBackground={toBackground} />,
+    ui: <StartDialogs flow={flow} onClose={close} onConfirm={fetchNeeds} onContinue={post} onStopServers={stopServersAndStart} onBackground={toBackground} />,
   };
 }
