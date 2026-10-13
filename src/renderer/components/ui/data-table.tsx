@@ -11,7 +11,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 
@@ -20,6 +20,44 @@ export interface DataTableColumnMeta {
   numeric?: boolean;
   /** Extra classes for header and cells of this column. */
   className?: string;
+  /**
+   * Stays in sight at the right edge while the rest scrolls sideways (a row's actions). While columns
+   * hide under it, a shadow and a fade beside it say there is more.
+   */
+  stickyEnd?: boolean;
+  /**
+   * Takes the room the other columns leave, its text cut with "…" instead of widening the table (long
+   * names). Give it a min width in `className`: kept when the table scrolls on a narrow window.
+   */
+  fill?: boolean;
+}
+
+/** The sticky end column: opaque; a shadow and a fade on its left edge only while columns hide under it. */
+const STICKY_END = cn(
+  'sticky right-0 bg-surface group-hover:bg-surface-2',
+  "before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-10 before:bg-linear-to-l before:from-surface before:to-transparent before:opacity-0 before:content-[''] group-hover:before:from-surface-2",
+  'group-data-[more=end]/table:shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.25)] group-data-[more=end]/table:before:opacity-100 dark:group-data-[more=end]/table:shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.8)]',
+);
+const FILL = 'w-full max-w-0';
+
+/** Whether a sideways-scrolling box hides columns past its right edge (the fade beside a sticky column). */
+function useMoreAtEnd(ref: RefObject<HTMLDivElement | null>): boolean {
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current!;
+    const update = () => setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    // The window, the rows (filters, sorting) and the fonts change the widths.
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    ro.observe(el.firstElementChild!);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, [ref]);
+  return more;
 }
 
 export const dataTableFeatures = tableFeatures({
@@ -66,9 +104,11 @@ export function DataTable<T extends RowData>({ columns, data, caption, initialSo
     ...(getRowId ? { getRowId } : {}),
   });
   const rows = table.getRowModel().rows;
+  const scroller = useRef<HTMLDivElement>(null);
+  const more = useMoreAtEnd(scroller);
 
   return (
-    <div className={cn('overflow-x-auto', className)}>
+    <div ref={scroller} data-more={more ? 'end' : undefined} className={cn('group/table overflow-x-auto', className)}>
       <table className="w-full border-separate border-spacing-0 text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -86,6 +126,8 @@ export function DataTable<T extends RowData>({ columns, data, caption, initialSo
                     className={cn(
                       'sticky top-0 z-[1] h-9 border-b border-border bg-surface px-3 text-xs font-medium whitespace-nowrap text-fg-3 first:pl-card last:pr-card',
                       meta?.numeric ? 'text-right' : 'text-left',
+                      meta?.stickyEnd && STICKY_END,
+                      meta?.fill && FILL,
                       meta?.className,
                     )}
                   >
@@ -141,6 +183,8 @@ export function DataTable<T extends RowData>({ columns, data, caption, initialSo
                       className={cn(
                         'h-row border-b border-border px-3 whitespace-nowrap text-fg first:pl-card last:pr-card group-last:border-b-0',
                         meta?.numeric && 'text-right tabular-nums',
+                        meta?.stickyEnd && STICKY_END,
+                        meta?.fill && FILL,
                         meta?.className,
                       )}
                     >

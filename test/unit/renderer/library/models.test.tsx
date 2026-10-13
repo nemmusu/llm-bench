@@ -33,11 +33,11 @@ describe('models: on your PC', () => {
     expect(await h1('Modelli')).toBeTruthy();
     const list = await screen.findByRole('list', { name: 'Per llama.cpp (GGUF)' });
     expect(within(list).getByText('Model m1')).toBeTruthy();
-    expect(within(list).getAllByText('Q4_K_M · 8,2B parametri · 4,0 GB')).toHaveLength(2);
+    expect(within(list).getAllByText('Q4_K_M · 8,2 miliardi di parametri · 4,0 GB')).toHaveLength(2);
     expect(within(list).getByText('· LM Studio')).toBeTruthy();
     expect(within(list).getByText('Visione (mmproj)')).toBeTruthy();
     await waitFor(() => expect(within(list).getAllByText('Entra perfettamente')).toHaveLength(2));
-    await waitFor(() => expect(within(list).getAllByText('Provato su questa GPU · 88 tok/s')).toHaveLength(2));
+    await waitFor(() => expect(within(list).getAllByText('Provato su questa GPU · scrive 88 tok/s')).toHaveLength(2));
     // Only library models can be deleted.
     expect(screen.queryByRole('button', { name: 'Elimina: Model m2' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Mostra nella cartella: Model m1' }));
@@ -157,6 +157,9 @@ describe('models: on your PC', () => {
     const api = libApi(world({ volumes: ['m2'] }));
     renderLib('/models', api);
     expect(await screen.findByText('Copiato in Docker')).toBeTruthy();
+    // Why it helps sits behind the "?" next to the button, not under every model of the list.
+    expect(screen.getByRole('button', { name: 'Che cos’è «Copia nello spazio Docker»?' })).toBeTruthy();
+    expect(screen.queryByText(/caricheranno il modello molto più velocemente/)).toBeNull();
     await userEvent.click(await screen.findByRole('button', { name: 'Copia nello spazio Docker: Model m1' }));
     expect(api.calls.find((c) => c.path === '/api/docker/model-volumes' && c.method === 'POST')?.body).toEqual({ localId: 'm1' });
     act(() => api.emit({ type: 'engine.install', kind: 'docker-volume', stage: 'copy', bytesDone: 1e9, bytesTotal: 4e9 }));
@@ -352,7 +355,7 @@ describe('models: download', () => {
     expect(within(list).getByText('Non entra')).toBeTruthy();
     expect(within(list).getByText('Dimensione non indicata')).toBeTruthy();
     expect(within(list).getByText('Licenza da accettare')).toBeTruthy();
-    expect(within(list).getByText('Provato · 88 tok/s')).toBeTruthy();
+    expect(within(list).getByText('Provato · scrive 88 tok/s')).toBeTruthy();
     // Parameters as on Hugging Face: one decimal only for small models.
     expect(within(list).getByText('70B')).toBeTruthy();
     expect(within(list).getByText('0,6B')).toBeTruthy();
@@ -487,7 +490,7 @@ describe('models: download', () => {
     await userEvent.click(screen.getByRole('radio', { name: /^Già provati/ }));
     const list = await screen.findByRole('list', { name: 'Modelli che hai già provato' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(list).getByText('Provato · 88 tok/s')).toBeTruthy();
+    expect(within(list).getByText('Provato · scrive 88 tok/s')).toBeTruthy();
     expect(within(list).getByText('Q8_0')).toBeTruthy();
     expect(within(list).getAllByText(/^Test fatti: 1 · l’ultimo/)).toHaveLength(2);
     expect(screen.getByText('2 modelli')).toBeTruthy();

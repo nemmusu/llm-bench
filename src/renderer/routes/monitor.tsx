@@ -27,7 +27,7 @@ type Metric = 'utilPct' | 'memUsedMiB' | 'powerW' | 'tempC' | 'smClockMHz';
 export const THROTTLE_REASONS = ['sw_power_cap', 'hw_slowdown', 'sw_thermal_slowdown', 'hw_thermal_slowdown', 'hw_power_brake_slowdown', 'board_limit'] as const;
 
 function LiveChart({ title, history, metric, scale = 1, format, max }: { title: string; history: GpuSample[]; metric: Metric; scale?: number; format: (v: number) => string; max?: number | undefined }) {
-  const { t } = useI18n();
+  const { t, integer } = useI18n();
   const last = history[history.length - 1]?.t ?? 0;
   const value = useCallback((s: GpuSample) => (s[metric] ?? 0) / scale, [metric, scale]);
   // A fixed three-minute axis: an empty point at the left edge, so the line grows in from the right.
@@ -37,9 +37,9 @@ function LiveChart({ title, history, metric, scale = 1, format, max }: { title: 
         tk,
         [-HISTORY_SECONDS, ...history.map((s) => (s.t - last) / 1000)],
         [Number.NaN, ...history.map(value)],
-        { name: title, format, ...(max === undefined ? {} : { max }) },
+        { name: title, format, axis: integer, ...(max === undefined ? {} : { max }) },
       ),
-    [history, last, value, format, max, title],
+    [history, last, value, format, max, title, integer],
   );
   return (
     <ChartCard

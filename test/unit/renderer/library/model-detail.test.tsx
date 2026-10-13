@@ -41,8 +41,8 @@ describe('model page', () => {
     expect(within(q4).getByText('2 parti')).toBeTruthy();
     expect(within(choices).getAllByText('Entra perfettamente')).toHaveLength(1);
     expect(within(choices).getByText('Entra bene')).toBeTruthy();
-    await waitFor(() => expect(within(choices).getAllByText('Provato su questa GPU · 61 tok/s')).toHaveLength(2));
-    expect(screen.getByText('31,0B parametri')).toBeTruthy();
+    await waitFor(() => expect(within(choices).getAllByText('Provato su questa GPU · scrive 61 tok/s')).toHaveLength(2));
+    expect(screen.getByText('31,0 miliardi di parametri')).toBeTruthy();
     expect(screen.getByText('gemma4')).toBeTruthy();
     expect(screen.getByText('131.072 token')).toBeTruthy();
     expect(screen.getByText('Licenza da accettare')).toBeTruthy();

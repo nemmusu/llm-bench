@@ -158,7 +158,8 @@ function SelectedModel({
             {option.preset ? t('presets.badge') : t('benchmark.pickModel.suggested')}
           </Badge>
         )}
-        {best && <TriedHereBadge tried={triedHere(best)} short={false} size="sm" />}
+        {/* The short form: the long one is wider than this card. */}
+        {best && <TriedHereBadge tried={triedHere(best)} short size="sm" />}
       </div>
     </>
   );
@@ -524,7 +525,8 @@ function BenchmarkScreen() {
                 options={[...PROFILES.filter((p) => p !== 'tune' || effEngine !== 'command'), ...(expert ? (['custom'] as const) : [])].map((p) => ({
                   value: p,
                   label: t(`benchmark.profiles.${p}`),
-                  sublabel: t(`benchmark.profileTime.${p}`),
+                  // The chosen one with the estimate for this model and card, the same as in the summary above.
+                  sublabel: p === effProfile ? profileTime : t(`benchmark.profileTime.${p}`),
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>

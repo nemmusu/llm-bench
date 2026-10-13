@@ -99,7 +99,8 @@ export function RadialGauge({
         </svg>
         <div className="absolute inset-x-0 top-[30%] flex flex-col items-center">
           <span className="text-[28px] leading-8 font-semibold tracking-[-0.02em] text-fg tabular-nums">{format(shown)}</span>
-          <span className="text-xs font-medium text-fg-3">{caption ?? unit}</span>
+          {/* Inside the ring: a long caption ("in attesa della prima misura") wraps instead of crossing the arc. */}
+          <span className="max-w-[72%] text-center text-xs font-medium text-fg-3">{caption ?? unit}</span>
         </div>
       </div>
       <div className="-mt-1 flex items-center gap-1 text-sm font-medium text-fg-2">

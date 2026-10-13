@@ -142,7 +142,7 @@ describe('Configurazioni with tune combinations', () => {
     fireEvent.keyDown(trigger, { key: 'Enter' });
     fireEvent.click(await screen.findByRole('option', { name: '1K token' }));
     const row = screen.getAllByRole('row').find((r) => r.textContent?.includes('65.536'))!;
-    expect(within(row).getByText('cache KV q8_0 · flash attention · decodifica speculativa')).toBeTruthy();
+    expect(row.textContent).toContain('cache KV q8_0 · flash attention · decodifica speculativa');
     expect(within(row).getByText('210,0')).toBeTruthy();
     await userEvent.click(within(row).getByRole('button', { name: 'Mostra il test di Qwen3 8B' }));
     const dialog = await screen.findByRole('dialog', { name: 'Test di questa configurazione' });

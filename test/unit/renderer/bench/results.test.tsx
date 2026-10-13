@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '../helpers';
-import { HOST, IDS, seeded, seededRuns } from './fixtures';
+import { HOST, IDS, seeded, seededRuns, summaries } from './fixtures';
 import { apiError, benchApi, deferred } from './world';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -44,20 +44,28 @@ describe('results list', () => {
     for (const name of ['Generazione (tok/s)', 'Lettura prompt (tok/s)', 'Contesto (token)', 'Più utenti (tok/s)', 'VRAM picco (GB)']) {
       expect(screen.getByRole('columnheader', { name })).toBeTruthy();
     }
+    // Over its short numbers the VRAM name stays on one line; the model column takes the room left and cuts long names.
+    expect(screen.getByRole('columnheader', { name: 'VRAM picco (GB)' }).querySelector('.whitespace-nowrap')?.textContent).toBe('VRAM picco');
+    expect(screen.getByRole('columnheader', { name: /^Modello/ }).className).toContain('max-w-0');
     const mistral = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
     expect(within(mistral).getByText('a 512 token di contesto')).toBeTruthy();
     expect(within(mistral).getByText('prompt da 512 token')).toBeTruthy();
     expect(within(mistral).getByText('1.024')).toBeTruthy();
     expect(within(mistral).getAllByText('–').length).toBeGreaterThan(0);
-    // The card next to the engine; the score next to the profile.
-    expect(within(mistral).getByText(/llama\.cpp b11438 \(CUDA 13\.4\) · RTX 5090/)).toBeTruthy();
+    // The card next to the engine (its backend and the card's full name on hover); the score next to the profile.
+    const engine = within(mistral).getByText('llama.cpp b11438 · RTX 5090');
+    expect(engine.getAttribute('title')).toBe('llama.cpp b11438 (CUDA 13.4) · NVIDIA GeForce RTX 5090');
+    expect(within(mistral).getByRole('link', { name: /Mistral Small/ }).getAttribute('title')).toMatch(/^Mistral Small 3\.2 24B Q4_K_M$/);
     const gemma = screen.getByRole('link', { name: /Gemma 4 31B/ }).closest('tr')!;
     expect(within(gemma).getByText('8.192')).toBeTruthy();
     expect(within(gemma).getByText('prompt da 4K')).toBeTruthy();
-    expect(within(gemma).getByText('Standard · punteggio 486')).toBeTruthy();
-    expect(within(gemma).getByText('4 utenti · prompt da 512 token')).toBeTruthy();
-    // What each user got, then everyone together.
-    expect(within(gemma).getByText(/^\d+ ciascuno · [\d.]+ in tutto$/)).toBeTruthy();
+    expect(within(gemma).getByText('Standard · 486 punti')).toBeTruthy();
+    // What each user got with how many, over the prompt each sent; everyone together in the whole sentence on hover.
+    const users = within(gemma).getByText('4 utenti');
+    expect(users.parentElement!.textContent).toMatch(/^\d+ ciascuno · 4 utenti$/);
+    const cell = users.parentElement!.parentElement!;
+    expect(within(cell).getByText('prompt da 512 token')).toBeTruthy();
+    expect(cell.getAttribute('title')).toMatch(/^Generazione con 4 utenti insieme, prompt da 512 token ciascuno: [\d,]+ tok\/s per utente, [\d.]+ tok\/s in tutto\.$/);
     // What went wrong sits next to the model.
     const cancelled = screen.getByRole('link', { name: /Qwen3 14B/ }).closest('tr')!;
     expect(within(cancelled).getByText('Annullato')).toBeTruthy();
@@ -86,6 +94,26 @@ describe('results list', () => {
     const row = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
     await userEvent.click(within(row).getAllByRole('cell')[1]!);
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${IDS.quick}`));
+  });
+
+  it('several users on older runs: everyone together when each user was not measured, the users alone when neither', async () => {
+    const api = benchApi();
+    const [gemma, moe, ...rest] = summaries(seededRuns()).filter((r) => r.parallelUsers !== undefined);
+    api.world.routes['GET /api/runs'] = () => [
+      { ...gemma!, parallelPerUserTps: undefined, parallelTps: 155 },
+      { ...moe!, parallelPerUserTps: undefined, parallelTps: undefined, parallelPromptTokens: undefined },
+      ...rest,
+    ];
+    renderApp('/results', api);
+    await screen.findByText(/^\d+ risultati$/);
+    const row = (id: string) => document.querySelector(`a[href*="${id}"]`)!.closest('tr')!;
+    const together = within(row(gemma!.id)).getByText(`${gemma!.parallelUsers} utenti`).parentElement!;
+    expect(together.textContent).toBe(`155 in tutto · ${gemma!.parallelUsers} utenti`);
+    expect(together.parentElement!.getAttribute('title')).toBe(`Generazione con ${gemma!.parallelUsers} utenti insieme, prompt da 512 token ciascuno: 155 tok/s in tutto.`);
+    const alone = within(row(moe!.id)).getByText(`${moe!.parallelUsers} utenti`).parentElement!;
+    expect(alone.textContent).toBe(`${moe!.parallelUsers} utenti`);
+    expect(alone.parentElement!.getAttribute('title')).toBeNull();
+    expect(alone.parentElement!.children).toHaveLength(1);
   });
 
   it('"Confronta" on each row fills the tray; it opens the comparison, older first', async () => {
@@ -229,7 +257,7 @@ describe('results list', () => {
     expect(await screen.findByText('1 risultato')).toBeTruthy();
     expect(screen.queryByText('Altro PC')).toBeNull();
     // One card in the whole history: no need to repeat it on every row.
-    expect(screen.getByText('llama.cpp b11438 (CUDA 13.4)')).toBeTruthy();
+    expect(screen.getByText('llama.cpp b11438')).toBeTruthy();
     expect(HOST).toBe('WORKSTATION');
   });
 });

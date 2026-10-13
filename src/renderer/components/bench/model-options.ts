@@ -143,9 +143,9 @@ export function triedOn(o: ModelOption, runs: readonly RunSummary[], gpuName: st
   return newestTried(runs.filter((r) => r.gpuName === gpuName && matches(r)));
 }
 
-/** What the "Provato" badge says about a run: its speed, or that it spilled (its speed does not count). */
-export function triedHere(r: RunSummary): { tps?: number; date: string; spilled?: boolean } {
-  return spilledRun(r) ? { date: r.createdAt, spilled: true } : { tps: r.decodeTps as number, date: r.createdAt };
+/** What the "Provato" badge says about a run: its speed and what it was measured on, or that it spilled (its speed does not count). */
+export function triedHere(r: RunSummary): { tps?: number; date: string; spilled?: boolean; tokens?: number | undefined; basis?: RunSummary['speedBasis'] } {
+  return spilledRun(r) ? { date: r.createdAt, spilled: true } : { tps: r.decodeTps as number, date: r.createdAt, tokens: r.decodeTokens, basis: r.speedBasis };
 }
 
 /** The newest completed run with a speed among `runs` (newest first): one that did not spill, else one that did. */

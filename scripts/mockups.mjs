@@ -241,6 +241,8 @@ async function openDiff(page) {
 
 /** The picks live in the page (and its storage): the next screens start without them. */
 async function forgetPicks(_info, page) {
+  // The saved sheet (a file:// page) has its own storage: back to the app first.
+  if (!page.url().startsWith('http')) await page.goBack();
   await page.evaluate(() => localStorage.removeItem('gpubench.compare'));
   await page.reload();
 }
@@ -368,7 +370,7 @@ const SCREENS = [
   { n: 5, name: 'benchmark-expert', route: '/', wait: 'Pronto a misurare', settings: { expertMode: true }, full: true },
   { n: 6, name: 'result-launch', route: `/results/${RESULT_ID}`, wait: 'Punteggio LLM Bench', tab: 'Come è stato avviato' },
   { n: 7, name: 'model-picker', route: '/', wait: 'Pronto a misurare', click: { role: 'button', name: /Cambia modello/ } },
-  { n: 8, name: 'results', route: '/results', wait: 'Risultati' },
+  { n: 8, name: 'results', route: '/results', wait: 'Risultati', small: true },
   { n: 9, name: 'monitor', route: '/monitor', wait: 'Monitor GPU', settle: 900 },
   { n: 10, name: 'settings', route: '/settings', wait: 'Impostazioni' },
   { n: 11, name: 'palette', route: '/', wait: 'Avvia benchmark', keys: 'Control+K' },
@@ -1632,12 +1634,22 @@ async function main() {
         await context.close();
       }
     }
-    await tuneScenes(browser, info, world, written);
-    await spillScenes(browser, info, world, written);
-    await ninferScenes(browser, info, world, written);
-    await serverScenes(browser, info, written);
-    await dockerScenes(browser, info, world, written);
-    await trayScene(browser, written);
+    const groups = {
+      tune: () => tuneScenes(browser, info, world, written),
+      spill: () => spillScenes(browser, info, world, written),
+      ninfer: () => ninferScenes(browser, info, world, written),
+      server: () => serverScenes(browser, info, written),
+      docker: () => dockerScenes(browser, info, world, written),
+      tray: () => trayScene(browser, written),
+    };
+    // One group that no longer matches the app is reported at the end; the next groups still render.
+    for (const [name, run] of Object.entries(groups)) {
+      try {
+        await run();
+      } catch (e) {
+        failed.push(`${name} scenes: ${String(e?.message ?? e).split(/\r?\n/)[0]}`);
+      }
+    }
   } finally {
     await browser.close();
     const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));

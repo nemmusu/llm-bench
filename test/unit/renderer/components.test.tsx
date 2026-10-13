@@ -28,7 +28,7 @@ import { Switch } from '../../../src/renderer/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../src/renderer/components/ui/tabs';
 import { Toaster } from '../../../src/renderer/components/ui/toaster';
 import { Tooltip } from '../../../src/renderer/components/ui/tooltip';
-import { TriedBadge } from '../../../src/renderer/components/ui/tried-badge';
+import { TriedBadge, TriedHereBadge } from '../../../src/renderer/components/ui/tried-badge';
 import { renderUi } from './helpers';
 
 afterEach(() => {
@@ -151,8 +151,8 @@ describe('TriedBadge', () => {
         <TriedBadge tps={58} short size="sm" date="2026-09-12T10:00:00Z" />
       </>,
     );
-    expect(screen.getByText('Provato su questa GPU · 142 tok/s')).toBeTruthy();
-    expect(screen.getByText('Provato · 58 tok/s')).toBeTruthy();
+    expect(screen.getByText('Provato su questa GPU · scrive 142 tok/s')).toBeTruthy();
+    expect(screen.getByText('Provato · scrive 58 tok/s')).toBeTruthy();
   });
 
   it('a version an update replaced says so', async () => {
@@ -163,16 +163,22 @@ describe('TriedBadge', () => {
         <TriedBadge spilled previous date="2026-09-12T10:00:00Z" />
       </>,
     );
-    expect(screen.getByText('Provato (versione precedente) · 61 tok/s')).toBeTruthy();
+    expect(screen.getByText('Provato (versione precedente) · scrive 61 tok/s')).toBeTruthy();
     expect(screen.getByText('Provato con la versione precedente: usava la RAM condivisa')).toBeTruthy();
-    await userEvent.hover(screen.getByText('Provato con la versione precedente · 61 tok/s'));
+    await userEvent.hover(screen.getByText('Provato con la versione precedente · scrive 61 tok/s'));
     await waitFor(() => expect(screen.getAllByText(/con la versione precedente del file, prima dell’aggiornamento/).length).toBeGreaterThan(0));
   });
 
   it('shows the date in a tooltip', async () => {
     renderUi(<TriedBadge tps={58} date="2026-09-12T10:00:00Z" />, { lang: 'en' });
-    await userEvent.hover(screen.getByText('Tried on this GPU · 58 tok/s'));
-    await waitFor(() => expect(screen.getAllByText(/You measured it on Sep 12, 2026/).length).toBeGreaterThan(0));
+    await userEvent.hover(screen.getByText('Tried on this GPU · writes 58 tok/s'));
+    await waitFor(() => expect(screen.getAllByText('You measured it on Sep 12, 2026: 58 tok/s writing.').length).toBeGreaterThan(0));
+  });
+
+  it('the tooltip says what the speed was measured on, when known', async () => {
+    renderUi(<TriedHereBadge tried={{ tps: 46.04, date: '2026-09-12T10:00:00Z', tokens: 512, basis: 'prompt' }} short size="sm" />);
+    await userEvent.hover(screen.getByText('Provato · scrive 46 tok/s'));
+    await waitFor(() => expect(screen.getAllByText('L’hai già misurato il 12 set 2026: 46,0 tok/s · scrittura con 512 token già nel contesto.').length).toBeGreaterThan(0));
   });
 });
 

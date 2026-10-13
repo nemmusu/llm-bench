@@ -37,11 +37,14 @@ describe('benchmark home', () => {
     renderApp('/', api);
     expect(await screen.findByRole('heading', { name: 'Pronto a misurare la tua RTX 5090' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Cambia modello: qwen3-8b model Q4_K_M/ })).toBeTruthy();
-    expect((await screen.findAllByText('≈ 1 min 35 s')).length).toBe(2);
+    // Under the start button, in the preview and next to the chosen duration (not the typical ~2 min).
+    expect((await screen.findAllByText('≈ 1 min 35 s')).length).toBe(3);
+    expect(screen.getByRole('radio', { name: /Rapido/ }).textContent).toContain('≈ 1 min 35 s');
+    expect(screen.getByRole('radio', { name: /Standard/ }).textContent).toContain('~6 min');
     expect(screen.getByText('1 caricamento a caldo · prompt da 512 token, 128 token generati, 3 ripetizioni')).toBeTruthy();
     expect(screen.getAllByText('Entra perfettamente').length).toBeGreaterThan(0);
     expect(screen.getByText('Installato · b11438')).toBeTruthy();
-    expect(await screen.findByText(/Provato su questa GPU/)).toBeTruthy();
+    expect(await screen.findByText(/^Provato · scrive /)).toBeTruthy();
     expect(screen.getByText('Ultimi risultati')).toBeTruthy();
     // The command preview is folded for beginners.
     await userEvent.click(screen.getByRole('button', { name: /Anteprima comando/ }));
@@ -64,7 +67,7 @@ describe('benchmark home', () => {
     expect(await screen.findByText('Verrà installato prima del test: 480 MB')).toBeTruthy();
     expect(screen.getByText('Prima scarico llama.cpp: 480 MB in tutto.')).toBeTruthy();
     // The whole preview is there before the install: duration, steps, what is prepared first, the command.
-    expect(screen.getAllByText('≈ 1 min 35 s').length).toBe(2);
+    expect(screen.getAllByText('≈ 1 min 35 s').length).toBe(3);
     expect(screen.getByText('Da preparare')).toBeTruthy();
     expect(screen.getByText('· verrà installato prima del test')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: /Anteprima comando/ }));
@@ -339,7 +342,7 @@ describe('benchmark choices', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Scegli un modello' });
     expect(within(dialog).getByText('Consigliati per la tua RTX 5090 (32 GB). Quelli già sul PC partono subito.')).toBeTruthy();
     expect(within(dialog).getByText('Sul tuo PC', { selector: 'h3' })).toBeTruthy();
-    expect(within(dialog).getByText(/Provato · 59 tok\/s/)).toBeTruthy();
+    expect(within(dialog).getByText(/Provato · scrive 59 tok\/s/)).toBeTruthy();
     expect(within(dialog).getByText('Consigliato per la tua scheda')).toBeTruthy();
     await userEvent.click(within(dialog).getByRole('radio', { name: /gemma-12b/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Conferma' }));

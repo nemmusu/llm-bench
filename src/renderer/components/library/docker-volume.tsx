@@ -7,6 +7,7 @@ import { activeEvent, libKeys, useDockerStatus, useInstallEvent, useStartInstall
 import { InstallProgress } from '../setup/install-progress';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
+import { HelpTip } from '../ui/help-tip';
 import { ErrorCallout } from './error-callout';
 
 export const VOLUME_KEY = 'docker-volume';
@@ -60,21 +61,23 @@ export function DockerVolumeAction({ model, copied }: { model: LocalModel; copie
   }
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button
-        size="sm"
-        variant="ghost"
-        className="-ml-2.5"
-        disabled={start.isPending}
-        onClick={() => {
-          qc.setQueryData(TARGET_KEY, model.id);
-          start.mutate({ key: VOLUME_KEY, path: '/api/docker/model-volumes', body: { localId: model.id } });
-        }}
-        aria-label={`${t('models.volume.copy')}: ${name}`}
-      >
-        <Container aria-hidden />
-        {t('models.volume.copy')}
-      </Button>
-      <p className="text-xs text-fg-3">{t('models.volume.hint')}</p>
+      {/* Why, behind the "?": the same sentence under every model of the list was noise. */}
+      <span className="-ml-2.5 inline-flex items-center gap-0.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={start.isPending}
+          onClick={() => {
+            qc.setQueryData(TARGET_KEY, model.id);
+            start.mutate({ key: VOLUME_KEY, path: '/api/docker/model-volumes', body: { localId: model.id } });
+          }}
+          aria-label={`${t('models.volume.copy')}: ${name}`}
+        >
+          <Container aria-hidden />
+          {t('models.volume.copy')}
+        </Button>
+        <HelpTip term={t('models.volume.copy')}>{t('models.volume.hint')}</HelpTip>
+      </span>
       {mine && event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'DOCKER_VOLUME_FAILED', message: 'copy' }} className="w-full" />}
     </div>
   );

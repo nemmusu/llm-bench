@@ -88,6 +88,9 @@ function ScoreCard({ k }: { k: Kpis }) {
   );
 }
 
+/** A no-break space: keeps a number with its unit. */
+const NBSP = String.fromCharCode(160);
+
 /** Duration, repetitions and stability: how much to trust the numbers, in plain words. */
 function RunSummaryCard({ run }: { run: RunResult }) {
   const { t, duration, percent } = useI18n();
@@ -98,7 +101,8 @@ function RunSummaryCard({ run }: { run: RunResult }) {
   // Steady numbers of a run that spilled are steadily wrong: never "Ottima" (the warning above says why).
   const level = worst === undefined ? undefined : spilledRun(run) ? 'Spill' : worst < 0.02 ? 'Good' : worst < 0.05 ? 'Ok' : 'Bad';
   const items: { label: string; value: ReactNode; help?: string }[] = [
-    { label: t('result.summary.duration'), value: duration(Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt))) },
+    // A narrow column breaks "3 min 32 s" only between minutes and seconds, never before a unit.
+    { label: t('result.summary.duration'), value: duration(Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt))).replace(/(\d) /g, `$1${NBSP}`) },
     { label: t('result.summary.repetitions'), value: reps?.kind === 'latency' ? t('result.summary.repetitionsValue', { n: reps.reps }) : '–' },
     {
       label: t('result.summary.stability'),
@@ -205,7 +209,8 @@ function KpiGrid({ k, totalMiB, sharedMiB, usersPrompt }: { k: Kpis; totalMiB: n
         help={t('metrics.concurrency.help')}
         value={k.concurrency ? integer(k.concurrency.aggregateTps) : '–'}
         unit="tok/s"
-        hint={k.concurrency ? usersWords(k.concurrency.level, k.concurrency.promptTokens ?? usersPrompt, f) : undefined}
+        // Everyone together, not what each one gets (that is in the chart below): said under the number.
+        hint={k.concurrency ? t('metrics.concurrency.hint', { users: usersWords(k.concurrency.level, k.concurrency.promptTokens ?? usersPrompt, f) }) : undefined}
       />
     </section>
   );

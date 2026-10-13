@@ -26,6 +26,14 @@ export interface TriedHere {
   runId: string;
   /** Only runs that spilled exist here: "Provato: usava la RAM condivisa". */
   spilled?: boolean;
+  /** What the speed was measured on (the badge's tooltip says it). */
+  tokens?: number | undefined;
+  basis?: RunSummary['speedBasis'];
+}
+
+/** What a run's generation speed was measured on, for a "Provato" badge. */
+export function speedContextOf(r: RunSummary): { tokens: number | undefined; basis: RunSummary['speedBasis'] } {
+  return { tokens: r.decodeTokens, basis: r.speedBasis };
 }
 
 /**
@@ -41,7 +49,7 @@ export function bestRunHere(runs: readonly RunSummary[] | undefined, gpu: Pick<G
     if (spilledRun(r)) spilled = !spilled || r.createdAt > spilled.createdAt ? r : spilled;
     else if (!best || r.decodeTps > (best.decodeTps as number)) best = r;
   }
-  if (best) return { tps: best.decodeTps as number, date: best.createdAt, runId: best.id };
+  if (best) return { tps: best.decodeTps as number, date: best.createdAt, runId: best.id, ...speedContextOf(best) };
   return spilled ? { date: spilled.createdAt, runId: spilled.id, spilled: true } : undefined;
 }
 
@@ -52,6 +60,9 @@ export interface TriedModel {
   quant: string | undefined;
   /** Best generation speed on this GPU, when a run completed (runs that spilled to shared memory never count). */
   tps: number | undefined;
+  /** What that speed was measured on. */
+  tokens?: number | undefined;
+  basis?: RunSummary['speedBasis'];
   /** A completed run here spilled to shared memory (its speed does not count). */
   spilled: boolean;
   /** Latest run. */
@@ -70,7 +81,7 @@ export function triedModels(runs: readonly RunSummary[] | undefined, gpu: Pick<G
     const tps = r.status === 'completed' && !spill ? r.decodeTps : undefined;
     const seen = out.get(repo);
     if (!seen) {
-      out.set(repo, { repo, owner: parts[0] as string, name: parts[1] as string, quant: r.quant, tps, spilled: spill, date: r.createdAt, runs: 1 });
+      out.set(repo, { repo, owner: parts[0] as string, name: parts[1] as string, quant: r.quant, tps, ...speedContextOf(r), spilled: spill, date: r.createdAt, runs: 1 });
       continue;
     }
     seen.runs++;
@@ -79,6 +90,7 @@ export function triedModels(runs: readonly RunSummary[] | undefined, gpu: Pick<G
     if (tps !== undefined && (seen.tps === undefined || tps > seen.tps)) {
       seen.tps = tps;
       seen.quant = r.quant;
+      Object.assign(seen, speedContextOf(r));
     }
   }
   return [...out.values()].sort((a, b) => b.date.localeCompare(a.date));

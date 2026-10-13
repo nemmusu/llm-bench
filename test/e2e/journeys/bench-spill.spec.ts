@@ -49,7 +49,7 @@ test('a run that spills into shared memory says so, and its quick fixes run it a
     // The whole 256K context: the plan says before starting that it does not fit, with the fixes.
     await nav(page, 'Benchmark');
     await expect(h1(page, 'Benchmark')).toBeVisible();
-    await expect(page.getByText(/^Provato su questa GPU · [\d.,]+ tok\/s$/)).toBeVisible();
+    await expect(page.getByText(/^Provato · scrive [\d.,]+ tok\/s$/)).toBeVisible();
     await page.getByRole('switch', { name: 'Modalità esperto' }).click();
     await page.getByLabel('Contesto (token)').fill('262144');
     const risk = page.getByRole('list', { name: 'Avvisi' }).getByRole('listitem').filter({ hasText: 'Il modello non entra tutto nella scheda video' });
@@ -78,9 +78,9 @@ test('a run that spills into shared memory says so, and its quick fixes run it a
     await expect(h1(page, /Qwen3-27B/)).toBeVisible({ timeout: 90_000 });
     await expect(page.getByRole('alert').filter({ hasText: 'Il modello non è entrato tutto nella memoria della scheda' })).toHaveCount(0);
 
-    // Lists say which run spilled; "Provato su questa GPU" keeps quoting a clean one.
+    // Lists say which run spilled; "Provato" keeps quoting a clean one.
     await nav(page, 'Benchmark');
-    await expect(page.getByText(/^Provato su questa GPU · [\d.,]+ tok\/s$/)).toBeVisible();
+    await expect(page.getByText(/^Provato · scrive [\d.,]+ tok\/s$/)).toBeVisible();
     // "Ultimi risultati": the badge on the spilled run only.
     await expect(page.getByRole('heading', { name: 'Ultimi risultati' })).toBeVisible();
     await expect(page.getByText('RAM condivisa', { exact: true })).toHaveCount(1);

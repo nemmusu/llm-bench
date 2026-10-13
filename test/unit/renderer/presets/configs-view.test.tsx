@@ -59,6 +59,11 @@ describe('Risultati → Configurazioni', () => {
     expect(within(qwen).getByText('flash attention')).toBeTruthy();
     expect(within(qwen).getByText('8.192')).toBeTruthy();
     expect(within(rowOf(/Mistral/)).getByText('Impostazioni predefinite')).toBeTruthy();
+    // A short setting never breaks in two at the end of a line; a long one may wrap.
+    expect(within(qwen).getByText('flash attention').className).toBe('whitespace-nowrap');
+    const gpt = rowOf(/gpt-oss/);
+    expect(within(gpt).getByText('4 slot paralleli').className).toBe('whitespace-nowrap');
+    expect(within(gpt).getByText('contesto condiviso fra gli utenti').className).toBe('');
     // Two tests behind the Qwen3 8B configuration: the median of 183,45 and 186.
     expect(within(qwen).getByText('184,7')).toBeTruthy();
     expect(within(qwen).getByRole('button', { name: 'Mostra i 2 test di Qwen3 8B' })).toBeTruthy();
@@ -241,8 +246,8 @@ describe('Risultati → Configurazioni', () => {
     expect(within(gemma).queryByText(/in tutto/)).toBeNull();
     // With the prompt each user sent (the context of those speeds), the numbers in the header's unit.
     const moe = screen.getByRole('link', { name: /Qwen3 30B A3B/ }).closest('tr')!;
-    expect(within(moe).getByText('4 utenti · prompt da 512 token')).toBeTruthy();
-    expect(within(moe).getByText(/^[\d.]+ in tutto$/)).toBeTruthy();
+    expect(within(moe).getByText('4 utenti').parentElement!.textContent).toMatch(/^[\d.]+ in tutto · 4 utenti$/);
+    expect(within(moe).getByText('prompt da 512 token')).toBeTruthy();
   });
 
   it('empty, loading, failing; a test that cannot be read', async () => {

@@ -4,7 +4,7 @@
  * its tests), the tests behind it, and the preset to start it again in one click.
  */
 import { Link } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { ALL_GPUS, type ConfigEntry, type ConfigsQuery, type DepthPoint } from '../../../contract/configs';
 import type { EngineKind } from '../../../contract/engines';
 import type { MessageKey } from '../../i18n';
@@ -140,7 +140,19 @@ export function ConfigsView() {
             <HelpTip term={t('configs.columns.config')}>{t('configs.configHelp')}</HelpTip>
           </span>
         ),
-        cell: (c) => <span className="text-fg-2">{c.getValue()}</span>,
+        cell: (c) => (
+          <span className="text-fg-2">
+            {(c.getValue() as string)
+              .split(' · ')
+              .map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 && ' · '}
+                  {/* A short setting ("ub 2048", "cache KV q8_0") never breaks in two at the end of a line. */}
+                  <span className={part.length <= 18 ? 'whitespace-nowrap' : undefined}>{part}</span>
+                </Fragment>
+              ))}
+          </span>
+        ),
       }),
       ...(entries.some((e) => e.contextSize !== undefined)
         ? [
@@ -208,7 +220,7 @@ export function ConfigsView() {
       col.display({
         id: 'actions',
         // Always in sight: on a narrow window the numbers scroll under it.
-        meta: { className: 'sticky right-0 bg-surface shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.18)] group-hover:bg-surface-2' },
+        meta: { stickyEnd: true },
         header: () => <span className="sr-only">{t('configs.columns.actions')}</span>,
         cell: (c) => (
           <span className="flex items-start gap-2">

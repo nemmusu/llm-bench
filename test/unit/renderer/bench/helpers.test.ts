@@ -32,6 +32,7 @@ import {
   peakConcurrency,
   prettyEngineLabel,
   prettyVariant,
+  shortEngineLabel,
   shortGpuName,
   slug,
   summaryModelLabel,
@@ -99,6 +100,9 @@ describe('format', () => {
     expect(summaryModelLabel({ modelName: 'Gemma', quant: 'Q8_0' })).toBe('Gemma · Q8_0');
     expect(prettyEngineLabel('llama.cpp b1 (cuda-13.4)')).toBe('llama.cpp b1 (CUDA 13.4)');
     expect(prettyEngineLabel('vLLM v1')).toBe('vLLM v1');
+    expect(shortEngineLabel('llama.cpp b1 (cuda-13.4)')).toBe('llama.cpp b1');
+    expect(shortEngineLabel('vLLM v0.12.0 (CUDA)')).toBe('vLLM v0.12.0');
+    expect(shortEngineLabel('PrismML (git)')).toBe('PrismML (git)');
     expect(shortGpuName('NVIDIA GeForce RTX 5090')).toBe('RTX 5090');
     expect(shortGpuName('NVIDIA RTX A6000')).toBe('RTX A6000');
   });

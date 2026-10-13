@@ -34,12 +34,12 @@ describe('Conversazioni lunghe: words and table', () => {
     const t = sessionsTable([...NOW_POINTS].reverse(), it_);
     expect(t.head).toEqual([
       'Sessioni insieme',
-      'Lettura del contesto (token/s)',
+      'Lettura del contesto di 200.000 token (token/s)',
       'Attesa prima risposta a 200.000 token',
       'Attesa in coda, la più lunga',
       'Attesa risposte successive',
       'Contesto riusato (%)',
-      'Velocità di scrittura (token/s)',
+      'Velocità di scrittura con 200.000 token (token/s)',
       'Errori (richieste)',
     ]);
     expect(t.rows).toEqual([

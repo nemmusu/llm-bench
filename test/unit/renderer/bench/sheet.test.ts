@@ -191,7 +191,7 @@ describe('Scheda da condividere: never a secret', () => {
     expect(md.mime).toBe('text/markdown;charset=utf-8');
     expect(md.content).toContain('# Assistente del team: ');
     expect(md.content).toContain('## Velocità e tempi di attesa');
-    expect(md.content).toContain('| Sessioni insieme | Lettura del contesto (token/s) | Attesa prima risposta a 200.000 token |');
+    expect(md.content).toContain('| Sessioni insieme | Lettura del contesto di 200.000 token (token/s) | Attesa prima risposta a 200.000 token |');
     expect(md.content).toContain('- **Contesto riusato**: ');
     expect(md.content).toContain('```bash');
     const html = sheetRequest(input(), 'html', en);

@@ -206,18 +206,20 @@ describe('lists and badges', () => {
     const api = withLibrary([only]);
     renderApp('/', api);
     const recent = await screen.findByRole('heading', { name: 'Ultimi risultati' });
-    const card = recent.closest('div')!.parentElement!;
+    // Title and subtitle sit in the header; the rows below it.
+    const card = recent.closest('div')!.parentElement!.parentElement!;
+    expect(within(card).getByText('Velocità di generazione (scrittura) di ogni test')).toBeTruthy();
     expect(await within(card).findByText('RAM condivisa')).toBeTruthy();
     // The selected model (its only run spilled).
-    expect(await screen.findByText('Provato: usava la RAM condivisa')).toBeTruthy();
-    expect(screen.queryByText(/Provato su questa GPU ·/)).toBeNull();
+    expect(await screen.findByText('Provato: RAM condivisa')).toBeTruthy();
+    expect(screen.queryByText(/Provato · scrive/)).toBeNull();
   });
 
   it('with a clean run too, "Provato" quotes the clean one', async () => {
     const clean = seeded(IDS.full);
     const dirty = { ...spilled(), id: '01K70SPILL0000000000000000', createdAt: '2026-10-07T10:00:00.000Z' };
     renderApp('/', withLibrary([clean, dirty]));
-    expect(await screen.findByText(/^Provato su questa GPU · /)).toBeTruthy();
+    expect(await screen.findByText(/^Provato · scrive /)).toBeTruthy();
     expect(screen.queryByText('Provato: usava la RAM condivisa')).toBeNull();
     // The model picker too.
     await userEvent.click(screen.getByRole('button', { name: /^Cambia modello:/ }));

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { spilledRun, type RunSummary } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
 import { SpillBadge } from '../components/bench/spill';
-import { countKey, MIB_PER_GB, prettyEngineLabel, shortGpuName } from '../components/bench/format';
+import { countKey, MIB_PER_GB, prettyEngineLabel, shortEngineLabel, shortGpuName } from '../components/bench/format';
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS, type RunFilters } from '../components/bench/history';
 import { CompareToggle } from '../components/compare/compare-tray';
 import { entryOfSummary } from '../components/compare/compare-entries';
@@ -30,7 +30,7 @@ import { useI18n } from '../i18n';
 import { useApi } from '../lib/api-context';
 import { bundleRequest } from '../lib/export';
 import { saveTextFile } from '../lib/export/save';
-import { contextShort, tokensK } from '../lib/speed-at';
+import { contextShort, usersWords } from '../lib/speed-at';
 import { apiErrorData, RUNS_KEY, useBenchSystem, useRuns, useRunsLiveRefresh } from '../lib/queries-runs';
 
 const col = columnHelper<RunSummary>();
@@ -98,11 +98,15 @@ export function ResultsPage() {
         ),
       }),
       // The model, what went wrong (failed, cancelled, shared memory), then engine and card: one column, so the numbers fit.
+      // It takes the room the numbers leave: a long name ends with "…" and shows whole on hover.
       col.accessor('modelName', {
         header: t('results.columns.model'),
-        meta: { className: 'py-1.5' },
+        meta: { fill: true, className: 'min-w-48 py-1.5' },
         cell: (c) => {
           const r = c.row.original;
+          const quant = r.quant && !c.getValue().includes(r.quant) ? r.quant : undefined;
+          // The card only when the history has more than one (most people have one: the numbers keep the room).
+          const engine = manyGpus ? `${shortEngineLabel(r.engineLabel)} · ${shortGpuName(r.gpuName)}` : shortEngineLabel(r.engineLabel);
           return (
             <span className="flex flex-col leading-5">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -110,10 +114,11 @@ export function ResultsPage() {
                   to="/results/$runId"
                   params={{ runId: r.id }}
                   onClick={(e) => e.stopPropagation()}
-                  className="rounded-xs font-medium text-fg hover:text-accent-text focus-ring"
+                  title={quant ? `${c.getValue()} ${quant}` : c.getValue()}
+                  className="min-w-0 truncate rounded-xs font-medium text-fg hover:text-accent-text focus-ring"
                 >
                   {c.getValue()}
-                  {r.quant && !c.getValue().includes(r.quant) && <span className="font-normal text-fg-3"> {r.quant}</span>}
+                  {quant && <span className="font-normal text-fg-3"> {quant}</span>}
                 </Link>
                 {r.status !== 'completed' ? (
                   <Badge tone={statusTone[r.status]} size="sm" dot>
@@ -124,10 +129,12 @@ export function ResultsPage() {
                 )}
               </span>
               <span className="flex items-center gap-1.5 text-xs text-fg-3">
-                {/* The card only when the history has more than one (most people have one: the numbers keep the room). */}
-                {manyGpus ? `${prettyEngineLabel(r.engineLabel)} · ${shortGpuName(r.gpuName)}` : prettyEngineLabel(r.engineLabel)}
+                {/* The build's backend (CUDA 13.4) only on hover, with the card's full name. */}
+                <span className="truncate" title={`${prettyEngineLabel(r.engineLabel)} · ${r.gpuName}`}>
+                  {engine}
+                </span>
                 {system.data && r.hostId !== system.data.hostId && (
-                  <Badge tone="outline" size="sm" title={r.hostLabel}>
+                  <Badge tone="outline" size="sm" title={r.hostLabel} className="shrink-0">
                     {t('results.otherPc')}
                   </Badge>
                 )}
@@ -203,18 +210,32 @@ export function ResultsPage() {
           const v = c.getValue();
           const { parallelTps: tps, parallelPerUserTps: each, parallelPromptTokens: prompt } = c.row.original;
           if (v === undefined) return <span className="text-fg-3">–</span>;
-          // "4 utenti · prompt da 512 token" / "43 ciascuno · 155 in tutto": what each user gets, then everyone together (older runs: what they have).
-          const detail = [each !== undefined ? t('results.usersEach', { tps: integer(each) }) : undefined, tps !== undefined ? t('results.usersTotal', { tps: integer(tps) }) : undefined].filter(Boolean);
+          // "43 ciascuno · 4 utenti" over "prompt da 512 token": what each user gets, with how many and on what
+          // prompt, like the other columns (older runs without it: everyone together). The whole sentence,
+          // with everyone together, on hover.
+          const head = each !== undefined ? t('results.usersEach', { tps: integer(each) }) : tps !== undefined ? t('results.usersTotal', { tps: integer(tps) }) : undefined;
+          const users = t('results.users', { n: v });
+          const speeds = [
+            each !== undefined ? t('results.usersTipEach', { tps: number(each, 1) }) : undefined,
+            tps !== undefined ? t('results.usersTipTotal', { tps: integer(tps) }) : undefined,
+          ].filter((s): s is string => s !== undefined);
           return (
-            <span className="flex flex-col items-end leading-5 whitespace-nowrap">
-              {detail.length > 0 && <span>{detail.join(' · ')}</span>}
-              <span className="text-xs text-fg-3">{prompt === undefined ? t('results.users', { n: v }) : t('results.usersPrompt', { n: v, prompt: tokensK(prompt, f) })}</span>
+            <span
+              className="flex flex-col items-end leading-5 whitespace-nowrap"
+              title={speeds.length ? t('results.usersTip', { users: usersWords(v, prompt, f), speeds: speeds.join(', ') }) : undefined}
+            >
+              <span>
+                {head && `${head} · `}
+                <span className="text-fg-3">{users}</span>
+              </span>
+              {prompt !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'read', tokens: prompt }, f)}</span>}
             </span>
           );
         },
       }),
       col.accessor('vramPeakMiB', {
-        header: () => <UnitHeader text={t('results.columns.vram')} />,
+        // "VRAM picco" on one line: its numbers are short, and the model column takes the rest.
+        header: () => <UnitHeader text={t('results.columns.vram')} nowrap />,
         meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
@@ -225,7 +246,7 @@ export function ResultsPage() {
       // "Confronta": always in sight at the end of the row (a failed run measured nothing to compare).
       col.display({
         id: 'compare',
-        meta: { className: 'sticky right-0 bg-surface shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.18)] group-hover:bg-surface-2' },
+        meta: { stickyEnd: true },
         header: t('results.columns.compare'),
         cell: (c) => (c.row.original.status === 'failed' ? null : <CompareToggle compact entry={entryOfSummary(c.row.original, f)} />),
       }),

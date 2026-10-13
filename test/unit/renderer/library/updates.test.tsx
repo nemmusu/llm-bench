@@ -186,7 +186,7 @@ describe('model page: what the PC already has', () => {
     expect(within(card).getByText('Model m1')).toBeTruthy();
     expect(within(card).queryByText('Model half')).toBeNull();
     expect(within(card).getByText('Visione (mmproj)')).toBeTruthy();
-    expect(await within(card).findByText('Provato con la versione precedente · 55 tok/s')).toBeTruthy();
+    expect(await within(card).findByText('Provato con la versione precedente · scrive 55 tok/s')).toBeTruthy();
     expect(within(card).getByText('Aggiornamento disponibile')).toBeTruthy();
     await userEvent.click(within(card).getByRole('button', { name: 'Controlla aggiornamenti' }));
     // Only this repo's models count.

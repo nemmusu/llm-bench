@@ -88,6 +88,14 @@ export function prettyEngineLabel(label: string): string {
   return label.replace(/\(([^)]+)\)$/, (_, v: string) => `(${prettyVariant(v)})`);
 }
 
+/**
+ * The same without the build's backend, for a narrow list: "llama.cpp b11438 (cuda-13.4)" →
+ * "llama.cpp b11438". A name of its own in brackets stays ("PrismML (git)").
+ */
+export function shortEngineLabel(label: string): string {
+  return label.replace(/\s+\((?:cuda|cpu|vulkan|rocm|hip)\b[^)]*\)$/i, '');
+}
+
 /** Model name plus quant for a list row, without repeating the quant. */
 export function summaryModelLabel(r: { modelName: string; quant?: string | undefined }): string {
   return modelLabelOf({ displayName: r.modelName, quant: r.quant });

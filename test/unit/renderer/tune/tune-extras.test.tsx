@@ -58,7 +58,7 @@ describe('results list', () => {
     const row = (await screen.findAllByRole('row')).find((r) => r.textContent?.includes('6 combinazioni'))!;
     expect(row.textContent).toContain('Trova le impostazioni migliori · 6 combinazioni');
     expect(within(row).getByText('cache q4_0')).toBeTruthy();
-    expect(screen.getByText(/· 1 combinazione( · punteggio [\d.]+)?$/)).toBeTruthy();
+    expect(screen.getByText(/· 1 combinazione( · [\d.]+ punti)?$/)).toBeTruthy();
   });
 });
 

@@ -236,11 +236,13 @@ export function sparkAreaOption(
   tk: ChartTokens,
   t: readonly number[],
   values: readonly number[],
-  opts: { name: string; format: (v: number) => string; max?: number; colorIndex?: number },
+  opts: { name: string; format: (v: number) => string; max?: number; colorIndex?: number; axis?: (v: number) => string },
 ): ChartOption {
   const ax = axisStyle(tk);
   const color = tk.series[opts.colorIndex ?? 0]!;
   const t0 = t[t.length - 1] ?? 0;
+  // Half of the max is often fractional (575 W → 287.5): whole numbers, in the user's language.
+  const axis = opts.axis ?? ((v: number) => String(Math.round(v)));
   return {
     grid: { left: 8, right: 8, top: 10, bottom: 4, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
     tooltip: {
@@ -256,7 +258,14 @@ export function sparkAreaOption(
       splitLine: { show: false },
       axisLabel: { ...ax.axisLabel, formatter: (v: number) => `-${mmss(t0 - v)}` },
     },
-    yAxis: { type: 'value', min: 0, ...(opts.max === undefined ? { splitNumber: 2 } : { max: opts.max, interval: opts.max / 2 }), ...ax, axisLine: { show: false } },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      ...(opts.max === undefined ? { splitNumber: 2 } : { max: opts.max, interval: opts.max / 2 }),
+      ...ax,
+      axisLine: { show: false },
+      axisLabel: { ...ax.axisLabel, formatter: (v: number) => axis(Math.round(v)) },
+    },
     series: [
       {
         type: 'line',

@@ -84,7 +84,7 @@ describe('welcome wizard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continua' }));
     expect(await screen.findByText('Model m1 · Q4_K_M · 4,0 GB')).toBeTruthy();
     expect(screen.getByText('È già sul tuo PC: il test parte subito, senza scaricare nulla.')).toBeTruthy();
-    expect(await screen.findByText('Provato su questa GPU · 190 tok/s')).toBeTruthy();
+    expect(await screen.findByText('Provato su questa GPU · scrive 190 tok/s')).toBeTruthy();
     expect(screen.getByText('Installato')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Usa questa configurazione' }));
     expect(screen.queryByText(/Sto ancora scaricando/)).toBeNull();

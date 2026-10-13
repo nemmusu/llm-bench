@@ -120,13 +120,16 @@ describe('builders', () => {
   });
 
   it('spark area: relative time axis, optional max and color', () => {
-    const o: Any = sparkAreaOption(tk, [100, 160], [1, 2], { name: 'U', format: (v) => `${v}%`, max: 100, colorIndex: 2 });
-    expect(o.yAxis.interval).toBe(50);
+    const o: Any = sparkAreaOption(tk, [100, 160], [1, 2], { name: 'U', format: (v) => `${v}%`, max: 575, colorIndex: 2, axis: (v) => `n${v}` });
+    expect(o.yAxis.interval).toBe(287.5);
+    // Half of 575 W is a whole number on the axis, in the user's language.
+    expect(o.yAxis.axisLabel.formatter(287.5)).toBe('n288');
     expect(o.series[0].lineStyle.color).toBe('#3');
     expect(o.xAxis.axisLabel.formatter(100)).toBe('-1:00');
     expect(o.tooltip.valueFormatter(4)).toBe('4%');
     const noMax: Any = sparkAreaOption(tk, [], [], { name: 'V', format: String });
     expect(noMax.yAxis.splitNumber).toBe(2);
+    expect(noMax.yAxis.axisLabel.formatter(1500.4)).toBe('1500');
     expect(noMax.xAxis.min).toBe(0);
     expect(noMax.series[0].lineStyle.color).toBe('#1');
   });
