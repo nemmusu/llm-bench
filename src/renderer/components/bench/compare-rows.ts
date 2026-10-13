@@ -1,5 +1,6 @@
 /** The compare page as data: headline numbers side by side, and every setting that differs. */
 import type { LaunchParams } from '../../../contract/engines';
+import { ninferParamsText } from '../../../contract/ninfer';
 import type { RunResult } from '../../../contract/results';
 import type { Formatters, MessageKey } from '../../i18n';
 import { longConversationRows, type WordsRow } from './compare-words';
@@ -57,6 +58,7 @@ const PARAM_LABELS: Record<Exclude<keyof LaunchParams, never>, MessageKey> = {
   dtype: 'benchmark.expert.dtype',
   quantization: 'benchmark.expert.quantization',
   ropeScaling: 'benchmark.expert.ropeScaling',
+  ninfer: 'benchmark.expert.ninfer',
   extraArgs: 'benchmark.expert.extraArgs',
   env: 'benchmark.expert.env',
 };
@@ -65,6 +67,7 @@ function paramText(key: keyof LaunchParams, p: LaunchParams, auto: string): stri
   const v = p[key];
   if (key === 'extraArgs') return p.extraArgs.length ? p.extraArgs.join(' ') : auto;
   if (key === 'ropeScaling') return p.ropeScaling ? `${p.ropeScaling.type} ×${p.ropeScaling.factor} (${p.ropeScaling.originalContext})` : auto;
+  if (key === 'ninfer') return ninferParamsText(p.ninfer) || auto;
   if (key === 'env') {
     const e = Object.entries(p.env);
     return e.length ? e.map(([k, x]) => `${k}=${x}`).join(' ') : auto;

@@ -15,6 +15,9 @@ export const ENGINE_KINDS = [
   'sglang-native',
   'external',
   'command',
+  // NInfer (C++/CUDA engine for Qwen3.5–3.8 on one RTX 5090, contract/ninfer.ts): Linux, or inside a WSL distro on Windows.
+  'ninfer-native',
+  'ninfer-wsl',
 ] as const;
 export const engineKindSchema = z.enum(ENGINE_KINDS);
 export type EngineKind = z.infer<typeof engineKindSchema>;
@@ -31,7 +34,7 @@ export type ApiFlavor = z.infer<typeof apiFlavorSchema>;
  * covers every OpenAI server GPU Bench only talks to (external endpoints) or starts from a command
  * template ('command'): no known flags.
  */
-export type EngineBase = 'llamacpp' | 'vllm' | 'sglang' | 'external';
+export type EngineBase = 'llamacpp' | 'vllm' | 'sglang' | 'ninfer' | 'external';
 
 export function engineBaseOf(kind: EngineKind): EngineBase {
   switch (kind) {
@@ -44,6 +47,9 @@ export function engineBaseOf(kind: EngineKind): EngineBase {
     case 'sglang-docker':
     case 'sglang-native':
       return 'sglang';
+    case 'ninfer-native':
+    case 'ninfer-wsl':
+      return 'ninfer';
     default:
       return 'external';
   }
@@ -71,6 +77,43 @@ export const ropeScalingSchema = z.object({
 });
 export type RopeScaling = z.infer<typeof ropeScalingSchema>;
 
+/** NInfer KV-cache storage (--kv-dtype): bf16 (its default), int8 (group-64), fp8, nvfp4, k8v4 (K int8, V 4-bit). */
+export const NINFER_KV_DTYPES = ['bf16', 'int8', 'fp8', 'nvfp4', 'k8v4'] as const;
+export type NinferKvDtype = (typeof NINFER_KV_DTYPES)[number];
+/** NInfer speculative decoding (--spec): the model's MTP head, DFlash (35B-A3B), DFlash2 (Qwen3.8-27B); 'off' = none. */
+export const NINFER_SPECS = ['off', 'mtp', 'dflash', 'dflash2'] as const;
+export type NinferSpec = (typeof NINFER_SPECS)[number];
+
+/**
+ * NInfer's own launch settings (LaunchParams.ninfer). The shared fields keep their meaning:
+ * contextSize → --max-context (each request's ceiling, prompt + answer), parallel → --max-concurrency
+ * (requests served at once, 1..8). Unset = NInfer's default, except what GPU Bench sets for benchmarks
+ * (core/engines/ninfer/args.ts: no prefix reuse, no thinking).
+ */
+export const ninferParamsSchema = z.object({
+  /** --kv-capacity: tokens of the KV pool shared by every request, or 'auto' (all the memory left, 1 GiB spare). Unset = --max-context. */
+  kvCapacity: z.union([z.number().int().positive(), z.literal('auto')]).optional(),
+  kvDtype: z.enum(NINFER_KV_DTYPES).optional(),
+  spec: z.enum(NINFER_SPECS).optional(),
+  /** --draft-tokens: MTP 1..5, DFlash / DFlash2 1..15. */
+  draftTokens: z.number().int().min(1).max(15).optional(),
+  /** --lm-head-draft: the optimized proposal head. */
+  lmHeadDraft: z.boolean().optional(),
+  /** --vision: image and video input (loads the vision weights and workspace). */
+  vision: z.boolean().optional(),
+  /** Context cache (prefix reuse on only): --device-state-slots, --host-state-slots, --host-kv-mib. */
+  deviceStateSlots: z.number().int().min(0).optional(),
+  hostStateSlots: z.number().int().min(0).optional(),
+  hostKvMib: z.number().int().min(0).optional(),
+  /** false = --no-prefix-reuse (benchmarks: every prompt read in full). */
+  prefixReuse: z.boolean().optional(),
+  /** false = --no-thinking (benchmarks); true = the model's default (thinking on). */
+  thinking: z.boolean().optional(),
+  /** --preserve-thinking: keep closed turns' reasoning in the history. */
+  preserveThinking: z.boolean().optional(),
+});
+export type NinferParams = z.infer<typeof ninferParamsSchema>;
+
 /**
  * User-facing launch parameters. Beginners never see most of these: defaults come from
  * the planner. `undefined` means "let GPU Bench decide".
@@ -95,6 +138,8 @@ export const launchParamsSchema = z.object({
   quantization: z.string().optional(),
   /** Context extension beyond the model's trained context (YaRN / linear RoPE scaling). */
   ropeScaling: ropeScalingSchema.optional(),
+  /** NInfer's own settings (ninfer-native / ninfer-wsl). */
+  ninfer: ninferParamsSchema.optional(),
   /** Extra raw CLI arguments appended verbatim (expert mode). */
   extraArgs: z.array(z.string()).default([]),
   /** Extra environment variables (expert mode). */
@@ -131,6 +176,13 @@ export const engineConfigSchema = z.object({
   customEngineId: z.string().optional(),
   /** Docker engines: read the model from this named volume instead of a host folder (faster on Windows). */
   modelVolume: z.string().optional(),
+  /**
+   * ninfer-native / ninfer-wsl: the ninfer-serve program, or its NInfer checkout (build/apps/ninfer-serve
+   * inside it). A Linux path: for WSL, inside the distro. Absent = the one saved in settings.ninfer.
+   */
+  ninferPath: z.string().optional(),
+  /** ninfer-wsl: the WSL distro NInfer runs in (wsl.exe -d). Absent = the saved one. */
+  wslDistro: z.string().optional(),
 });
 export type EngineConfig = z.infer<typeof engineConfigSchema>;
 
