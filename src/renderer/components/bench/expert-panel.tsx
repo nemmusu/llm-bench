@@ -1,14 +1,17 @@
 import { FolderOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { isDockerKind, type ApiFlavor, type EngineKind } from '../../../contract/engines';
+import { argGroups, mergeRecipeParams, type RecipePatch } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Field, Input, Textarea } from '../ui/input';
 import { Select } from '../ui/select';
+import { YarnChoice } from '../recipes/yarn-choice';
+import { depthLabel } from '../tune/tune-format';
 import type { EngineField, EngineForm } from './engine-form';
-import type { ParamsField, ParamsForm, ScenarioField, ScenarioForm } from './expert-form';
+import { parseArgs, parseEnv, parseInteger, type ParamsField, type ParamsForm, type ScenarioField, type ScenarioForm } from './expert-form';
 import { engineFamily } from './model-options';
 
 export interface ExpertPanelProps {
@@ -25,6 +28,10 @@ export interface ExpertPanelProps {
   onScenario: (patch: Partial<ScenarioForm>) => void;
   /** Image used when the field is empty (from the engine status). */
   defaultImage: string | undefined;
+  /** The model's trained context (YaRN), when known. */
+  trainedContext?: number | undefined;
+  /** The model's recipe in use: its values are shown, marked, where the user's would go. */
+  recipe?: { name: string; patch: RecipePatch | undefined } | undefined;
   /** A custom engine is chosen: its executable / image / command are set on the Engines page. */
   customEngine?: string | undefined;
 }
@@ -39,9 +46,10 @@ interface TextProps {
   mono?: boolean;
   type?: 'text' | 'password' | 'url';
   inputMode?: 'numeric' | 'decimal' | 'text';
+  disabled?: boolean;
 }
 
-function Text({ label, value, onChange, placeholder, hint, invalid, mono, type = 'text', inputMode }: TextProps) {
+function Text({ label, value, onChange, placeholder, hint, invalid, mono, type = 'text', inputMode, disabled }: TextProps) {
   const { t } = useI18n();
   return (
     <Field label={label} hint={invalid ? <span className="text-danger-text">{t('benchmark.expert.invalid')}</span> : hint}>
@@ -56,6 +64,7 @@ function Text({ label, value, onChange, placeholder, hint, invalid, mono, type =
           onChange={(e) => onChange(e.target.value)}
           className={mono ? 'font-mono text-xs' : 'tabular-nums'}
           {...(inputMode ? { inputMode } : {})}
+          {...(disabled ? { disabled } : {})}
           autoComplete="off"
           spellCheck={false}
         />
@@ -73,9 +82,74 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/**
+ * The recipe's arguments and variables before the user's own: each one marked when the user's replaces it
+ * (the same flag in the extra arguments, the same variable).
+ */
+function RecipeExtras({ recipe, params }: { recipe: { name: string; patch: RecipePatch }; params: ParamsForm }) {
+  const { t } = useI18n();
+  const { overridden } = mergeRecipeParams({ extraArgs: parseArgs(params.extraArgs), env: parseEnv(params.env).env }, recipe.patch);
+  const groups = argGroups(recipe.patch.args);
+  const env = Object.entries(recipe.patch.env);
+  if (!groups.length && !env.length) return null;
+  const struck = (on: boolean) => (on ? 'text-fg-3 line-through' : 'text-fg');
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent-soft/40 px-3 py-2.5 text-xs lg:col-span-2" aria-label={t('recipes.expert.fromRecipe', { name: recipe.name })}>
+      {groups.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-fg-2">{t('recipes.expert.recipeArgs', { name: recipe.name })}</span>
+          <p className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
+            {groups.map((g, i) => {
+              const replaced = overridden.includes(g[0] as string);
+              return (
+                <span key={`${g.join(' ')}-${i}`} className={struck(replaced)} {...(replaced ? { title: t('recipes.expert.replacedArg') } : {})}>
+                  {g.join(' ')}
+                </span>
+              );
+            })}
+          </p>
+        </div>
+      )}
+      {env.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-fg-2">{t('recipes.expert.recipeEnv', { name: recipe.name })}</span>
+          <p className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
+            {env.map(([k, v]) => (
+              <span key={k} className={struck(overridden.includes(`env:${k}`))}>
+                {k}={v}
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Every launch parameter, the engine's executable/image/endpoint and the custom test plan. Empty = automatic. */
 export function ExpertPanel(p: ExpertPanelProps) {
-  const { t } = useI18n();
+  const f = useI18n();
+  const { t, integer } = f;
+  const recipe = p.recipe?.patch ? { name: p.recipe.name, patch: p.recipe.patch } : undefined;
+  const recipeCtx = recipe?.patch.params.contextSize ?? recipe?.patch.params.maxModelLen;
+  const yarnOn = p.params.yarnTarget.trim() !== '';
+  /** The context field: the recipe's value as its placeholder, and a line when the user's replaces it. */
+  const ctxField = (field: 'contextSize' | 'maxModelLen', label: string) => {
+    const typed = parseInteger(p.params[field]);
+    const hint = recipe === undefined || recipeCtx === undefined || yarnOn ? undefined : typed !== null && typed !== recipeCtx ? t('recipes.expert.replaced', { value: integer(recipeCtx) }) : t('recipes.expert.fromRecipe', { name: recipe.name });
+    return (
+      <Text
+        label={label}
+        value={yarnOn ? '' : p.params[field]}
+        onChange={(v) => p.onParams({ [field]: v })}
+        placeholder={yarnOn ? `${integer(Number(p.params.yarnTarget))} · YaRN` : recipeCtx !== undefined ? t('recipes.expert.recipeValue', { value: integer(recipeCtx) }) : t('common.auto')}
+        invalid={bad(field)}
+        inputMode="numeric"
+        disabled={yarnOn}
+        {...(hint ? { hint } : {})}
+      />
+    );
+  };
   const family = engineFamily(p.engine);
   const bad = (f: ParamsField) => p.paramsInvalid.includes(f);
   const num = (field: ParamsField & keyof ParamsForm, label: string, placeholder: string) => (
@@ -149,7 +223,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
             <div className="grid grid-cols-2 gap-4">
               {family === 'llamacpp' ? (
                 <>
-                  {num('contextSize', t('benchmark.expert.ctx'), t('common.auto'))}
+                  {ctxField('contextSize', t('benchmark.expert.ctx'))}
                   {num('gpuLayers', t('benchmark.expert.ngl'), t('benchmark.expert.nglAll'))}
                   <Field label={t('benchmark.expert.flashAttention')}>
                     {({ id }) => (
@@ -187,7 +261,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 </>
               ) : (
                 <>
-                  {num('maxModelLen', t('benchmark.expert.maxModelLen'), t('common.auto'))}
+                  {ctxField('maxModelLen', t('benchmark.expert.maxModelLen'))}
                   <Text
                     label={t('benchmark.expert.gpuMemory')}
                     value={p.params.gpuMemoryUtilization}
@@ -209,6 +283,12 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 </>
               )}
             </div>
+            <YarnChoice value={p.params.yarnTarget} onChange={(yarnTarget) => p.onParams({ yarnTarget, yarnOriginal: '' })} trained={parseInteger(p.params.yarnOriginal) ?? p.trainedContext} allowOff invalid={bad('yarnTarget')} title />
+            {recipe?.patch.params.ropeScaling && !yarnOn && (
+              <p className="-mt-2 text-xs text-accent-text">
+                {t('recipes.expert.fromRecipe', { name: recipe.name })}: {recipeCtx !== undefined ? t('recipes.parts.yarn', { ctx: depthLabel(recipeCtx, f) }) : t('recipes.parts.ropeOnly', { factor: f.number(recipe.patch.params.ropeScaling.factor, 2) })}
+              </p>
+            )}
             {p.customEngine !== undefined && <p className="text-sm text-fg-2">{t('engines.custom.expertNote', { name: p.customEngine })}</p>}
             {p.customEngine === undefined && p.engine === 'llamacpp-native' && (
               <Field label={t('benchmark.expert.executable')} hint={t('benchmark.expert.executableHint')}>
@@ -298,6 +378,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
 
         {family !== 'external' && (
           <>
+            {recipe && <RecipeExtras recipe={recipe} params={p.params} />}
             <Field
               label={t('benchmark.expert.extraArgs')}
               hint={t('benchmark.expert.extraArgsHint')}

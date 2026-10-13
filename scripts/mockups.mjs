@@ -23,8 +23,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startFakeDockerApi } from '../test/fakes/fake-docker/api.mjs';
 import { startFakeGithub } from '../test/fakes/fake-github/server.mjs';
-import { demoRepos, startFakeHub } from '../test/fakes/fake-hub/hub.mjs';
-import { buildGguf, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
+import { demoRepos, formatRepos, startFakeHub } from '../test/fakes/fake-hub/hub.mjs';
+import { buildGguf, buildSafetensors, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
 import { SPILL_PROFILE, TUNE_PROFILE } from '../test/fakes/fake-engine/profiles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -77,10 +77,96 @@ async function openServeReady(page) {
   await page.getByRole('dialog', { name: 'Il server è pronto' }).getByText('Indirizzo compatibile OpenAI').waitFor({ timeout: 90000 });
 }
 
+/**
+ * "Comandi per questo modello": a recipe for the library's Qwen3 8B (trained on 40K tokens), YaRN to
+ * 300K with an extra llama.cpp argument and a note, as "Usa" on the YaRN built-in would write it.
+ */
+const QWEN_RECIPE = {
+  id: 'qwen3-8b-yarn',
+  name: 'Qwen3 8B · YaRN 300K',
+  match: { models: [], name: 'Qwen3-8B', quant: 'Q4_K_M' },
+  contextSize: 307_200,
+  ropeScaling: { type: 'yarn', factor: 7.5, originalContext: 40_960 },
+  args: { llamacpp: ['--jinja'] },
+  env: {},
+  notes: 'Dalla scheda di Qwen3: YaRN fino a 4 volte il contesto di addestramento è provato; oltre, solo per misurare velocità e memoria.',
+  link: 'https://huggingface.co/Qwen/Qwen3-8B',
+  from: ['yarn'],
+};
+/** The same for the reference model's repo (its page: every quant of it). */
+const REFERENCE_RECIPE = { ...QWEN_RECIPE, id: 'qwen3-4b-yarn', name: 'Qwen3 4B · YaRN 300K', match: { models: [{ label: 'Qwen3-4B-GGUF', repo: REFERENCE.repo }] } };
+
+/** "Comandi" of the library's Qwen3 8B: the section in its dialog. */
+async function openLocalRecipe(page) {
+  await page.getByRole('button', { name: /^Comandi per Qwen3-8B/ }).click();
+  await page.getByRole('dialog', { name: /^Comandi per questo modello/ }).getByText('--rope-scaling', { exact: false }).first().waitFor({ timeout: 60000 });
+}
+
+/** "Scegli da una ricetta pronta" for a model with no commands yet. */
+async function openRecipeLibrary(page) {
+  await page.getByRole('button', { name: /^Comandi per Qwen3-8B/ }).click();
+  await page.getByRole('button', { name: 'Scegli da una ricetta pronta' }).click();
+  await page.getByRole('dialog', { name: 'Ricette pronte' }).waitFor({ timeout: 30000 });
+}
+
+/** "Modifica" of the saved recipe: the editor with its live command. */
+async function openRecipeEditor(page) {
+  await openLocalRecipe(page);
+  await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Modifica i comandi' });
+  await editor.getByText('--rope-scaling', { exact: false }).first().waitFor({ timeout: 30000 });
+}
+
+/** The library's Qwen3 8B on the Benchmark page: its commands' chip. */
+async function pickQwen8(page) {
+  await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
+  await picker.getByRole('radio', { name: /^Qwen3 8B Q4_K_M/ }).click();
+  await picker.getByRole('button', { name: 'Conferma' }).click();
+  await page.getByText('Usa i comandi di questo modello').first().waitFor({ timeout: 30000 });
+}
+
+/** The same in expert mode: the recipe's values where the user's would go. */
+async function pickQwen8Expert(page) {
+  await pickQwen8(page);
+  await page.getByText('Prima dei tuoi argomenti', { exact: false }).first().scrollIntoViewIfNeeded();
+}
+
+/** Expert mode, "Contesto oltre il limite del modello (YaRN)": 300K and its warning. */
+async function chooseYarn(page) {
+  await page.getByRole('radiogroup', { name: 'Contesto oltre il limite del modello (YaRN)' }).getByRole('radio', { name: '300K' }).click();
+  await page.getByText('la qualità non è garantita', { exact: false }).first().waitFor({ timeout: 10000 });
+  await page.getByRole('radiogroup', { name: 'Contesto oltre il limite del modello (YaRN)' }).scrollIntoViewIfNeeded();
+}
+
 /** Picks "Trova le impostazioni migliori" on the Benchmark page. */
 async function chooseTune(page) {
   await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
   await page.getByText('Le impostazioni che contano di più, poche prove.').waitFor({ timeout: 10000 });
+}
+
+/** The fake nvidia-smi state of this world (fakeWorld sets it): the busy-GPU scenes change it. */
+let smiStateFile = '';
+const IDLE_GPU = { gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] };
+/** A VM or a game holds 22 GB of the 32 GB card. */
+const BUSY_GPU = { gpus: [{ memUsedMiB: 22_000, powerW: 60, utilPct: 3, tempC: 44 }] };
+
+/** Other programs take most of the card; the plan says so (the verdict stays on the card's total). */
+async function busyBenchmark(page) {
+  writeFileSync(smiStateFile, JSON.stringify(BUSY_GPU));
+  await page.reload();
+  await page.getByText('Ora altri programmi usano').first().waitFor({ timeout: 30000 });
+}
+
+/** The same busy card from the catalog: one small banner on top. */
+async function busyCatalog(page) {
+  writeFileSync(smiStateFile, JSON.stringify(BUSY_GPU));
+  await page.reload();
+  await page.getByText('Ora altri programmi usano').first().waitFor({ timeout: 30000 });
+}
+
+function idleGpu() {
+  writeFileSync(smiStateFile, JSON.stringify(IDLE_GPU));
 }
 
 /** Stops every server a scene started (the next screens, the live run above all, need a free GPU). */
@@ -202,6 +288,14 @@ const SCREENS = [
   { n: 27, name: 'benchmark-tune', route: '/', wait: 'Pronto a misurare', act: chooseTune, small: true, full: true },
   // A run that spilled into shared memory (the real numbers of the 0.3.0 report). Live: spillScenes, 31-33.
   { n: 30, name: 'result-spill', route: `/results/${SPILL_ID}`, wait: 'Il modello non è entrato tutto nella memoria della scheda', small: true, full: true },
+  // Formats: each repo's formats as badges with their engine, a mixed repo split by format, the library grouped.
+  { n: 34, name: 'catalog-formats', route: '/models?tab=download&engine=any', wait: 'Di tendenza su Hugging Face', settle: 1500, small: true },
+  { n: 35, name: 'model-formats', route: '/models/hub/nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', wait: 'Per vLLM / SGLang (safetensors)', settle: 2000, small: true, full: true },
+  { n: 36, name: 'models-local-formats', route: '/models', wait: 'Per vLLM / SGLang (safetensors)', settle: 1500, small: true, full: true },
+  { n: 37, name: 'model-ninfer', route: '/models/hub/neroued/Qwen3.8-27B-nvfp4-NInfer', wait: 'Per NInfer (ottimizzato per RTX 5090)', settle: 1500 },
+  // The card is busy with other programs: a calm note before the test, one banner on the catalog.
+  { n: 38, name: 'busy-note', route: '/', wait: 'Pronto a misurare', act: busyBenchmark, after: idleGpu, small: true, full: true },
+  { n: 39, name: 'catalog-busy', route: '/models?tab=download', wait: 'Di tendenza su Hugging Face', act: busyCatalog, after: idleGpu },
   // "Motori personalizzati" and SGLang on the Engines page: a llama.cpp fork that lacks -ub, an SGLang fork image
   // not pulled yet, a program with an OpenAI API.
   { n: 40, name: 'engines-custom', route: '/engines', wait: 'Motori personalizzati', settings: { customEngines: CUSTOM_ENGINES }, act: showCustomEngines, small: true, full: true },
@@ -213,6 +307,14 @@ const SCREENS = [
   { n: 43, name: 'engines-template', route: `/engines?customTemplate=prismml-bonsai&modelName=${encodeURIComponent('Ternary-Bonsai-8B PQ2_0')}`, wait: 'Serve per Ternary-Bonsai-8B PQ2_0', settings: { customEngines: [] }, small: true },
   // The engine choice with the custom engines under their base.
   { n: 44, name: 'benchmark-engines', route: '/', wait: 'Pronto a misurare', settings: { customEngines: CUSTOM_ENGINES }, act: openEngineChoice },
+  // "Comandi per questo modello": the section, the ready recipes, the editor, the Benchmark chip, YaRN in expert mode, the model page.
+  { n: 50, name: 'recipe-section', route: '/models', wait: 'Fai il benchmark', act: openLocalRecipe, settings: { modelRecipes: [QWEN_RECIPE] }, small: true },
+  { n: 51, name: 'recipe-library', route: '/models', wait: 'Fai il benchmark', act: openRecipeLibrary, small: true },
+  { n: 52, name: 'recipe-editor', route: '/models', wait: 'Fai il benchmark', act: openRecipeEditor, settings: { modelRecipes: [QWEN_RECIPE] }, small: true },
+  { n: 53, name: 'benchmark-recipe', route: '/', wait: 'Pronto a misurare', act: pickQwen8, settings: { modelRecipes: [QWEN_RECIPE] }, small: true, full: true },
+  { n: 54, name: 'benchmark-recipe-expert', route: '/', wait: 'Pronto a misurare', act: pickQwen8Expert, settings: { modelRecipes: [QWEN_RECIPE], expertMode: true }, small: true },
+  { n: 55, name: 'benchmark-yarn', route: '/', wait: 'Pronto a misurare', act: chooseYarn, settings: { expertMode: true }, small: true, full: true },
+  { n: 56, name: 'model-recipe', route: REFERENCE_PAGE, wait: 'Comandi per questo modello', settings: { modelRecipes: [REFERENCE_RECIPE] }, settle: 1500, small: true, full: true },
 ];
 
 /** The custom engines section, scrolled into view once every check has answered. */
@@ -406,6 +508,7 @@ async function fakeWorld(dataDir) {
   const hub = await startFakeHub({
     repos: [
       ...demoRepos(),
+      ...formatRepos(),
       {
         id: REFERENCE.repo,
         sha: REFERENCE.revision,
@@ -435,6 +538,31 @@ async function fakeWorld(dataDir) {
   writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
   writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
+  // Every format in the library: a safetensors model for vLLM / SGLang, a download stopped at 1 of 4
+  // files, an NInfer artifact with its manifest, a ternary Bonsai quant only the PrismML fork reads. In a
+  // folder added by the user (after the library: the Benchmark page keeps its usual first model), each repo
+  // folder with GPU Bench's download sidecar, as when another install's library is added.
+  const lib = path.join(dataDir, 'more-models');
+  const sidecar = (dir, repo) => writeFileSync(path.join(dir, '.gpubench-download.json'), JSON.stringify({ repo, files: {} }));
+  const st = path.join(lib, 'Qwen', 'Qwen3-8B-FP8');
+  mkdirSync(st, { recursive: true });
+  writeFileSync(path.join(st, 'config.json'), JSON.stringify({ architectures: ['Qwen3ForCausalLM'], num_hidden_layers: 36, num_attention_heads: 32, num_key_value_heads: 8, head_dim: 128, quantization_config: { quant_method: 'fp8' } }));
+  writeFileSync(path.join(st, 'model.safetensors'), buildSafetensors({ tensors: { w: { dtype: 'F8_E4M3', shape: [64, 64] } }, totalSize: 128 * 1024 }));
+  sidecar(st, 'Qwen/Qwen3-8B-FP8');
+  const orca = path.join(lib, 'orcarouter', 'OrcaSAQ-2-27B');
+  mkdirSync(orca, { recursive: true });
+  writeFileSync(path.join(orca, 'config.json'), JSON.stringify({ num_hidden_layers: 64, torch_dtype: 'bfloat16' }));
+  writeFileSync(path.join(orca, 'model-00001-of-00004.safetensors'), buildSafetensors({ tensors: { w: { dtype: 'BF16', shape: [64, 64] } }, totalSize: 160 * 1024 }));
+  sidecar(orca, 'orcarouter/OrcaSAQ-2-27B');
+  const ninfer = path.join(lib, 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
+  mkdirSync(ninfer, { recursive: true });
+  writeFileSync(path.join(ninfer, 'qwen3_8_27b_nvfp4.ninfer'), Buffer.alloc(192 * 1024, 1));
+  sidecar(ninfer, 'neroued/Qwen3.8-27B-nvfp4-NInfer');
+  writeFileSync(path.join(ninfer, 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json'), JSON.stringify({ artifact: { name: 'qwen3.8-27b', architecture: 'qwen3_8', container_version: 3, components: ['text', 'vision', 'mtp'] } }));
+  const bonsai = path.join(lib, 'prism-ml', 'Ternary-Bonsai-2-27B-gguf');
+  mkdirSync(bonsai, { recursive: true });
+  sidecar(bonsai, 'prism-ml/Ternary-Bonsai-2-27B-gguf');
+  writeFileSync(path.join(bonsai, 'Ternary-Bonsai-2-27B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ arch: 'qwen35', name: 'Bonsai 27B', sizeLabel: '27B', fileType: 141 }), totalSize: 64 * 1024 }));
   // A PrismML Bonsai model (ternary weights: only the PrismML fork of llama.cpp reads them).
   writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
   const results = path.join(dataDir, 'results');
@@ -457,11 +585,12 @@ async function fakeWorld(dataDir) {
   for (const run of teamRuns(base)) writeFileSync(path.join(results, `${run.createdAt.slice(0, 10)}_08-00-00_${run.id}.json`), JSON.stringify(run, null, 2));
   const quick = JSON.parse(readFileSync(path.join(results, readdirSync(results).find((f) => f.includes(QUICK_ID))), 'utf8'));
   for (const run of spillRuns(quick, path.join(models, 'Qwen3-27B-Q4_K_M.gguf'))) writeFileSync(path.join(results, `${run.id}.json`), JSON.stringify(run, null, 2));
-  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true }));
+  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true, extraModelDirs: [lib] }));
   const profileFile = path.join(dataDir, 'fake-engine-profile.json');
   writeFileSync(profileFile, JSON.stringify(LIVE_PROFILE));
   const smiState = path.join(dataDir, 'fake-nvidia-smi.json');
-  writeFileSync(smiState, JSON.stringify({ gpus: [{ memUsedMiB: 1600, powerW: 38, utilPct: 1, tempC: 39 }] }));
+  smiStateFile = smiState;
+  writeFileSync(smiState, JSON.stringify(IDLE_GPU));
   const env = {
     GPUBENCH_GITHUB_API: github.url,
     GPUBENCH_HF_ENDPOINT: hub.url,
@@ -905,7 +1034,7 @@ async function main() {
         for (const s of SCREENS) {
           if (only && !only.includes(s.name)) continue;
           if (size.suffix && !s.small) continue;
-          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, ...s.settings });
+          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [], ...s.settings });
           if (s.route === 'LIVE') await openLiveRun(page, info);
           else await page.goto(`${info.url}#${s.route}`);
           await page.getByText(s.wait).first().waitFor({ timeout: 30000 });

@@ -9,6 +9,7 @@ import type { DownloadJob } from '../../../../src/contract/models';
 import { renderApp } from '../helpers';
 import { apiError, benchApi, curatedModel, deferred, localModel, serverInfo, serverPlanFor, serverPreset } from '../bench/world';
 import { engineChoices } from '../../../../src/renderer/components/servers/server-flow';
+import { modelRecipeSchema, type ModelRecipe } from '../../../../src/contract/recipes';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -485,6 +486,49 @@ describe('Avvia un server: model, engine, port and network', () => {
     const { router } = await openFlow(api);
     await userEvent.click(screen.getByRole('link', { name: 'Torna ai server' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/servers'));
+  });
+});
+
+describe('Avvia un server: the model’s recipe ("Comandi per questo modello")', () => {
+  const recipe = (over: Record<string, unknown> = {}): ModelRecipe =>
+    modelRecipeSchema.parse({ id: 'q', name: 'Qwen lungo', match: { models: [], name: 'qwen3-8b' }, args: { llamacpp: ['--jinja'] }, engine: { type: 'builtin', kind: 'llamacpp-docker' }, ...over });
+
+  it('its engine chosen, the chip on (the core applies it), what it applied; off: the normal engine, { use: false } in the plan and the preset', async () => {
+    const api = benchApi({}, { onboardingDone: true, modelRecipes: [recipe()] });
+    api.world.serverPlan = (body) =>
+      serverPlanFor((body as StartServerRequest).recipe ? {} : { recipe: { id: 'q', name: 'Qwen lungo', from: [], parts: ['args'], args: ['--jinja'], envNames: [], overridden: [], skipped: [] } });
+    await openFlow(api);
+    await waitFor(() => expect(lastPlan(api).engine).toEqual({ kind: 'llamacpp-docker' }));
+    expect(lastPlan(api).recipe).toBeUndefined();
+    const chip = screen.getByRole('switch', { name: 'Usa i comandi di questo modello' });
+    expect(chip.getAttribute('aria-checked')).toBe('true');
+    expect(await screen.findByText(/^Usa i comandi «Qwen lungo»/)).toBeTruthy();
+    await userEvent.click(chip);
+    await waitFor(() => expect(lastPlan(api)).toMatchObject({ engine: { kind: 'llamacpp-native' }, recipe: { use: false } }));
+    await waitFor(() => expect(screen.queryByText(/^Usa i comandi «Qwen lungo»/)).toBeNull());
+    await userEvent.click(screen.getByRole('button', { name: 'Salva come preset' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(posted(api, '/api/servers/presets')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, recipe: { use: false } }));
+  });
+
+  it('the engine the recipe ran it on is the one the summary names (a fork, or a built-in one)', async () => {
+    const fork: CustomEngineInfo = {
+      engine: { schema: 1, id: 'prismml', name: 'PrismML', base: 'llamacpp', run: { mode: 'native', path: 'C:\\prism\\llama-server.exe' }, extraArgs: [], env: {}, notes: '' },
+      kind: 'llamacpp-native',
+      config: { kind: 'llamacpp-native', customEngineId: 'prismml' },
+      check: { kind: 'llamacpp-native', status: { kind: 'llamacpp-native', available: true, installed: true, problems: [], supported: true }, flagCount: 1, missing: [] },
+    };
+    const applied = (engine: { customEngineId?: string; kind?: 'llamacpp-docker'; name: string }) => ({ id: 'q', name: 'Qwen lungo', from: [], parts: ['engine' as const], args: [], envNames: [], overridden: [], skipped: [], engine });
+    const api = benchApi({ custom: [fork] });
+    api.world.serverPlan = () => serverPlanFor({ recipe: applied({ customEngineId: 'prismml', name: 'PrismML' }) });
+    await openFlow(api);
+    // The summary's "Motore" line (the engine step keeps the user's choice).
+    const summaryEngine = () => screen.getByText('Motore', { selector: 'dt' }).nextElementSibling?.textContent;
+    await waitFor(() => expect(summaryEngine()).toBe('llama.cpp · PrismML'));
+    api.world.serverPlan = () => serverPlanFor({ recipe: applied({ kind: 'llamacpp-docker', name: 'llamacpp-docker' }) });
+    await userEvent.type(screen.getByLabelText('Porta'), '8100');
+    await waitFor(() => expect(summaryEngine()).toBe('llama.cpp (Docker)'));
+    expect(screen.getByRole('combobox', { name: 'Motore' }).textContent).toContain('llama.cpp');
   });
 });
 

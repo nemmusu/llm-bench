@@ -1,7 +1,9 @@
 import { precisionFromText } from '../../contract/formats';
+import { ninferFit } from '../../contract/ninfer';
 import type { HubModel, QuickFit } from '../../contract/models';
 import type { CuratedModel } from './curated';
 import { estimateFit, levelRank } from './fit';
+import { bytesPerParam } from './quant';
 import type { HubFormat } from './hub';
 import type { GpuMem } from './types';
 
@@ -14,12 +16,11 @@ type Family = QuickFit['engine'];
 
 /**
  * How a format is judged: GGUF at Q4_K_M on llama.cpp; safetensors at their precision on vLLM (SGLang
- * reserves memory the same way); NInfer at its precision (NVFP4 unless named) with llama.cpp's
- * per-layer KV math: an approximation until the NInfer engine knows its own allocations.
+ * reserves memory the same way). NInfer artifacts go through NInfer's own estimate (quickFit).
  */
 function target(family: Family, quant: string) {
-  if (family === 'llamacpp') return { quant: 'Q4_K_M', engine: 'llamacpp-native', family } as const;
-  if (family === 'ninfer') return { quant, engine: 'llamacpp-native', family } as const;
+  // NInfer's hub-size bound uses llama.cpp's math (the card bound only; each result is judged by ninferFit).
+  if (family === 'llamacpp' || family === 'ninfer') return { quant: 'Q4_K_M', engine: 'llamacpp-native', family } as const;
   return { quant, engine: 'vllm-docker', family } as const;
 }
 
@@ -39,8 +40,16 @@ function familyOf(m: Pick<HubModel, 'formats'>, format: HubFormat): Family {
  */
 export function quickFit(m: HubModel, gpu: GpuMem, format: HubFormat = 'any'): QuickFit | undefined {
   if (m.paramsB === undefined) return undefined;
+  // Only formats GPU Bench cannot run (an MLX repo): no verdict to give.
+  if (format === 'any' && m.formats.length > 0 && m.formats.every((f) => f === 'other')) return undefined;
   const family = familyOf(m, format);
-  const t = target(family, family === 'ninfer' ? (precisionFromText(m.name) ?? 'NVFP4') : safetensorsQuant(m));
+  if (family === 'ninfer') {
+    // NInfer's own estimate on an artifact the size the parameters and precision suggest (search results carry no file sizes).
+    const quant = precisionFromText(m.name) ?? 'NVFP4';
+    const est = ninferFit({ artifactBytes: m.paramsB * 1e9 * bytesPerParam(quant), label: m.name, gpu });
+    return { level: est.level, needMiB: est.needMiB, availableMiB: est.availableMiB, quant, engine: 'ninfer' };
+  }
+  const t = target(family, safetensorsQuant(m));
   const est = estimateFit({ facts: { paramsB: m.paramsB, quant: t.quant }, gpu, engine: t.engine });
   return { level: est.level, needMiB: est.needMiB, availableMiB: est.availableMiB, quant: t.quant, engine: t.family };
 }

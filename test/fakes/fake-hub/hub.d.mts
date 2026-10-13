@@ -11,6 +11,8 @@ export interface FakeFileSpec {
   seed?: number;
   /** Served via a signed CDN redirect (default: weights extensions or > 10 KiB). */
   lfs?: boolean;
+  /** Size the tree listing reports instead of the real bytes (mockups: real-looking sizes, tiny files). */
+  reportedSize?: number;
 }
 
 export interface FakeRepoSpec {
@@ -33,6 +35,8 @@ export interface FakeRepoSpec {
   license?: string;
   baseModel?: string | string[];
   safetensorsTotal?: number;
+  /** The hub's safetensors parameter counts by dtype (default { BF16: safetensorsTotal }). */
+  safetensorsParameters?: Record<string, number>;
   tags?: string[];
   readme?: string;
   files: FakeFileSpec[];
@@ -91,4 +95,5 @@ export interface FakeHub {
 }
 
 export declare function demoRepos(): FakeRepoSpec[];
+export declare function formatRepos(): FakeRepoSpec[];
 export declare function startFakeHub(opts?: FakeHubOptions): Promise<FakeHub>;

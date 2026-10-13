@@ -96,7 +96,10 @@ describe('ModelsService', () => {
     const all = (await svc.search('', {})).models;
     expect(all.find((m) => m.repo === 'huge/Giant-400B-GGUF')?.fit?.level).toBe('partial');
     expect(all.find((m) => m.repo === 'nosize/Mystery-GGUF')?.fit).toBeUndefined();
-    expect(all.find((m) => m.repo === 'Qwen/Qwen3-0.6B')?.fit).toMatchObject({ quant: 'BF16', engine: 'vllm' });
+    // A repo with a GGUF next to its safetensors is mixed: with every engine shown it is judged for llama.cpp,
+    // with the safetensors filter at its own precision for vLLM / SGLang.
+    expect(all.find((m) => m.repo === 'Qwen/Qwen3-0.6B')).toMatchObject({ formats: ['gguf', 'safetensors'], fit: { quant: 'Q4_K_M', engine: 'llamacpp' } });
+    expect((await svc.search('qwen3-0.6b', { format: 'safetensors' })).models[0]?.fit).toMatchObject({ quant: 'BF16', engine: 'vllm' });
     const fits = (await svc.search('', { onlyFits: true })).models.map((m) => m.repo);
     expect(fits).toContain('ggml-org/Qwen3-0.6B-GGUF');
     expect(fits).toContain('Qwen/Qwen3-0.6B');
@@ -302,7 +305,7 @@ describe('ModelsService', () => {
     expect(await svc.hubFit('broken/Variants', 'vllm-docker')).toEqual({ choices: [], facts: {} });
   });
 
-  it('NInfer: one choice per .ninfer artifact (manifest read, approximate), searched by name', async () => {
+  it('NInfer: one choice per .ninfer artifact (manifest read, the NInfer estimate), searched by name; a local artifact too', async () => {
     const manifest = { artifact: { filename: 'qwen3_8_27b_nvfp4.ninfer', bytes: 64 * 1024, container_version: 3, architecture: 'qwen3_8', name: 'Qwen3.8 27B', components: ['text', 'vision', 'mtp'] } };
     hub.addRepo({
       id: 'neroued/Qwen3.8-27B-nvfp4-NInfer',
@@ -321,8 +324,10 @@ describe('ModelsService', () => {
     const c = r.choices[0]!;
     expect(c).toMatchObject({ groupKey: 'qwen3_8_27b_nvfp4.ninfer', quant: 'NVFP4', dir: '', manifest: { containerVersion: 3, components: ['text', 'vision', 'mtp'] } });
     expect(c.files.map((f) => f.path).sort()).toEqual(['Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS', 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', 'qwen3_8_27b_nvfp4.ninfer']);
-    expect(c.fit.weightsMiB).toBe(0);
-    expect(c.fit.notes).toContain('ninfer.approximate');
+    // NInfer's own estimate (contract/ninfer.ts), on the card's total; what is free now alongside.
+    expect(c.fit.notes).toContain('ninfer.estimate');
+    expect(c.fit).toMatchObject({ totalMiB: GPU_32GB.totalMiB, availableMiB: GPU_32GB.totalMiB - 1024 });
+    expect(c.fit.levelNow).toBeDefined();
     expect(c.weakKey).toBe(`neroued/Qwen3.8-27B-nvfp4-NInfer/qwen3_8_27b_nvfp4.ninfer//${64 * 1024}`);
     expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 });
     expect(r.best).toBe('qwen3_8_27b_nvfp4.ninfer');
@@ -345,6 +350,19 @@ describe('ModelsService', () => {
     expect(found.models.map((m) => m.repo)).toEqual(['neroued/Qwen3.8-27B-nvfp4-NInfer']);
     expect(found.models[0]?.fit?.engine).toBe('ninfer');
     expect((await svc.search('', { format: 'ninfer' })).models.map((m) => m.repo)).toEqual(expect.arrayContaining(['mixed/Coder-GGUF-NInfer', 'neroued/Qwen3.8-27B-nvfp4-NInfer', 'neroued/Qwen3.8-4B-nvfp4-NInfer']));
+    // A .ninfer artifact on the PC: the same estimate, with what the scanner kept from its manifest.
+    const dir = path.join(lib(), 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'qwen3_8_27b_nvfp4.ninfer'), Buffer.alloc(4096));
+    writeFileSync(path.join(dir, 'Q.artifact-manifest.json'), JSON.stringify({ artifact: { name: 'qwen3.8-27b', components: ['text', 'mtp'] } }));
+    const local = (await svc.rescan()).find((m) => m.identity.format === 'ninfer')!;
+    expect(local.identity.facts).toMatchObject({ name: 'qwen3.8-27b', components: ['text', 'mtp'] });
+    const lf = await svc.fit({ localId: local.id, engine: 'llamacpp-native' });
+    expect(lf.notes).toContain('ninfer.estimate');
+    // Without manifest facts or a known size it still answers.
+    writeFileSync(path.join(lib(), 'bare.ninfer'), 'x');
+    const bare = (await svc.rescan()).find((m) => m.identity.displayName === 'bare')!;
+    expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
   });
 
   it('serves the repo info of one hub repo, with the hub errors mapped', async () => {

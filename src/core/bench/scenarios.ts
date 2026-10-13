@@ -1,6 +1,6 @@
 import { engineBaseOf, type EngineKind, type LaunchParams } from '../../contract/engines';
 import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
-import { CONTEXT_MARGIN, sweepDepths } from './sweep';
+import { CONTEXT_MARGIN, requestMsAt, sweepDepths } from './sweep';
 
 export { CONTEXT_MARGIN };
 export type BuiltinProfile = Exclude<Profile, 'custom'>;
@@ -39,6 +39,22 @@ const PROFILES: Record<BuiltinProfile, Step[]> = {
 
 export function buildScenario(profile: BuiltinProfile, seed = DEFAULT_SEED): Scenario {
   return { profile, seed, steps: structuredClone(PROFILES[profile]) };
+}
+
+/**
+ * The scenario with its context sweeps measuring every depth: a launch beyond the model's trained
+ * context (YaRN) is there to measure up to it, whatever the profile's time budget (the plan's
+ * duration says how long).
+ */
+export function sweepWithoutBudget(scenario: Scenario): Scenario {
+  return {
+    ...scenario,
+    steps: scenario.steps.map((s) => {
+      if (s.kind !== 'context-sweep') return s;
+      const { maxSeconds: _budget, ...rest } = s;
+      return rest;
+    }),
+  };
 }
 
 export function isLlamaCpp(kind: EngineKind): boolean {
@@ -292,7 +308,9 @@ export function stepSeconds(step: Step, e: Expectations): number {
     case 'llama-bench':
       return e.warmLoadSec + step.reps * (step.pp / e.prefillTps + step.tg / e.decodeTps + 1);
     case 'context-sweep': {
-      const all = step.depths.reduce((s, d) => s + step.reps * requestSeconds(d, step.outputTokens, e), 0);
+      // Deep prompts are read slower than short ones (attention grows with the context): see requestMsAt.
+      const anchor = { depth: 1024, prefillTps: e.prefillTps, decodeTps: e.decodeTps };
+      const all = step.depths.reduce((s, d) => s + step.reps * (requestMsAt(d, step.outputTokens, anchor) / 1000 + 0.2), 0);
       return step.maxSeconds === undefined ? all : Math.min(all, step.maxSeconds);
     }
     case 'sessions': {

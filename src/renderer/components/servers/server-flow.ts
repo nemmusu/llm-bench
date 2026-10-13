@@ -19,7 +19,12 @@ import { hubOption } from '../presets/use-preset-draft';
 
 /** What a page hands to the flow ("Avvia solo il server", "Avvia il server così", "Avvia server", "Modifica"). */
 export interface ServerDraft {
+  /** The engine chosen elsewhere (a test's, a preset's, the Benchmark's): it wins over the model's recipe. */
   engine?: EngineConfig;
+  /** A likely engine (Models → "Avvia server"): used when neither the user nor the model's recipe chose one. */
+  suggestedEngine?: EngineConfig;
+  /** "Usa i comandi di questo modello" was turned off where the flow was opened. */
+  recipeOff?: boolean;
   model?: ServerModel;
   /** The model of a test that is not on the PC any more: downloaded first. */
   hub?: DraftHubModel;
@@ -190,7 +195,7 @@ export function presetsForModel(presets: readonly ServerPreset[], model: ServerM
 
 // ---- the request ----------------------------------------------------------------------------------
 
-export interface FlowChoices {
+export type FlowChoices = {
   engine: EngineConfig;
   model: ServerModel;
   /** undefined = GPU Bench chooses (the latest "Trova le impostazioni migliori", else what fits the card). */
@@ -198,10 +203,9 @@ export interface FlowChoices {
   /** undefined = the first free port from 8080. */
   port: number | undefined;
   network: ServerNetwork;
-  /** "Comandi per questo modello" turned off. */
-  recipeOff?: boolean;
-}
+} & Pick<StartServerRequest, 'recipe'>;
 
+/** The request of these choices; `recipe` is useModelRecipe's requestPart (nothing = the core applies the model's recipe). */
 export function serverRequest(c: FlowChoices): StartServerRequest {
   return {
     engine: c.engine,
@@ -209,7 +213,7 @@ export function serverRequest(c: FlowChoices): StartServerRequest {
     ...(c.params ? { params: c.params } : {}),
     ...(c.port !== undefined ? { port: c.port } : {}),
     network: c.network,
-    ...(c.recipeOff ? { recipe: { use: false } } : {}),
+    ...(c.recipe ? { recipe: c.recipe } : {}),
   };
 }
 

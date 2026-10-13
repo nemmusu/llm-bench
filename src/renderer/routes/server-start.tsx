@@ -10,6 +10,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { StartServerRequest } from '../../contract/api';
+import type { EngineConfig } from '../../contract/engines';
 import { ninferPresetsFor } from '../../contract/ninfer';
 import type { ServerNetwork, ServerPresetInput, ServerSettingsSource } from '../../contract/servers';
 import { formFromParams, paramsFromForm, type ParamsForm } from '../components/bench/expert-form';
@@ -19,6 +20,9 @@ import { presetOf } from '../components/bench/rerun';
 import { useStartFlow } from '../components/bench/start-flow';
 import { sourceFor } from '../components/configs/depths';
 import { engineNameOf } from '../components/servers/engine-name';
+import { RecipeChip } from '../components/recipes/recipe-chip';
+import { targetOfOption } from '../components/recipes/recipe-model';
+import { useModelRecipe } from '../components/recipes/use-model-recipe';
 import { SavePresetDialog } from '../components/servers/save-preset-dialog';
 import {
   engineChoices,
@@ -91,12 +95,25 @@ export function ServerStartPage() {
   const option = options.find((o) => o.key === modelKey) ?? optionFor(options, draft?.model) ?? options.find((o) => o.source === 'local') ?? options[0];
   const format = option ? optionFormat(option) : 'gguf';
 
-  // 2. The engine: the one handed over (or the preset's), else the first usable one for the model's files.
+  // "Comandi per questo modello": the model's recipe (the core applies it unless it is turned off here).
+  const recipeTarget = option ? targetOfOption(option) : undefined;
+  const recipe = useModelRecipe(recipeTarget);
+  const [recipeOn, setRecipeOn] = useState(!draft?.recipeOff);
+
+  // 2. The engine: the user's pick, the one handed over (a test's, a preset's), the recipe's, a suggested one,
+  //    else the first usable one for the model's files.
   const choices = engineChoices(format, engines.data ?? [], customs.data ?? [], system.data?.os.platform ?? 'win32');
   const [engineKey, setEngineKey] = useState<string | undefined>(undefined);
-  const engineChoice = choices.find((c) => c.key === engineKey) ?? (draft?.engine ? choices.find((c) => c.key === engineKeyOf(draft.engine!)) : undefined) ?? choices.find((c) => !c.disabled);
-  // The handed-over engine keeps its own executable or image (a test's custom build).
-  const engine = engineChoice && draft?.engine && engineKeyOf(draft.engine) === engineChoice.key ? draft.engine : engineChoice?.config;
+  const choiceOf = (config: EngineConfig | undefined) => (config ? choices.find((c) => c.key === engineKeyOf(config) && !c.disabled) : undefined);
+  const engineChoice =
+    choices.find((c) => c.key === engineKey) ??
+    choiceOf(draft?.engine) ??
+    (recipeOn ? choiceOf(recipe.engine) : undefined) ??
+    choiceOf(draft?.suggestedEngine) ??
+    choices.find((c) => !c.disabled);
+  // A handed-over engine keeps its own executable or image (a test's custom build, the llama.cpp used last).
+  const handed = [draft?.engine, draft?.suggestedEngine].find((e) => e !== undefined && engineKeyOf(e) === engineChoice?.key);
+  const engine = handed ?? engineChoice?.config;
   const engineName = engineChoice ? engineNameOf(engineChoice.config, customs.data ?? [], f) : '';
 
   // 3. The settings.
@@ -156,7 +173,7 @@ export function ServerStartPage() {
   const lanUnsupported = engineChoice?.kind === 'command';
   const effNetwork: ServerNetwork = lanUnsupported ? 'local' : network;
 
-  const request = option && engine && paramsReady && !port.invalid ? serverRequest({ engine, model: optionModel(option), params, port: port.port, network: effNetwork }) : undefined;
+  const request = option && engine && paramsReady && !port.invalid ? serverRequest({ engine, model: optionModel(option), params, port: port.port, network: effNetwork, ...recipe.requestPart(recipeOn) }) : undefined;
   const requestKey = keyOf(request);
   const planKey = useDebounced(requestKey, 300);
   const planQ = useServerPlan(planKey ? (JSON.parse(planKey) as StartServerRequest) : undefined);
@@ -164,7 +181,7 @@ export function ServerStartPage() {
   // The preview of exactly these choices (not the previous one still on screen while typing).
   const current = plan && !planQ.isPlaceholderData && planKey === requestKey ? plan : undefined;
   // "Scelte da GPU Bench": what it would choose (the latest "Trova le impostazioni migliori", else the context that fits).
-  const autoRequest = option && engine && tab === 'best' ? serverRequest({ engine, model: optionModel(option), params: undefined, port: port.port, network: effNetwork }) : undefined;
+  const autoRequest = option && engine && tab === 'best' ? serverRequest({ engine, model: optionModel(option), params: undefined, port: port.port, network: effNetwork, ...recipe.requestPart(recipeOn) }) : undefined;
   const autoKey = useDebounced(keyOf(autoRequest), 300);
   const autoPlan = useServerPlan(autoKey ? (JSON.parse(autoKey) as StartServerRequest) : undefined);
   const modelLabel = option ? `${option.name}${option.quant ? ` · ${option.quant}` : ''}` : '';
@@ -172,6 +189,9 @@ export function ServerStartPage() {
   const portProblem = current?.warnings.some((w) => w.code === 'port_taken' || w.code === 'port_ours') === true;
   const unsupportedWarning = plan?.warnings.find((w) => w.code === 'flag_unsupported');
   const own = !(tab === 'best' && best === 'auto');
+  // The recipe may run the model on its own engine (a fork): the summary names the one that will run.
+  const applied = current?.recipe?.engine;
+  const summaryEngine = applied ? engineNameOf({ kind: applied.kind ?? engine!.kind, ...(applied.customEngineId !== undefined ? { customEngineId: applied.customEngineId } : {}) }, customs.data ?? [], f) : engineName;
 
   const [saving, setSaving] = useState(false);
 
@@ -181,7 +201,7 @@ export function ServerStartPage() {
     flow.serve(req, {
       plan: current!,
       modelLabel,
-      engineLabel: engineName,
+      engineLabel: summaryEngine,
       onStarted: () => {
         toast.success(t('servers.flow.ready', { name: option!.name }));
         void navigate({ to: '/servers' });
@@ -198,7 +218,7 @@ export function ServerStartPage() {
         : tab === 'best'
           ? sourceOf({ kind: best === 'auto' ? 'auto' : 'config', ...(best === 'draft' ? { runId: draft!.provenance!.runId } : configSource ? { runId: configSource.runId, ...(configSource.combo !== undefined ? { combo: configSource.combo } : {}) } : {}) })
           : { kind: 'custom' };
-    return { engine: engine!, model: optionModel(option!), modelLabel, params: current!.params, port: request!.port ?? current!.port, network: effNetwork, source };
+    return { engine: engine!, model: optionModel(option!), modelLabel, params: current!.params, port: request!.port ?? current!.port, network: effNetwork, source, ...recipe.requestPart(recipeOn) };
   };
 
   const save = () => {
@@ -285,7 +305,8 @@ export function ServerStartPage() {
                 setForm((cur) => ({ ...cur, ...patch }));
               }}
               unsupported={unsupportedWarning ? { engine: String(unsupportedWarning.params?.engine), flags: String(unsupportedWarning.params?.flags) } : undefined}
-              // "Comandi per questo modello": the recipes' chip (useModelRecipe / RecipeChip) goes here once it lands.
+              // "Comandi per questo modello": nothing when the model has no recipe, or when its only command is the engine (preselected above).
+              recipeSlot={recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
             />
           </StepCard>
           <StepCard step={4} title={t('servers.flow.step.port')} help={t('servers.flow.step.portHelp')}>
@@ -309,7 +330,7 @@ export function ServerStartPage() {
             error={planQ.isError ? apiErrorData(planQ.error) : undefined}
             needs={needs}
             engineKind={engineChoice?.kind}
-            engineName={engineName}
+            engineName={summaryEngine}
             own={own}
             canStart={current !== undefined && !portProblem}
             editing={editing !== undefined}

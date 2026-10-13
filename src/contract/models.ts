@@ -43,6 +43,8 @@ export const modelFactsSchema = z.object({
   feedForwardLength: z.number().int().optional(),
   /** Share of the GGUF file llama.cpp keeps in RAM (input embeddings). */
   cpuOnlyFraction: z.number().optional(),
+  /** NInfer artifacts: the parts packed in it, from its manifest ("text", "vision", "mtp", "dflash2"). */
+  components: z.array(z.string()).optional(),
 });
 export type ModelFacts = z.infer<typeof modelFactsSchema>;
 
@@ -110,6 +112,31 @@ export type FitFixes = z.infer<typeof fitFixesSchema>;
  * total). The engine's own CUDA context is part of the estimate, not of this reserve.
  */
 export const VRAM_RESERVE_MIB = 1024;
+
+/** Other programs hold at least this share of the card beyond the reserve: the note speaks up anyway. */
+export const BUSY_NOTE_SHARE = 0.15;
+
+/** What the card holds right now (GET /api/models/vram, and the same fields of a FitEstimate). */
+export const vramNowSchema = z.object({
+  totalMiB: z.number(),
+  freeMiB: z.number(),
+  /** In use by other programs (not GPU Bench's own engines). */
+  busyMiB: z.number().min(0),
+  reserveMiB: z.number(),
+});
+export type VramNow = z.infer<typeof vramNowSchema>;
+
+/**
+ * "Ora altri programmi usano 6,2 GB della scheda": shown when what other programs hold right now
+ * changes this launch's verdict (`levelNow` worse than `level`), or when it is a notable share of the
+ * card beyond the reserve (BUSY_NOTE_SHARE). Undefined when there is nothing worth saying.
+ */
+export function busyVram(f: { totalMiB?: number | undefined; busyMiB?: number | undefined; freeNowMiB?: number | undefined; level?: FitLevel; levelNow?: FitLevel | undefined }): { busyMiB: number; freeMiB: number } | undefined {
+  if (f.totalMiB === undefined || f.busyMiB === undefined || f.freeNowMiB === undefined) return undefined;
+  const worse = f.level !== undefined && f.levelNow !== undefined && FIT_LEVELS.indexOf(f.levelNow) > FIT_LEVELS.indexOf(f.level);
+  const notable = f.busyMiB - VRAM_RESERVE_MIB >= BUSY_NOTE_SHARE * f.totalMiB;
+  return worse || notable ? { busyMiB: f.busyMiB, freeMiB: f.freeNowMiB } : undefined;
+}
 
 export const fitEstimateSchema = z.object({
   /**

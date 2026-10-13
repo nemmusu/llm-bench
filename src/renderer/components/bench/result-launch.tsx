@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import type { RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { AppliedRecipeLine } from '../recipes/recipe-chip';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { CodeBlock } from '../ui/code-block';
@@ -94,6 +95,11 @@ export function Launch({ run, rerun, onRerun, onUseSettings, onServe }: LaunchPr
           {e.executable && (
             <KeyValue label={t('result.launch.executable')}>
               <code className="font-mono text-xs">{e.executable}</code>
+            </KeyValue>
+          )}
+          {run.recipe && (
+            <KeyValue label={t('recipes.applied.title')}>
+              <AppliedRecipeLine applied={run.recipe} />
             </KeyValue>
           )}
           <KeyValue label={t('result.launch.build')}>

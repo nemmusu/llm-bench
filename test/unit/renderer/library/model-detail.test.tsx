@@ -2,7 +2,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HubFile } from '../../../../src/contract/models';
-import { bridge, fail, fit, hubFit, hubModel, libApi, renderLib, run, world } from './fake';
+import { MODEL_DETAIL_SECTIONS } from '../../../../src/renderer/components/library/model-detail-slots';
+import { bridge, fail, fit, GPU, hubFit, hubModel, libApi, renderLib, run, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -33,7 +34,7 @@ describe('model page', () => {
     expect(await screen.findByText('1.200 download')).toBeTruthy();
     expect(screen.getByText('30 mi piace')).toBeTruthy();
     expect(screen.getByText('apache-2.0')).toBeTruthy();
-    const choices = await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare' });
+    const choices = await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per llama.cpp (GGUF)' });
     const q4 = within(choices).getByRole('radio', { name: /Q4_K_M/ });
     expect(q4.getAttribute('aria-checked')).toBe('true');
     expect(within(q4).getByText('Consigliata')).toBeTruthy();
@@ -45,10 +46,14 @@ describe('model page', () => {
     expect(screen.getByText('gemma4')).toBeTruthy();
     expect(screen.getByText('131.072 token')).toBeTruthy();
     expect(screen.getByText('Licenza da accettare')).toBeTruthy();
-    // Files grouped by quant, extras by kind.
-    expect(screen.getByText('Model-Q4_K_M-00001-of-00002.gguf')).toBeTruthy();
-    expect(screen.getByText('Visione (mmproj)')).toBeTruthy();
+    // Files of the root grouped by quant and kind, each sub-folder in one line.
+    expect(screen.getByText('Model-Q8_0.gguf', { selector: 'span.font-mono' })).toBeTruthy();
+    expect(screen.getByText('Q4/')).toBeTruthy();
+    expect(screen.getByText('2 file')).toBeTruthy();
+    expect(screen.getAllByText('Visione (mmproj)').length).toBeGreaterThan(0);
     expect(screen.getByText('Altri file')).toBeTruthy();
+    // The formats of the repo, each with its engine; this one is GGUF only.
+    expect(document.querySelectorAll('[data-format-section]')).toHaveLength(1);
     // Model card rendered safely, relative image resolved on the repo.
     expect(await screen.findByRole('heading', { level: 3, name: 'Model' })).toBeTruthy();
     expect((screen.getByRole('img', { name: 'chart' }) as HTMLImageElement).src).toBe('https://huggingface.co/org/Model-GGUF/resolve/main/assets/c.png');
@@ -95,7 +100,7 @@ describe('model page', () => {
     accepted = true;
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }));
     expect(b.saveHfToken).toHaveBeenCalledWith('hf_secret');
-    expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare' })).toBeTruthy();
+    expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per llama.cpp (GGUF)' })).toBeTruthy();
     await waitFor(() => expect(api.w.settings.hasHfToken).toBe(true));
     expect(screen.queryByText('hf_secret')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Scarica Q4_K_M · 4,7 GB' }));
@@ -118,7 +123,7 @@ describe('model page', () => {
     expect(await screen.findByRole('radiogroup')).toBeTruthy();
   });
 
-  it('safetensors repo: whole model for vLLM; other fit errors; no card; no related', async () => {
+  it('safetensors repo: the whole model folder for vLLM / SGLang; other fit errors; no card; no related', async () => {
     const files: HubFile[] = [
       { path: 'model.safetensors', sizeBytes: 1.5e9, kind: 'weights' },
       { path: 'config.json', sizeBytes: 900, kind: 'config' },
@@ -139,7 +144,8 @@ describe('model page', () => {
     expect(api.calls.find((c) => c.path.endsWith('/fit'))?.body).toEqual({ engine: 'vllm-docker' });
     await userEvent.click(screen.getByRole('button', { name: 'Scarica Modello completo · 1,4 GB' }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Scarica · 1,4 GB' }));
-    await waitFor(() => expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/downloads')?.body).toMatchObject({ files: ['*'] }));
+    // Exactly the files of the model folder, as the core listed them for that choice.
+    await waitFor(() => expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/downloads')?.body).toMatchObject({ files: ['model.safetensors'] }));
   });
 
   it('repo not found, nothing usable, unknown quant labels', async () => {
@@ -149,7 +155,6 @@ describe('model page', () => {
     api.on('POST /api/models/hub/*/*/fit', () => ({ choices: [], facts: {} }));
     renderLib(PAGE, api);
     expect(await screen.findByText('Modello non trovato su Hugging Face')).toBeTruthy();
-    expect(screen.getByText('Non riesco a calcolare quanta memoria serve finché il problema sopra non è risolto.')).toBeTruthy();
     missing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
     expect(await screen.findByText('In questo repository non ci sono file di modello che GPU Bench sa usare.')).toBeTruthy();
@@ -172,5 +177,83 @@ describe('model page', () => {
     const { router } = renderLib(PAGE, libApi(world({ related: [] })));
     await userEvent.click(await screen.findByRole('link', { name: 'Modelli' , current: false }));
     await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'download' }));
+  });
+
+  it('opened from the catalog, "Modelli" goes back to it as it was (search, engine, filters)', async () => {
+    const api = libApi(world({ related: [], search: [hubModel('org/Model-GGUF'), hubModel('org/Other-GGUF')] }));
+    const { router } = renderLib('/models?tab=download&q=model&engine=any&size=medium&fits=true&sort=likes', api);
+    const list = await screen.findByRole('list', { name: 'Modelli trovati' });
+    expect(screen.getByRole('searchbox', { name: 'Cerca un modello su Hugging Face' })).toHaveProperty('value', 'model');
+    await userEvent.click(within(list).getByRole('link', { name: 'org/Model-GGUF' }));
+    expect(await h1('Model-GGUF')).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: 'Modelli', current: false }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/models'));
+    expect(router.state.location.search).toEqual({ tab: 'download', q: 'model', engine: 'any', size: 'medium', fits: true, sort: 'likes' });
+    expect(await screen.findByRole('list', { name: 'Modelli trovati' })).toBeTruthy();
+    expect(screen.getByRole('searchbox', { name: 'Cerca un modello su Hugging Face' })).toHaveProperty('value', 'model');
+    expect(screen.getByRole('button', { name: 'Entra nella mia GPU' }).getAttribute('aria-pressed')).toBe('true');
+    // Opened another way (a link, the palette): back to the last catalog seen.
+    await router.navigate({ to: '/models/hub/$owner/$name', params: { owner: 'org', name: 'Other-GGUF' } });
+    await userEvent.click(await screen.findByRole('link', { name: 'Modelli', current: false }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ q: 'model', engine: 'any' }));
+  });
+
+  it('a mixed repo: one section per format, each downloading exactly its files; other formats listed; sections added by other features', async () => {
+    const files: HubFile[] = [
+      { path: 'README.md', sizeBytes: 2000, kind: 'other' },
+      { path: 'GGUF/Mixed-Q4_K_M.gguf', sizeBytes: 5e9, quant: 'Q4_K_M', groupKey: 'GGUF/Mixed-Q4_K_M.gguf', kind: 'weights' },
+      { path: 'GGUF/mmproj-F16.gguf', sizeBytes: 9e8, kind: 'mmproj' },
+      { path: 'FP8/config.json', sizeBytes: 900, kind: 'config' },
+      { path: 'FP8/model.safetensors', sizeBytes: 9e9, kind: 'weights' },
+      { path: 'NInfer/mixed_nvfp4.ninfer', sizeBytes: 7e9, kind: 'weights' },
+      { path: 'mlx/model.safetensors', sizeBytes: 4e9, kind: 'weights' },
+      { path: 'BF16/MTP-BF16/mtp.safetensors', sizeBytes: 8e8, kind: 'mtp' },
+    ];
+    const gguf = { choices: [{ groupKey: 'GGUF/Mixed-Q4_K_M.gguf', quant: 'Q4_K_M', files: [files[1]!], sizeBytes: 5e9, fit: fit('perfect'), weakKey: 'k1' }], best: 'GGUF/Mixed-Q4_K_M.gguf', facts: { paramsB: 9 } };
+    const st = {
+      choices: [{ groupKey: 'FP8/*', quant: 'FP8', dir: 'FP8', files: [files[3]!, files[4]!], sizeBytes: 9e9 + 900, fit: fit('good'), weakKey: 'k2' }],
+      best: 'FP8/*',
+      facts: { paramsB: 9 },
+    };
+    const nf = {
+      choices: [{ groupKey: 'NInfer/mixed_nvfp4.ninfer', quant: 'NVFP4', dir: 'NInfer', files: [files[5]!], sizeBytes: 7e9, fit: { ...fit('good'), notes: ['ninfer.estimate'] }, weakKey: 'k3', manifest: { components: ['text', 'mtp'], containerVersion: 2 } }],
+      facts: {},
+    };
+    // A GPU NInfer does not run on: the choice is shown, marked.
+    const api = libApi(world({ files, related: [], system: system({ gpus: [{ ...GPU, name: 'NVIDIA GeForce RTX 4090', computeCapability: '8.9' }] }), search: [hubModel('org/Model-GGUF', { formats: ['gguf', 'safetensors', 'ninfer', 'other'], otherFormats: ['MLX'], precision: 'FP8' })] }));
+    api.on('POST /api/models/hub/*/*/fit', (b) => {
+      const body = b as { engine: string; format?: string };
+      return body.format === 'ninfer' ? nf : body.engine === 'vllm-docker' ? st : gguf;
+    });
+    MODEL_DETAIL_SECTIONS.push({ id: 'test-recipes', order: 1, Component: ({ repo, layout }) => <p>{`Comandi per ${repo}: ${layout?.safetensors.length ?? 0} cartelle`}</p> });
+    try {
+      renderLib(PAGE, api);
+      expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per llama.cpp (GGUF)' })).toBeTruthy();
+      expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per vLLM / SGLang (safetensors)' })).toBeTruthy();
+      const ninfer = await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per NInfer (ottimizzato per RTX 5090)' });
+      expect(within(ninfer).getByText('Richiede una RTX 5090')).toBeTruthy();
+      expect(within(ninfer).getByText('Contiene: text, mtp')).toBeTruthy();
+      expect(within(ninfer).getByText('Versione del file 2: NInfer richiede la versione 3.')).toBeTruthy();
+      expect(within(ninfer).queryByText('Consigliata')).toBeNull();
+      expect(screen.getByText('Stima approssimativa: NInfer gestisce la memoria a modo suo.')).toBeTruthy();
+      expect(screen.getByText('cartella FP8')).toBeTruthy();
+      // Other formats: listed, never downloaded as a model.
+      const other = document.querySelector('[data-format-section="other"]') as HTMLElement;
+      expect(within(other).getByText('MLX')).toBeTruthy();
+      expect(within(other).getByText('parte di un modello')).toBeTruthy();
+      // The page's open slot.
+      expect(screen.getByText('Comandi per org/Model-GGUF: 1 cartelle')).toBeTruthy();
+      // The facts card lists every format too, MLX marked as not supported.
+      expect(screen.getAllByText('non supportato').length).toBe(2);
+      // The safetensors folder downloads its own files and nothing else.
+      await userEvent.click(screen.getByRole('button', { name: /^Scarica FP8 · / }));
+      await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^Scarica · / }));
+      await waitFor(() => expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/downloads')?.body).toMatchObject({ files: ['FP8/config.json', 'FP8/model.safetensors'], label: 'Model-GGUF · FP8' }));
+      expect(api.calls.filter((c) => c.path.endsWith('/fit')).map((c) => c.body)).toEqual(
+        expect.arrayContaining([{ engine: 'llamacpp-native' }, { engine: 'vllm-docker' }, { engine: 'llamacpp-native', format: 'ninfer' }]),
+      );
+    } finally {
+      MODEL_DETAIL_SECTIONS.splice(0);
+    }
   });
 });

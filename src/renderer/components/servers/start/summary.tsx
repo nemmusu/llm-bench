@@ -10,7 +10,8 @@ import type { EngineKind } from '../../../../contract/engines';
 import type { AppErrorData } from '../../../../contract/errors';
 import { useI18n } from '../../../i18n';
 import { ErrorCard } from '../../bench/error-card';
-import { MIB_PER_GB } from '../../bench/format';
+import { BusyVramNote } from '../../library/busy-note';
+import { AppliedRecipeLine } from '../../recipes/recipe-chip';
 import type { Need } from '../../bench/needs';
 import { FitSummary, PlanWarnings } from '../../bench/plan-card';
 import { NeedList } from '../../bench/start-dialogs';
@@ -56,11 +57,10 @@ export interface SummaryProps {
 
 export function Summary(p: SummaryProps) {
   const f = useI18n();
-  const { t, integer, number } = f;
+  const { t, integer } = f;
   const configLabel = useConfigLabel();
   const plan = p.plan;
   const fit = plan?.fit;
-  const busy = fit?.levelNow !== undefined && fit.levelNow !== fit.level && (fit.busyMiB ?? 0) > 0;
   const warnings = plan?.warnings.filter((w) => !SHOWN_ELSEWHERE.has(w.code)) ?? [];
   const address = plan ? (plan.network === 'lan' ? (plan.lanUrls?.[0] ?? `http://0.0.0.0:${plan.port}/v1`) : `http://127.0.0.1:${plan.port}/v1`) : undefined;
   return (
@@ -89,6 +89,12 @@ export function Summary(p: SummaryProps) {
                 <dt className="text-xs text-fg-3">{t('servers.flow.summary.settings')}</dt>
                 <dd className="text-fg-2">{configLabel(plan.params, p.engineKind ?? 'llamacpp-native').text}</dd>
                 <dd className="text-xs text-fg-3">{!p.own && plan.tuned ? <TunedContext tuned={plan.tuned} /> : t(p.own ? 'servers.flow.summary.contextOwn' : 'servers.flow.summary.contextAuto')}</dd>
+                {/* What the model's recipe adds to this launch ("Comandi per questo modello"). */}
+                {plan.recipe && (
+                  <dd className="mt-1">
+                    <AppliedRecipeLine applied={plan.recipe} />
+                  </dd>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 sm:col-span-2">
                 <dt className="text-xs text-fg-3">{t('servers.flow.summary.address')}</dt>
@@ -100,14 +106,11 @@ export function Summary(p: SummaryProps) {
                   <dd>
                     <FitSummary fit={fit} />
                   </dd>
-                  {busy && (
-                    <dd className="text-xs text-warning-text">
-                      {t('servers.flow.summary.busyNow', { busy: `${number(fit.busyMiB! / MIB_PER_GB, 1)} GB`, verdict: t(`fit.${fit.levelNow!}`).toLocaleLowerCase(f.locale) })}
-                    </dd>
-                  )}
                 </div>
               )}
             </dl>
+            {/* What other programs hold right now (the verdict above judges the card's total). */}
+            <BusyVramNote fit={fit} kind="server" />
             {p.needs.length > 0 && (
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-fg-3">{t('servers.flow.summary.needs')}</p>

@@ -38,9 +38,9 @@ export const MAX_RECIPE_CONTEXT = 4_194_304;
 /**
  * Engines a recipe's own arguments are written for. 'command' = a program started from a command
  * template (custom engines of base 'openai-server'). A fork of llama.cpp / vLLM / SGLang takes its
- * base's arguments.
+ * base's arguments. 'ninfer' = NInfer (ninfer-serve, native or in WSL).
  */
-export const RECIPE_ARG_TARGETS = ['llamacpp', 'vllm', 'sglang', 'command'] as const;
+export const RECIPE_ARG_TARGETS = ['llamacpp', 'vllm', 'sglang', 'ninfer', 'command'] as const;
 export const recipeArgTargetSchema = z.enum(RECIPE_ARG_TARGETS);
 export type RecipeArgTarget = z.infer<typeof recipeArgTargetSchema>;
 
@@ -48,8 +48,7 @@ export type RecipeArgTarget = z.infer<typeof recipeArgTargetSchema>;
 export function recipeArgTargetOf(kind: EngineKind): RecipeArgTarget | undefined {
   if (kind === 'command') return 'command';
   const base = engineBaseOf(kind);
-  // NInfer takes its own settings (LaunchParams.ninfer), not command-line recipes (merge of the NInfer and recipes contracts).
-  return base === 'external' || base === 'ninfer' ? undefined : base;
+  return base === 'external' ? undefined : base;
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -105,7 +104,7 @@ export type RecipeEngine = z.infer<typeof recipeEngineSchema>;
 const argList = z.array(z.string().min(1).max(4000)).max(100);
 
 export const recipeArgsSchema = z
-  .object({ llamacpp: argList.optional(), vllm: argList.optional(), sglang: argList.optional(), command: argList.optional() })
+  .object({ llamacpp: argList.optional(), vllm: argList.optional(), sglang: argList.optional(), ninfer: argList.optional(), command: argList.optional() })
   .default({});
 export type RecipeArgs = z.infer<typeof recipeArgsSchema>;
 
@@ -229,7 +228,8 @@ export interface RecipeModelRef extends MatchableModel {
   weakKey?: string | undefined;
 }
 
-const baseName = (p: string): string => p.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+/** The last part of a path, lower case (a split always has one). */
+const baseName = (p: string): string => (p.split(/[\\/]/).pop() as string).toLowerCase();
 
 /**
  * How well `entry` names `model`: 4 = same sha256, 3 = same weak key or same repo + file, 2 = same
@@ -245,7 +245,7 @@ export function modelEntryRank(entry: RecipeModel, model: RecipeModelRef): numbe
 
 /** The quantization of a model: its own, else a token of its file name ("Bonsai-8B-PQ2_0.gguf"). */
 function quantTexts(model: RecipeModelRef): string[] {
-  const tokens = (model.file ?? '').split(/[\\/]/).pop()?.split(/[^A-Za-z0-9_]+/) ?? [];
+  const tokens = ((model.file ?? '').split(/[\\/]/).pop() as string).split(/[^A-Za-z0-9_]+/);
   return [...(model.quant !== undefined ? [model.quant] : []), ...tokens].filter(Boolean);
 }
 
@@ -361,7 +361,7 @@ export interface RecipePatch {
 
 const isMtpName = (p: string): boolean => /(^|[^a-z])mtp([^a-z]|$)/i.test(baseName(p));
 
-/** The recipe's settings for one launch (the preferred engine is resolved separately: recipeEngineConfig). */
+/** The recipe's settings for one launch (the preferred engine is resolved separately: recipeCustomEngine). */
 export function recipePatchFor(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling' | 'draft' | 'mmproj' | 'args' | 'env'>, ctx: RecipeLaunchContext): RecipePatch {
   const target = recipeArgTargetOf(ctx.kind);
   const out: RecipePatch = { params: {}, args: [], env: {}, parts: [], skipped: [] };
@@ -371,13 +371,15 @@ export function recipePatchFor(r: Pick<ModelRecipe, 'contextSize' | 'ropeScaling
     return out;
   }
   const llama = target === 'llamacpp';
-  if (r.contextSize !== undefined && target !== 'command') {
-    if (llama) out.params.contextSize = r.contextSize;
-    else out.params.maxModelLen = r.contextSize;
+  if (r.contextSize !== undefined) {
+    // vLLM and SGLang read max-model-len; llama.cpp and a command template's {ctx} the context size.
+    if (target === 'vllm' || target === 'sglang') out.params.maxModelLen = r.contextSize;
+    else out.params.contextSize = r.contextSize;
     out.parts.push('context');
   }
   if (r.ropeScaling !== undefined) {
-    if (target === 'command') out.skipped.push({ part: 'rope', reason: 'engine' });
+    // A command template has no RoPE flags GPU Bench knows; NInfer runs its models as trained.
+    if (target === 'command' || target === 'ninfer') out.skipped.push({ part: 'rope', reason: 'engine' });
     else {
       out.params.ropeScaling = r.ropeScaling;
       out.parts.push('rope');
@@ -539,8 +541,8 @@ export const appliedRecipeSchema = z.object({
   /** Context and RoPE scaling it set (as launched, unless the user replaced them). */
   contextSize: z.number().int().optional(),
   ropeScaling: ropeScalingSchema.optional(),
-  /** The custom engine it chose for the launch. */
-  engine: z.object({ customEngineId: z.string(), name: z.string() }).optional(),
+  /** The engine it chose for the launch: a custom engine (its id and name), or a built-in kind (name = the kind). */
+  engine: z.object({ customEngineId: z.string().optional(), kind: engineKindSchema.optional(), name: z.string() }).optional(),
   /** What the user's own settings replaced ('context', 'rope', a flag, "env:NAME"). */
   overridden: z.array(z.string()).default([]),
   skipped: z.array(recipeSkipSchema).default([]),
@@ -551,19 +553,19 @@ export type AppliedRecipe = z.infer<typeof appliedRecipeSchema>;
 
 // ---- built-in recipes -----------------------------------------------------------------------------
 
-export const RECIPE_TEMPLATE_IDS = ['yarn', 'mtp', 'prismml-bonsai', 'vision'] as const;
+export const RECIPE_TEMPLATE_IDS = ['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer'] as const;
 export type RecipeTemplateId = (typeof RECIPE_TEMPLATE_IDS)[number];
 
 /** What the built-in recipes look at to say whether they fit a model. */
 export interface RecipeTemplateModel extends RecipeModelRef {
-  format?: 'gguf' | 'safetensors' | 'remote' | undefined;
+  format?: 'gguf' | 'safetensors' | 'ninfer' | 'remote' | undefined;
   /** The context the model was trained with (GGUF / config.json), tokens. */
   trainedContext?: number | undefined;
   /** Auxiliary files next to the model (local), or in its repo (hub). */
   auxKinds?: readonly ('mmproj' | 'mtp' | 'draft' | 'other')[] | undefined;
 }
 
-/** Why a built-in recipe does not fit a model: 'no_context' (trained context unknown), 'no_file', 'not_bonsai', 'format'. */
+/** Why a built-in recipe does not fit a model: 'no_context' (trained context unknown), 'no_file', 'not_bonsai', 'format' (not for this kind of model). */
 export type TemplateBlock = 'no_context' | 'no_file' | 'not_bonsai' | 'format';
 
 export interface RecipeTemplate {
@@ -601,7 +603,7 @@ export const RECIPE_TEMPLATES: readonly RecipeTemplate[] = [
     id: 'yarn',
     parts: ['context', 'rope'],
     docs: ['https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md', 'https://docs.vllm.ai/en/latest/configuration/engine_args.html'],
-    blocked: (m) => (m.trainedContext === undefined ? 'no_context' : undefined),
+    blocked: (m) => (m.format === 'ninfer' ? 'format' : m.trainedContext === undefined ? 'no_context' : undefined),
     build: (m, o) => {
       const trained = m.trainedContext as number;
       const target = o?.yarnTarget ?? defaultYarnTarget(trained);
@@ -614,7 +616,8 @@ export const RECIPE_TEMPLATES: readonly RecipeTemplate[] = [
     parts: ['draft', 'args'],
     docs: ['https://docs.vllm.ai/en/latest/features/speculative_decoding/', 'https://docs.sglang.io/docs/advanced_features/speculative_decoding'],
     // A GGUF needs its MTP / draft file next to it; safetensors models carry the MTP head themselves.
-    blocked: (m) => (m.format === 'safetensors' || hasAux(m, ['mtp', 'draft']) ? undefined : 'no_file'),
+    // NInfer has its own MTP setting (LaunchParams.ninfer).
+    blocked: (m) => (m.format === 'ninfer' ? 'format' : m.format === 'safetensors' || hasAux(m, ['mtp', 'draft']) ? undefined : 'no_file'),
     build: () => ({ draft: DRAFT_AUTO, args: { vllm: [...VLLM_MTP_ARGS], sglang: [...SGLANG_MTP_ARGS] } }),
   },
   {
@@ -628,8 +631,16 @@ export const RECIPE_TEMPLATES: readonly RecipeTemplate[] = [
     id: 'vision',
     parts: ['mmproj'],
     docs: ['https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md'],
-    blocked: (m) => (m.format === 'safetensors' ? 'format' : hasAux(m, ['mmproj']) ? undefined : 'no_file'),
+    blocked: (m) => (m.format === 'safetensors' || m.format === 'ninfer' ? 'format' : hasAux(m, ['mmproj']) ? undefined : 'no_file'),
     build: () => ({ mmproj: true }),
+  },
+  {
+    // A .ninfer artifact runs only on NInfer (the core uses the platform's kind: in WSL on Windows).
+    id: 'ninfer',
+    parts: ['engine'],
+    docs: ['https://github.com/Neroued/ninfer'],
+    blocked: (m) => (m.format === 'ninfer' ? undefined : 'format'),
+    build: () => ({ engine: { type: 'builtin', kind: 'ninfer-native' } }),
   },
 ];
 

@@ -16,6 +16,7 @@ import { CodeBlock } from '../ui/code-block';
 import { FitBadge } from '../ui/fit-badge';
 import { HelpTip } from '../ui/help-tip';
 import { Skeleton } from '../ui/skeleton';
+import { BusyVramNote, FitTotalHelp } from '../library/busy-note';
 import { ErrorCard } from './error-card';
 import { MIB_PER_GB } from './format';
 import type { Need } from './needs';
@@ -37,8 +38,9 @@ export interface PlanCardProps {
 const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
 
 /**
- * The VRAM verdict and its estimate ("Stima: 6,8 GB su 30,4 GB disponibili"), and "stima tarata su N
- * misure" when the measured peaks of this card corrected it.
+ * The VRAM verdict and its estimate ("Stima: 6,8 GB su 31,8 GB della scheda"), judged on the card's total
+ * (a "?" says how), "stima tarata su N misure" when the measured peaks of this card corrected it, and a
+ * calm line for a context extended with YaRN or NInfer's own estimate.
  */
 export function FitSummary({ fit }: { fit: FitEstimate }) {
   const { t, number, percent } = useI18n();
@@ -46,9 +48,12 @@ export function FitSummary({ fit }: { fit: FitEstimate }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
       <FitBadge level={fit.level} size="sm" />
-      <span className="text-fg-2 tabular-nums">
+      <span className="inline-flex items-center gap-1 text-fg-2 tabular-nums">
         {t('fit.estimate', { need: `${number(fit.needMiB / MIB_PER_GB, 1)} GB`, available: `${number(fit.availableMiB / MIB_PER_GB, 1)} GB` })}
+        <FitTotalHelp totalMiB={fit.totalMiB} />
       </span>
+      {fit.notes.includes('context.rope-extended') && <span className="basis-full text-xs text-fg-3">{t('fit.ropeExtended')}</span>}
+      {fit.notes.includes('ninfer.estimate') && <span className="basis-full text-xs text-fg-3">{t('fit.approximate')}</span>}
       {cal && (
         <span className="inline-flex items-center gap-1 text-xs text-fg-3 tabular-nums">
           {t('fit.calibrated', { n: cal.samples, err: percent(cal.errorPct / 100, 1) })}
@@ -194,6 +199,7 @@ export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCar
           </dl>
         )}
         {error && <ErrorCard error={error} headingLevel={3} />}
+        <BusyVramNote fit={fit} kind="run" />
         {plan && plan.warnings.length > 0 && <PlanWarnings warnings={plan.warnings} onFix={onFix} />}
       </div>
       <Collapsible.Root open={open} onOpenChange={setOpen} className="border-t border-border">

@@ -381,6 +381,11 @@ export function libApi(w: World = world()): LibApi {
       return { ok: true };
     },
     'GET /api/models/curated': () => w.curated,
+    // What the card holds now, from the telemetry sample (no engine of ours running).
+    'GET /api/models/vram': () => {
+      const s = w.snapshot[0];
+      return s?.memTotalMiB ? { totalMiB: s.memTotalMiB, freeMiB: s.memTotalMiB - (s.memUsedMiB ?? 0), busyMiB: s.memUsedMiB ?? 0, reserveMiB: 1024 } : null;
+    },
     'POST /api/models/fit': () => fit(),
     'GET /api/runs/tried': () => w.tried,
     'GET /api/runs': () => w.runs,

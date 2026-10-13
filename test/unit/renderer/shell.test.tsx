@@ -171,5 +171,6 @@ describe('command palette', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Confronta' })).toBeTruthy();
     await pick('Avvia benchmark');
     expect(await screen.findByRole('heading', { level: 1, name: 'Benchmark' })).toBeTruthy();
-  });
+    // Eleven palette round trips: ~2 s alone, more than the default 5 s under the full parallel run.
+  }, 20_000);
 });
