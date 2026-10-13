@@ -133,6 +133,12 @@ Ogni modello mostra i suoi **formati**, ognuno con il motore che lo usa: **GGUF 
 
 GPU Bench sceglie da solo la versione (quantizzazione) migliore che entra nella tua scheda; se sei esperto puoi sceglierne un'altra. I download si possono mettere in pausa e riprendono da soli se la connessione cade.
 
+Quello che hai già non si riscarica mai. Se scegli una versione già sul PC, è segnata **Già scaricato** e il download prende solo le parti che mancano: per esempio, se la prima volta non avevi preso la parte visione, la finestra dice **Il modello è già sul PC: scarico solo la parte visione (mmproj)**. Un file della stessa dimensione ma non ancora verificato viene controllato prima (sha256): si riscarica solo se è diverso. Nell'elenco **Sul tuo PC** e nella pagina del modello trovi anche **Aggiungi la parte visione** e **Aggiungi MTP** quando il repository ha queste parti e tu no: finiscono nella stessa cartella del modello.
+
+**Aggiornamenti.** GPU Bench guarda su Hugging Face se i file che hai scaricato sono cambiati: quando premi **Controlla aggiornamenti** e, da solo, al massimo una volta al giorno (un repository al secondo, mai a raffica). Se un file è cambiato vedi **Aggiornamento disponibile** con cosa è cambiato (per esempio "Il file Q4_K_M è cambiato (17,8 GB → 17,6 GB)") e il pulsante **Aggiorna**, che scarica solo i file cambiati: quello vecchio resta finché il nuovo non è scaricato e verificato. I risultati misurati prima restano com'erano: il badge dice **Provato con la versione precedente**.
+
+Quanto spazio serve nella scheda conta anche quello che carichi insieme al modello: con un modello MTP o bozza (`-md`) o con la parte visione (`--mmproj`) la stima mostra **+ MTP 3,2 GB** e **+ visione 0,9 GB**.
+
 Per i modelli che richiedono di accettare una licenza (per esempio Llama o Gemma) GPU Bench apre la pagina giusta e ti chiede il token di Hugging Face una sola volta: viene salvato cifrato.
 
 ## 6. Docker e vLLM (facoltativo)
