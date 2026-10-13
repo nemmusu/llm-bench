@@ -1,15 +1,20 @@
 /** "Avvia un server": the one start flow, opened from the Benchmark page, a result, the Models page or a preset. */
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { createMemoryHistory } from '@tanstack/react-router';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerInfo, ServerPlan, StartServerRequest } from '../../../../src/contract/api';
 import type { CustomEngineInfo } from '../../../../src/contract/custom-engines';
+import type { LaunchParams } from '../../../../src/contract/engines';
 import type { DownloadJob } from '../../../../src/contract/models';
-import { renderApp } from '../helpers';
-import { apiError, benchApi, curatedModel, deferred, localModel, serverInfo, serverPlanFor, serverPreset } from '../bench/world';
-import { engineChoices } from '../../../../src/renderer/components/servers/server-flow';
+import { ninferPresetsFor } from '../../../../src/contract/ninfer';
 import { modelRecipeSchema, type ModelRecipe } from '../../../../src/contract/recipes';
+import { App } from '../../../../src/renderer/app';
+import { engineChoices, saveServerDraft } from '../../../../src/renderer/components/servers/server-flow';
+import { createAppRouter } from '../../../../src/renderer/routes/router';
+import { newQueryClient, renderApp } from '../helpers';
+import { apiError, benchApi, curatedModel, deferred, localModel, serverInfo, serverPlanFor, serverPreset } from '../bench/world';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -277,15 +282,47 @@ describe('Avvia un server: where the settings come from', () => {
     expect(screen.queryByText('Gli altri preset sono nella pagina Server.')).toBeNull();
   });
 
-  it('NInfer: its built-in presets, ready to start or save as one’s own', async () => {
+  it('NInfer: its own presets (NinferPresetPicker), the user’s, or GPU Bench’s choice', async () => {
     const ninfer = localModel('qwen38', { format: 'ninfer', displayName: 'Qwen3.8-27B-nvfp4', file: 'qwen.ninfer', quant: 'NVFP4', facts: { name: 'qwen3.8-27b' } });
-    const api = benchApi({ local: [ninfer] });
+    const api = benchApi({ local: [ninfer], presets: [serverPreset('mine', { name: 'Mio NInfer', model: { localId: 'qwen38' }, engine: { kind: 'ninfer-wsl' }, params: { contextSize: 32768, extraArgs: [], env: {} } })] });
     await openFlow(api);
     expect(screen.getByRole('combobox', { name: 'Motore' }).textContent).toContain('NInfer (WSL)');
     await userEvent.click(screen.getByRole('tab', { name: 'I tuoi preset' }));
-    expect(screen.getAllByText('Predefinito')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Impostazioni di NInfer' })).toBeTruthy();
+    // "Consigliata da NInfer" first: chosen as soon as the tab opens.
+    expect(screen.getByRole('radio', { name: /^Consigliata da NInfer: contesto 240K, KV fp8, 2 utenti, MTP 3$/ }).getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(lastPlan(api).params).toMatchObject({ contextSize: 240000, parallel: 2, ninfer: { kvDtype: 'fp8', spec: 'mtp' } }));
     await userEvent.click(screen.getByRole('radio', { name: /Provata su RTX 5090/ }));
     await waitFor(() => expect(lastPlan(api)).toMatchObject({ engine: { kind: 'ninfer-wsl' }, params: { contextSize: 65536, parallel: 2, ninfer: { kvDtype: 'int8' } } }));
+    // One of the user's presets: NInfer's choices are left unchecked.
+    await userEvent.click(screen.getByRole('radio', { name: /Mio NInfer/ }));
+    await waitFor(() => expect(lastPlan(api).params).toMatchObject({ contextSize: 32768 }));
+    expect(screen.getByRole('radio', { name: /Provata su RTX 5090/ }).getAttribute('aria-checked')).toBe('false');
+    await userEvent.click(screen.getByRole('radio', { name: 'Scelte da GPU Bench' }));
+    await waitFor(() => expect(lastPlan(api).params).toBeUndefined());
+    expect(screen.getByRole('radio', { name: /Mio NInfer/ }).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('NInfer settings handed over: the preset they match, else as they are; never the benchmark-only ones', async () => {
+    const ninfer = localModel('qwen38', { format: 'ninfer', displayName: 'Qwen3.8-27B-nvfp4', file: 'qwen.ninfer', quant: 'NVFP4', facts: { name: 'qwen3.8-27b' } });
+    const open = (params: LaunchParams) => {
+      const qc = newQueryClient();
+      saveServerDraft(qc, { engine: { kind: 'ninfer-wsl' }, model: { localId: 'qwen38' }, params });
+      render(<App api={benchApi({ local: [ninfer] })} router={createAppRouter(createMemoryHistory({ initialEntries: ['/servers/new'] }))} queryClient={qc} />);
+    };
+    const tested = ninferPresetsFor({ name: 'qwen3.8-27b' }).find((p) => p.id === 'rtx5090-tested')!;
+    open({ ...tested.params, extraArgs: [], env: {} });
+    expect(await screen.findByRole('radio', { name: /Provata su RTX 5090/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'I tuoi preset' }).getAttribute('data-state')).toBe('active');
+    expect(screen.getByRole('radio', { name: /Provata su RTX 5090/ }).getAttribute('aria-checked')).toBe('true');
+    cleanup();
+    const api = benchApi({ local: [ninfer] });
+    const qc = newQueryClient();
+    saveServerDraft(qc, { engine: { kind: 'ninfer-wsl' }, model: { localId: 'qwen38' }, params: { contextSize: 8192, extraArgs: [], env: {}, ninfer: { kvDtype: 'bf16', prefixReuse: false, thinking: false } } });
+    render(<App api={api} router={createAppRouter(createMemoryHistory({ initialEntries: ['/servers/new'] }))} queryClient={qc} />);
+    const run = await screen.findByRole('radio', { name: /^Come nel test da cui viene il preset/ });
+    expect(run.getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(lastPlan(api).params).toEqual({ contextSize: 8192, extraArgs: [], env: {}, ninfer: { kvDtype: 'bf16' } }));
     await userEvent.click(screen.getByRole('tab', { name: 'Comandi personalizzati' }));
     expect(screen.getByLabelText('Contesto (token)')).toBeTruthy();
     expect(screen.queryByLabelText('Livelli in GPU')).toBeNull();

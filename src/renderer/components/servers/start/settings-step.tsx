@@ -18,7 +18,6 @@ import type { ParamsField, ParamsForm } from '../../bench/expert-form';
 import type { PresetProvenance } from '../../bench/run-context';
 import { configLabelOf, useConfigLabel } from '../../presets/config-label';
 import { provenanceText, shortDate, tokensShort } from '../../presets/format';
-import { Badge } from '../../ui/badge';
 import { Callout } from '../../ui/callout';
 import { Field, Input, Textarea } from '../../ui/input';
 import { Select } from '../../ui/select';
@@ -27,13 +26,6 @@ import { depthLabel, kvName } from '../../tune/tune-format';
 import type { TestedConfig } from '../server-flow';
 
 export type SettingsTab = 'best' | 'presets' | 'custom';
-
-/** An engine's ready-made settings (NInfer's "Consigliata da NInfer", "Provata su RTX 5090"): read-only. */
-export interface BuiltinPreset {
-  id: string;
-  label: string;
-  params: ServerPreset['params'];
-}
 
 export interface SettingsStepProps {
   engineKind: EngineKind;
@@ -49,8 +41,9 @@ export interface SettingsStepProps {
   /** The chosen configuration's test is still being read. */
   loadingConfig: boolean;
   presets: readonly ServerPreset[];
-  builtins: readonly BuiltinPreset[];
-  /** A user preset id, or a built-in's id. */
+  /** An engine's own presets, above the user's (NInfer's picker for a .ninfer model). */
+  builtins?: ReactNode;
+  /** The chosen preset of the user's. */
   preset: string | undefined;
   onPreset: (id: string) => void;
   othersCount: number;
@@ -136,35 +129,16 @@ function BestTab(p: SettingsStepProps) {
 function PresetsTab(p: SettingsStepProps) {
   const { t } = useI18n();
   const configLabel = useConfigLabel();
-  const empty = p.presets.length === 0 && p.builtins.length === 0;
   return (
     <div className="flex flex-col gap-3">
-      {empty ? (
+      {p.builtins}
+      {p.presets.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm text-fg-2">
           <span className="block font-medium text-fg">{t('servers.flow.presetsTab.none')}</span>
           {t('servers.flow.presetsTab.noneBody')}
         </p>
       ) : (
         <RadioGroup.Root value={p.preset ?? ''} onValueChange={p.onPreset} aria-label={t('servers.flow.presetsTab.label')} className="flex flex-col gap-2">
-          {p.builtins.map((b) => (
-            <Choice
-              key={b.id}
-              value={b.id}
-              icon={<Sparkles />}
-              title={b.label}
-              badge={
-                <Badge tone="accent" size="sm">
-                  {t('servers.flow.presetsTab.builtin')}
-                </Badge>
-              }
-              detail={
-                <>
-                  {configLabel(b.params, p.engineKind).text}
-                  <span className="block text-xs text-fg-3">{t('servers.flow.presetsTab.builtinHint')}</span>
-                </>
-              }
-            />
-          ))}
           {p.presets.map((x) => (
             <Choice
               key={x.id}

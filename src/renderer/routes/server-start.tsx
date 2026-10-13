@@ -11,7 +11,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { StartServerRequest } from '../../contract/api';
 import type { EngineConfig } from '../../contract/engines';
-import { ninferPresetsFor } from '../../contract/ninfer';
+import { ninferPresetOf, ninferPresetsFor } from '../../contract/ninfer';
 import type { ServerNetwork, ServerPresetInput, ServerSettingsSource } from '../../contract/servers';
 import { formFromParams, paramsFromForm, type ParamsForm } from '../components/bench/expert-form';
 import { MIB_PER_GB } from '../components/bench/format';
@@ -19,6 +19,8 @@ import { needsFromPlan } from '../components/bench/needs';
 import { presetOf } from '../components/bench/rerun';
 import { useStartFlow } from '../components/bench/start-flow';
 import { sourceFor } from '../components/configs/depths';
+import { serverNinfer, withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
+import { NinferPresetPicker } from '../components/engines/ninfer-presets';
 import { engineNameOf } from '../components/servers/engine-name';
 import { RecipeChip } from '../components/recipes/recipe-chip';
 import { targetOfOption } from '../components/recipes/recipe-model';
@@ -41,7 +43,7 @@ import {
 import { EngineStep } from '../components/servers/start/engine-step';
 import { ModelStep } from '../components/servers/start/model-step';
 import { NetworkStep } from '../components/servers/start/network-step';
-import { SettingsStep, type BuiltinPreset, type SettingsTab } from '../components/servers/start/settings-step';
+import { SettingsStep, type SettingsTab } from '../components/servers/start/settings-step';
 import { Summary } from '../components/servers/start/summary';
 import { Page } from '../components/shell/page';
 import { Card } from '../components/ui/card';
@@ -117,7 +119,12 @@ export function ServerStartPage() {
   const engineName = engineChoice ? engineNameOf(engineChoice.config, customs.data ?? [], f) : '';
 
   // 3. The settings.
-  const [tab, setTab] = useState<SettingsTab>(draft?.presetId !== undefined ? 'presets' : draft?.params && !draft.provenance ? 'custom' : 'best');
+  // A preset to change, or NInfer settings handed over (the Benchmark's NInfer preset): "I tuoi preset"; other
+  // settings of the Benchmark's expert mode: "Comandi personalizzati"; a test's settings or nothing: "Le migliori".
+  const draftNinfer = draft?.params?.ninfer;
+  const [tab, setTab] = useState<SettingsTab>(
+    draft?.presetId !== undefined || (draftNinfer && !draft!.provenance) ? 'presets' : draft?.params && !draft.provenance ? 'custom' : 'best',
+  );
   const [best, setBest] = useState(draft?.provenance ? 'draft' : 'auto');
   const [presetId, setPresetId] = useState<string | undefined>(draft?.presetId);
   const [form, setForm] = useState<ParamsForm>(() => formFromParams(draft?.params));
@@ -141,17 +148,14 @@ export function ServerStartPage() {
   const configRun = useRun(configSource?.runId);
   const configParams =
     configRun.data && local.data ? presetOf(configRun.data, local.data, system.data?.paths.enginesDir, { combo: configSource?.combo }).params : undefined;
-  const builtins: BuiltinPreset[] =
-    option?.source === 'local' && format === 'ninfer'
-      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name }).map((b) => ({
-          id: `builtin:${b.id}`,
-          label: t(`servers.flow.builtin.${b.id}`),
-          params: { ...b.params, extraArgs: [], env: {} },
-        }))
-      : [];
+  // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), a test's own NInfer settings, or GPU Bench's choice.
+  const ninferPresets = option?.source === 'local' && format === 'ninfer' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name }) : [];
+  // Handed-over NInfer settings are the preset they match, else offered as they are ('run').
+  const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(undefined);
+  const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (ninferPresetOf(draft!.params!, ninferPresets) ?? 'run') : 'ninfer-recommended');
+  const ninferParams = ninferChoice === 'run' ? draft!.params : withNinferPreset(undefined, ninferPresets.find((p) => p.id === ninferChoice)?.params);
   const modelPresets = option ? presetsForModel(presets.data ?? [], optionModel(option)) : [];
   const pickedPreset = modelPresets.find((p) => p.id === presetId);
-  const pickedBuiltin = builtins.find((b) => b.id === presetId);
   const parsed = paramsFromForm(form);
 
   let params: StartServerRequest['params'];
@@ -163,12 +167,15 @@ export function ServerStartPage() {
       paramsReady = configParams !== undefined;
     }
   } else if (tab === 'presets') {
-    params = pickedPreset?.params ?? pickedBuiltin?.params;
-    paramsReady = params !== undefined;
+    // One of the user's presets, else NInfer's choice ('auto': GPU Bench decides).
+    params = pickedPreset ? pickedPreset.params : ninferParams;
+    paramsReady = pickedPreset !== undefined || ninferPresets.length > 0;
   } else {
     params = parsed.params;
     paramsReady = parsed.invalid.length === 0;
   }
+  // A server keeps NInfer's own defaults for what only a benchmark sets (every prompt in full, no thinking).
+  if (params) params = serverNinfer(params);
   const port = parsePort(portText);
   const lanUnsupported = engineChoice?.kind === 'command';
   const effNetwork: ServerNetwork = lanUnsupported ? 'local' : network;
@@ -251,13 +258,12 @@ export function ServerStartPage() {
     setTab(next);
   };
 
+  /** One of the user's presets (it brings its port and network). */
   const onPreset = (id: string) => {
     setPresetId(id);
-    const p = modelPresets.find((x) => x.id === id);
-    if (p) {
-      setPortText(p.port !== undefined ? String(p.port) : '');
-      setNetwork(p.network);
-    }
+    const p = modelPresets.find((x) => x.id === id)!;
+    setPortText(p.port !== undefined ? String(p.port) : '');
+    setNetwork(p.network);
   };
 
   return (
@@ -294,7 +300,20 @@ export function ServerStartPage() {
               configs={tested}
               loadingConfig={configId !== undefined && configParams === undefined}
               presets={modelPresets}
-              builtins={builtins}
+              builtins={
+                ninferPresets.length > 0 ? (
+                  <NinferPresetPicker
+                    presets={ninferPresets}
+                    run={draftNinfer}
+                    // Nothing checked here while one of the user's presets is chosen.
+                    value={pickedPreset ? ('' as NinferChoice) : ninferChoice}
+                    onChange={(v) => {
+                      setNinferChoice(v);
+                      setPresetId(undefined);
+                    }}
+                  />
+                ) : undefined
+              }
               preset={presetId}
               onPreset={onPreset}
               othersCount={(presets.data?.length ?? 0) - modelPresets.length}

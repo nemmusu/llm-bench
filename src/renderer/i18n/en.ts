@@ -577,12 +577,6 @@ export const en: Messages = {
         none: 'No presets for this model.',
         noneBody: 'Choose the settings and press “Save as preset”.',
         others: 'The other presets are on the Servers page.',
-        builtin: 'Built-in',
-        builtinHint: 'Ready-made settings of the engine: you can save them as your own preset and change them.',
-      },
-      builtin: {
-        'ninfer-recommended': 'Recommended by NInfer',
-        'rtx5090-tested': 'Tested on RTX 5090',
       },
       custom: {
         intro: 'Leave a field empty to let GPU Bench decide. The values start from the ones chosen so far.',

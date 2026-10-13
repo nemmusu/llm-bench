@@ -578,12 +578,6 @@ export const it = {
         none: 'Nessun preset per questo modello.',
         noneBody: 'Scegli le impostazioni e premi «Salva come preset».',
         others: 'Gli altri preset sono nella pagina Server.',
-        builtin: 'Predefinito',
-        builtinHint: 'Impostazioni pronte del motore: puoi salvarle come tuo preset e cambiarle.',
-      },
-      builtin: {
-        'ninfer-recommended': 'Consigliata da NInfer',
-        'rtx5090-tested': 'Provata su RTX 5090',
       },
       custom: {
         intro: 'Lascia vuoto un campo per far decidere a GPU Bench. I valori partono da quelli scelti finora.',
