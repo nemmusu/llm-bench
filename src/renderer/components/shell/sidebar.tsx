@@ -7,6 +7,7 @@ import { NAV_MAIN, NAV_SETTINGS, navIdFor, type NavItem } from '../../lib/nav';
 import { useGpuSnapshot, useSystemInfo } from '../../lib/queries-library';
 import { VersionLabel } from '../domain/version-label';
 import { IconButton } from '../ui/button';
+import { ActiveRunCard, ServersCard } from './sidebar-cards';
 import { Skeleton } from '../ui/skeleton';
 import { StatusDot } from '../ui/status-dot';
 import { Tooltip } from '../ui/tooltip';
@@ -88,7 +89,10 @@ function GpuStatus({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** Left navigation: six destinations, collapsible to icons, GPU + core status at the bottom. */
+/**
+ * Left navigation: seven destinations, what is running right now (a benchmark, the servers),
+ * collapsible to icons, GPU + core status at the bottom.
+ */
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { t } = useI18n();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -104,6 +108,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             </li>
           ))}
         </ul>
+        <div className="mt-4 flex flex-col gap-2">
+          <ActiveRunCard collapsed={collapsed} />
+          <ServersCard collapsed={collapsed} />
+        </div>
         <ul className="mt-auto flex flex-col gap-0.5 pt-4">
           <li>
             <NavLink item={NAV_SETTINGS} active={activeId === 'settings'} collapsed={collapsed} />
