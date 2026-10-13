@@ -144,6 +144,41 @@ function thisHostId() {
  */
 /** The fake engine stands in for every custom engine (GPUBENCH_LLAMA_LAUNCHER runs it with node). */
 const FAKE_ENGINE_CLI = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
+/** A fork in a real git checkout two commits behind its upstream (made by fakeWorld). */
+const GIT_FORK_DIR = path.join(os.tmpdir(), 'gpubench-mockups-gitfork');
+const GIT_FORK_EXE = path.join(GIT_FORK_DIR, 'prism', 'build', 'bin', 'llama-server.mjs');
+const UPDATE_SETTINGS = {
+  lastEngine: { kind: 'sglang-docker', image: 'lmsysorg/sglang:v0.5.20' },
+  customEngines: [{ id: 'prism-git', name: 'PrismML (git)', base: 'llamacpp', run: { mode: 'native', path: GIT_FORK_EXE }, extraArgs: [], env: {}, notes: 'Compilato da un clone di github.com/PrismML.' }],
+};
+
+/** The checkout of GIT_FORK_DIR: upstream two commits ahead, already fetched; its build folder ignored by git. */
+function makeGitFork() {
+  rmSync(GIT_FORK_DIR, { recursive: true, force: true });
+  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=GPU Bench', '-c', 'user.email=mockups@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...a], { cwd, stdio: 'pipe' });
+  const upstream = path.join(GIT_FORK_DIR, 'upstream');
+  mkdirSync(upstream, { recursive: true });
+  git(upstream, 'init', '-q');
+  writeFileSync(path.join(upstream, 'VERSION'), '7001\n');
+  writeFileSync(path.join(upstream, '.gitignore'), 'build/\n');
+  git(upstream, 'add', '.');
+  git(upstream, 'commit', '-q', '-m', 'b7001');
+  const work = path.join(GIT_FORK_DIR, 'prism');
+  git(GIT_FORK_DIR, 'clone', '-q', upstream, work);
+  const bin = path.dirname(GIT_FORK_EXE);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(work, 'build', 'CMakeCache.txt'), `CMAKE_HOME_DIRECTORY:INTERNAL=${work.replace(/\\/g, '/')}\n`);
+  writeFileSync(
+    GIT_FORK_EXE,
+    `process.env.FAKE_ENGINE_HELP = 'fork';\nawait import(${JSON.stringify(pathToFileURL(FAKE_ENGINE_CLI).href)});\n`,
+  );
+  writeFileSync(path.join(upstream, 'NOTES'), 'ternary kernels\n');
+  git(upstream, 'add', '.');
+  git(upstream, 'commit', '-q', '-m', 'notes');
+  writeFileSync(path.join(upstream, 'VERSION'), '7010\n');
+  git(upstream, 'commit', '-q', '-am', 'b7010');
+  git(work, 'fetch', '-q');
+}
 const CUSTOM_ENGINES = [
   {
     id: 'prismml',
@@ -213,13 +248,38 @@ const SCREENS = [
   { n: 43, name: 'engines-template', route: `/engines?customTemplate=prismml-bonsai&modelName=${encodeURIComponent('Ternary-Bonsai-8B PQ2_0')}`, wait: 'Serve per Ternary-Bonsai-8B PQ2_0', settings: { customEngines: [] }, small: true },
   // The engine choice with the custom engines under their base.
   { n: 44, name: 'benchmark-engines', route: '/', wait: 'Pronto a misurare', settings: { customEngines: CUSTOM_ENGINES }, act: openEngineChoice, small: true },
+  // "Aggiorna": SGLang in Docker one release behind, a fork in a git checkout two commits behind.
+  { n: 45, name: 'engines-update', route: '/engines', wait: 'Motori personalizzati', settings: UPDATE_SETTINGS, act: showUpdates, after: backToLlama, small: true, full: true },
+  // Its confirmation: the exact commands first.
+  { n: 46, name: 'engines-update-confirm', route: '/engines', wait: 'Motori personalizzati', settings: UPDATE_SETTINGS, act: confirmForkUpdate, after: backToLlama, small: true },
 ];
+
+/** The next screens start from llama.cpp again (the "Aggiorna" scenes chose SGLang in Docker). */
+function backToLlama(info) {
+  return putSettings(info, { lastEngine: { kind: 'llamacpp-native' } });
+}
+
+/** Both updates offered: the SGLang image and the fork's new commits. */
+async function showUpdates(page) {
+  await page.getByText('Aggiornamento disponibile: v0.5.20 → v0.5.21').waitFor({ timeout: 30000 });
+  await page.getByText(/2 commit nuovi/).waitFor({ timeout: 30000 });
+  await page.getByRole('region', { name: 'SGLang (Docker)' }).scrollIntoViewIfNeeded();
+}
+
+/** "Aggiorna" on the fork: the confirmation with git and cmake. */
+async function confirmForkUpdate(page) {
+  await showUpdates(page);
+  await page.getByRole('region', { name: 'PrismML (git)' }).getByRole('button', { name: 'Aggiorna' }).click();
+  await page.getByRole('dialog', { name: 'Aggiornare PrismML (git)?' }).waitFor({ timeout: 10000 });
+}
 
 /** The custom engines section, scrolled into view once every check has answered. */
 async function showCustomEngines(page) {
   const section = page.getByRole('region', { name: 'Motori personalizzati' }).or(page.locator('section[aria-labelledby="custom-engines-title"]'));
-  await section.first().scrollIntoViewIfNeeded();
   await page.getByText('Questo motore non conosce alcune impostazioni di GPU Bench').first().waitFor({ timeout: 30000 });
+  // Their update notes come last: the page is in its final layout once they are there.
+  await page.getByText('Aggiorna questo motore con i suoi strumenti.').first().waitFor({ timeout: 30000 });
+  await section.first().scrollIntoViewIfNeeded();
 }
 
 /** "Aggiungi motore" → fork of llama.cpp → where it is → "Prova". */
@@ -421,7 +481,9 @@ async function fakeWorld(dataDir) {
       },
     ],
   });
-  const dockerApi = await startFakeDockerApi({ images: {} });
+  // SGLang v0.5.20 is on the PC (the "Aggiorna" scenes use it); the release in use elsewhere is not.
+  const dockerApi = await startFakeDockerApi({ images: { 'lmsysorg/sglang:v0.5.20': { Id: 'sha256:sglang0520', RepoDigests: [`lmsysorg/sglang@sha256:${'5'.repeat(64)}`] } } });
+  makeGitFork();
   // Docker Hub tags (vLLM and SGLang cards): recorded listings, never the real site.
   const tagFixture = (name) => readFileSync(path.join(root, 'test', 'fixtures', 'docker', name));
   const dockerHub = http.createServer((req, res) => {
@@ -469,11 +531,17 @@ async function fakeWorld(dataDir) {
     GPUBENCH_NVIDIA_SMI: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-nvidia-smi', 'fake-nvidia-smi.mjs')]),
     FAKE_NVIDIA_SMI_STATE: smiState,
     GPUBENCH_LLAMA_LAUNCHER: JSON.stringify([process.execPath]),
+    // The fork's rebuild in the "Aggiorna" scenes: a fake cmake.
+    GPUBENCH_CMAKE: JSON.stringify([process.execPath, path.join(root, 'test', 'fakes', 'fake-cmake', 'cmake.mjs')]),
     // A file the fake engine reads at every launch: the tune scenes switch it to the tuner's profile.
     FAKE_ENGINE_PROFILE: profileFile,
     FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
   };
-  return { env, profileFile, close: () => Promise.all([github.close(), hub.close(), dockerApi.close(), new Promise((r) => dockerHub.close(r))]) };
+  const close = async () => {
+    await Promise.all([github.close(), hub.close(), dockerApi.close(), new Promise((r) => dockerHub.close(r))]);
+    rmSync(GIT_FORK_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  };
+  return { env, profileFile, close };
 }
 
 function startCore(dataDir, extraEnv) {

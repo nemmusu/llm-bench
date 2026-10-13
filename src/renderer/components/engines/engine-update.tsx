@@ -152,10 +152,8 @@ export function EngineUpdatePanel({ target, name, enabled }: EngineUpdatePanelPr
               </>
             }
           >
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-fg-3">{t('engines.update.commands')}</p>
-              <CodeBlock single label={t('engines.update.commands')} commands={{ powershell: c.commands.map(commandLine).join('\n'), bash: c.commands.map(commandLine).join('\n') }} />
-            </div>
+            {/* The code block names itself ("Comandi che eseguo"). */}
+            <CodeBlock single label={t('engines.update.commands')} commands={{ powershell: c.commands.map(commandLine).join('\n'), bash: c.commands.map(commandLine).join('\n') }} />
           </DialogContent>
         </Dialog>
       )}
