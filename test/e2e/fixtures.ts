@@ -61,6 +61,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     FAKE_ENGINE_ALLOW_MISSING_MODEL: '1',
     GPUBENCH_DOCKER: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-docker', 'fake-docker.mjs')]),
     FAKE_DOCKER_STATE: dockerState,
+    // "Perché è successo" reads Docker Desktop's logs: a folder of the test's own, never this PC's.
+    GPUBENCH_DOCKER_DESKTOP_DIR: path.join(stateDir, 'docker-desktop'),
     GPUBENCH_USER_DATA: userData,
     GPUBENCH_MODELS_DIR: path.join(userData, 'models'),
     // The tray and the window through globalThis.__gpubench (Playwright cannot click the OS tray); no desktop toasts.

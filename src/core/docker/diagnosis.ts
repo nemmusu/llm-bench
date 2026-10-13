@@ -14,6 +14,11 @@ import { envValue } from './cli';
 export interface DiagnosisDeps {
   platform: Platform;
   env: Record<string, string | undefined>;
+  /**
+   * Stands in for Docker Desktop's folders (tests, mockups: never this PC's real logs):
+   * settings-store.json in it, the logs in its log/host. GPUBENCH_DOCKER_DESKTOP_DIR.
+   */
+  dir?: string;
   /** A whole small file (settings-store.json). */
   readFile(p: string): Promise<string>;
   /** The last `bytes` of a log file. */
@@ -114,14 +119,17 @@ export function causeFrom(events: readonly EngineEvent[], now: number): Pick<Doc
 export async function diagnoseDocker(d: DiagnosisDeps, hang?: DockerHangReason): Promise<DockerDiagnosis> {
   const fallback: DockerDiagnosis = { cause: hang ? 'not-answering' : 'unknown', evidence: [] };
   if (d.platform !== 'win32') return fallback;
+  // Docker Desktop's own folders, or the one standing in for them (settings in it, logs in its log/host).
   const appData = envValue(d.env, 'APPDATA', 'win32');
   const local = envValue(d.env, 'LOCALAPPDATA', 'win32');
-  const settings = appData ? await d.readFile(path.win32.join(appData, 'Docker', 'settings-store.json')).catch(() => undefined) : undefined;
+  const settingsFile = d.dir !== undefined ? path.join(d.dir, 'settings-store.json') : appData && path.win32.join(appData, 'Docker', 'settings-store.json');
+  const logDir = d.dir !== undefined ? path.join(d.dir, 'log', 'host') : local && path.win32.join(local, 'Docker', 'log', 'host');
+  const settings = settingsFile ? await d.readFile(settingsFile).catch(() => undefined) : undefined;
   const resourceSaver = settings === undefined ? undefined : resourceSaverFrom(settings);
   const out: DockerDiagnosis = { ...fallback, ...(resourceSaver ? { resourceSaver } : {}) };
-  if (!local) return out;
-  const dir = path.win32.join(local, 'Docker', 'log', 'host');
-  const logs = await Promise.all(['com.docker.backend.exe.log', 'monitor.log'].map((f) => d.readTail(path.win32.join(dir, f), LOG_TAIL_BYTES).catch(() => '')));
+  if (!logDir) return out;
+  const join = d.dir !== undefined ? path.join : path.win32.join;
+  const logs = await Promise.all(['com.docker.backend.exe.log', 'monitor.log'].map((f) => d.readTail(join(logDir, f), LOG_TAIL_BYTES).catch(() => '')));
   // Both logs repeat the same lines: one event per moment and kind.
   const seen = new Set<string>();
   const events = logs.flatMap(engineEvents).filter((e) => {
@@ -148,7 +156,8 @@ export async function readTail(p: string, bytes: number): Promise<string> {
   }
 }
 
-/** The real files of this PC (read only). */
+/** The real files of this PC (read only), or of GPUBENCH_DOCKER_DESKTOP_DIR. */
 export function diagnosisDeps(platform: Platform, env: Record<string, string | undefined>, now: () => number): DiagnosisDeps {
-  return { platform, env, readFile: (p) => fs.readFile(p, 'utf8'), readTail, now };
+  const dir = env.GPUBENCH_DOCKER_DESKTOP_DIR;
+  return { platform, env, ...(dir ? { dir } : {}), readFile: (p) => fs.readFile(p, 'utf8'), readTail, now };
 }

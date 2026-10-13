@@ -178,6 +178,8 @@ export class DockerEnvironment {
   private desktop: DesktopSeen | undefined;
   private desktopInflight: Promise<void> | undefined;
   private lastState: DockerState | undefined;
+  /** The last state worked out (peek()). */
+  private last: DockerStatusDetail | undefined;
   private readonly listeners = new Set<(s: DockerStatusDetail) => void>();
   private readonly exists: (p: string) => Promise<boolean>;
   private readonly launch: (cmd: string, args: string[]) => Promise<void>;
@@ -212,9 +214,9 @@ export class DockerEnvironment {
     return value;
   }
 
-  /** The last state worked out, without asking Docker (the tray). */
+  /** The last state worked out, without asking Docker (the tray); kept when the cache is dropped. */
   peek(): DockerStatusDetail | undefined {
-    return this.cached?.value;
+    return this.last;
   }
 
   /** Called whenever the state changes (it stopped answering, came back…). Returns the unsubscribe. */
@@ -236,6 +238,7 @@ export class DockerEnvironment {
 
   private publish(at: number, value: DockerStatusDetail): void {
     this.cached = { at, value };
+    this.last = value;
     if (value.state === this.lastState) return;
     this.lastState = value.state;
     for (const fn of this.listeners) fn(value);
@@ -253,8 +256,8 @@ export class DockerEnvironment {
       this.hang = { since: this.o.clock.now(), reason, ...(detail ? { detail: detail.slice(-1000) } : {}) };
       this.o.log?.warn('docker does not answer', { reason, ...(detail ? { detail: detail.slice(0, 300) } : {}) });
     }
-    const cached = this.cached?.value;
-    if (cached && cached.state !== 'not-responding') this.publish(this.o.clock.now(), this.stuck(cached, this.hang));
+    const last = this.last;
+    if (last && last.state !== 'not-responding') this.publish(this.o.clock.now(), this.stuck(last, this.hang));
   }
 
   private clearHang(...reasons: DockerHangReason[]): void {

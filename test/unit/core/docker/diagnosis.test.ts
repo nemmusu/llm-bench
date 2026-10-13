@@ -101,6 +101,22 @@ describe('diagnoseDocker', () => {
     expect(await diagnoseDocker(deps({}, { platform: 'linux' }), 'calls-failing')).toEqual({ cause: 'not-answering', evidence: [] });
   });
 
+  it('a folder standing in for Docker Desktop (tests, mockups): its settings and its log/host, never this PC\'s', async () => {
+    const dir = path.join('C:', 'fake-dd');
+    const d = await diagnoseDocker(
+      deps(
+        {
+          [path.join(dir, 'settings-store.json')]: '{"AutoPauseTimeoutSeconds":600}',
+          [path.join(dir, 'log', 'host', 'monitor.log')]: STUCK,
+        },
+        { dir },
+      ),
+    );
+    expect(d).toMatchObject({ cause: 'resource-saver', resourceSaver: { enabled: true, timeoutSeconds: 600 } });
+    expect(diagnosisDeps('win32', { GPUBENCH_DOCKER_DESKTOP_DIR: dir }, () => 0).dir).toBe(dir);
+    expect(diagnosisDeps('win32', {}, () => 0).dir).toBeUndefined();
+  });
+
   it('reads the end of a file, and the real files of this PC', async () => {
     const whole = await readTail(fixture('desktop-backend-ok-tail.txt').replace('-ok-tail.txt', '-resource-saver-ok.log'), LOG_TAIL_BYTES);
     expect(whole).toBe(OK);
