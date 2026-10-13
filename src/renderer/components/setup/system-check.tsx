@@ -5,6 +5,7 @@ import type { CheckActionKind, CheckId, CheckItem, CheckState, SystemCheckReport
 import { useI18n, type Formatters } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { activeEvent, useInstallEvent, useRecheck, useStartInstall, useSystemCheck } from '../../lib/queries-library';
+import { prettyVariant } from '../bench/format';
 import { ErrorCallout } from '../library/error-callout';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -86,7 +87,7 @@ export function itemDetail(item: CheckItem, f: Pick<Formatters, 't' | 'number'>)
       if (item.state === 'unsupported') return t('setup.items.gpu.unsupported', { name: str(p.name) });
       return item.code === 'DRIVER_MISSING' ? t('setup.items.gpu.needsDriver') : t('setup.items.gpu.missing');
     case 'llamacpp':
-      if (item.state === 'ok') return t('setup.items.llamacpp.ok', { version: str(p.version), variant: str(p.variant) });
+      if (item.state === 'ok') return t('setup.items.llamacpp.ok', { version: str(p.version), variant: prettyVariant(str(p.variant)) });
       if (item.code === 'ENGINE_MISSING_LIBRARY') return t('setup.items.llamacpp.missingLibrary', { library: str(p.library), package: str(p.package) });
       return item.state === 'warning' ? t('setup.items.llamacpp.broken') : t('setup.items.llamacpp.missing');
     case 'models':

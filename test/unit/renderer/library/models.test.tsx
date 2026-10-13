@@ -38,8 +38,9 @@ describe('models: on your PC', () => {
     expect(within(list).getByText('Visione (mmproj)')).toBeTruthy();
     await waitFor(() => expect(within(list).getAllByText('Entra perfettamente')).toHaveLength(2));
     await waitFor(() => expect(within(list).getAllByText('Provato su questa GPU · scrive 88 tok/s')).toHaveLength(2));
-    // Only library models can be deleted.
+    // Only library models can be deleted; the others keep the place, so the buttons line up.
     expect(screen.queryByRole('button', { name: 'Elimina: Model m2' })).toBeNull();
+    expect(list.querySelectorAll('[data-placeholder="delete"]')).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'Mostra nella cartella: Model m1' }));
     expect(b.revealPath).toHaveBeenCalledWith('C:\\Models\\m1-Q4_K_M.gguf');
     await userEvent.click(screen.getByRole('button', { name: 'Elimina: Model m1' }));

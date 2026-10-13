@@ -56,7 +56,7 @@ test('Docker stopped: "Avvia Docker" brings it up; then GPU check, image downloa
     await scan(page, 'docker stopped');
     await docker.getByRole('button', { name: 'Avvia Docker' }).click();
     await expect(docker.getByText('Acceso', { exact: true })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('region', { name: 'Controllo del sistema' }).getByText(/^Docker .* è pronto\. Serve solo per vLLM\.$/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('region', { name: 'Controllo del sistema' }).getByText(/^Docker .* è pronto\. Serve per vLLM e SGLang\.$/)).toBeVisible({ timeout: 20_000 });
 
     await docker.getByRole('button', { name: 'Verifica la GPU in Docker' }).click();
     await expect(docker.getByText('Docker vede la scheda video')).toBeVisible({ timeout: 30_000 });
@@ -82,7 +82,7 @@ test('Docker not installed: the guided install asks first and explains what will
     const { page } = gb;
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const check = page.getByRole('region', { name: 'Controllo del sistema' });
-    await expect(check.getByText('Facoltativo: serve solo per usare vLLM.')).toBeVisible({ timeout: 20_000 });
+    await expect(check.getByText('Facoltativo: serve solo per vLLM e SGLang.')).toBeVisible({ timeout: 20_000 });
     await check.getByRole('button', { name: /^Installa Docker.*\(Docker\)$/ }).click();
     // Windows: Docker Desktop and the UAC prompt; Linux: the exact script and the password prompt.
     const dialog = page.getByRole('dialog', { name: /^Installare Docker (Desktop|Engine)\?$/ });

@@ -255,7 +255,7 @@ describe('SGLang cards', () => {
     const tags = await within(docker).findByRole('list', { name: 'Versioni di SGLang' });
     expect(within(tags).getAllByRole('listitem')).toHaveLength(6);
     expect(within(tags).getByText('Consigliato')).toBeTruthy();
-    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa' })[0]!);
+    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa questa' })[0]!);
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'sglang-docker', image: 'lmsysorg/sglang:v0.5.21-cu130' }));
     expect(await within(tags).findByText('In uso')).toBeTruthy();
     await userEvent.click(within(docker).getByRole('button', { name: 'Tutte le versioni (8)' }));
@@ -392,7 +392,7 @@ describe('Motori personalizzati: the check in words, the dialog on Linux, errors
     renderLib('/engines', api);
     const docker = await card('SGLang (Docker)');
     const tags = await within(docker).findByRole('list', { name: 'Versioni di SGLang' });
-    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa' })[0]!);
+    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa questa' })[0]!);
     expect(await within(docker).findByText('Alcuni valori non sono validi')).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'sglang-native', stage: 'error', bytesDone: 0 }));
     expect(await within(await card('SGLang nativo')).findByText('Installazione del motore non riuscita')).toBeTruthy();

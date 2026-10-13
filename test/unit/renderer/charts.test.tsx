@@ -1,7 +1,7 @@
 import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { barOption, concurrencyOption, mmss, sparkAreaOption, timelineOption } from '../../../src/renderer/components/charts/builders';
+import { agoLabel, barOption, concurrencyOption, mmss, sparkAreaOption, timelineOption } from '../../../src/renderer/components/charts/builders';
 import { ChartCard, LegendKey } from '../../../src/renderer/components/charts/chart-card';
 import { EChart } from '../../../src/renderer/components/charts/echart';
 import { axisStyle, baseOption, readChartTokens, type ChartTokens } from '../../../src/renderer/components/charts/echarts';
@@ -126,6 +126,9 @@ describe('builders', () => {
     expect(o.yAxis.axisLabel.formatter(287.5)).toBe('n288');
     expect(o.series[0].lineStyle.color).toBe('#3');
     expect(o.xAxis.axisLabel.formatter(100)).toBe('-1:00');
+    expect(o.xAxis.axisLabel.formatter(160)).toBe('0:00');
+    expect(agoLabel(90)).toBe('-1:30');
+    expect(agoLabel(0.2)).toBe('0:00');
     expect(o.tooltip.valueFormatter(4)).toBe('4%');
     const noMax: Any = sparkAreaOption(tk, [], [], { name: 'V', format: String });
     expect(noMax.yAxis.splitNumber).toBe(2);

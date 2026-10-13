@@ -11,9 +11,10 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { useMoreAtEnd } from '../../lib/use-more-at-end';
 
 export interface DataTableColumnMeta {
   /** Right-align and use tabular figures (numbers). */
@@ -39,26 +40,6 @@ const STICKY_END = cn(
   'group-data-[more=end]/table:shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.25)] group-data-[more=end]/table:before:opacity-100 dark:group-data-[more=end]/table:shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.8)]',
 );
 const FILL = 'w-full max-w-0';
-
-/** Whether a sideways-scrolling box hides columns past its right edge (the fade beside a sticky column). */
-function useMoreAtEnd(ref: RefObject<HTMLDivElement | null>): boolean {
-  const [more, setMore] = useState(false);
-  useLayoutEffect(() => {
-    const el = ref.current!;
-    const update = () => setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    // The window, the rows (filters, sorting) and the fonts change the widths.
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    ro.observe(el.firstElementChild!);
-    return () => {
-      el.removeEventListener('scroll', update);
-      ro.disconnect();
-    };
-  }, [ref]);
-  return more;
-}
 
 export const dataTableFeatures = tableFeatures({
   rowSortingFeature,

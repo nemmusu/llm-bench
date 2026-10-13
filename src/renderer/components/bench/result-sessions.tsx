@@ -2,6 +2,7 @@ import type { RunResult } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
+import { ScrollX } from '../ui/scroll-x';
 import { kvCapacityText, prefixCacheSentences, sessionsGlossary, sessionsOf, sessionsSentences, sessionsTable, type SessionsTable } from './sessions-view';
 
 /**
@@ -10,7 +11,7 @@ import { kvCapacityText, prefixCacheSentences, sessionsGlossary, sessionsOf, ses
  */
 function Table({ table, caption }: { table: SessionsTable; caption: string }) {
   return (
-    <div role="region" aria-label={caption} tabIndex={0} className="overflow-x-auto focus-ring">
+    <ScrollX role="region" aria-label={caption} tabIndex={0} className="focus-ring">
       <table className="w-full border-separate border-spacing-0 text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -40,7 +41,7 @@ function Table({ table, caption }: { table: SessionsTable; caption: string }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   );
 }
 

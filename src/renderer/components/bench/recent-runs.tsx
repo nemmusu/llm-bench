@@ -27,7 +27,7 @@ export function RecentRuns({ limit = 4 }: { limit?: number }) {
           <CardTitle>{t('benchmark.recent.title')}</CardTitle>
           <CardDescription className="text-xs text-fg-3">{t('benchmark.recent.subtitle')}</CardDescription>
         </div>
-        <Link to="/results" className="inline-flex items-center gap-1 rounded-xs text-sm font-medium text-accent-text hover:underline focus-ring">
+        <Link to="/results" className="inline-flex shrink-0 items-center gap-1 rounded-xs text-sm font-medium whitespace-nowrap text-accent-text hover:underline focus-ring">
           {t('common.seeAll')}
           <ArrowRight aria-hidden className="size-3.5" />
         </Link>

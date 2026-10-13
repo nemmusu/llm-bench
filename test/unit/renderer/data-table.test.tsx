@@ -1,6 +1,7 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { DataTable, columnHelper } from '../../../src/renderer/components/ui/data-table';
+import { ScrollX } from '../../../src/renderer/components/ui/scroll-x';
 import { renderUi } from './helpers';
 
 interface Row {
@@ -43,5 +44,29 @@ describe('DataTable', () => {
     act(() => void scroller.dispatchEvent(new Event('scroll')));
     expect(scroller.dataset.more).toBeUndefined();
     unmount();
+  });
+});
+
+describe('ScrollX', () => {
+  it('fades its right edge while content hides past it', () => {
+    renderUi(
+      <ScrollX role="region" aria-label="Confronto">
+        <table>
+          <tbody>
+            <tr>
+              <td>A</td>
+            </tr>
+          </tbody>
+        </table>
+      </ScrollX>,
+    );
+    const box = screen.getByRole('region', { name: 'Confronto' });
+    const fade = box.nextElementSibling as HTMLElement;
+    expect(fade.dataset.more).toBeUndefined();
+    Object.defineProperty(box, 'scrollWidth', { configurable: true, value: 900 });
+    Object.defineProperty(box, 'clientWidth', { configurable: true, value: 600 });
+    act(() => void box.dispatchEvent(new Event('scroll')));
+    expect(fade.dataset.more).toBe('end');
+    expect(fade.className).toContain('opacity-100');
   });
 });

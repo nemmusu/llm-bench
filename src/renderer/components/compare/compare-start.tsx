@@ -14,7 +14,7 @@ import { cn } from '../../lib/cn';
 import { COMPARE_MAX, idsOf, oldestFirst, setCompareSelection, useCompareSelection, type CompareEntry } from '../../lib/compare-selection';
 import { useConfigs } from '../../lib/queries-configs';
 import { apiErrorData, useRuns } from '../../lib/queries-runs';
-import { contextShort, speedAt } from '../../lib/speed-at';
+import { contextWords, speedAt } from '../../lib/speed-at';
 import { ErrorCard } from '../bench/error-card';
 import { countKey, prettyEngineLabel, shortGpuName, summaryModelLabel } from '../bench/format';
 import { SpillBadge } from '../bench/spill';
@@ -181,7 +181,8 @@ function RunRow({ r }: { r: RunSummary }) {
       {r.decodeTps !== undefined && (
         <span className="hidden flex-col items-end text-right sm:flex">
           <span className="text-sm font-semibold text-fg tabular-nums">{number(r.decodeTps, 1)} tok/s</span>
-          {r.decodeTokens !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'write', tokens: r.decodeTokens, basis: r.speedBasis }, f)}</span>}
+          {/* No column header here: the line says it is the writing speed, and on what. */}
+          {r.decodeTokens !== undefined && <span className="text-xs text-fg-3">{contextWords({ kind: 'write', tokens: r.decodeTokens, basis: r.speedBasis }, f)}</span>}
         </span>
       )}
       <CompareToggle entry={entryOfSummary(r, f)} />

@@ -855,7 +855,7 @@ export const it = {
     HF_NOT_FOUND: { title: 'Modello non trovato su Hugging Face', what: 'Controlla il nome del repository.' },
     DOWNLOAD_FAILED: { title: 'Download non riuscito', what: 'Riprova: riprende da dove si era fermato.' },
     DOWNLOAD_CHECKSUM: { title: 'Il file scaricato è danneggiato', what: 'Scaricalo di nuovo: il file rovinato è stato eliminato.' },
-    DOCKER_NOT_INSTALLED: { title: 'Docker non è installato', what: 'Serve solo per vLLM: installalo da Motori, oppure usa llama.cpp.' },
+    DOCKER_NOT_INSTALLED: { title: 'Docker non è installato', what: 'Serve solo per vLLM e SGLang: installalo da Motori, oppure usa llama.cpp.' },
     DOCKER_NOT_RUNNING: { title: 'Docker non è avviato', what: 'Premi «Avvia Docker» e aspetta che sia pronto.' },
     DOCKER_NOT_RESPONDING: { title: 'Docker non risponde', what: 'Premi «Riavvia Docker»: lo fermo e lo riaccendo io. Immagini e modelli restano dove sono.' },
     DOCKER_NO_GPU: { title: 'Docker non vede la scheda video', what: 'Segui la guida in Motori per abilitare la GPU in Docker.' },
@@ -925,10 +925,10 @@ export const it = {
       },
       docker: {
         title: 'Docker',
-        running: 'Docker {version} è pronto. Serve solo per vLLM.',
-        stopped: 'È installato ma spento. Serve solo per vLLM.',
+        running: 'Docker {version} è pronto. Serve per vLLM e SGLang.',
+        stopped: 'È installato ma spento. Serve per vLLM e SGLang.',
         starting: 'Si sta avviando…',
-        'not-installed': 'Facoltativo: serve solo per usare vLLM.',
+        'not-installed': 'Facoltativo: serve solo per vLLM e SGLang.',
         'no-permission': 'Il tuo utente non ha il permesso di usare Docker.',
         'no-gpu': 'Docker non vede la scheda video.',
         unsupported: 'Questa installazione di Docker non è supportata (per esempio Podman o i contenitori Windows).',
@@ -1055,7 +1055,7 @@ export const it = {
     pulled: 'Immagine pronta: {image}',
     install: {
       title: 'Installare Docker Desktop?',
-      body: 'Scarico l’installazione ufficiale di Docker Desktop e la avvio. Docker serve solo per usare vLLM o llama.cpp dentro un contenitore.',
+      body: 'Scarico l’installazione ufficiale di Docker Desktop e la avvio. Docker serve solo per vLLM, SGLang o llama.cpp dentro un contenitore.',
       size: 'Dimensione',
       source: 'Da',
       wslMissing: 'Manca WSL 2: l’installazione di Docker lo attiverà e potrebbe servire un riavvio.',
@@ -1467,7 +1467,7 @@ export const it = {
     },
     recent: {
       title: 'Ultimi risultati',
-      subtitle: 'Velocità di generazione (scrittura) di ogni test',
+      subtitle: 'Velocità di generazione (scrittura)',
       empty: 'Qui vedrai i tuoi test più recenti.',
     },
     gpu: {
@@ -3125,7 +3125,7 @@ export const it = {
       nativeTitle: 'SGLang nativo',
       nativeDesc: 'SGLang installato sul PC, in un ambiente separato (solo Linux).',
       tags: 'Versioni di SGLang',
-      use: 'Usa',
+      use: 'Usa questa',
       pull: 'Scarica',
       allTags: 'Tutte le versioni ({n})',
       nativeVersion: 'SGLang {version}',
@@ -3360,7 +3360,7 @@ export const it = {
     },
     docker: {
       title: 'Docker',
-      desc: 'Serve solo per vLLM e per llama.cpp dentro un contenitore.',
+      desc: 'Serve per vLLM, SGLang e per llama.cpp dentro un contenitore.',
       install: 'Installa Docker',
       pullLlama: 'Scarica l’immagine di llama.cpp',
       cleanup: 'Pulisci i contenitori di LLM Bench',

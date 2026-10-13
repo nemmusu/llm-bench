@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { ScrollX } from '../ui/scroll-x';
 
 export interface MeasureColumn {
   /** Header with its unit, e.g. "Generazione (tok/s)". */
@@ -24,7 +25,7 @@ export interface MeasureRow {
 export function MeasureTable({ caption, columns, rows, className, framed }: { caption: string; columns: readonly MeasureColumn[]; rows: readonly MeasureRow[]; className?: string; framed?: boolean }) {
   return (
     // Focusable so keyboard users can scroll a wide table.
-    <div role="region" aria-label={caption} tabIndex={0} className={cn('overflow-x-auto focus-ring', framed && 'rounded-lg border border-border bg-surface', className)}>
+    <ScrollX role="region" aria-label={caption} tabIndex={0} className={cn('focus-ring', framed && 'rounded-lg border border-border bg-surface', className)}>
       <table className="w-full border-separate border-spacing-0 text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -58,6 +59,6 @@ export function MeasureTable({ caption, columns, rows, className, framed }: { ca
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   );
 }

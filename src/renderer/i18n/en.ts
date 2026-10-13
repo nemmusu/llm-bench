@@ -268,7 +268,7 @@ export const en: Messages = {
       label: 'Context step by step',
       status: 'Filling the context a bit at a time (1K, 4K, 8K… tokens) and measuring how much it slows down as it fills.',
     },
-    concurrency: { label: 'Many users', status: 'Simulating several people using the model at the same time.' },
+    concurrency: { label: 'Several users', status: 'Simulating several people using the model at the same time.' },
     sessions: {
       label: 'Long conversations',
       status: 'Simulating long conversations: the first message reads the whole context, the next ones reuse what the server has already read.',
@@ -331,7 +331,7 @@ export const en: Messages = {
       help: 'A single number to compare graphics cards: 1,000 is an RTX 5090 with llama.cpp on the reference model. Higher is better.',
     },
     concurrency: {
-      label: 'Many users',
+      label: 'Several users',
       help: 'How many tokens per second the graphics card produces in total when several people use it together.',
       hint: 'writing in total {users}',
     },
@@ -853,7 +853,7 @@ export const en: Messages = {
     HF_NOT_FOUND: { title: 'Model not found on Hugging Face', what: 'Check the repository name.' },
     DOWNLOAD_FAILED: { title: 'Download failed', what: 'Try again: it resumes where it stopped.' },
     DOWNLOAD_CHECKSUM: { title: 'The downloaded file is damaged', what: 'Download it again: the damaged file was deleted.' },
-    DOCKER_NOT_INSTALLED: { title: 'Docker is not installed', what: 'It is only needed for vLLM: install it from Engines, or use llama.cpp.' },
+    DOCKER_NOT_INSTALLED: { title: 'Docker is not installed', what: 'It is only needed for vLLM and SGLang: install it from Engines, or use llama.cpp.' },
     DOCKER_NOT_RUNNING: { title: 'Docker is not running', what: 'Press “Start Docker” and wait until it is ready.' },
     DOCKER_NOT_RESPONDING: { title: 'Docker is not responding', what: 'Press “Restart Docker”: I stop it and start it again. Images and models stay where they are.' },
     DOCKER_NO_GPU: { title: 'Docker cannot see the graphics card', what: 'Follow the guide in Engines to enable the GPU in Docker.' },
@@ -923,10 +923,10 @@ export const en: Messages = {
       },
       docker: {
         title: 'Docker',
-        running: 'Docker {version} is ready. Only needed for vLLM.',
-        stopped: 'Installed but not running. Only needed for vLLM.',
+        running: 'Docker {version} is ready. Needed for vLLM and SGLang.',
+        stopped: 'Installed but not running. Needed for vLLM and SGLang.',
         starting: 'Starting…',
-        'not-installed': 'Optional: only needed to use vLLM.',
+        'not-installed': 'Optional: only needed for vLLM and SGLang.',
         'no-permission': 'Your user is not allowed to use Docker.',
         'no-gpu': 'Docker cannot see the graphics card.',
         unsupported: 'This Docker setup is not supported (for example Podman or Windows containers).',
@@ -1053,7 +1053,7 @@ export const en: Messages = {
     pulled: 'Image ready: {image}',
     install: {
       title: 'Install Docker Desktop?',
-      body: 'I download the official Docker Desktop installer and run it. Docker is only needed for vLLM or for llama.cpp inside a container.',
+      body: 'I download the official Docker Desktop installer and run it. Docker is only needed for vLLM, SGLang or llama.cpp inside a container.',
       size: 'Size',
       source: 'From',
       wslMissing: 'WSL 2 is missing: the Docker installer will enable it and a restart may be needed.',
@@ -1465,7 +1465,7 @@ export const en: Messages = {
     },
     recent: {
       title: 'Latest results',
-      subtitle: 'Generation speed (writing) of each test',
+      subtitle: 'Generation speed (writing)',
       empty: 'Your most recent tests will appear here.',
     },
     gpu: {
@@ -3123,7 +3123,7 @@ export const en: Messages = {
       nativeTitle: 'SGLang native',
       nativeDesc: 'SGLang installed on the PC, in a separate environment (Linux only).',
       tags: 'SGLang versions',
-      use: 'Use',
+      use: 'Use this one',
       pull: 'Download',
       allTags: 'All versions ({n})',
       nativeVersion: 'SGLang {version}',
@@ -3358,7 +3358,7 @@ export const en: Messages = {
     },
     docker: {
       title: 'Docker',
-      desc: 'Only needed for vLLM and for llama.cpp inside a container.',
+      desc: 'Needed for vLLM, SGLang and for llama.cpp inside a container.',
       install: 'Install Docker',
       pullLlama: 'Download the llama.cpp image',
       cleanup: 'Clean up LLM Bench containers',

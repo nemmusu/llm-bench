@@ -148,7 +148,12 @@ function LocalRow({
           {t('recipes.rowButton')}
         </Button>
         <IconButton label={`${t('models.reveal')}: ${id.displayName}`} icon={<FolderOpen />} onClick={() => void window.gpubench?.revealPath(m.paths[0] as string)} />
-        {m.origin === 'library' && <IconButton label={`${t('models.delete')}: ${id.displayName}`} icon={<Trash2 />} onClick={() => onDelete(m)} />}
+        {/* A model of a folder of the user's is not deleted from here: its place stays, so the buttons line up row after row. */}
+        {m.origin === 'library' ? (
+          <IconButton label={`${t('models.delete')}: ${id.displayName}`} icon={<Trash2 />} onClick={() => onDelete(m)} />
+        ) : (
+          <span aria-hidden data-placeholder="delete" className="size-control shrink-0" />
+        )}
       </div>
     </li>
   );

@@ -74,8 +74,9 @@ async function openServeConfirm(page) {
   await page.getByRole('region', { name: 'Comando esatto' }).waitFor({ timeout: 30000 });
 }
 
-/** The server started from there, ready: the Server page with its address for other programs. */
-async function openServeReady(page) {
+/** The server started from there, ready: the Server page with its address for other programs (the live run of scene 3 stopped first: it holds the card). */
+async function openServeReady(page, info) {
+  await idle(info);
   await openServeConfirm(page);
   await page.getByRole('button', { name: /^(Avvia|Scarica e avvia)$/ }).click();
   await page.getByRole('region', { name: /^Server .* sulla porta \d+$/ }).getByText('Acceso', { exact: true }).first().waitFor({ timeout: 90000 });
@@ -240,9 +241,11 @@ async function openDiff(page) {
 }
 
 /** The picks live in the page (and its storage): the next screens start without them. */
-async function forgetPicks(_info, page) {
-  // The saved sheet (a file:// page) has its own storage: back to the app first.
-  if (!page.url().startsWith('http')) await page.goBack();
+async function forgetPicks(info, page) {
+  // Away from the comparison first (it may still be saving its picks), and from the saved sheet (a
+  // file:// page with its own storage).
+  await page.goto(`${info.url}#/results`);
+  await page.getByRole('heading', { level: 1, name: 'Risultati' }).waitFor({ timeout: 30000 });
   await page.evaluate(() => localStorage.removeItem('gpubench.compare'));
   await page.reload();
 }
@@ -359,7 +362,7 @@ const CUSTOM_ENGINES = [
 ];
 
 const SCREENS = [
-  { n: 1, name: 'welcome', route: '/welcome', wait: 'Controllo del sistema' },
+  { n: 1, name: 'welcome', route: '/welcome', wait: 'Ecco cosa ho trovato' },
   { n: 2, name: 'benchmark', route: '/', wait: 'Pronto a misurare', small: true },
   // Before the live run below installs llama.cpp: engine and model are both still to fetch.
   { n: 15, name: 'benchmark-download', route: '/', wait: 'Pronto a misurare', act: previewSuggestion, small: true, full: true },
@@ -1607,7 +1610,7 @@ async function main() {
             }
             if (s.click) await page.getByRole(s.click.role, { name: s.click.name }).click();
             if (s.keys) await page.keyboard.press(s.keys);
-            if (s.act) await s.act(page);
+            if (s.act) await s.act(page, info);
             await page.waitForTimeout(s.settle ?? 900);
             // Move the pointer away so no hover state or tooltip leaks into the image.
             await page.mouse.move(size.w - 4, size.h - 4);

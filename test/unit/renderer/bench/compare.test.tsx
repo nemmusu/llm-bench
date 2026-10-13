@@ -334,7 +334,7 @@ describe('picking what to compare', () => {
     const list = screen.getByRole('list', { name: 'Test completati' });
     expect(within(list).queryByText(/Llama 3\.3 70B/)).toBeNull();
     const full = within(list).getAllByRole('link', { name: 'Qwen3 8B · Q4_K_M' })[0]!.closest('li')!;
-    expect(within(full).getByText('a 512 token di contesto')).toBeTruthy();
+    expect(within(full).getByText('scrittura con 512 token già nel contesto')).toBeTruthy();
     await userEvent.type(screen.getByRole('textbox', { name: 'Cerca' }), 'gemma');
     expect(within(list).getAllByRole('listitem')).toHaveLength(1);
     await userEvent.clear(screen.getByRole('textbox', { name: 'Cerca' }));

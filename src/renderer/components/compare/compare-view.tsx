@@ -26,6 +26,7 @@ import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
+import { ScrollX } from '../ui/scroll-x';
 import { SegmentedControl } from '../ui/segmented-control';
 import { Select } from '../ui/select';
 import { Switch } from '../ui/switch';
@@ -429,7 +430,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
       </Card>
 
       <Card className="overflow-hidden">
-        <div role="region" aria-label={t('compare.table')} tabIndex={0} className="overflow-x-auto focus-ring">
+        <ScrollX role="region" aria-label={t('compare.table')} tabIndex={0} className="focus-ring">
           <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-sm">
             <caption className="sr-only">{t('compare.table')}</caption>
             <colgroup>
@@ -454,7 +455,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
               <GroupRows key={g} group={g} rows={rows.filter((r) => r.group === g)} n={n} />
             ))}
           </table>
-        </div>
+        </ScrollX>
       </Card>
 
       <div className={cn('grid gap-section', users && 'xl:grid-cols-2')}>

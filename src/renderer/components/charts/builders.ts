@@ -28,6 +28,11 @@ export function mmss(sec: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** Seconds ago on a live axis: "-1:30"; now is "0:00", not "-0:00". */
+export function agoLabel(sec: number): string {
+  return sec < 0.5 ? mmss(0) : `-${mmss(sec)}`;
+}
+
 /** Time series stacked as small multiples sharing one x-axis, with phase bands behind them. */
 export function timelineOption(
   tk: ChartTokens,
@@ -256,7 +261,7 @@ export function sparkAreaOption(
       max: t0,
       ...ax,
       splitLine: { show: false },
-      axisLabel: { ...ax.axisLabel, formatter: (v: number) => `-${mmss(t0 - v)}` },
+      axisLabel: { ...ax.axisLabel, formatter: (v: number) => agoLabel(t0 - v) },
     },
     yAxis: {
       type: 'value',

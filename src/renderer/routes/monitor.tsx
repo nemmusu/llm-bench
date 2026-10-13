@@ -2,7 +2,7 @@ import { Activity, Cpu, MemoryStick } from 'lucide-react';
 import { useCallback } from 'react';
 import type { SystemResponse } from '../../contract/api';
 import type { GpuSample } from '../../contract/hardware';
-import { mmss, sparkAreaOption } from '../components/charts/builders';
+import { agoLabel, sparkAreaOption } from '../components/charts/builders';
 import { ChartCard } from '../components/charts/chart-card';
 import { EChart } from '../components/charts/echart';
 import type { ChartTokens } from '../components/charts/echarts';
@@ -47,7 +47,7 @@ function LiveChart({ title, history, metric, scale = 1, format, max }: { title: 
       table={{
         columns: [t('chart.time'), title],
         numeric: [1],
-        rows: history.filter((_, i) => (history.length - 1 - i) % 15 === 0).map((s) => [`-${mmss((last - s.t) / 1000)}`, format(value(s))]),
+        rows: history.filter((_, i) => (history.length - 1 - i) % 15 === 0).map((s) => [agoLabel((last - s.t) / 1000), format(value(s))]),
       }}
     >
       <EChart build={build} height={150} label={title} />

@@ -157,7 +157,7 @@ describe('system check details', () => {
     expect(d(item('gpu', { state: 'unsupported', params: { name: 'Radeon' } }))).toContain('Radeon');
     expect(d(item('gpu', { state: 'missing', code: 'DRIVER_MISSING' }))).toContain('installato il driver');
     expect(d(item('gpu', { state: 'missing', code: 'GPU_NOT_FOUND' }))).toBe('Non ho trovato una scheda video NVIDIA.');
-    expect(d(item('llamacpp', { params: { version: 'b1', variant: 'cuda' } }))).toBe('Versione b1 · cuda');
+    expect(d(item('llamacpp', { params: { version: 'b1', variant: 'cuda' } }))).toBe('Versione b1 · CUDA');
     expect(d(item('llamacpp', { state: 'warning' }))).toContain('non parte');
     expect(d(item('llamacpp', { state: 'warning', code: 'ENGINE_MISSING_LIBRARY', params: { library: 'libgomp.so.1', package: 'libgomp1' } }))).toBe(
       'È installato, ma al tuo Linux manca libgomp.so.1: in un terminale esegui «sudo apt install libgomp1», poi premi Ricontrolla.',
@@ -168,7 +168,7 @@ describe('system check details', () => {
     expect(d(item('models', { state: 'missing' }))).toContain('Nessun modello');
     expect(d(item('disk', { params: { freeGb: 120, path: 'C:\\', minFreeGb: 20 } }))).toBe('120 GB liberi in C:\\');
     expect(d(item('disk', { state: 'warning', params: { freeGb: 5, path: 'C:\\', minFreeGb: 20 } }))).toContain('Solo 5 GB');
-    expect(d(item('docker', { params: { dockerState: 'running', version: '29' } }))).toBe('Docker 29 è pronto. Serve solo per vLLM.');
+    expect(d(item('docker', { params: { dockerState: 'running', version: '29' } }))).toBe('Docker 29 è pronto. Serve per vLLM e SGLang.');
     expect(d(item('docker', { state: 'unsupported' }))).toContain('non è supportata');
     expect(d(item('docker', { params: { distroSupport: 'unsupported-distro' } }))).toContain('Ubuntu e Debian');
     expect(d(item('vllm-native', { params: { version: '0.11' } }))).toBe('vLLM 0.11 installato.');

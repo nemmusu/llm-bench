@@ -56,6 +56,8 @@ describe('Benchmark: "Trova le impostazioni migliori"', () => {
     await userEvent.click(screen.getByRole('radio', { name: /Trova le impostazioni migliori/ }));
     expect(screen.getByText(/Provo da solo le impostazioni/)).toBeTruthy();
     expect(screen.getByText('Le impostazioni che contano di più, poche prove.')).toBeTruthy();
+    // Its long name leaves no room for the estimate: "variabile" there, the times under "Quanto cercare".
+    expect(screen.getByRole('radio', { name: /Trova le impostazioni migliori/ }).textContent).toContain('variabile');
     await userEvent.click(screen.getByRole('radio', { name: /^Accurata/ }));
     expect(screen.getByText('Più valori per ogni impostazione e più ripetizioni.')).toBeTruthy();
     await userEvent.click(screen.getByRole('switch', { name: 'Controllo di fedeltà' }));

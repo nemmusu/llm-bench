@@ -42,7 +42,8 @@ describe('monitor', () => {
     expect(option.xAxis.min).toBe(-180);
     await userEvent.click(screen.getAllByRole('button', { name: 'Mostra tabella' })[1]!);
     const table = screen.getByRole('table', { name: 'Dati del grafico «Memoria video (GB)»' });
-    expect(within(table).getByText('-0:00')).toBeTruthy();
+    // The newest reading is now: "0:00", not "-0:00".
+    expect(within(table).getByText('0:00')).toBeTruthy();
     const users = screen.getByRole('list', { name: 'Altri programmi che usano la GPU' });
     expect(within(users).getByText('llama-server.exe')).toBeTruthy();
     expect(within(users).getByText('2,0 GB')).toBeTruthy();

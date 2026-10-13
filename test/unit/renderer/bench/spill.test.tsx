@@ -208,7 +208,7 @@ describe('lists and badges', () => {
     const recent = await screen.findByRole('heading', { name: 'Ultimi risultati' });
     // Title and subtitle sit in the header; the rows below it.
     const card = recent.closest('div')!.parentElement!.parentElement!;
-    expect(within(card).getByText('Velocità di generazione (scrittura) di ogni test')).toBeTruthy();
+    expect(within(card).getByText('Velocità di generazione (scrittura)')).toBeTruthy();
     expect(await within(card).findByText('RAM condivisa')).toBeTruthy();
     // The selected model (its only run spilled).
     expect(await screen.findByText('Provato: RAM condivisa')).toBeTruthy();
