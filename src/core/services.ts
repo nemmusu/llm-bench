@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { RunPlan, StartServerRequest } from '../contract/api';
 import { AppError } from '../contract/errors';
 import type { LocalModel } from '../contract/models';
+import { fileExists } from './bench/recipes';
 import { BenchService } from './bench/service';
 import { createBenchRoutes } from './bench/routes';
 import { createLinuxEvictor, noEvictor, type CacheEvictor } from './cache/evictor';
@@ -548,6 +549,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const s = await ctx.settings.get();
       return { recipes: s.modelRecipes, customEngines: s.customEngines };
     },
+    fileExists,
   });
 
   return {

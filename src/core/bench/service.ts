@@ -86,6 +86,8 @@ export interface BenchServiceDeps {
   serverApiKey?: () => string;
   /** "Comandi per questo modello": the saved recipes and the custom engines they name (settings). */
   recipes?: () => Promise<RecipeSources>;
+  /** Whether a file exists (a recipe's draft model named by its path). */
+  fileExists?: (path: string) => Promise<boolean>;
 }
 
 export type { ActiveRun };
@@ -232,7 +234,7 @@ export class BenchService {
     const sources = await this.deps.recipes?.().catch(() => undefined);
     // Only a llama.cpp draft/MTP file needs the build's options (which --spec-type it knows).
     const platform = sources ? (await this.deps.fingerprint().catch(() => undefined))?.os.platform : undefined;
-    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform);
+    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform, this.deps.fileExists);
   }
 
   private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {

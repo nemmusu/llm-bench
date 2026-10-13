@@ -137,7 +137,7 @@ describe('CapsProbe', () => {
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[0]?.slice(0, 2)).toEqual(['node', ['cli.mjs', '--version']]);
     expect(run.mock.calls[0]?.[2]).toEqual({ timeoutMs: 5000, env: { X: '1' } });
-    const v = await probe.version(['node', 'cli.mjs'], { X: '1' });
+    const v = await probe.version(['node', 'cli.mjs'], { X: '1' }); // same binary and environment: cached
     expect(v).toMatchObject({ ok: true, build: 'b10997', code: 0 });
     mtimeMs = 2; // binary replaced
     await probe.probe(['node', 'cli.mjs']);

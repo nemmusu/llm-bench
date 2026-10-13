@@ -8,7 +8,8 @@ import type { StartServerRequest } from '../../../../src/contract/api';
 import { customEngineSchema, type CustomEngine } from '../../../../src/contract/custom-engines';
 import { launchParamsSchema, type LaunchParams } from '../../../../src/contract/engines';
 import { modelRecipeDraftSchema, modelRecipeSchema, type ModelRecipe } from '../../../../src/contract/recipes';
-import { recipeRefOf, recipeWarnings, withRecipe, type RecipeSources } from '../../../../src/core/bench/recipes';
+import { fileURLToPath } from 'node:url';
+import { fileExists, recipeRefOf, recipeWarnings, withRecipe, type RecipeSources } from '../../../../src/core/bench/recipes';
 import { buildScenario, sweepWithoutBudget } from '../../../../src/core/bench/scenarios';
 import { BenchService, beyondTrained } from '../../../../src/core/bench/service';
 import { buildTuneSetup, yarnSpace, type TunePrepared } from '../../../../src/core/bench/tune-setup';
@@ -89,6 +90,21 @@ describe('withRecipe', () => {
     const v = await withRecipe(req({ engine: { kind: 'vllm-docker' } }), local, sources([recipe()]), noCaps);
     expect(v.params).toMatchObject({ maxModelLen: 307_200, ropeScaling: YARN });
     expect(v.applied).toMatchObject({ contextSize: 307_200 });
+  });
+
+  it('a draft file named by a path that is gone is said, never passed to the engine', async () => {
+    const r = recipe({ draft: 'C:/m/gone-mtp.gguf', contextSize: undefined, ropeScaling: undefined });
+    const w = await withRecipe(req(), local, sources([r]), async () => CAPS, undefined, async () => false);
+    expect(w.params.extraArgs).toEqual([]);
+    expect(w.applied).toMatchObject({ parts: [], skipped: [{ part: 'draft', reason: 'no_file' }] });
+    const there = await withRecipe(req(), local, sources([r]), async () => CAPS, undefined, async () => true);
+    expect(there.params.extraArgs).toContain('C:/m/gone-mtp.gguf');
+    expect(await fileExists(fileURLToPath(import.meta.url))).toBe(true);
+    expect(await fileExists(`${fileURLToPath(import.meta.url)}.gone`)).toBe(false);
+    // The file next to the model is the library's: never checked again.
+    let checked = 0;
+    await withRecipe(req(), local, sources([recipe({ draft: 'auto' })]), noCaps, undefined, async () => (checked++, false));
+    expect(checked).toBe(0);
   });
 
   it('one by id or an unsaved one (the editor’s preview) instead of the matching one', async () => {

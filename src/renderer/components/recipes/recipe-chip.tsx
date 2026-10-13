@@ -8,11 +8,11 @@ import { useId } from 'react';
 import type { AppliedRecipe } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { useSettings } from '../../lib/settings';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { HelpTip } from '../ui/help-tip';
 import { Switch } from '../ui/switch';
-import { useSettings } from '../../lib/settings';
 import { appliedLines, recipeParts, type RecipeTarget } from './recipe-model';
 import { useRecipeDialogs } from './recipe-section';
 import { useModelRecipe } from './use-model-recipe';
@@ -28,7 +28,8 @@ export interface RecipeChipProps {
 /**
  * Nothing when the model has no recipe, or when its only command is the engine: on the Benchmark page the
  * engine choice and its suggestion ("Usa PrismML", "Questo modello richiede il fork PrismML") already say
- * it, so the chip never repeats them. Made for narrow places (the Benchmark model card).
+ * it, so the chip never repeats them. One row where there is room (the Benchmark page, under the three
+ * choices), stacked in a narrow place (a container query).
  */
 export function RecipeChip({ target, use, onUseChange, className }: RecipeChipProps) {
   const f = useI18n();
@@ -40,36 +41,36 @@ export function RecipeChip({ target, use, onUseChange, className }: RecipeChipPr
   const parts = info.recipe ? recipeParts(info.recipe, f, { customEngines: settings.customEngines, aux: target.aux, ref: target.ref, engine: false }) : [];
   if (!info.recipe || parts.length === 0) return null;
   return (
-    <div
-      className={cn('flex flex-col gap-2 rounded-lg border px-3 py-2.5 transition-colors', use ? 'border-accent/30 bg-accent-soft/50' : 'border-border bg-surface-2/60', className)}
-    >
-      <div className="flex items-start gap-2.5">
-        <Switch id={id} checked={use} onCheckedChange={onUseChange} className="mt-px" />
-        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer text-sm leading-5 font-medium text-fg">
-          {t('recipes.chip.label')}
-        </label>
-        <HelpTip term={t('recipes.chip.label')}>{t('recipes.chip.help')}</HelpTip>
+    <div className={cn('@container rounded-lg border transition-colors', use ? 'border-accent/30 bg-accent-soft/50' : 'border-border bg-surface-2/60', className)}>
+      <div className="flex flex-col gap-2 px-3 py-2.5 @2xl:flex-row @2xl:items-center @2xl:gap-3 @2xl:px-4">
+        <div className="flex shrink-0 items-start gap-2.5 @2xl:items-center">
+          <Switch id={id} checked={use} onCheckedChange={onUseChange} className="mt-px @2xl:mt-0" />
+          <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer text-sm leading-5 font-medium text-fg">
+            {t('recipes.chip.label')}
+          </label>
+          <HelpTip term={t('recipes.chip.label')}>{t('recipes.chip.help')}</HelpTip>
+        </div>
+        {use ? (
+          <ul className="flex flex-wrap gap-1" aria-label={info.recipe.name}>
+            {parts.map((p) => (
+              <li key={p}>
+                <Badge tone="accent" size="sm">
+                  {p}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-fg-3">{t('recipes.chip.off')}</p>
+        )}
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-3 @2xl:ml-auto">
+          <SquareTerminal aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{info.recipe.name}</span>
+          <Button variant="link" size="sm" className="ml-auto h-auto text-xs @2xl:ml-1" onClick={dialogs.edit} aria-label={`${t('recipes.chip.open')}: ${info.recipe.name}`}>
+            {t('recipes.chip.open')}
+          </Button>
+        </span>
       </div>
-      {use ? (
-        <ul className="flex flex-wrap gap-1" aria-label={info.recipe.name}>
-          {parts.map((p) => (
-            <li key={p}>
-              <Badge tone="accent" size="sm">
-                {p}
-              </Badge>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-fg-3">{t('recipes.chip.off')}</p>
-      )}
-      <span className="flex items-center gap-1.5 text-xs text-fg-3">
-        <SquareTerminal aria-hidden className="size-3.5" />
-        <span className="min-w-0 truncate">{info.recipe.name}</span>
-        <Button variant="link" size="sm" className="ml-auto h-auto text-xs" onClick={dialogs.edit} aria-label={`${t('recipes.chip.open')}: ${info.recipe.name}`}>
-          {t('recipes.chip.open')}
-        </Button>
-      </span>
       {dialogs.ui}
     </div>
   );

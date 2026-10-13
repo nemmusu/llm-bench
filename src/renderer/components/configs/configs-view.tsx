@@ -30,8 +30,8 @@ import { SourcesDialog } from './sources-dialog';
 import { NUMERIC, UnitHeader } from './unit-header';
 
 const ALL = 'all';
-/** "Contesto almeno": the steps offered. */
-const CONTEXT_STEPS = [8192, 16384, 32768, 65536, 131072] as const;
+/** "Contesto almeno": the steps offered (200K: the step every long sweep measures). */
+const CONTEXT_STEPS = [8192, 16384, 32768, 65536, 131072, 204800, 262144] as const;
 
 interface Filters {
   /** A card key, ALL_GPUS, or undefined = the core's default (this PC's card). */

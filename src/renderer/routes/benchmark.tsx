@@ -497,10 +497,7 @@ function BenchmarkScreen() {
               ) : modelsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : option ? (
-                <>
-                  <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
-                  {recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
-                </>
+                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
               ) : (
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
@@ -528,6 +525,9 @@ function BenchmarkScreen() {
               {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
             </ChoiceCard>
           </div>
+
+          {/* "Comandi per questo modello": what the model's own commands do, with the switch to start without them. */}
+          {recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
 
           <EngineSuggestion
             model={
