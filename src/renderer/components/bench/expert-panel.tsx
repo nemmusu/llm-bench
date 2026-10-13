@@ -9,6 +9,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Field, Input, Textarea } from '../ui/input';
 import { Select } from '../ui/select';
 import { YarnChoice } from '../recipes/yarn-choice';
+import { depthLabel } from '../tune/tune-format';
 import type { EngineField, EngineForm } from './engine-form';
 import { parseArgs, parseEnv, parseInteger, type ParamsField, type ParamsForm, type ScenarioField, type ScenarioForm } from './expert-form';
 import { engineFamily } from './model-options';
@@ -125,7 +126,8 @@ function RecipeExtras({ recipe, params }: { recipe: { name: string; patch: Recip
 
 /** Every launch parameter, the engine's executable/image/endpoint and the custom test plan. Empty = automatic. */
 export function ExpertPanel(p: ExpertPanelProps) {
-  const { t, integer } = useI18n();
+  const f = useI18n();
+  const { t, integer } = f;
   const recipe = p.recipe?.patch ? { name: p.recipe.name, patch: p.recipe.patch } : undefined;
   const recipeCtx = recipe?.patch.params.contextSize ?? recipe?.patch.params.maxModelLen;
   const yarnOn = p.params.yarnTarget.trim() !== '';
@@ -280,6 +282,11 @@ export function ExpertPanel(p: ExpertPanelProps) {
               )}
             </div>
             <YarnChoice value={p.params.yarnTarget} onChange={(yarnTarget) => p.onParams({ yarnTarget, yarnOriginal: '' })} trained={parseInteger(p.params.yarnOriginal) ?? p.trainedContext} allowOff invalid={bad('yarnTarget')} title />
+            {recipe?.patch.params.ropeScaling && !yarnOn && (
+              <p className="-mt-2 text-xs text-accent-text">
+                {t('recipes.expert.fromRecipe', { name: recipe.name })}: {recipeCtx !== undefined ? t('recipes.parts.yarn', { ctx: depthLabel(recipeCtx, f) }) : t('recipes.parts.ropeOnly', { factor: f.number(recipe.patch.params.ropeScaling.factor, 2) })}
+              </p>
+            )}
             {p.engine === 'llamacpp-native' && (
               <Field label={t('benchmark.expert.executable')} hint={t('benchmark.expert.executableHint')}>
                 {({ id, describedBy }) => (

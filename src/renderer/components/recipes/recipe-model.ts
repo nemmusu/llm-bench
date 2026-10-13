@@ -57,7 +57,8 @@ export function targetOfLocal(m: LocalModel, label = m.identity.displayName): Re
     ref,
     template: { ...ref, format: id.format, trainedContext: id.facts?.contextLength, auxKinds: m.auxiliary.map((a) => a.kind) },
     entry: {
-      label: [label, id.quant].filter(Boolean).join(' · '),
+      // The quant once: file names often carry it already ("Qwen3-8B-Q4_K_M").
+      label: id.quant && !label.toLowerCase().includes(id.quant.toLowerCase()) ? `${label} · ${id.quant}` : label,
       weakKey: id.weakKey,
       ...(id.sha256 ? { sha256: id.sha256 } : {}),
       ...(id.repo ? { repo: id.repo } : {}),

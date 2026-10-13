@@ -1930,6 +1930,7 @@ export const it = {
     },
   },
   recipes: {
+    dialogHint: 'Benchmark, «Trova le impostazioni migliori» e «Avvia solo il server» li usano da soli: scrivili una volta qui.',
     templateNames: {
       'prismml-bonsai': 'Fork PrismML',
     },
@@ -2041,7 +2042,8 @@ export const it = {
     },
     preview: {
       title: 'Comando completo',
-      hint: 'Così parte il modello con questi comandi (come «Avvia solo il server»). Si aggiorna mentre scrivi.',
+      hint: 'Così parte il modello con questi comandi (come «Avvia solo il server»).',
+      hintLive: 'Così parte il modello con questi comandi (come «Avvia solo il server»). Si aggiorna mentre scrivi.',
       loading: 'Preparo l’anteprima…',
       error: 'Anteprima non disponibile: {reason}',
     },

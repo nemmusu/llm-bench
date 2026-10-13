@@ -76,6 +76,68 @@ async function openServeReady(page) {
   await page.getByRole('dialog', { name: 'Il server è pronto' }).getByText('Indirizzo compatibile OpenAI').waitFor({ timeout: 90000 });
 }
 
+/**
+ * "Comandi per questo modello": a recipe for the library's Qwen3 8B (trained on 40K tokens), YaRN to
+ * 300K with an extra llama.cpp argument and a note, as "Usa" on the YaRN built-in would write it.
+ */
+const QWEN_RECIPE = {
+  id: 'qwen3-8b-yarn',
+  name: 'Qwen3 8B · YaRN 300K',
+  match: { models: [], name: 'Qwen3-8B', quant: 'Q4_K_M' },
+  contextSize: 307_200,
+  ropeScaling: { type: 'yarn', factor: 7.5, originalContext: 40_960 },
+  args: { llamacpp: ['--jinja'] },
+  env: {},
+  notes: 'Dalla scheda di Qwen3: YaRN fino a 4 volte il contesto di addestramento è provato; oltre, solo per misurare velocità e memoria.',
+  link: 'https://huggingface.co/Qwen/Qwen3-8B',
+  from: ['yarn'],
+};
+/** The same for the reference model's repo (its page: every quant of it). */
+const REFERENCE_RECIPE = { ...QWEN_RECIPE, id: 'qwen3-4b-yarn', name: 'Qwen3 4B · YaRN 300K', match: { models: [{ label: 'Qwen3-4B-GGUF', repo: REFERENCE.repo }] } };
+
+/** "Comandi" of the library's Qwen3 8B: the section in its dialog. */
+async function openLocalRecipe(page) {
+  await page.getByRole('button', { name: /^Comandi per Qwen3-8B/ }).click();
+  await page.getByRole('dialog', { name: /^Comandi per questo modello/ }).getByText('--rope-scaling', { exact: false }).first().waitFor({ timeout: 60000 });
+}
+
+/** "Scegli da una ricetta pronta" for a model with no commands yet. */
+async function openRecipeLibrary(page) {
+  await page.getByRole('button', { name: /^Comandi per Qwen3-8B/ }).click();
+  await page.getByRole('button', { name: 'Scegli da una ricetta pronta' }).click();
+  await page.getByRole('dialog', { name: 'Ricette pronte' }).waitFor({ timeout: 30000 });
+}
+
+/** "Modifica" of the saved recipe: the editor with its live command. */
+async function openRecipeEditor(page) {
+  await openLocalRecipe(page);
+  await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Modifica i comandi' });
+  await editor.getByText('--rope-scaling', { exact: false }).first().waitFor({ timeout: 30000 });
+}
+
+/** The library's Qwen3 8B on the Benchmark page: its commands' chip. */
+async function pickQwen8(page) {
+  await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Scegli un modello' });
+  await picker.getByRole('radio', { name: /^Qwen3 8B Q4_K_M/ }).click();
+  await picker.getByRole('button', { name: 'Conferma' }).click();
+  await page.getByText('Usa i comandi di questo modello').first().waitFor({ timeout: 30000 });
+}
+
+/** The same in expert mode: the recipe's values where the user's would go. */
+async function pickQwen8Expert(page) {
+  await pickQwen8(page);
+  await page.getByText('Prima dei tuoi argomenti', { exact: false }).first().scrollIntoViewIfNeeded();
+}
+
+/** Expert mode, "Contesto oltre il limite del modello (YaRN)": 300K and its warning. */
+async function chooseYarn(page) {
+  await page.getByRole('radiogroup', { name: 'Contesto oltre il limite del modello (YaRN)' }).getByRole('radio', { name: '300K' }).click();
+  await page.getByText('la qualità non è garantita', { exact: false }).first().waitFor({ timeout: 10000 });
+  await page.getByRole('radiogroup', { name: 'Contesto oltre il limite del modello (YaRN)' }).scrollIntoViewIfNeeded();
+}
+
 /** Picks "Trova le impostazioni migliori" on the Benchmark page. */
 async function chooseTune(page) {
   await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
@@ -206,6 +268,14 @@ const SCREENS = [
   // The card is busy with other programs: a calm note before the test, one banner on the catalog.
   { n: 38, name: 'busy-note', route: '/', wait: 'Pronto a misurare', act: busyBenchmark, after: idleGpu, small: true, full: true },
   { n: 39, name: 'catalog-busy', route: '/models?tab=download', wait: 'Di tendenza su Hugging Face', act: busyCatalog, after: idleGpu },
+  // "Comandi per questo modello": the section, the ready recipes, the editor, the Benchmark chip, YaRN in expert mode, the model page.
+  { n: 40, name: 'recipe-section', route: '/models', wait: 'Fai il benchmark', act: openLocalRecipe, settings: { modelRecipes: [QWEN_RECIPE] }, small: true },
+  { n: 41, name: 'recipe-library', route: '/models', wait: 'Fai il benchmark', act: openRecipeLibrary, small: true },
+  { n: 42, name: 'recipe-editor', route: '/models', wait: 'Fai il benchmark', act: openRecipeEditor, settings: { modelRecipes: [QWEN_RECIPE] }, small: true },
+  { n: 43, name: 'benchmark-recipe', route: '/', wait: 'Pronto a misurare', act: pickQwen8, settings: { modelRecipes: [QWEN_RECIPE] }, small: true, full: true },
+  { n: 46, name: 'benchmark-recipe-expert', route: '/', wait: 'Pronto a misurare', act: pickQwen8Expert, settings: { modelRecipes: [QWEN_RECIPE], expertMode: true }, small: true },
+  { n: 44, name: 'benchmark-yarn', route: '/', wait: 'Pronto a misurare', act: chooseYarn, settings: { expertMode: true }, small: true, full: true },
+  { n: 45, name: 'model-recipe', route: REFERENCE_PAGE, wait: 'Comandi per questo modello', settings: { modelRecipes: [REFERENCE_RECIPE] }, settle: 1500, small: true, full: true },
 ];
 
 /** Slow enough that the live screen is mid-run when it is photographed. */
@@ -748,7 +818,7 @@ async function main() {
         for (const s of SCREENS) {
           if (only && !only.includes(s.name)) continue;
           if (size.suffix && !s.small) continue;
-          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, ...s.settings });
+          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [], ...s.settings });
           if (s.route === 'LIVE') await openLiveRun(page, info);
           else await page.goto(`${info.url}#${s.route}`);
           await page.getByText(s.wait).first().waitFor({ timeout: 30000 });

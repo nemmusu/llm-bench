@@ -9,6 +9,7 @@ import { useId } from 'react';
 import type { AppliedRecipe } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { HelpTip } from '../ui/help-tip';
 import { Switch } from '../ui/switch';
@@ -24,42 +25,56 @@ export interface RecipeChipProps {
   className?: string;
 }
 
-/** Nothing when the model has no recipe. */
+/** Nothing when the model has no recipe. Made for narrow places (the Benchmark model card). */
 export function RecipeChip({ target, use, onUseChange, className }: RecipeChipProps) {
-  const f = useI18n();
-  const { t } = f;
+  const { t } = useI18n();
   const router = useRouter();
   const info = useModelRecipe(target);
   const dialogs = useRecipeDialogs(target);
   const id = useId();
   if (!info.recipe) return null;
   return (
-    <div className={cn('flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors', use ? 'border-accent/30 bg-accent-soft/60' : 'border-border bg-surface-2/60', className)}>
-      <SquareTerminal aria-hidden className={cn('mt-0.5 size-4 shrink-0', use ? 'text-accent-text' : 'text-fg-3')} />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="inline-flex items-center gap-1">
-          <label htmlFor={id} className="cursor-pointer text-sm font-semibold text-fg">
-            {t('recipes.chip.label')}
-          </label>
-          <HelpTip term={t('recipes.chip.label')}>{t('recipes.chip.help')}</HelpTip>
-        </span>
-        <span className="text-sm text-fg-2">
-          <span className={use ? 'font-medium text-fg' : undefined}>{use ? (info.label ?? info.recipe.name) : t('recipes.chip.off')}</span>
-          <Button variant="link" size="sm" className="ml-2 align-baseline" onClick={dialogs.edit} aria-label={`${t('recipes.chip.open')}: ${info.recipe.name}`}>
-            {t('recipes.chip.open')}
-          </Button>
-        </span>
-        {use && info.missingTemplate && (
-          <span className="mt-0.5 inline-flex flex-wrap items-center gap-x-2 text-xs text-warning-text">
-            <TriangleAlert aria-hidden className="size-3.5" />
-            {t('recipes.engineMissing.title')}
-            <Button variant="link" size="sm" className="text-xs" onClick={() => void router.history.push(templateEngineLink(info.missingTemplate as string, target))}>
+    <div
+      className={cn('flex flex-col gap-2 rounded-lg border px-3 py-2.5 transition-colors', use ? 'border-accent/30 bg-accent-soft/50' : 'border-border bg-surface-2/60', className)}
+    >
+      <div className="flex items-start gap-2.5">
+        <Switch id={id} checked={use} onCheckedChange={onUseChange} className="mt-px" />
+        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer text-sm leading-5 font-medium text-fg">
+          {t('recipes.chip.label')}
+        </label>
+        <HelpTip term={t('recipes.chip.label')}>{t('recipes.chip.help')}</HelpTip>
+      </div>
+      {use ? (
+        <ul className="flex flex-wrap gap-1" aria-label={info.recipe.name}>
+          {(info.parts.length ? info.parts : [info.recipe.name]).map((p) => (
+            <li key={p}>
+              <Badge tone="accent" size="sm">
+                {p}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-fg-3">{t('recipes.chip.off')}</p>
+      )}
+      {use && info.missingTemplate && (
+        <p className="flex items-start gap-1.5 text-xs text-warning-text">
+          <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+          <span>
+            {t('recipes.engineMissing.title')}.{' '}
+            <Button variant="link" size="sm" className="h-auto text-xs" onClick={() => void router.history.push(templateEngineLink(info.missingTemplate as string, target))}>
               {t('recipes.engineMissing.action')}
             </Button>
           </span>
-        )}
-      </div>
-      <Switch id={id} checked={use} onCheckedChange={onUseChange} className="mt-0.5" />
+        </p>
+      )}
+      <span className="flex items-center gap-1.5 text-xs text-fg-3">
+        <SquareTerminal aria-hidden className="size-3.5" />
+        <span className="min-w-0 truncate">{info.recipe.name}</span>
+        <Button variant="link" size="sm" className="ml-auto h-auto text-xs" onClick={dialogs.edit} aria-label={`${t('recipes.chip.open')}: ${info.recipe.name}`}>
+          {t('recipes.chip.open')}
+        </Button>
+      </span>
       {dialogs.ui}
     </div>
   );

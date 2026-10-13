@@ -32,7 +32,7 @@ export function useRecipePlan(target: RecipeTarget, kind: EngineKind, recipe: { 
   });
 }
 
-export function RecipePreview({ target, recipe }: { target: RecipeTarget; recipe: { inline: InlineRecipe } | { id: string } | undefined }) {
+export function RecipePreview({ target, recipe, live = false }: { target: RecipeTarget; recipe: { inline: InlineRecipe } | { id: string } | undefined; live?: boolean }) {
   const f = useI18n();
   const { t } = f;
   const [kind, setKind] = useState<EngineKind>(target.engines[0] as EngineKind);
@@ -42,7 +42,7 @@ export function RecipePreview({ target, recipe }: { target: RecipeTarget; recipe
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-col">
           <h3 className="text-sm font-semibold text-fg">{t('recipes.preview.title')}</h3>
-          <p className="text-xs text-fg-3">{t('recipes.preview.hint')}</p>
+          <p className="text-xs text-fg-3">{t(live ? 'recipes.preview.hintLive' : 'recipes.preview.hint')}</p>
         </div>
         {target.engines.length > 1 && (
           <SegmentedControl<EngineKind>

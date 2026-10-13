@@ -156,7 +156,7 @@ export function ModelRecipeDialog({ target, onOpenChange }: { target: RecipeTarg
   return (
     <Dialog open={target !== undefined} onOpenChange={onOpenChange}>
       {target && (
-        <DialogContent size="lg" title={`${t('recipes.title')} · ${target.label}`} description={t('recipes.help')}>
+        <DialogContent size="lg" title={`${t('recipes.title')} · ${target.label}`} description={t('recipes.dialogHint')}>
           <div className="pb-2">
             <RecipeSectionBody target={target} />
           </div>

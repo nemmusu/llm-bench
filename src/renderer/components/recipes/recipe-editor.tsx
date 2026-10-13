@@ -191,7 +191,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
             ]}
           />
           {form.context === 'yarn' && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 border-l-2 border-accent/40 pl-4">
               {trainedKnown === undefined && (
                 <Field label={t('context.yarn.originalLabel')} hint={hintFor(bad('yarnOriginal'), t('benchmark.expert.invalid'))} className="max-w-56">
                   {({ id, describedBy }) => (
@@ -203,7 +203,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
             </div>
           )}
           {form.context === 'fixed' && (
-            <Field label={t('recipes.editor.contextFixedLabel')} hint={hintFor(bad('contextSize'), t('benchmark.expert.invalid'))} className="max-w-56">
+            <Field label={t('recipes.editor.contextFixedLabel')} hint={hintFor(bad('contextSize'), t('benchmark.expert.invalid'))} className="max-w-56 border-l-2 border-accent/40 pl-4">
               {({ id, describedBy }) => (
                 <Input id={id} aria-describedby={describedBy} inputMode="numeric" aria-invalid={bad('contextSize') || undefined} value={form.contextSize} onChange={(e) => set({ contextSize: e.target.value })} className="tabular-nums" />
               )}
@@ -324,7 +324,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
         </Section>
 
         <Section title={t('recipes.preview.title')}>
-          <RecipePreview target={target} recipe={preview} />
+          <RecipePreview target={target} recipe={preview} live />
         </Section>
       </div>
     </DialogContent>

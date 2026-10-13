@@ -1929,6 +1929,7 @@ export const en: Messages = {
     },
   },
   recipes: {
+    dialogHint: 'Benchmark, “Find the best settings” and “Start only the server” use them by themselves: write them here once.',
     templateNames: {
       'prismml-bonsai': 'PrismML fork',
     },
@@ -2040,7 +2041,8 @@ export const en: Messages = {
     },
     preview: {
       title: 'Full command',
-      hint: 'How the model starts with these commands (like “Start only the server”). It updates as you type.',
+      hint: 'How the model starts with these commands (like “Start only the server”).',
+      hintLive: 'How the model starts with these commands (like “Start only the server”). It updates as you type.',
       loading: 'Preparing the preview…',
       error: 'Preview not available: {reason}',
     },
