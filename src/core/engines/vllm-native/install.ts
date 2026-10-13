@@ -63,31 +63,38 @@ export class UvProgress {
   }
 }
 
-function failure(stage: string, code: number | null, tail: string[]): AppError {
+export function failure(stage: string, code: number | null, tail: string[], label = 'vLLM'): AppError {
   const detail = tail.join('\n');
   const params = { stage, code: String(code) };
-  if (/No space left on device/i.test(detail)) return new AppError('DISK_FULL', 'No space left to install vLLM', { params, detail });
+  if (/No space left on device/i.test(detail)) return new AppError('DISK_FULL', `No space left to install ${label}`, { params, detail });
   if (/Failed to fetch|error sending request|dns error|Connection reset|timed out|Could not connect/i.test(detail)) {
-    return new AppError('NETWORK', 'Network error while installing vLLM', { params, detail });
+    return new AppError('NETWORK', `Network error while installing ${label}`, { params, detail });
   }
   if (/\bspawn\b.*\bENOENT\b/.test(detail)) {
     return new AppError('ENGINE_INSTALL_FAILED', 'uv was not found', { params: { ...params, reason: 'uv-missing' }, detail });
   }
-  return new AppError('ENGINE_INSTALL_FAILED', `vLLM install failed at ${stage}`, { params, detail });
+  return new AppError('ENGINE_INSTALL_FAILED', `${label} install failed at ${stage}`, { params, detail });
 }
 
-/**
- * Installs vLLM into enginesDir/vllm-venv with uv: no system Python needed (uv fetches a managed
- * CPython) and `--torch-backend auto` picks the PyTorch CUDA build matching the driver.
- */
-export async function installVllm(o: UvInstallOptions, progress: ProgressSink, signal: AbortSignal): Promise<{ venv: string; vllm: string; version?: string }> {
-  const p = venvPaths(o.enginesDir);
+/** A Python environment installed with uv: its folder, its Python, what goes in it. */
+export interface UvEnvSpec {
+  venv: string;
+  python: string;
+  spec: string;
+  /** "vLLM", "SGLang": for messages. */
+  label: string;
+  /** Marker of the uv processes (never an engine's). */
+  owner: string;
+}
+
+/** `uv venv` + `uv pip install <spec> --torch-backend auto` into env.venv, with progress. */
+export async function installUvEnv(o: Pick<UvInstallOptions, 'proc' | 'uv' | 'python'>, env: UvEnvSpec, progress: ProgressSink, signal: AbortSignal): Promise<UvProgress> {
   const state = new UvProgress();
   const [uvCmd, ...uvPre] = o.uv as [string, ...string[]];
 
   const step = async (stage: string, args: string[]) => {
-    if (signal.aborted) throw new AppError('CANCELLED', 'vLLM install cancelled');
-    const mp = o.proc.spawn({ cmd: uvCmd, args: [...uvPre, ...args], owner: { runId: 'vllm-install', marker: 'vllm-install' } });
+    if (signal.aborted) throw new AppError('CANCELLED', `${env.label} install cancelled`);
+    const mp = o.proc.spawn({ cmd: uvCmd, args: [...uvPre, ...args], owner: { runId: env.owner, marker: env.owner } });
     const onAbort = () => void mp.stop();
     signal.addEventListener('abort', onAbort, { once: true });
     const tail: string[] = [];
@@ -98,18 +105,28 @@ export async function installVllm(o: UvInstallOptions, progress: ProgressSink, s
         if (state.push(l.text)) progress({ stage: state.stage, bytesDone: state.bytesDone, ...(state.bytesTotal > 0 ? { bytesTotal: state.bytesTotal } : {}) });
       }
       const exit = await mp.exited;
-      if (signal.aborted) throw new AppError('CANCELLED', 'vLLM install cancelled');
-      if (exit.code !== 0) throw failure(stage, exit.code, tail);
+      if (signal.aborted) throw new AppError('CANCELLED', `${env.label} install cancelled`);
+      if (exit.code !== 0) throw failure(stage, exit.code, tail, env.label);
     } finally {
       signal.removeEventListener('abort', onAbort);
     }
   };
 
   progress({ stage: 'venv', bytesDone: 0 });
-  await step('venv', ['venv', p.venv, '--python', o.python ?? DEFAULT_PYTHON, '--allow-existing']);
+  await step('venv', ['venv', env.venv, '--python', o.python ?? DEFAULT_PYTHON, '--allow-existing']);
   progress({ stage: 'resolve', bytesDone: 0 });
-  await step('install', ['pip', 'install', '--python', p.python, o.spec ?? 'vllm', '--torch-backend', 'auto']);
+  await step('install', ['pip', 'install', '--python', env.python, env.spec, '--torch-backend', 'auto']);
   progress({ stage: 'verify', bytesDone: state.bytesDone, ...(state.bytesTotal > 0 ? { bytesTotal: state.bytesTotal } : {}) });
+  return state;
+}
+
+/**
+ * Installs vLLM into enginesDir/vllm-venv with uv: no system Python needed (uv fetches a managed
+ * CPython) and `--torch-backend auto` picks the PyTorch CUDA build matching the driver.
+ */
+export async function installVllm(o: UvInstallOptions, progress: ProgressSink, signal: AbortSignal): Promise<{ venv: string; vllm: string; version?: string }> {
+  const p = venvPaths(o.enginesDir);
+  const state = await installUvEnv(o, { venv: p.venv, python: p.python, spec: o.spec ?? 'vllm', label: 'vLLM', owner: 'vllm-install' }, progress, signal);
   const v = await o.proc.run(p.vllm, ['--version'], { timeoutMs: 300_000, signal });
   if (v.code !== 0) throw failure('verify', v.code, `${v.stdout}\n${v.stderr}`.trim().split(/\r?\n/).slice(-40));
   const version = parseVllmVersion(v.stdout);

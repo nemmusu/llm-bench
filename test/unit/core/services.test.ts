@@ -535,11 +535,17 @@ describe('composition details', () => {
     expect(await vd.gpuSm!()).toBeUndefined();
     ctx.telemetry.probe = () => Promise.resolve([{ computeCapability: '12.0' } as never]);
     expect(await vd.gpuSm!()).toBe('sm_120');
-    const vn = (s.registry.get('vllm-native') as unknown as { o: Any }).o;
+    // Registry adapters are wrapped for custom engines: the base adapter is `inner`.
+    const vn = (s.registry.get('vllm-native') as unknown as { inner: { o: Any } }).inner.o;
+    const sn = (s.registry.get('sglang-native') as unknown as { inner: { o: Any } }).inner.o;
+    const sd = (s.sglangDocker as unknown as { s: Any }).s;
     expect(vn.hfToken!()).toBe('hf_x');
+    expect(sn.hfToken!()).toBe('hf_x');
+    expect(sd.hfToken!()).toBe('hf_x');
     expect(await vn.uv!()).toBeUndefined();
     s.uv.uvPath = () => Promise.resolve('/data/engines/uv/uv');
     expect(await vn.uv!()).toEqual(['/data/engines/uv/uv']);
+    expect(await sn.uv!()).toEqual(['/data/engines/uv/uv']);
     // Docker installer size and the post-install refresh are wired to the real objects.
     s.dockerInstaller.installerSize = () => Promise.resolve(600_000_000);
     expect(await (s.systemCheck as unknown as { s: Any }).s.dockerInstallBytes!()).toBe(600_000_000);

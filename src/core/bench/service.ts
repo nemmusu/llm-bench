@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
-import type { EngineConfig, EngineKind, LaunchParams } from '../../contract/engines';
+import { engineBaseOf, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
@@ -152,7 +152,21 @@ const VLLM_FREE_MARGIN_MIB = 768;
 export const SERVER_CONTEXTS = [32768, 16384, 8192, 4096] as const;
 export const SERVER_FALLBACK_CONTEXT = 8192;
 
-const isVllm = (kind: EngineKind): boolean => kind === 'vllm-docker' || kind === 'vllm-native';
+/** vLLM and SGLang: max-model-len / context-length, and a memory share reserved up front. */
+const isVllm = (kind: EngineKind): boolean => {
+  const base = engineBaseOf(kind);
+  return base === 'vllm' || base === 'sglang';
+};
+
+/**
+ * Plan warnings of the launch itself: GPU Bench flags the build does not know (a fork), left out of
+ * the command so the engine's own default applies ('flag_unsupported').
+ */
+export function launchWarnings(launch: Pick<LaunchPlan, 'unsupported' | 'engine'>): ScenarioWarning[] {
+  const missing = launch.unsupported ?? [];
+  if (missing.length === 0) return [];
+  return [{ code: 'flag_unsupported', params: { engine: launch.engine.name, flags: missing.map((m) => m.flag).join(' '), settings: missing.map((m) => m.setting).join(',') } }];
+}
 
 /**
  * Context beyond the model's trained one (YaRN or a recipe): quality there is not guaranteed, only
@@ -224,6 +238,10 @@ export class BenchService {
     const r = await this.recipe(req, model);
     const run: StartRunRequest = { ...req, engine: r.engine, params: r.params };
     const kind = run.engine.kind;
+    // A command template only takes the context: there are no settings to search.
+    if (scenario.profile === 'tune' && kind === 'command') {
+      throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
+    }
     const adapter = this.deps.getAdapter(kind);
     const trained = model.identity.facts?.contextLength;
     // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
@@ -238,7 +256,7 @@ export class BenchService {
     const beyond = beyondTrained(kind, yarnTarget !== undefined ? { ...c.launch.params, contextSize: yarnTarget, maxModelLen: yarnTarget } : c.launch.params, trained);
     // Beyond the trained context the sweep measures up to the launch, whatever the profile's time budget.
     const swept = beyond && scenario.profile !== 'tune' ? sweepWithoutBudget(fitted.scenario) : fitted.scenario;
-    const warnings = [...(memWarning ? [memWarning] : []), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])];
+    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])];
     return { request: run, model, adapter, params, ...c, scenario: swept, warnings, ...(r.applied ? { recipe: r.applied } : {}) };
   }
 
@@ -274,7 +292,7 @@ export class BenchService {
       ...c,
       contextSize,
       apiName,
-      warnings: [...(memWarning ? [memWarning] : []), ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])],
+      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])],
       ...(r.applied ? { recipe: r.applied } : {}),
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),

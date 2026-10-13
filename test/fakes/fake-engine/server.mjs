@@ -1,4 +1,5 @@
-// Deterministic fake LLM server speaking the llama.cpp server API or vLLM's OpenAI API.
+// Deterministic fake LLM server speaking the llama.cpp server API, vLLM's OpenAI API or SGLang's
+// (OpenAI API plus /health_generate, /get_model_info, /server_info; its own start-up log).
 // Used in-process (startFakeEngine) and as a child process through cli.mjs, which mimics the
 // llama-server / `vllm serve` command lines. Timing comes from a behaviour profile.
 import { existsSync, readFileSync, rmSync } from 'node:fs';
@@ -211,7 +212,7 @@ function sendJson(res, status, body) {
 
 /**
  * @typedef {object} FakeEngineOptions
- * @property {'llamacpp' | 'vllm'} [flavor]
+ * @property {'llamacpp' | 'vllm' | 'sglang'} [flavor]
  * @property {string} [host]
  * @property {number} [port]            0 = any free port.
  * @property {string} [model]           Model path (llama.cpp) or repo id (vLLM).
@@ -256,6 +257,8 @@ export function commonPrefix(a, b) {
  */
 export async function startFakeEngine(o = {}) {
   const flavor = o.flavor ?? 'llamacpp';
+  /** SGLang serves the OpenAI API like vLLM: same memory model, prefix cache (token-exact) and routes. */
+  const openai = flavor === 'vllm' || flavor === 'sglang';
   const p = o.profile ?? {};
   const scale = p.timeScale ?? 1;
   const log = o.log ?? (() => {});
@@ -276,7 +279,7 @@ export async function startFakeEngine(o = {}) {
   const rand = mulberry32(p.seed ?? 1);
   // The memory model (when the profile has one) decides what loads, what spills and how much VRAM it holds.
   const mem = p.memory
-    ? memoryPlan(p.memory, { flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
+    ? memoryPlan(p.memory, { flavor: openai ? 'vllm' : flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
     : undefined;
   /** Shared GPU memory of this launch once loaded, or once it generates (a spill's grows with its compute buffers). */
   const sharedOf = (generating) => {
@@ -289,7 +292,7 @@ export async function startFakeEngine(o = {}) {
   };
   const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816 };
   /** vLLM without a CUDA graph for this many requests at once runs eagerly. */
-  const eagerAt = (busy) => flavor === 'vllm' && (o.eager === true || (o.graphSizes !== undefined && busy > Math.max(...o.graphSizes)));
+  const eagerAt = (busy) => openai && (o.eager === true || (o.graphSizes !== undefined && busy > Math.max(...o.graphSizes)));
   const rates = (depth, busy = 1) =>
     speeds(p, {
       depth,
@@ -370,8 +373,9 @@ export async function startFakeEngine(o = {}) {
     }
     if (o.prefixCaching === false) return 0;
     const best = prefixCache.reduce((m, seq) => Math.max(m, commonPrefix(seq, ids)), 0);
-    // Whole blocks only, and never the last token (vLLM recomputes it).
-    return Math.floor(Math.min(best, Math.max(0, ids.length - 1)) / VLLM_BLOCK) * VLLM_BLOCK;
+    // vLLM: whole blocks only; SGLang's radix cache: any token. Never the last token (it is recomputed).
+    const block = flavor === 'sglang' ? 1 : VLLM_BLOCK;
+    return Math.floor(Math.min(best, Math.max(0, ids.length - 1)) / block) * block;
   };
   const remember = (seq, slot) => {
     if (flavor === 'llamacpp') {
@@ -578,12 +582,24 @@ export async function startFakeEngine(o = {}) {
   }
 
   async function handleVllm(req, res, url) {
-    if (url.pathname === '/health') {
+    const sglang = flavor === 'sglang';
+    // SGLang binds its port before its own warm-up request: until then it is not up yet.
+    if (sglang && !loaded) {
+      res.writeHead(503);
+      return res.end();
+    }
+    if (url.pathname === '/health' || (sglang && url.pathname === '/health_generate')) {
       res.writeHead(200);
       return res.end();
     }
-    if (url.pathname === '/version') return sendJson(res, 200, { version: '0.12.0' });
-    if (url.pathname === '/metrics' && req.method === 'GET') {
+    if (sglang && url.pathname === '/get_model_info') {
+      return sendJson(res, 200, { model_path: model, tokenizer_path: model, is_generation: true, model_type: 'qwen3', architectures: ['Qwen3ForCausalLM'] });
+    }
+    if (sglang && url.pathname === '/server_info') {
+      return sendJson(res, 200, { model_path: model, context_length: ctx, max_total_num_tokens: c.kvTokens, version: L.SGLANG_VERSION });
+    }
+    if (!sglang && url.pathname === '/version') return sendJson(res, 200, { version: '0.12.0' });
+    if (!sglang && url.pathname === '/metrics' && req.method === 'GET') {
       const style = p.vllmMetrics ?? 'counters';
       if (style === 'none') return sendJson(res, 404, { detail: 'Not Found' });
       const labels = `{engine="0",model_name="${alias}"}`;
@@ -605,7 +621,7 @@ export async function startFakeEngine(o = {}) {
     if (url.pathname === '/v1/models') {
       return sendJson(res, 200, {
         object: 'list',
-        data: aliases.map((id) => ({ id, object: 'model', created: 1_760_000_000, owned_by: 'vllm', root: model, parent: null, max_model_len: ctx })),
+        data: aliases.map((id) => ({ id, object: 'model', created: 1_760_000_000, owned_by: sglang ? 'sglang' : 'vllm', root: model, parent: null, max_model_len: ctx })),
       });
     }
     if (req.method !== 'POST') return sendJson(res, 404, { detail: 'Not Found' });
@@ -689,7 +705,7 @@ export async function startFakeEngine(o = {}) {
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://fake');
-    const handler = flavor === 'vllm' ? handleVllm : handleLlama;
+    const handler = openai ? handleVllm : handleLlama;
     handler(req, res, url).catch((e) => {
       if (!res.headersSent) sendJson(res, 500, errorJson(500, String(e), 'server_error'));
       else res.destroy();
@@ -776,6 +792,33 @@ export async function startFakeEngine(o = {}) {
     gpu.setLoad(null);
   }
 
+  /** SGLang: weights, KV pool, CUDA graphs (all before the HTTP port), then the warm-up request. */
+  async function loadSglang() {
+    out(L.sglangBanner(c));
+    await sleep(loadMs * 0.05);
+    if (p.noKernelImage) throw Object.assign(new Error('nokernel'), { lines: L.sglangNoKernelImage() });
+    out(L.sglangLoadBegin());
+    for (let i = 0; i <= SHARDS; i++) {
+      out([L.vllmShards(i, SHARDS)]);
+      if (i < SHARDS) await sleep((loadMs * 0.4) / SHARDS);
+      if (p.oomAtLoad && i === 2) throw Object.assign(new Error('oom'), { lines: L.sglangOom() });
+    }
+    gpu.setMem(Math.round(c.vramMiB * 0.6));
+    out(L.sglangLoadEnd(c));
+    if (mem?.outcome === 'kv-too-small') throw Object.assign(new Error('kv'), { lines: L.sglangMemFraction() });
+    out(L.sglangKvCache(c));
+    if (!o.eager) {
+      out(L.sglangGraphsBegin());
+      for (let i = 0; i <= GRAPHS; i += GRAPHS / 4) {
+        out([L.sglangGraphs(i, GRAPHS)]);
+        if (i < GRAPHS) await sleep((loadMs * 0.2) / 4);
+      }
+      out(L.sglangGraphsEnd((loadMs * 0.2) / 1000));
+    }
+    out(L.sglangPool(c));
+    gpu.setMem(c.vramMiB);
+  }
+
   const finishLoad = () => {
     loaded = true;
     if (cold) rmSync(/** @type {string} */ (o.coldMarker), { force: true });
@@ -804,6 +847,30 @@ export async function startFakeEngine(o = {}) {
         throw e;
       },
     );
+  } else if (flavor === 'sglang') {
+    // SGLang loads first, binds the HTTP port, then answers once its own warm-up request is done.
+    loadedPromise = loadSglang().then(
+      async () => {
+        try {
+          port = await bind();
+        } catch (e) {
+          fatal(1, L.vllmPortInUse(c));
+          throw e;
+        }
+        c.port = port;
+        out(L.sglangServing(c));
+        gpu.setLoad(busyLoad);
+        await sleep(loadMs * 0.1);
+        gpu.setLoad(null);
+        finishLoad();
+        out(L.sglangReady());
+      },
+      (e) => {
+        fatal(1, e.lines ?? [String(e)]);
+        throw e;
+      },
+    );
+    port = o.port ?? 0;
   } else {
     // vLLM loads first and binds the HTTP port afterwards.
     loadedPromise = loadVllm().then(

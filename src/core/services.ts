@@ -17,11 +17,16 @@ import { smFromComputeCap } from './engines/shared/compat';
 import type { DockerLaunchPlan } from './engines/shared/docker-engine';
 import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
 import { VllmNativeAdapter } from './engines/vllm-native/adapter';
+import { SglangDockerAdapter } from './engines/sglang-docker/adapter';
+import { SglangNativeAdapter } from './engines/sglang-native/adapter';
+import { CommandAdapter } from './engines/command/adapter';
+import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
+import { createCustomEngineRoutes } from './engines/custom/routes';
 import { FitCalibrator, type ModelKey } from './models/calibration';
 import { vllmRepoFiles } from './downloads/service';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
-import type { EngineKind } from '../contract/engines';
+import { engineBaseOf, isDockerKind, type EngineKind } from '../contract/engines';
 import { createLlamaBench } from './engines/llama-bench/llama-bench';
 import { DockerInstaller } from './setup/docker-installer';
 import { readOsRelease } from './setup/os-release';
@@ -68,6 +73,7 @@ export interface CoreServices {
   llama: LlamaNativeAdapter;
   docker: DockerServices;
   vllmDocker: VllmDockerAdapter;
+  sglangDocker: SglangDockerAdapter;
   /** Models copied into Docker volumes (fast loads with Docker Desktop). */
   modelVolumes: ModelVolumes;
   models?: ModelsLookup;
@@ -267,14 +273,25 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     },
   });
   const llamaDocker = new LlamaDockerAdapter(dockerEngine);
-  const registry = new EngineRegistry([
-    llama,
-    new ExternalAdapter({ fetch: deps.fetch, clock: deps.clock, createClient }),
-    llamaDocker,
-    vllmDocker,
-    // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
-    new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
-  ]);
+  const sglangDocker = new SglangDockerAdapter({ ...dockerEngine, hub: docker.hub, api: docker.api, hfToken: () => ctx.secrets.hfToken });
+  // "Motori personalizzati": read from the settings on every use, so an edit applies to the next launch.
+  const customEngines: CustomEngineSource = { list: async () => (await ctx.settings.get()).customEngines };
+  const registry = new EngineRegistry(
+    withCustomEngines(
+      [
+        llama,
+        new ExternalAdapter({ fetch: deps.fetch, clock: deps.clock, createClient }),
+        llamaDocker,
+        vllmDocker,
+        // uv is installed by the setup module when needed (no Python on the PC): resolved at install time.
+        new VllmNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
+        sglangDocker,
+        new SglangNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
+        new CommandAdapter({ deps, createClient, ownership }),
+      ],
+      customEngines,
+    ),
+  );
   const modelVolumes = new ModelVolumes({ cli: docker.cli, images: docker.images, clock: deps.clock, log: deps.log });
   // Containers left by a crashed session (label gpubench=1); never anyone else's. Docker may be off: best effort.
   void docker.env.cleanupOrphans().catch(() => undefined);
@@ -328,7 +345,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     const out: RunPlan['needs'] = [];
     // A hub GGUF not downloaded yet (resolved for the preview as its pending download).
     if (model?.pending) out.push({ kind: 'model', label: `${model.pending.repo}/${model.pending.file}`, bytes: model.pending.bytes });
-    if ((req.engine.kind === 'vllm-docker' || req.engine.kind === 'vllm-native') && req.model.repo && modelServices) {
+    const base = engineBaseOf(req.engine.kind);
+    if ((base === 'vllm' || base === 'sglang') && req.model.repo && modelServices) {
       const local = await models?.findByRepo?.(req.model.repo);
       if (!local) {
         const files = await modelServices.models.hubFiles(req.model.repo, req.model.revision).catch(() => []);
@@ -338,19 +356,21 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
         out.push({ kind: 'model', label: req.model.repo, ...(bytes > 0 ? { bytes } : {}) });
       }
     }
-    if (req.engine.kind === 'llamacpp-native' && !req.engine.executable) {
+    // A custom engine names its own executable: no managed build to install.
+    if (req.engine.kind === 'llamacpp-native' && !req.engine.executable && req.engine.customEngineId === undefined) {
       const status = await llama.detect(req.engine);
       if (!status.installed) {
         const plan = await llama.planInstall({}).catch(() => undefined);
         out.push({ kind: 'engine', label: 'llama.cpp', ...(plan ? { bytes: plan.bytes } : {}) });
       }
     }
-    if (req.engine.kind === 'llamacpp-docker' || req.engine.kind === 'vllm-docker') {
-      const adapter = req.engine.kind === 'vllm-docker' ? vllmDocker : llamaDocker;
+    if (isDockerKind(req.engine.kind)) {
+      // Through the registry: a fork's image is the one to pull.
+      const adapter = registry.require(req.engine.kind) as CustomEngineAdapter;
       const status = await adapter.detect(req.engine);
       // Docker answers but the image is not there yet: it is pulled before the run (never part of the load time).
       if (status.problems.includes('ENGINE_NOT_INSTALLED') && status.location) {
-        const plan = await adapter.installPlan(req.engine).catch(() => undefined);
+        const plan = await adapter.installPlan?.(req.engine).catch(() => undefined);
         out.push({ kind: 'image', label: status.location, ...(plan?.bytes ? { bytes: plan.bytes } : {}) });
       }
     }
@@ -473,6 +493,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     llama,
     docker,
     vllmDocker,
+    sglangDocker,
     modelVolumes,
     ...(models ? { models } : {}),
     runs,
@@ -520,6 +541,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
       createEnginesRoutes({
         registry: s.registry,
         llama: s.llama,
+        sglang: s.sglangDocker,
         publish: (e) => ctx.hub.publish(e),
         configs: async () => {
           const last = (await ctx.settings.get()).lastEngine;
@@ -527,6 +549,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         },
         shutdown: ctx.shutdown,
       })(app, ctx),
+    (app, ctx) => createCustomEngineRoutes({ settings: ctx.settings, registry: s.registry })(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>

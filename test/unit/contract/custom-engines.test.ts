@@ -23,8 +23,8 @@ import { settingsSchema } from '../../../src/contract/settings';
 
 const fork: CustomEngineDraft = { name: 'PrismML fork', base: 'llamacpp', run: { mode: 'native', path: '/home/u/prism/llama-server' } };
 const saved = (over: Partial<CustomEngine> = {}): CustomEngine => customEngineSchema.parse({ id: 'prismml-fork', ...fork, ...over });
-const reasons = (r: { success: boolean; error?: { issues: { params?: Record<string, unknown> }[] } }) =>
-  r.error?.issues.map((i) => i.params?.reason) ?? [];
+const reasons = (r: { success: boolean; error?: { issues: readonly object[] } | undefined }) =>
+  r.error?.issues.map((i) => (i as { params?: { reason?: string } }).params?.reason) ?? [];
 
 describe('custom engine schema', () => {
   it('fills defaults and keeps a format version', () => {

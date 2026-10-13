@@ -18,6 +18,10 @@ import { profileSchema } from './results';
 
 export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
 
+/**
+ * SGLang reads its settings like vLLM (context, KV dtype, memory share, users, batched tokens): its
+ * own flag spellings are parsed into the same fields, and the engine kind in the key keeps the two apart.
+ */
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
   // A command template is the user's own program: no flags GPU Bench knows, like an external endpoint.
@@ -166,7 +170,7 @@ const VALUE_FLAGS = new Map<string, Setter>();
 const add = (flags: string[], set: Setter) => {
   for (const f of flags) VALUE_FLAGS.set(f, set);
 };
-add(['-c', '--ctx-size', '--max-model-len'], (r, v) => {
+add(['-c', '--ctx-size', '--max-model-len', '--context-length'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.contextSize = n;
 });
@@ -185,7 +189,7 @@ add(['-b', '--batch-size'], (r, v) => {
 add(['-ub', '--ubatch-size'], (r, v) => {
   r.ubatchSize = positive(v[0]) ?? r.ubatchSize;
 });
-add(['-np', '--parallel', '--max-num-seqs'], (r, v) => {
+add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests'], (r, v) => {
   r.parallel = positive(v[0]) ?? r.parallel;
 });
 add(['-ngl', '--gpu-layers', '--n-gpu-layers'], (r, v) => {
@@ -218,10 +222,10 @@ add(['--speculative-model'], (r, v) => {
 add(['--num-speculative-tokens'], (r, v) => {
   r.speculativeTokens = int(v[0]) ?? r.speculativeTokens;
 });
-add(['--max-num-batched-tokens'], (r, v) => {
+add(['--max-num-batched-tokens', '--chunked-prefill-size'], (r, v) => {
   r.maxNumBatchedTokens = positive(v[0]) ?? r.maxNumBatchedTokens;
 });
-add(['--gpu-memory-utilization'], (r, v) => {
+add(['--gpu-memory-utilization', '--mem-fraction-static'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
 add(['--cache-reuse'], (r, v) => {
@@ -310,6 +314,8 @@ add(['--quantization'], (r, v) => {
 /** Switches without a value. */
 const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['--enforce-eager', (r) => (r.enforceEager = true)],
+  // SGLang: no CUDA graphs, vLLM's eager mode.
+  ['--disable-cuda-graph', (r) => (r.enforceEager = true)],
   ['--kv-unified', (r) => (r.kvUnified = true)],
   ['-kvu', (r) => (r.kvUnified = true)],
   ['--no-kv-unified', (r) => (r.kvUnified = false)],
@@ -341,6 +347,10 @@ const IGNORED_VALUE = new Set([
   '-mmproj',
   '--mmproj',
   '--fit',
+  // SGLang: the model, the seed; Python's -m (the module) and -X (GPU Bench's marker on servers).
+  '--model-path',
+  '--random-seed',
+  '-X',
 ]);
 const IGNORED_SWITCH = new Set([
   '--no-webui',
@@ -354,6 +364,7 @@ const IGNORED_SWITCH = new Set([
   '--log-timestamps',
   // vLLM: only how much of the prompt came from the cache is reported, nothing runs differently.
   '--enable-prompt-tokens-details',
+  '--enable-cache-report',
   '--disable-log-requests',
   '--disable-log-stats',
   '--disable-uvicorn-access-log',
@@ -565,9 +576,18 @@ export function gpuKeyOf(g: { hostId: string; gpuUuid?: string | undefined; gpuN
   return g.gpuUuid ? `gpu:${g.gpuUuid}` : `host:${g.hostId}:${g.gpuName ?? 'none'}`;
 }
 
-/** Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4". */
-export function engineReleaseOf(e: { image?: string | undefined; build?: string | undefined; version?: string | undefined; variant?: string | undefined }): string {
-  return [e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
+/**
+ * Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4".
+ * A custom engine (a fork) comes first ("custom:prismml b11460"): it is never the same configuration as its base.
+ */
+export function engineReleaseOf(e: {
+  image?: string | undefined;
+  build?: string | undefined;
+  version?: string | undefined;
+  variant?: string | undefined;
+  customEngine?: { id: string } | undefined;
+}): string {
+  return [e.customEngine ? `custom:${e.customEngine.id}` : undefined, e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
 }
 
 export interface ConfigKeyParts {

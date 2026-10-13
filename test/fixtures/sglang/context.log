@@ -1,0 +1,5 @@
+[2025-10-01 10:00:00] server_args=ServerArgs(model_path='Qwen/Qwen3-8B', context_length=131072)
+Traceback (most recent call last):
+  File "/sgl-workspace/sglang/python/sglang/srt/configs/model_config.py", line 214, in __init__
+    raise ValueError(
+ValueError: User-specified context_length (131072) is greater than the derived context_length (40960). This may lead to incorrect model outputs or CUDA errors. Note that the derived context_length may differ from max_position_embeddings in the model's config. To allow overriding this maximum, set the env var SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1

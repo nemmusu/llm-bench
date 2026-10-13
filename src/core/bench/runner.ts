@@ -25,7 +25,7 @@ import {
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
 import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
-import { parseKvCapacity, vllmKvCapacity } from '../engines/shared/kv-capacity';
+import { parseKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../inference/types';
@@ -166,7 +166,7 @@ const FIRST_TOKEN_PROMPT_CHARS = 64;
 /** A tune run re-sends its progress and time left at least this often (on the telemetry heartbeat). */
 export const PHASE_HEARTBEAT_MS = 5000;
 /** Engines in containers: an instance PID (if any) is a docker CLI helper, never the engine. */
-const CONTAINER_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker']);
+const CONTAINER_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker', 'sglang-docker']);
 
 /** The engine process is ours and visible to the OS (native llama.cpp / vLLM): its VRAM can be read per process. */
 function pidAttributable(kind: EngineKind): boolean {
@@ -912,7 +912,7 @@ export class BenchRunner {
       sessions: async (step) => (await this.sessionsOn(s, inst, plan, step)).points,
       memory: () => this.launchMemory(s, from),
       // vLLM's KV pool does not depend on max-model-len: what it holds is the largest context. (llama.cpp just echoes -c.)
-      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : vllmKvCapacity(inst.logTail())?.tokens),
+      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : parseKvCapacity(inst.logTail(), plan.kind)?.tokens),
       generate: async (promptTokens, tokens) => {
         this.step(s, { kind: 'fidelity', promptTokens, outputTokens: tokens });
         const seed = s.input.scenario.seed;

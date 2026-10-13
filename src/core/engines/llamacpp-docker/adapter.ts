@@ -3,13 +3,14 @@ import type { EngineConfig, LaunchParams } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 import type { EngineIdentity } from '../../../contract/results';
 import { containerName, dockerRunArgv, startContainer, type DockerEngineInstance } from '../../docker/container';
-import { aliasArg, capsFromOutputs, parseHelp, type LlamaCaps } from '../llamacpp-native/caps';
+import { llamaArgs } from '../llamacpp-native/args';
+import { capsFromOutputs, parseHelp, type LlamaCaps } from '../llamacpp-native/caps';
 import { diagnoseExit, llamaPhaseOf } from '../llamacpp-native/logs';
 import { weightFiles, type LaunchPlan, type ModelTarget, type PlanOptions } from '../types';
 import type { EngineCompat } from '../shared/compat';
 import { DockerEngineAdapter, type DockerEngineConfig, type DockerLaunchPlan } from '../shared/docker-engine';
-import { llamaFlashAttention, llamaKvArgs, llamaKvLayoutArgs } from '../shared/kv-flags';
 import { modelReadyProbe } from '../shared/probes';
+import { FlagGate, trustedFlags } from '../shared/standard-flags';
 
 export const LLAMA_CONTAINER_PORT = 8080;
 export const DEFAULT_CONTEXT = 4096;
@@ -31,26 +32,17 @@ export function defaultLlamaCaps(): LlamaCaps {
   };
 }
 
-/** llama-server arguments inside the container; same rules as the native adapter. */
-export function llamaServerArgs(params: LaunchParams, caps: LlamaCaps, o: { modelPath: string; marker: string; apiName?: string | undefined }): string[] {
-  const args = ['-m', o.modelPath, '--host', '0.0.0.0', '--port', String(LLAMA_CONTAINER_PORT), '--alias', aliasArg(caps, o.marker, o.apiName)];
-  args.push('-c', String(params.contextSize ?? DEFAULT_CONTEXT));
-  args.push('-ngl', params.gpuLayers !== undefined ? String(params.gpuLayers) : caps.nglKeywords.includes('all') ? 'all' : '999');
-  const fa = llamaFlashAttention(params);
-  if (caps.flashAttn === 'value') args.push('-fa', fa);
-  else if (caps.flashAttn === 'toggle' && fa === 'on') args.push('-fa');
-  args.push(...llamaKvArgs(params));
-  if (params.batchSize !== undefined) args.push('-b', String(params.batchSize));
-  if (params.ubatchSize !== undefined) args.push('-ub', String(params.ubatchSize));
-  if (params.threads !== undefined) args.push('-t', String(params.threads));
-  if (params.parallel !== undefined) args.push('-np', String(params.parallel));
-  // One KV pool shared by the slots (as in the native adapter): long prompts get the whole context.
-  args.push(...llamaKvLayoutArgs(params, caps.flags));
-  // Auto-fit would silently change ctx/ngl: the measured configuration must be the requested one.
-  if (caps.fitFlag) args.push('--fit', 'off');
-  if (caps.flags.has('--no-webui')) args.push('--no-webui');
-  args.push(...params.extraArgs);
-  return args;
+/**
+ * llama-server arguments inside the container; same rules as the native adapter (llamacpp-native/args.ts).
+ * `gate` leaves out the flags the image's build does not know (default: pass everything).
+ */
+export function llamaServerArgs(
+  params: LaunchParams,
+  caps: LlamaCaps,
+  o: { modelPath: string; marker: string; apiName?: string | undefined },
+  gate = new FlagGate('llamacpp', undefined),
+): string[] {
+  return llamaArgs(params, caps, { modelPath: o.modelPath, host: '0.0.0.0', port: LLAMA_CONTAINER_PORT, marker: o.marker, apiName: o.apiName }, gate);
 }
 
 /** llama.cpp `server-cuda` image (ghcr.io/ggml-org/llama.cpp), GGUF model bind-mounted read-only. */
@@ -105,6 +97,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
     // Split GGUFs: every shard sits next to the first one, so mounting its folder is enough.
     const mount = volume !== undefined ? `${volume}:/models:ro` : `${hostPath.dirname(main)}:/models:ro`;
     const caps = await this.capabilities(cfg);
+    const gate = new FlagGate('llamacpp', trustedFlags('llamacpp', caps.flags));
     const docker = await this.o.cli.command();
     const env = { ...params.env };
     const argv = dockerRunArgv({
@@ -115,7 +108,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       volumes: [mount],
       envNames: Object.keys(env),
       image,
-      args: llamaServerArgs(params, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker, apiName: opts.apiName }),
+      args: llamaServerArgs(params, caps, { modelPath: `/models/${hostPath.basename(main)}`, marker: opts.marker, apiName: opts.apiName }, gate),
     });
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', image, variant: /cuda13/.test(image) ? 'cuda13' : 'cuda' };
     const digest = await this.imageDigest(image);
@@ -138,6 +131,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       containerName: containerName(opts.marker),
       slowSharedFilesystem: this.slowShare(volume === undefined),
       ...(pending ? { pending: ['model' as const] } : {}),
+      ...(gate.missing.length > 0 ? { unsupported: gate.missing } : {}),
     };
   }
 

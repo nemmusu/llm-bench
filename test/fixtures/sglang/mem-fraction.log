@@ -1,0 +1,6 @@
+[2025-10-01 10:00:11 TP0] Load weight end. type=Qwen3ForCausalLM, dtype=torch.bfloat16, avail mem=15.37 GB, mem usage=15.46 GB.
+[2025-10-01 10:00:11 TP0] Scheduler hit an exception: Traceback (most recent call last):
+  File "/sgl-workspace/sglang/python/sglang/srt/model_executor/model_runner.py", line 1180, in init_memory_pool
+    raise RuntimeError(
+RuntimeError: Not enough memory. Please try to increase --mem-fraction-static.
+[2025-10-01 10:00:11] Received sigquit from a child process. It usually means the child failed.
