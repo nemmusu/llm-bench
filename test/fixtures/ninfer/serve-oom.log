@@ -1,0 +1,5 @@
+2026-09-28 11:59:51.028  INFO  starting engine
+2026-09-28 11:59:51.891  INFO  loading weights | 20.0 GiB
+2026-09-28 11:59:54.550  INFO  weights ready | 20.0 GiB | 2.7s | 7.52 GiB/s
+2026-09-28 11:59:54.556  ERROR startup failed | finalizing target | 4.06 ms
+2026-09-28 11:59:54.693  FATAL server failed during startup | requested Engine runtime reservation requires 11099231489 bytes, but only 10948182016 bytes are available for runtime capacity

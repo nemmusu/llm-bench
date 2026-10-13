@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { NINFER_FILE, NINFER_MANIFEST, NINFER_SUMS, parseNinferManifest, parseSha256Sums, precisionFromText } from '../../contract/formats';
 import type { LocalModel } from '../../contract/models';
+import { trainedContextOf } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
 import type { Logger, Platform } from '../deps';
 import { readJsonFile, writeFileAtomic } from '../store/atomic';
@@ -505,6 +506,8 @@ export class ModelScanner {
         ...(mine?.name ? { name: mine.name } : {}),
         ...(mine?.components.length ? { components: mine.components } : {}),
         ...(paramsB ? { paramsB } : {}),
+        // The manifest does not say the trained context: NInfer's models' own (contract/ninfer.ts), as the bench and tuner read it.
+        contextLength: trainedContextOf({ format: 'ninfer' }),
       };
       const quant = precisionFromText(f.name);
       const identity: LocalModel['identity'] = {

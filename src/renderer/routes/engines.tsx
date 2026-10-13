@@ -5,6 +5,7 @@ import { CustomEnginesSection } from '../components/engines/custom-engines';
 import { DockerCard } from '../components/engines/docker-card';
 import { EngineCard } from '../components/engines/engine-card';
 import { LlamaCard } from '../components/engines/llama-card';
+import { NinferCard } from '../components/engines/ninfer-card';
 import { SglangDockerCard, SglangNativeCard } from '../components/engines/sglang-card';
 import { VllmDockerCard, VllmNativeCard } from '../components/engines/vllm-card';
 import { SystemCheckPanel } from '../components/setup/system-check';
@@ -63,6 +64,7 @@ export function EnginesPage() {
           <VllmNativeCard />
           <SglangDockerCard />
           <SglangNativeCard />
+          <NinferCard />
           <EngineCard
             icon={<Globe />}
             title={t('engines.kinds.external')}

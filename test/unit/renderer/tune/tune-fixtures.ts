@@ -33,7 +33,7 @@ export function params(over: Partial<LaunchParams> = {}): LaunchParams {
 const cmd = (args: string) => ({ argv: ['llama-server', ...args.split(' ')], powershell: `llama-server ${args}`, bash: `llama-server ${args}` });
 
 export function combo(kvType: TuneKvType, maxContext: number, sweep: LatencyPoint[], over: Partial<TuneCombination> = {}): TuneCombination {
-  const p = params({ kvCacheType: kvType, flashAttention: 'on', contextSize: maxContext, ...over.params });
+  const p = params({ kvCacheType: kvType as LaunchParams['kvCacheType'], flashAttention: 'on', contextSize: maxContext, ...over.params });
   return {
     kvType,
     maxContext,
@@ -53,7 +53,7 @@ export function attempt(stage: TuneAttempt['stage'], kvType: TuneKvType, context
     kvType,
     contextSize,
     outcome,
-    params: params({ kvCacheType: kvType, flashAttention: 'on', contextSize }),
+    params: params({ kvCacheType: kvType as LaunchParams['kvCacheType'], flashAttention: 'on', contextSize }),
     points: [],
     command: cmd(`-c ${contextSize} -ctk ${kvType}`),
     ...over,

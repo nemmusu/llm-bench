@@ -405,11 +405,12 @@ describe('ModelScanner', () => {
     const q = byName(models, 'qwen3_8_27b_nvfp4') as LocalModel;
     expect(q).toMatchObject({
       origin: 'library',
-      identity: { format: 'ninfer', repo: 'neroued/Qwen3.8-27B-nvfp4-NInfer', sha256: sha, quant: 'NVFP4', sizeBytes: 2048, facts: { architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 } },
+      identity: { format: 'ninfer', repo: 'neroued/Qwen3.8-27B-nvfp4-NInfer', sha256: sha, quant: 'NVFP4', sizeBytes: 2048, facts: { architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27, contextLength: 262_144 } },
     });
     expect(q.paths.map((p) => path.basename(p))).toEqual(['qwen3_8_27b_nvfp4.ninfer', 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json', 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS']);
     expect(byName(models, 'other')?.identity).toMatchObject({ sha256: 'c'.repeat(64), facts: { paramsB: 27 } });
-    expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: {} });
+    // The manifest does not say the trained context: NInfer's models' own, even without a manifest.
+    expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: { contextLength: 262_144 } });
     expect(byName(models, 'mine')?.identity.sha256).toBeUndefined();
   });
 

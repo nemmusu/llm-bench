@@ -9,7 +9,7 @@ import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
-import { ninferFit } from '../../contract/ninfer';
+import { ninferFit, trainedContextOf } from '../../contract/ninfer';
 import { estimateFit, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
@@ -337,6 +337,8 @@ export class ModelsService {
         ...(manifest?.name ? { name: manifest.name } : {}),
         ...(manifest?.components.length ? { components: manifest.components } : {}),
         ...(paramsB ? { paramsB } : {}),
+        // A GGUF of the same repo says it; else NInfer's models' own (the manifest does not).
+        contextLength: trainedContextOf({ format: 'ninfer', facts: fromGguf }),
         quant,
       };
       const fit = ninferFit({ artifactBytes: a.artifact.sizeBytes, manifest, label: `${repo} ${name}`, params, gpu });

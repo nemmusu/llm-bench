@@ -240,6 +240,51 @@ describe('corpus cycling for prompts longer than the corpus', () => {
     );
   });
 
+  it('YaRN 500K: a prompt five times the bundled corpus, built in well under a second, with no run of more than one passage repeated', () => {
+    // The bundled book is ~100K tokens: unique ids stand for its positions.
+    const book = Array.from({ length: 101_377 }, (_, i) => i);
+    const started = performance.now();
+    const p = buildPrompt(book, 512_000, 1, { seed: 42, bos: -1 });
+    const ms = performance.now() - started;
+    expect(p.length).toBe(512_000);
+    expect(ms).toBeLessThan(1000);
+    // No window of PASSAGE_TOKENS + 1 tokens appears twice (double rolling hash over every window).
+    const W = PASSAGE_TOKENS + 1;
+    const seen = new Set<string>();
+    const M1 = 1_000_000_007;
+    const M2 = 998_244_353;
+    const B = 1_000_003;
+    let pow1 = 1;
+    let pow2 = 1;
+    for (let i = 0; i < W - 1; i++) {
+      pow1 = (pow1 * B) % M1;
+      pow2 = (pow2 * B) % M2;
+    }
+    const mulmod = (a: number, b: number, m: number) => Number((BigInt(a) * BigInt(b)) % BigInt(m));
+    let h1 = 0;
+    let h2 = 0;
+    let repeats = 0;
+    for (let i = 0; i < p.length; i++) {
+      const v = (p[i] as number) + 2;
+      if (i >= W) {
+        const out = (p[i - W] as number) + 2;
+        h1 = (h1 - mulmod(out, pow1, M1) + M1) % M1;
+        h2 = (h2 - mulmod(out, pow2, M2) + M2) % M2;
+      }
+      h1 = (mulmod(h1, B, M1) + v) % M1;
+      h2 = (mulmod(h2, B, M2) + v) % M2;
+      if (i >= W - 1) {
+        const key = `${h1}:${h2}`;
+        if (seen.has(key)) repeats++;
+        seen.add(key);
+      }
+    }
+    expect(repeats).toBe(0);
+    // Another repetition starts elsewhere: no shared prefix for the engine's cache.
+    const q = buildPrompt(book, 512_000, 2, { seed: 42, bos: -1 });
+    expect(q[1]).not.toBe(p[1]);
+  }, 60_000);
+
   it('tiny corpora (one or two passages) still cycle', () => {
     expect(promptSegments(3, 7, 1, 0, 64).reduce((n, [a, b]) => n + (b - a), 0)).toBe(7);
     expect(promptSegments(100, 400, 0, 9, 64).reduce((n, [a, b]) => n + (b - a), 0)).toBe(400);

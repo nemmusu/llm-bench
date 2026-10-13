@@ -329,7 +329,7 @@ describe('ModelsService', () => {
     expect(c.fit).toMatchObject({ totalMiB: GPU_32GB.totalMiB, availableMiB: GPU_32GB.totalMiB - 1024 });
     expect(c.fit.levelNow).toBeDefined();
     expect(c.weakKey).toBe(`neroued/Qwen3.8-27B-nvfp4-NInfer/qwen3_8_27b_nvfp4.ninfer//${64 * 1024}`);
-    expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27 });
+    expect(r.facts).toMatchObject({ architecture: 'qwen3_8', name: 'Qwen3.8 27B', paramsB: 27, contextLength: 262_144 });
     expect(r.best).toBe('qwen3_8_27b_nvfp4.ninfer');
     // Without a manifest: still a choice; a repo without .ninfer: none.
     expect((await svc.hubFit('neroued/Qwen3.8-4B-nvfp4-NInfer', 'llamacpp-native', { format: 'ninfer' })).choices[0]?.manifest).toBeUndefined();
@@ -344,6 +344,8 @@ describe('ModelsService', () => {
     });
     const mixed = await svc.hubFit('mixed/Coder-GGUF-NInfer', 'llamacpp-native', { format: 'ninfer' });
     expect(mixed.facts.blockCount).toBe(6);
+    // The trained context its GGUF says, over NInfer's default.
+    expect(mixed.facts.contextLength).toBe(40_960);
     expect(mixed.choices[0]?.dir).toBe('NInfer');
     // The NInfer filter searches by name and narrows by the words typed.
     const found = await svc.search('27b nvfp4', { format: 'ninfer' });
@@ -395,7 +397,7 @@ describe('ModelsService', () => {
     expect(plain.choices[0]).not.toHaveProperty('quant');
     const broken = await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' });
     expect(broken.choices[0]).not.toHaveProperty('manifest');
-    expect(broken.facts).toEqual({ quant: 'NVFP4' });
+    expect(broken.facts).toEqual({ quant: 'NVFP4', contextLength: 262_144 });
     // Nothing fits a tiny card: no best.
     gpu = { totalMiB: 512, freeMiB: 512 };
     expect((await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' })).best).toBeUndefined();

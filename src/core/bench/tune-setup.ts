@@ -7,6 +7,8 @@
 import type { ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
 import { engineBaseOf, type EngineBase, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import type { HardwareFingerprint } from '../../contract/hardware';
+import { extendedContext, YARN_TARGETS, yarnScaling } from '../../contract/recipes';
+import { trainedContextOf } from '../../contract/ninfer';
 import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
@@ -19,7 +21,8 @@ import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
 import { llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
-import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput } from './tuner';
+import { ninferTuneInput } from './tune-ninfer';
+import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput, type TuneSpace } from './tuner';
 
 /** VRAM kept free when vLLM's memory share is fitted to the free VRAM, and the highest share used. */
 export const VLLM_TUNE_MARGIN_MIB = 768;
@@ -118,6 +121,25 @@ export async function learnedOrder(
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 /**
+ * "Contesto oltre il limite del modello (YaRN)" in the search: every launch beyond the trained context
+ * reads it with YaRN at factor context / trained (the exact extension it needs); launches within it run
+ * as the model was trained (no RoPE scaling).
+ */
+export function yarnSpace(space: TuneSpace, trained: number): TuneSpace {
+  return {
+    ...space,
+    params: (v, ctx) => {
+      const { ropeScaling: _rope, ...rest } = space.params(v, ctx);
+      const rope = yarnScaling(ctx, trained);
+      return rope ? { ...rest, ropeScaling: rope } : rest;
+    },
+  };
+}
+
+/** A draft model is already in the launch (a recipe's -md): the search does not add its own. */
+const hasDraft = (args: readonly string[]): boolean => args.some((a) => a === '-md' || a === '--model-draft' || a === '--spec-draft-model');
+
+/**
  * What a model of this size usually does, for a search with no earlier run of it here: prompt reading
  * and generation inversely proportional to the file size (an RTX 5090 read ~2 000 tok/s and generated
  * ~54 tok/s with a 17.6 GB Q4 model, loaded in ~10 s).
@@ -174,6 +196,11 @@ export async function buildTuneSetup(
   const facts = p.model.identity.facts;
   const fileBytes = p.launch.modelBytes > 0 ? p.launch.modelBytes : p.model.identity.sizeBytes;
   const step = p.scenario.steps.find((s) => s.kind === 'context-sweep');
+  const trained = trainedContextOf(p.model.identity);
+  // The YaRN switch (one user only): the capacity search may go up to its target, the offered targets on the way.
+  const target = req.tune?.yarnTarget;
+  const yarn = users === undefined && target !== undefined && trained !== undefined && target > trained ? target : undefined;
+  const modelContext = yarn ?? extendedContext(trained, p.params.ropeScaling);
   const calibration = await deps.calibration?.(p.model, kind).catch(() => undefined);
   const here = await deps.here?.().catch(() => undefined);
   // Ordering only: a forecast (the plan's duration) does not need it.
@@ -182,7 +209,8 @@ export async function buildTuneSetup(
   const common = {
     budget,
     sweep: step ? { outputTokens: step.outputTokens, reps: step.reps } : DEFAULT_SWEEP,
-    ...(facts?.contextLength !== undefined ? { modelContext: facts.contextLength } : {}),
+    ...(modelContext !== undefined ? { modelContext } : {}),
+    ...(yarn !== undefined ? { contextCandidates: [...YARN_TARGETS.filter((c) => c > (trained as number) && c < yarn), yarn] } : {}),
     ...(gpu && facts
       ? { predict: (params: LaunchParams) => estimateFit({ facts, ...(fileBytes ? { fileBytes } : {}), gpu, engine: kind, params: fitParamsFrom(params), ...(calibration ? { calibration } : {}) }) }
       : {}),
@@ -195,6 +223,7 @@ export async function buildTuneSetup(
     ...(past ? { learned: past.learned } : {}),
     ...(recheck ? { recheck } : {}),
   };
+  if (engineBaseOf(kind) === 'ninfer') return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, seen, ...(users !== undefined ? { users } : {}) });
   const caps = await p.adapter.capabilities(p.engine).catch(() => undefined);
   const prefer = past?.prefer;
   if (!isLlamaCpp(kind)) {
@@ -208,21 +237,22 @@ export async function buildTuneSetup(
       ...(caps ? { flags: caps.flags, ...(caps.choices ? { choices: caps.choices } : {}) } : {}),
       ...(prefer ? { prefer } : {}),
     });
-    return { ...common, space };
+    return { ...common, space: yarn !== undefined ? yarnSpace(space, trained as number) : space };
   }
   const llama = caps as LlamaCaps | undefined;
-  const draftArgs = llama?.entries && users === undefined ? speculativeArgs(p.model.local, llama) : undefined;
+  const draftArgs = llama?.entries && users === undefined && !hasDraft(p.params.extraArgs) ? speculativeArgs(p.model.local, llama) : undefined;
   const layers = facts?.blockCount;
-  return {
-    ...common,
-    space: llamaSpace({
+  const space = llamaSpace({
       budget,
       params: p.params,
       ...(draftArgs ? { draftArgs } : {}),
       ...(users !== undefined ? { users } : {}),
       ...(llama ? { flags: llama.flags } : {}),
       ...(prefer ? { prefer } : {}),
-    }),
+  });
+  return {
+    ...common,
+    space: yarn !== undefined ? yarnSpace(space, trained as number) : space,
     // The last resort of goal 'single' only: several users each with their own context and part of the model on the CPU is not a configuration to recommend.
     ...(layers && users === undefined ? { offload: { layers, moe: (facts?.expertCount ?? 0) > 1 && llama?.flags.has('--n-cpu-moe') === true } } : {}),
   };
@@ -335,6 +365,11 @@ export async function tunedServerParams(
   const combo = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
   if (!run || !t || !combo) return undefined;
   const params: LaunchParams = { ...combo.params };
+  // NInfer: the search read every prompt in full and without thinking; a server keeps NInfer's own defaults.
+  if (params.ninfer) {
+    const { prefixReuse: _reuse, thinking: _thinking, ...ninfer } = params.ninfer;
+    params.ninfer = ninfer;
+  }
   if (user) {
     for (const [k, v] of Object.entries(user) as [keyof LaunchParams, unknown][]) {
       if (k === 'extraArgs' || k === 'env' || v === undefined) continue;

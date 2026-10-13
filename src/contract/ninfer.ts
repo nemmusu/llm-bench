@@ -87,6 +87,14 @@ export function ninferGpuSupported(gpu: { name?: string | undefined; computeCapa
 
 // ---- models --------------------------------------------------------------------------------------
 
+/** Trained context of the Qwen3.5-family models NInfer runs (Qwen3.6 / 3.8: 262,144 tokens). */
+export const NINFER_MODEL_CONTEXT = 262_144;
+
+/** A model's trained context: what its facts say, else NInfer's for a .ninfer artifact (its manifest does not say). */
+export function trainedContextOf(identity: { format: string; facts?: { contextLength?: number | undefined } | undefined }): number | undefined {
+  return identity.facts?.contextLength ?? (identity.format === 'ninfer' ? NINFER_MODEL_CONTEXT : undefined);
+}
+
 /** The model families NInfer runs, by the artifact's metadata name ("qwen3.8-27b"). */
 export type NinferFamily = 'dense-27b' | 'moe-35b-a3b';
 

@@ -293,7 +293,7 @@ describe('BenchRunner — happy paths', () => {
       new AbortController().signal,
     );
     expect(result.status).toBe('completed');
-    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([256, 256, 64]);
+    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([1024, 256, 256, 64]);
     expect(result.metrics.latency[0]?.itlPerChunk).toBe(true);
     expect(result.metrics.firstTokenAfterLoadMs).toBeGreaterThan(0);
     expect(result.metrics.concurrency).toHaveLength(1);

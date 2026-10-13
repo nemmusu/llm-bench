@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
-import { engineBaseOf, launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { engineBaseOf, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
+import { extendedContext, type AppliedRecipe } from '../../contract/recipes';
+import { trainedContextOf } from '../../contract/ninfer';
 import { spilledRun, type Scenario, type TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
+import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { availableNowMiB, levelNowOf } from '../models/fit';
 import { serverApiName } from '../engines/types';
@@ -14,13 +17,16 @@ import { newRunId } from '../store/runs-id';
 import { engineBuildOf, engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
 import { loadCorpus } from './prompts';
+import { recipeWarnings, withRecipe, type RecipeSources, type WithRecipe } from './recipes';
 import { BenchRunner, launchRecordOf, type RunInput, type RunnerDeps } from './runner';
 import {
   autoLaunchParams,
   buildScenario,
   estimateSeconds,
   fitScenario,
+  isLlamaCpp,
   limitsFor,
+  sweepWithoutBudget,
   type Expectations,
   type ScenarioWarning,
 } from './scenarios';
@@ -74,6 +80,8 @@ export interface BenchServiceDeps {
   blockedBy?: () => AppError | undefined;
   /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
   calibration?: TuneSetupDeps['calibration'];
+  /** "Comandi per questo modello": the saved recipes and the custom engines they name (settings). */
+  recipes?: () => Promise<RecipeSources>;
 }
 
 export type { ActiveRun };
@@ -99,6 +107,8 @@ export function livePointKey(p: LivePoint): string {
 
 /** A request resolved down to the exact command (runs and servers alike). */
 interface Launched {
+  /** The request as launched: its engine (a recipe may choose a custom one) and params (the recipe's merged in). */
+  request: StartServerRequest;
   model: ModelTarget;
   adapter: EngineAdapter;
   /** The engine configuration actually used (adjustEngine may add a Docker model volume…). */
@@ -108,9 +118,12 @@ interface Launched {
   marker: string;
   launch: LaunchPlan;
   warnings: ScenarioWarning[];
+  /** The model's command recipe, when one applied. */
+  recipe?: AppliedRecipe;
 }
 
 interface Prepared extends Launched {
+  request: StartRunRequest;
   scenario: Scenario;
 }
 
@@ -154,6 +167,16 @@ export function launchWarnings(launch: Pick<LaunchPlan, 'unsupported' | 'engine'
   const missing = launch.unsupported ?? [];
   if (missing.length === 0) return [];
   return [{ code: 'flag_unsupported', params: { engine: launch.engine.name, flags: missing.map((m) => m.flag).join(' '), settings: missing.map((m) => m.setting).join(',') } }];
+}
+
+/**
+ * Context beyond the model's trained one (YaRN or a recipe): quality there is not guaranteed, only
+ * speed and memory are measured. Undefined when the launch stays within it.
+ */
+export function beyondTrained(kind: EngineKind, params: LaunchParams, trained: number | undefined): ScenarioWarning | undefined {
+  const ctx = serverContextOf(kind, params);
+  if (trained === undefined || ctx === undefined || ctx <= trained) return undefined;
+  return { code: 'context_beyond_trained', params: { contextSize: ctx, trained, ...(params.ropeScaling ? { factor: params.ropeScaling.factor, rope: params.ropeScaling.type } : {}) } };
 }
 
 /** The context a server offers with these params: llama.cpp ctx-size, vLLM max-model-len (or ctx-size). */
@@ -200,26 +223,43 @@ export class BenchService {
     return { engine, port, marker, launch };
   }
 
+  /** The model's command recipe applied to a request (none when there are no recipes). */
+  private async recipe(req: StartServerRequest, model: ModelTarget): Promise<WithRecipe> {
+    const sources = await this.deps.recipes?.().catch(() => undefined);
+    // Only a llama.cpp draft/MTP file needs the build's options (which --spec-type it knows).
+    const platform = sources ? (await this.deps.fingerprint().catch(() => undefined))?.os.platform : undefined;
+    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform);
+  }
+
   private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {
     const scenario = this.scenarioFor(req);
     const model = await this.deps.resolveModel(req, { preview });
-    const adapter = this.deps.getAdapter(req.engine.kind);
-    const modelContext = model.identity.facts?.contextLength;
     if (scenario.profile === 'tune' && req.engine.kind === 'external') {
       throw new AppError('VALIDATION', 'An external endpoint cannot be relaunched with other settings', { params: { reason: 'tune_external' } });
     }
+    const r = await this.recipe(req, model);
+    const run: StartRunRequest = { ...req, engine: r.engine, params: r.params };
+    const kind = run.engine.kind;
     // A command template only takes the context: there are no settings to search.
-    if (scenario.profile === 'tune' && req.engine.kind === 'command') {
+    if (scenario.profile === 'tune' && kind === 'command') {
       throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
     }
-    const params = autoLaunchParams(req.engine.kind, scenario, req.params ?? launchParamsSchema.parse({}), modelContext);
-    const memWarning = await this.fitVllmMemory(req.engine.kind, params);
-    const c = await this.command(req, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
+    const adapter = this.deps.getAdapter(kind);
+    const trained = trainedContextOf(model.identity);
+    // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
+    const modelContext = extendedContext(trained, r.params.ropeScaling);
+    const params = autoLaunchParams(kind, scenario, r.params, modelContext);
+    const memWarning = await this.fitVllmMemory(kind, params);
+    const c = await this.command(run, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
     const kvUnified = c.launch.argv.includes('--kv-unified');
     // A tune run picks its contexts itself (the tuner): its sweep template stays as it is.
-    const fitted = scenario.profile === 'tune' ? { scenario, warnings: [] } : fitScenario(scenario, limitsFor(req.engine.kind, c.launch.params, modelContext, { kvUnified }));
-    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings];
-    return { model, adapter, params, ...c, scenario: fitted.scenario, warnings };
+    const fitted = scenario.profile === 'tune' ? { scenario, warnings: [] } : fitScenario(scenario, limitsFor(kind, c.launch.params, modelContext, { kvUnified }));
+    const yarnTarget = scenario.profile === 'tune' ? req.tune?.yarnTarget : undefined;
+    const beyond = beyondTrained(kind, yarnTarget !== undefined ? { ...c.launch.params, contextSize: yarnTarget, maxModelLen: yarnTarget } : c.launch.params, trained);
+    // Beyond the trained context the sweep measures up to the launch, whatever the profile's time budget.
+    const swept = beyond && scenario.profile !== 'tune' ? sweepWithoutBudget(fitted.scenario) : fitted.scenario;
+    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])];
+    return { request: run, model, adapter, params, ...c, scenario: swept, warnings, ...(r.applied ? { recipe: r.applied } : {}) };
   }
 
   /**
@@ -231,34 +271,40 @@ export class BenchService {
   async prepareServer(req: StartServerRequest, opts: { preview: boolean; marker: string }): Promise<PreparedServer> {
     if (req.engine.kind === 'external') throw new AppError('VALIDATION', 'External endpoints are already running', { params: { reason: 'external' } });
     const model = await this.deps.resolveModel(req, { preview: opts.preview });
-    const adapter = this.deps.getAdapter(req.engine.kind);
-    // No context chosen: the latest "Trova le impostazioni migliori" of this model here decides, if any.
-    const userParams = req.params ?? launchParamsSchema.parse({});
-    const tuned = serverContextOf(req.engine.kind, userParams) === undefined ? await this.tunedServer(req, model, adapter) : undefined;
+    const r = await this.recipe(req, model);
+    const run = { ...req, engine: r.engine, params: r.params };
+    const kind = run.engine.kind;
+    const adapter = this.deps.getAdapter(kind);
+    // No context chosen (by the user or the model's recipe): the latest "Trova le impostazioni migliori" of this model here decides, if any.
+    const userParams = r.params;
+    const tuned = serverContextOf(kind, userParams) === undefined ? await this.tunedServer(run, model, adapter) : undefined;
     const params: LaunchParams = { ...(tuned?.params ?? userParams) };
-    const memWarning = await this.fitVllmMemory(req.engine.kind, params);
-    const contextSize = await this.fillServerContext(req, model, params);
-    const apiName = serverApiName(req.engine.kind, model);
-    const c = await this.command(req, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
-    const past = opts.preview ? undefined : (await this.expectedLoad(model, req.engine.kind)).expectedLoadMs;
+    const memWarning = await this.fitVllmMemory(kind, params);
+    const contextSize = await this.fillServerContext(run, model, params);
+    const apiName = serverApiName(kind, model);
+    const c = await this.command(run, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
+    const past = opts.preview ? undefined : (await this.expectedLoad(model, kind)).expectedLoadMs;
     const expectedLoadMs = past?.warm ?? past?.cold;
+    const beyond = beyondTrained(kind, c.launch.params, trainedContextOf(model.identity));
     return {
+      request: run,
       model,
       adapter,
       params,
       ...c,
       contextSize,
       apiName,
-      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch)],
+      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])],
+      ...(r.applied ? { recipe: r.applied } : {}),
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
     };
   }
 
-  private async tunedServer(req: StartServerRequest, model: ModelTarget, adapter: EngineAdapter): ReturnType<typeof tunedServerParams> {
+  private async tunedServer(req: StartServerRequest & { params: LaunchParams }, model: ModelTarget, adapter: EngineAdapter): ReturnType<typeof tunedServerParams> {
     const here = await this.here().catch(() => undefined);
     if (!here) return undefined;
-    return tunedServerParams(this.deps.runs, here, req, model, () => this.currentBuild(req, model, adapter, req.params ?? launchParamsSchema.parse({})));
+    return tunedServerParams(this.deps.runs, here, req, model, () => this.currentBuild(req, model, adapter, req.params));
   }
 
   /**
@@ -289,7 +335,7 @@ export class BenchService {
    * yet), the fallback capped at the model's context.
    */
   private async recommendedContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
-    const max = model.identity.facts?.contextLength;
+    const max = extendedContext(trainedContextOf(model.identity), params.ropeScaling);
     const cap = (n: number) => (max ? Math.min(n, max) : n);
     const candidates = [...new Set(SERVER_CONTEXTS.map(cap))];
     const vllm = isVllm(req.engine.kind);
@@ -410,13 +456,15 @@ export class BenchService {
    */
   async plan(req: StartRunRequest): Promise<RunPlan> {
     const p = await this.prepare(req, true);
-    const preview = await this.preview(req, p);
-    if (p.scenario.profile !== 'tune') return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)) };
-    const previousTune = await this.previousTune(req, p);
-    const tuneSeconds = { fast: await this.tuneDuration(req, p, 'fast'), thorough: await this.tuneDuration(req, p, 'thorough') };
+    const run = p.request;
+    const preview = await this.preview(run, p);
+    const recipe = p.recipe ? { recipe: p.recipe } : {};
+    if (p.scenario.profile !== 'tune') return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)), ...recipe };
+    const previousTune = await this.previousTune(run, p);
+    const tuneSeconds = { fast: await this.tuneDuration(run, p, 'fast'), thorough: await this.tuneDuration(run, p, 'thorough') };
     const budget = req.tune?.budget ?? 'fast';
-    const estimatedSeconds = budget === 'recheck' ? await this.tuneDuration(req, p, budget) : tuneSeconds[budget];
-    return { scenario: p.scenario, ...preview, estimatedSeconds, tuneSeconds, ...(previousTune ? { previousTune } : {}) };
+    const estimatedSeconds = budget === 'recheck' ? await this.tuneDuration(run, p, budget) : tuneSeconds[budget];
+    return { scenario: p.scenario, ...preview, estimatedSeconds, tuneSeconds, ...(previousTune ? { previousTune } : {}), ...recipe };
   }
 
   /** The latest tune of this model here with the same question, and whether it ran with this build. */
@@ -448,8 +496,8 @@ export class BenchService {
    */
   async planServer(req: StartServerRequest): Promise<ServerPlan> {
     const p = await this.prepareServer(req, { preview: true, marker: `gpubench-${randomUUID()}` });
-    const preview = await this.preview(req, p);
-    return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}) };
+    const preview = await this.preview(p.request, p);
+    return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}), ...(p.recipe ? { recipe: p.recipe } : {}) };
   }
 
   /**
@@ -562,9 +610,9 @@ export class BenchService {
     try {
       // Never a preview: a missing engine or model fails here (ENGINE_NOT_INSTALLED / MODEL_NOT_FOUND).
       p = await this.prepare(req, false);
-      fit = await d.fit?.(req, p.model, p.launch).catch(() => undefined);
+      fit = await d.fit?.(p.request, p.model, p.launch).catch(() => undefined);
       interval = await d.telemetryIntervalMs?.();
-      if (p.scenario.profile === 'tune') tune = await this.tuneSetup(req, p);
+      if (p.scenario.profile === 'tune') tune = await this.tuneSetup(p.request, p);
       current.info = {
         startedAt,
         profile: p.scenario.profile,
@@ -633,6 +681,7 @@ export class BenchService {
       notes: p.warnings.map((w) => `plan: ${w.code}${w.params ? ` ${JSON.stringify(w.params)}` : ''}`),
       warnings: p.warnings,
       ...(tune ? { tune } : {}),
+      ...(p.recipe ? { recipe: p.recipe } : {}),
       ...(await this.expectedLoad(p.model, p.engine.kind)),
       ...(tune ? {} : await this.spillInputs(p, fit)),
     };

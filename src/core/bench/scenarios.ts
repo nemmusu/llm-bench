@@ -1,6 +1,8 @@
 import { engineBaseOf, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { NINFER_DEFAULTS } from '../../contract/ninfer';
 import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
-import { CONTEXT_MARGIN, sweepDepths } from './sweep';
+import { NINFER_MAX_CONCURRENCY, ninferBenchParams } from '../engines/ninfer/args';
+import { CONTEXT_MARGIN, requestMsAt, sweepDepths } from './sweep';
 
 export { CONTEXT_MARGIN };
 export type BuiltinProfile = Exclude<Profile, 'custom'>;
@@ -41,6 +43,22 @@ export function buildScenario(profile: BuiltinProfile, seed = DEFAULT_SEED): Sce
   return { profile, seed, steps: structuredClone(PROFILES[profile]) };
 }
 
+/**
+ * The scenario with its context sweeps measuring every depth: a launch beyond the model's trained
+ * context (YaRN) is there to measure up to it, whatever the profile's time budget (the plan's
+ * duration says how long).
+ */
+export function sweepWithoutBudget(scenario: Scenario): Scenario {
+  return {
+    ...scenario,
+    steps: scenario.steps.map((s) => {
+      if (s.kind !== 'context-sweep') return s;
+      const { maxSeconds: _budget, ...rest } = s;
+      return rest;
+    }),
+  };
+}
+
 export function isLlamaCpp(kind: EngineKind): boolean {
   return kind === 'llamacpp-native' || kind === 'llamacpp-docker';
 }
@@ -71,6 +89,15 @@ export function limitsFor(
     const parallel = params.parallel ?? 1;
     const perRequest = ctx === undefined ? undefined : opts.kvUnified ? ctx : Math.floor(ctx / parallel);
     return { engineKind: kind, ...(perRequest ? { contextSize: perRequest } : {}), maxConcurrency: parallel, ...(opts.kvUnified ? { sharedPool: true } : {}) };
+  }
+  if (engineBaseOf(kind) === 'ninfer') {
+    // --max-context per request (NInfer's default without it), --max-concurrency 1..8; everyone at once
+    // must also fit in the shared pool (--kv-capacity, else --max-context; 'auto' holds at least that).
+    const parallel = Math.min(params.parallel ?? 1, NINFER_MAX_CONCURRENCY);
+    const perRequest = params.contextSize ?? NINFER_DEFAULTS.maxContext;
+    const capacity = params.ninfer?.kvCapacity;
+    const pool = typeof capacity === 'number' ? capacity : perRequest;
+    return { engineKind: kind, contextSize: Math.min(perRequest, Math.floor(pool / parallel)), maxConcurrency: parallel };
   }
   return { engineKind: kind, ...(ctx ? { contextSize: ctx } : {}) };
 }
@@ -137,6 +164,19 @@ export function autoLaunchParams(
         : perSlot * parallel;
       out.contextSize = unified ? sized(total) : sized(perSlot) * parallel;
     }
+    return out;
+  }
+  if (engineBaseOf(kind) === 'ninfer') {
+    // --max-concurrency: one lane per user at once (at most 8); --max-context: the longest request.
+    if (params.parallel === undefined && users > 1) out.parallel = Math.min(users, NINFER_MAX_CONCURRENCY);
+    const lanes = out.parallel ?? 1;
+    const perRequest = Math.max(single, perConcurrent, perSession);
+    if (params.contextSize === undefined && perRequest > 0) out.contextSize = sized(perRequest);
+    const ctx = out.contextSize ?? NINFER_DEFAULTS.maxContext;
+    // The shared pool holds every user's request at once (a request whose pages do not fit waits).
+    const pool = roundUp(Math.max(ctx, perConcurrent * Math.min(lanes, concurrency || 1), perSession * Math.min(lanes, sessions || 1)), 1024);
+    const n = ninferBenchParams(params.ninfer, { conversations: sessions > 0 });
+    out.ninfer = n.kvCapacity === undefined && pool > ctx ? { ...n, kvCapacity: pool } : n;
     return out;
   }
   if (params.maxModelLen === undefined && (single > 0 || perSession > 0)) out.maxModelLen = sized(Math.max(single, perConcurrent, perSession));
@@ -292,7 +332,9 @@ export function stepSeconds(step: Step, e: Expectations): number {
     case 'llama-bench':
       return e.warmLoadSec + step.reps * (step.pp / e.prefillTps + step.tg / e.decodeTps + 1);
     case 'context-sweep': {
-      const all = step.depths.reduce((s, d) => s + step.reps * requestSeconds(d, step.outputTokens, e), 0);
+      // Deep prompts are read slower than short ones (attention grows with the context): see requestMsAt.
+      const anchor = { depth: 1024, prefillTps: e.prefillTps, decodeTps: e.decodeTps };
+      const all = step.depths.reduce((s, d) => s + step.reps * (requestMsAt(d, step.outputTokens, anchor) / 1000 + 0.2), 0);
       return step.maxSeconds === undefined ? all : Math.min(all, step.maxSeconds);
     }
     case 'sessions': {
