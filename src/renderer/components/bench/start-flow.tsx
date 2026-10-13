@@ -8,14 +8,17 @@
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { RunPlan, ServerInfo, ServerPlan, StartRunRequest, StartServerRequest } from '../../../contract/api';
+import { isDockerKind } from '../../../contract/engines';
+import type { DockerStatusDetail } from '../../../contract/views';
 import type { AppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
 import type { DownloadJob } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { useApi, useServerEvents } from '../../lib/api-context';
+import { DOCKER_CODES, DOCKER_READY } from '../../lib/queries-docker';
 import { apiErrorData, ENGINES_KEY, LOCAL_MODELS_KEY, SERVERS_KEY } from '../../lib/queries-runs';
 import { needsFromPlan, type Need } from './needs';
 import { saveRunContext } from './run-context';
@@ -68,6 +71,9 @@ const TEXT_STARTFAILED = { run: 'benchmark.startFailed', serve: 'servers.flow.st
 /** Whether the user already accepted a GPU other programs are using. */
 const sharedOk = (job: Job): boolean => (job.mode === 'run' ? job.request.allowSharedGpu : job.sharedOk === true);
 
+/** The job's options without its plan: it is made again once Docker answers. */
+const baseOf = (opts: FlowOpts): FlowOpts => ({ needs: opts.needs, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel });
+
 export function useStartFlow(): {
   start: (request: StartRunRequest, opts: StartOptions) => void;
   serve: (request: StartServerRequest, opts: ServeOptions) => void;
@@ -82,6 +88,8 @@ export function useStartFlow(): {
   const waiters = useRef(new Set<Waiter>());
   const generation = useRef(0);
   const downloadId = useRef<string | undefined>(undefined);
+  /** `begin`, for the failures met before it is defined (Docker off or stuck: plan and start again). */
+  const beginRef = useRef<(job: Job, opts: FlowOpts) => void>(() => undefined);
 
   useServerEvents((e) => {
     for (const w of [...waiters.current]) w(e);
@@ -136,6 +144,11 @@ export function useStartFlow(): {
         }
       } catch (e) {
         const error = apiErrorData(e);
+        // Docker went off or stopped answering: "Serve Docker", then a fresh plan and the start again.
+        if (generation.current === gen && DOCKER_CODES.has(error.code)) {
+          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current(job, baseOf(opts)) });
+          return;
+        }
         // Sent to the background meanwhile: nobody is looking at the dialog any more.
         if (generation.current !== gen) {
           toast.error(t(TEXT_STARTFAILED[job.mode]), { description: t(`errors.${error.code}.title`) });
@@ -254,6 +267,11 @@ export function useStartFlow(): {
       } catch (e) {
         if (!alive()) return;
         const data = (e as { data?: AppErrorData }).data ?? apiErrorData(e);
+        // An image pull that met a Docker off or stuck: "Serve Docker", then everything again.
+        if (DOCKER_CODES.has(data.code)) {
+          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current(job, baseOf(opts)) });
+          return;
+        }
         setFlow({ step: 'fetching', job, opts, progress: progress.map((p) => (p.state === 'running' ? { ...p, state: 'failed' as const } : p)), error: data });
         return;
       }
@@ -299,22 +317,55 @@ export function useStartFlow(): {
     [planOf, decide],
   );
 
+  useEffect(() => {
+    beginRef.current = begin;
+  }, [begin]);
+
+  /**
+   * A Docker engine: a real look at Docker first (it may be off, or up but not answering); if it is
+   * not ready, "Serve Docker", then a fresh plan (an image may be missing now that Docker answers).
+   */
+  const withDocker = useCallback(
+    (job: Job, opts: FlowOpts, then: () => void) => {
+      if (!isDockerKind(job.request.engine.kind)) {
+        then();
+        return;
+      }
+      const gen = ++generation.current;
+      setFlow({ step: 'starting', job, opts, planning: true });
+      void api
+        .get<DockerStatusDetail>('/api/docker/status?probe=1')
+        .then(
+          (s) => DOCKER_READY.has(s.state),
+          // Could not tell: the start itself will say what is wrong.
+          () => true,
+        )
+        .then((ok) => {
+          if (generation.current !== gen) return;
+          if (ok) then();
+          else setFlow({ step: 'docker', job, opts, resume: () => begin(job, baseOf(opts)) });
+        });
+    },
+    [api, begin],
+  );
+
   const start = useCallback(
     (request: StartRunRequest, opts: StartOptions) => {
       const job: Job = { mode: 'run', request, onStarted: opts.onStarted };
       const base: FlowOpts = { needs: opts.needs, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel };
-      if (opts.plan) decide(job, { ...base, plan: opts.plan });
-      else begin(job, base);
+      withDocker(job, base, () => (opts.plan ? decide(job, { ...base, plan: opts.plan }) : begin(job, base)));
     },
-    [decide, begin],
+    [decide, begin, withDocker],
   );
 
   const serve = useCallback(
     (request: StartServerRequest, opts: ServeOptions) => {
       background.current = opts.onBackground;
-      decide({ mode: 'serve', request, onStarted: opts.onStarted }, { needs: [], plan: opts.plan, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel });
+      const job: Job = { mode: 'serve', request, onStarted: opts.onStarted };
+      const flowOpts: FlowOpts = { needs: [], plan: opts.plan, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel };
+      withDocker(job, flowOpts, () => decide(job, flowOpts));
     },
-    [decide],
+    [decide, withDocker],
   );
 
   const close = () => {

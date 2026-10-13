@@ -9,6 +9,7 @@ import type { ServerInfo, ServerPlan, StartServerRequest } from '../../contract/
 import type { ServerApiKeyInfo, ServerLog, ServerNotice, ServerPreset, ServerPresetInput } from '../../contract/servers';
 import { useI18n } from '../i18n';
 import { useApi, useServerEvents } from './api-context';
+import { DOCKER_CODES, useDockerNeed } from './queries-docker';
 import { apiErrorData, SERVERS_KEY } from './queries-runs';
 
 export const PRESETS_KEY = ['servers', 'presets'] as const;
@@ -80,7 +81,13 @@ export function useServerActions() {
     void qc.invalidateQueries({ queryKey: NOTICES_KEY });
   };
   const failed = (e: unknown) => toast.error(t(`errors.${apiErrorData(e).code}.title`));
-  return {
+  const [, needDocker] = useDockerNeed();
+  /** Docker off or stuck: "Serve Docker" (with its button), then `again` by itself; anything else: a toast. */
+  const failedOr = (e: unknown, engineLabel: string, again: () => Promise<void>) => {
+    if (DOCKER_CODES.has(apiErrorData(e).code)) needDocker({ engineLabel, retry: () => void again() });
+    else failed(e);
+  };
+  const actions = {
     stop: async (s: ServerInfo) => {
       try {
         await api.del(`/api/servers/${encodeURIComponent(s.id)}`);
@@ -100,6 +107,18 @@ export function useServerActions() {
         await p;
         toast.success(t('servers.card.restarted', { name }));
       } catch (e) {
+        // The old engine is gone with Docker: once Docker answers, the same request starts it again.
+        failedOr(e, s.engineLabel, () => actions.startAgain(s));
+      }
+      refresh();
+    },
+    /** The same server again (same request: port, settings, preset), after Docker came back. */
+    startAgain: async (s: ServerInfo) => {
+      const name = s.presetName ?? s.modelLabel;
+      try {
+        await api.post<ServerInfo>('/api/servers', s.request);
+        toast.success(t('servers.card.restarted', { name }));
+      } catch (e) {
         failed(e);
       }
       refresh();
@@ -112,7 +131,7 @@ export function useServerActions() {
         await started;
         toast.success(t('servers.presets.started', { name: p.name }));
       } catch (e) {
-        failed(e);
+        failedOr(e, p.modelLabel, () => actions.startPreset(p));
       }
       refresh();
     },
@@ -121,6 +140,7 @@ export function useServerActions() {
       refresh();
     },
   };
+  return actions;
 }
 
 /** Save, change and remove presets. */

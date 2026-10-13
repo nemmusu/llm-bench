@@ -14,7 +14,8 @@ import type { RunResult } from '../../../../src/contract/results';
 import { configsQuerySchema } from '../../../../src/contract/configs';
 import { mergeSources, queryConfigs, sourcesOf } from '../../../../src/core/store/configs-index';
 import { parseRun } from '../../../../src/core/store/runs-repo';
-import type { CuratedModel } from '../../../../src/contract/views';
+import type { DockerDiagnosis, DockerRecovery } from '../../../../src/contract/docker';
+import type { CuratedModel, DockerStatusDetail } from '../../../../src/contract/views';
 import { ApiError, type ApiClient } from '../../../../src/renderer/lib/api';
 import { fakeApi, type FakeApi } from '../helpers';
 import { HOST, HOST_ID, seededRuns, summaries } from './fixtures';
@@ -192,6 +193,12 @@ export interface World {
   routes: Record<string, Handler>;
   /** GET /api/engines/custom (the saved engines with their checks). */
   custom: CustomEngineInfo[];
+  /** GET /api/docker/status (also ?probe=1); POST /api/docker/start makes it "starting". */
+  docker: DockerStatusDetail;
+  /** GET /api/docker/recovery: the servers Docker took down. */
+  recovery: DockerRecovery;
+  /** GET /api/docker/diagnosis. */
+  diagnosis: DockerDiagnosis;
 }
 
 export interface BenchApi extends FakeApi {
@@ -217,6 +224,9 @@ export function defaultWorld(): World {
     logs: {},
     routes: {},
     custom: [],
+    docker: { state: 'running', version: '29.8.0', platform: 'Docker Desktop 4.47.0 (210443)' },
+    recovery: { servers: [], restoring: false },
+    diagnosis: { cause: 'unknown', evidence: [], resourceSaver: { enabled: true, timeoutSeconds: 300 } },
   };
 }
 
@@ -283,6 +293,9 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     const log = /^\/api\/servers\/([^/]+)\/log$/.exec(bare);
     if (log) return { lines: world.logs[decodeURIComponent(log[1]!)] ?? [] };
     if (bare === '/api/engines/custom') return world.custom;
+    if (bare === '/api/docker/status') return world.docker;
+    if (bare === '/api/docker/recovery') return world.recovery;
+    if (bare === '/api/docker/diagnosis') return world.diagnosis;
     if (bare === '/api/setup/check') return { checkedAt: '2026-10-06T10:00:00.000Z', canBenchmark: true, platform: 'win32', items: [{ id: 'llamacpp', state: 'missing', required: true, params: {}, ...(world.installBytes === null ? {} : { action: { kind: 'install-llamacpp', bytes: world.installBytes } }) }] };
     const run = /^\/api\/runs\/([^/]+)$/.exec(bare);
     if (run) {
@@ -330,6 +343,11 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
       return { runId: world.active.runId };
     }
     if (bare === '/api/models/rescan') return world.local;
+    if (bare === '/api/docker/start') {
+      world.docker = { state: 'starting' };
+      return { ok: true, state: 'starting' };
+    }
+    if (bare === '/api/docker/restart' || bare === '/api/docker/recovery' || bare === '/api/docker/open') return { ok: true };
   }
   if (method === 'PUT') {
     const preset = /^\/api\/servers\/presets\/([^/]+)$/.exec(bare);
@@ -341,6 +359,10 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     }
   }
   if (method === 'DELETE') {
+    if (bare === '/api/docker/recovery') {
+      world.recovery = { servers: [], restoring: false };
+      return { ok: true };
+    }
     const notice = /^\/api\/servers\/notices\/([^/]+)$/.exec(bare);
     if (notice) {
       world.notices = world.notices.filter((n) => n.id !== decodeURIComponent(notice[1]!));

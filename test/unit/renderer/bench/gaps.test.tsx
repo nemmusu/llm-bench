@@ -141,10 +141,19 @@ describe('benchmark: unusual data', () => {
     const confirm = await screen.findByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' });
     expect(within(confirm).getByText(`Scarico l’immagine ${image}`)).toBeTruthy();
     expect(within(confirm).getByText('Il motore pronto per Docker. Succede solo la prima volta.')).toBeTruthy();
+    // Docker went off meanwhile: "Avvia Docker" in the same dialog, then the plan and the pull again by themselves.
+    api.world.docker = { state: 'stopped' };
     await userEvent.click(within(confirm).getByRole('button', { name: 'Scarica e avvia' }));
-    expect(await screen.findByRole('heading', { name: 'Docker non è avviato' })).toBeTruthy();
+    const gate = await screen.findByRole('dialog', { name: 'Docker è spento' });
+    expect(within(gate).getByText(/gira dentro Docker/)).toBeTruthy();
     fail = false;
-    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await userEvent.click(within(gate).getByRole('button', { name: 'Avvia Docker' }));
+    expect(posted(api, '/api/docker/start')).toHaveLength(1);
+    expect(await screen.findByRole('dialog', { name: 'Avvio Docker…' })).toBeTruthy();
+    api.world.docker = { state: 'running' };
+    act(() => api.emit({ type: 'engine.install', kind: 'docker-desktop', stage: 'running', bytesDone: 0, state: 'running' }));
+    const again = await screen.findByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' });
+    await userEvent.click(within(again).getByRole('button', { name: 'Scarica e avvia' }));
     await waitFor(() => expect(posted(api, '/api/engines/llamacpp-docker/install')).toHaveLength(2));
     expect(posted(api, '/api/engines/llamacpp-docker/install')[1]!.body).toEqual({ image });
     api.world.engines = benchApi().world.engines;

@@ -583,11 +583,18 @@ export function handleLibraryEvent(
     void qc.invalidateQueries({ queryKey: libKeys.tried });
     return;
   }
+  if (e.type === 'docker.changed') {
+    // Docker stopped answering, came back, or Docker took servers down: every Docker view reads it again.
+    for (const k of [libKeys.docker, libKeys.engines, libKeys.check, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
+    return;
+  }
   if (e.type !== 'engine.install') return;
   setInstall(qc, installKey(e), e);
   if (activeEvent(e)) return;
   // Something finished: everything derived from the machine state may have changed.
   for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
+  // A Docker restart started our servers again.
+  if (e.kind === 'docker-restart') void qc.invalidateQueries({ queryKey: ['bench', 'servers'] });
   // An engine update: its check, the custom engines' checks, and the settings it may have changed (the image in use).
   if (e.kind.startsWith('update:')) for (const k of [['engines'], SETTINGS_QUERY_KEY]) void qc.invalidateQueries({ queryKey: k });
 }

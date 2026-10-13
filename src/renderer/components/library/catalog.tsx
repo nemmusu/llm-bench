@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useAllRuns, useCurated, useHubCatalog, useMainGpu, type CatalogParams, type CatalogSort } from '../../lib/queries-library';
 import { useDebounced } from '../../lib/queries-runs';
+import { DockerSearchNote } from '../docker/docker-note';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { EmptyState } from '../ui/empty-state';
@@ -353,6 +354,8 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
           </div>
         </div>
         {view !== 'tried' && <CatalogBusyNote />}
+        {/* vLLM and SGLang models need Docker: say it now if it is off or stuck, with the button. */}
+        {(engine === 'vllm' || engine === 'sglang') && <DockerSearchNote className="mb-3" />}
 
         {view === 'curated' ? (
           <CuratedRows models={curatedShown} showEngine={engine === 'any'} />

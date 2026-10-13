@@ -9,6 +9,7 @@ import type { RunPlan, ServerInfo, ServerPlan, StartRunRequest, StartServerReque
 import type { AppErrorData } from '../../../contract/errors';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useServers } from '../../lib/queries-runs';
+import { useDockerGate } from '../docker/docker-gate';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { Progress } from '../ui/progress';
@@ -65,6 +66,8 @@ export type Flow =
   | { step: 'busy'; job: Job; opts: FlowOpts; names: string; ownServers: ServerInfo[] }
   /** `planning`: the preview of these exact choices is still on its way. */
   | { step: 'starting'; job: Job; opts: FlowOpts; planning?: boolean }
+  /** A Docker engine and Docker is off or does not answer: "Avvia Docker" / "Riavvia Docker", then `resume`. */
+  | { step: 'docker'; job: Job; opts: FlowOpts; resume: () => void }
   | { step: 'error'; job: Job; opts: FlowOpts; error: AppErrorData };
 
 /** The same job, acknowledged to run on a GPU other programs are using. */
@@ -200,11 +203,32 @@ export interface StartDialogsProps {
   onBackground: () => void;
 }
 
+/** "Serve Docker": the gate's words and buttons in the start dialog; carries on by itself once Docker answers. */
+function DockerStep({ flow, onClose }: { flow: Extract<Flow, { step: 'docker' }>; onClose: () => void }) {
+  const { t } = useI18n();
+  const gate = useDockerGate({ engineLabel: flow.opts.engineLabel, onReady: flow.resume });
+  return (
+    <DialogContent
+      title={gate.title}
+      description={gate.description}
+      footer={
+        <>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          {gate.actions}
+        </>
+      }
+    >
+      {gate.body}
+    </DialogContent>
+  );
+}
+
 export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServers, onBackground }: StartDialogsProps) {
   const { t, bytes } = useI18n();
   const open = flow.step !== 'idle';
   let content: ReactNode = null;
-  if (flow.step === 'confirm') {
+  if (flow.step === 'docker') content = <DockerStep flow={flow} onClose={onClose} />;
+  else if (flow.step === 'confirm') {
     const total = flow.opts.needs.reduce((a, n) => a + (n.bytes ?? 0), 0);
     content = (
       <DialogContent

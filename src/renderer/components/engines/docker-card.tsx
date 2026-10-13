@@ -1,7 +1,10 @@
-import { Container, Download, Eraser, Play, RefreshCw, ScanSearch } from 'lucide-react';
+import { Container, Download, Eraser, Play, RefreshCw, RotateCcw, ScanSearch } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n';
+import { useDockerActions } from '../../lib/queries-docker';
+import { DockerCause } from '../docker/docker-cause';
+import { DockerGateDialog, RestartProgress } from '../docker/docker-gate';
 import { activeEvent, useDockerCleanup, useDockerStatus, useGpuCheck, useInstallEvent, useStartInstall, useSystemInfo } from '../../lib/queries-library';
 import { ErrorCallout } from '../library/error-callout';
 import { DockerInstallDialog } from '../setup/docker-install-dialog';
@@ -17,6 +20,7 @@ const TONES: Record<string, StatusDotProps['tone']> = {
   running: 'success',
   starting: 'accent',
   stopped: 'warning',
+  'not-responding': 'danger',
   'no-gpu': 'warning',
   'no-permission': 'warning',
   'not-installed': 'neutral',
@@ -57,14 +61,26 @@ export function DockerCard() {
   const linuxEvent = useInstallEvent('docker-linux');
   const gpuCheck = useGpuCheck();
   const cleanup = useDockerCleanup();
+  const dockerActions = useDockerActions();
   const [confirm, setConfirm] = useState(false);
+  const [gate, setGate] = useState(false);
   const state = docker.data?.state ?? 'unknown';
   const linux = system.data?.os.platform === 'linux';
   const busy = activeEvent(startEvent) ?? activeEvent(linuxEvent);
+  const restarting = activeEvent(dockerActions.restartEvent);
   const install = () => start.mutate({ key: linux ? 'docker-linux' : 'docker-desktop', path: '/api/setup/docker/install' });
 
   let action = null;
-  if (busy) action = <InstallProgress event={busy} label={t('engines.docker.title')} className="w-full" />;
+  if (restarting) action = <RestartProgress event={restarting} className="w-full" />;
+  else if (busy) action = <InstallProgress event={busy} label={t('engines.docker.title')} className="w-full" />;
+  else if (state === 'not-responding')
+    // Windows: the restart, in its dialog (it says what to try if a normal restart is not enough); Linux: the command.
+    action = (
+      <Button variant="primary" size="sm" onClick={() => setGate(true)}>
+        <RotateCcw aria-hidden />
+        {linux ? t('dockerFix.banner.details') : t('dockerFix.restart')}
+      </Button>
+    );
   else if (state === 'stopped')
     action = (
       <Button variant="primary" size="sm" onClick={() => start.mutate({ key: 'docker-desktop', path: '/api/docker/start' })}>
@@ -96,6 +112,13 @@ export function DockerCard() {
           <Eraser aria-hidden />
           {t('engines.docker.cleanup')}
         </Button>
+        {/* Running but acting strange: a restart without waiting for it to count as stuck. */}
+        {!linux && (
+          <Button size="sm" variant="ghost" onClick={() => dockerActions.restart()}>
+            <RotateCcw aria-hidden />
+            {t('dockerFix.restart')}
+          </Button>
+        )}
       </>
     );
   else
@@ -117,6 +140,8 @@ export function DockerCard() {
       <p className="text-sm text-fg-2">{t(`engines.docker.explain.${state}`, { version: docker.data?.version ?? '' })}</p>
       {docker.data?.reason && state !== 'running' && <p className="text-xs text-fg-3">{t('engines.docker.reason', { reason: docker.data.reason })}</p>}
       {startEvent?.stage === 'error' && <ErrorCallout error={startEvent.error ?? { code: 'DOCKER_NOT_RUNNING', message: 'start' }} />}
+      {dockerActions.restartEvent?.stage === 'error' && state !== 'not-responding' && <ErrorCallout error={dockerActions.restartEvent.error ?? { code: 'DOCKER_NOT_RESPONDING', message: 'restart' }} />}
+      {state === 'not-responding' && <DockerCause windows={!linux} />}
       {gpuCheck.data && (
         <Callout tone="success" title={t('engines.docker.gpuOk')}>
           <ul className="font-mono text-xs">
@@ -129,6 +154,7 @@ export function DockerCard() {
       {gpuCheck.isError && <ErrorCallout error={gpuCheck.error} />}
       {cleanup.isError && <ErrorCallout error={cleanup.error} />}
       <DockerInstallDialog platform={linux ? 'linux' : 'win32'} open={confirm} onOpenChange={setConfirm} onConfirm={install} />
+      <DockerGateDialog open={gate} onOpenChange={setGate} {...(linux ? {} : { auto: 'restart' as const })} />
     </EngineCard>
   );
 }

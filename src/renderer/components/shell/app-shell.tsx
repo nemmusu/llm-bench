@@ -3,6 +3,7 @@ import { MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { CompareTray } from '../compare/compare-tray';
+import { DockerAlerts } from '../docker/docker-alerts';
 import { LibraryEvents } from '../library/library-events';
 import { AppNotices } from './app-notices';
 import { CommandPalette, usePaletteShortcut } from './command-palette';
@@ -71,6 +72,8 @@ export function AppShell() {
             className="relative min-w-0 flex-1 overflow-y-auto border-t border-border bg-panel outline-none data-[edge=left]:rounded-tl-xl data-[edge=left]:border-l"
             data-edge={onboarding ? 'none' : 'left'}
           >
+            {/* "Docker non risponde" and the servers Docker took down, above every page. */}
+            <DockerAlerts />
             <motion.div
               key={pathname}
               initial={reduceMotion ? false : { opacity: 0, y: 6 }}
