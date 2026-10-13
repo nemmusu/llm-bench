@@ -2,11 +2,14 @@
  * Custom engines and SGLang, as a person meets them: a llama.cpp fork added on the Engines page (the
  * fake engine in fork mode: it lacks -ub and has an extra option) and benchmarked; SGLang in Docker
  * (the fake docker CLI runs the fake engine in SGLang mode); a program with an OpenAI API started from
- * a command template, measured and stopped.
+ * a command template, measured and stopped; a fork in a git checkout updated with "Aggiorna" (real git,
+ * a fake cmake that "rebuilds" it).
  */
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, launchApp, ROOT, test } from '../fixtures';
 import { h1, scan, skipWelcome } from './bench-helpers';
@@ -16,6 +19,7 @@ test.describe.configure({ timeout: 180_000 });
 
 const FORK = path.join(ROOT, 'test', 'fakes', 'fake-engine', 'fork.mjs');
 const CLI = path.join(ROOT, 'test', 'fakes', 'fake-engine', 'cli.mjs');
+const CMAKE = path.join(ROOT, 'test', 'fakes', 'fake-cmake', 'cmake.mjs');
 
 let world: LibraryWorld;
 
@@ -158,5 +162,84 @@ test('a program with an OpenAI API: started from its command, measured, stopped'
     await scan(page, 'command engine result');
   } finally {
     await gb.close();
+  }
+});
+
+test('a fork built from git: new commits found, pulled and rebuilt; changes of yours stop it', async () => {
+  // A real git checkout of a fake fork: its "upstream" is another folder, its build folder is ignored by git.
+  const root = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-git-'));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=GPU Bench E2E', '-c', 'user.email=e2e@example.invalid', '-c', 'init.defaultBranch=master', '-c', 'core.autocrlf=false', ...args], { cwd, stdio: 'pipe' })
+      .toString()
+      .trim();
+  const upstream = path.join(root, 'upstream');
+  mkdirSync(upstream);
+  git(upstream, 'init', '-q');
+  writeFileSync(path.join(upstream, 'VERSION'), '7001\n');
+  writeFileSync(path.join(upstream, '.gitignore'), 'build/\n');
+  git(upstream, 'add', '.');
+  git(upstream, 'commit', '-q', '-m', 'b7001');
+  const work = path.join(root, 'prism');
+  git(root, 'clone', '-q', upstream, work);
+  const bin = path.join(work, 'build', 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(work, 'build', 'CMakeCache.txt'), `CMAKE_HOME_DIRECTORY:INTERNAL=${work.replace(/\\/g, '/')}\n`);
+  writeFileSync(path.join(bin, 'BUILD'), '7001');
+  const exe = path.join(bin, 'llama-server.mjs');
+  writeFileSync(
+    exe,
+    `import { readFileSync } from 'node:fs';\nprocess.env.FAKE_ENGINE_HELP = 'fork';\nprocess.env.FAKE_ENGINE_BUILD = readFileSync(new URL('./BUILD', import.meta.url), 'utf8').trim();\nawait import(${JSON.stringify(pathToFileURL(CLI).href)});\n`,
+  );
+  // Upstream moves on: two commits, the second a new build.
+  writeFileSync(path.join(upstream, 'NOTES'), 'ternary kernels\n');
+  git(upstream, 'add', '.');
+  git(upstream, 'commit', '-q', '-m', 'notes');
+  writeFileSync(path.join(upstream, 'VERSION'), '7010\n');
+  git(upstream, 'commit', '-q', '-am', 'b7010');
+  const head = git(work, 'rev-parse', '--short', 'HEAD');
+  const next = git(upstream, 'rev-parse', '--short', 'HEAD');
+
+  const gb = await launchApp({ env: { ...world.env, GPUBENCH_CMAKE: JSON.stringify([process.execPath, CMAKE]) } });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await stubDesktop(gb, exe);
+    await openPage(page, 'Motori');
+    await page.getByRole('button', { name: 'Aggiungi motore' }).click();
+    const add = page.getByRole('dialog', { name: 'Aggiungi un motore' });
+    await add.getByRole('radio', { name: /Fork di llama\.cpp/ }).click();
+    await add.getByRole('button', { name: 'Avanti' }).click();
+    await add.getByLabel('Nome').fill('PrismML git');
+    await add.getByRole('button', { name: 'Scegli file…' }).click();
+    await expect(add.getByLabel('Il programma llama-server')).toHaveValue(exe);
+    await add.getByRole('button', { name: 'Avanti' }).click();
+    await add.getByRole('button', { name: 'Salva motore' }).click();
+    await expect(add).toBeHidden();
+
+    const card = page.getByRole('region', { name: 'PrismML git' });
+    await expect(card.getByText('Funziona · versione b7001')).toBeVisible({ timeout: 30_000 });
+    // Nothing fetched yet: the checkout is level with what it knows of upstream.
+    await expect(card.getByText(`Hai l’ultima versione (${head})`)).toBeVisible({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Controlla aggiornamenti' }).click();
+    await expect(card.getByText(`2 commit nuovi: ${head} → ${next}`)).toBeVisible({ timeout: 30_000 });
+    await scan(page, 'fork update available');
+    await card.getByRole('button', { name: 'Aggiorna' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Aggiornare PrismML git?' });
+    const commands = confirm.getByRole('region', { name: 'Comandi che eseguo' });
+    await expect(commands).toContainText('pull --ff-only');
+    await expect(commands).toContainText('cmake --build');
+    await scan(page, 'fork update confirm');
+    await confirm.getByRole('button', { name: 'Aggiorna' }).click();
+    await expect(card.getByText(`Aggiornato a ${next}`)).toBeVisible({ timeout: 60_000 });
+    await expect(card.getByText('Funziona · versione b7010')).toBeVisible({ timeout: 30_000 });
+    expect(git(work, 'rev-parse', '--short', 'HEAD')).toBe(next);
+
+    // A change of yours in the checkout: nothing is touched, and it is said.
+    writeFileSync(path.join(work, 'VERSION'), '9999\n');
+    await card.getByRole('button', { name: 'Controlla aggiornamenti' }).click();
+    await expect(card.getByText(/ci sono modifiche non salvate \(1 file\): non tocco niente/)).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await gb.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });

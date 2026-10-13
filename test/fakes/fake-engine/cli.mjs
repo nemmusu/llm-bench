@@ -10,6 +10,7 @@
 //   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm" | "sglang"
 //   FAKE_ENGINE_HELP=fork    a llama.cpp fork (PrismML-like): its own --version, no -ub, an extra
 //                            --ternary-kernels option; SGLang: a fork without --chunked-prefill-size
+//   FAKE_ENGINE_BUILD        the fork's build number in its --version (default 7001)
 //   FAKE_ENGINE_ALLOW_MISSING_MODEL=1  do not fail when -m does not exist
 import { readFileSync } from 'node:fs';
 import { SGLANG_VERSION } from './logs.mjs';
@@ -77,7 +78,8 @@ async function main() {
 
   if (flavor === 'llamacpp') {
     if (argv.includes('--version')) {
-      process.stderr.write(readFileSync(new URL(LLAMA_VERSION, FIXTURES), 'utf8'));
+      const version = readFileSync(new URL(LLAMA_VERSION, FIXTURES), 'utf8');
+      process.stderr.write(env.FAKE_ENGINE_BUILD ? version.replace(/build \d+/, `build ${env.FAKE_ENGINE_BUILD}`) : version);
       return 0;
     }
     if (argv.includes('--help') || argv.includes('-h') || argv.includes('--usage')) {
