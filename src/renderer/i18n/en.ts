@@ -46,7 +46,7 @@ export const en: Messages = {
     groupActions: 'Actions',
     groupPreferences: 'Preferences',
     startBenchmark: 'Start benchmark',
-    newCompare: 'Compare two results',
+    newCompare: 'Compare models or tests',
     themeLight: 'Light theme',
     themeDark: 'Dark theme',
     themeSystem: 'Match system theme',

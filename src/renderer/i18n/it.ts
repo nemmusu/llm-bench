@@ -47,7 +47,7 @@ export const it = {
     groupActions: 'Azioni',
     groupPreferences: 'Preferenze',
     startBenchmark: 'Avvia benchmark',
-    newCompare: 'Confronta due risultati',
+    newCompare: 'Confronta modelli o test',
     themeLight: 'Tema chiaro',
     themeDark: 'Tema scuro',
     themeSystem: 'Tema come il sistema',
