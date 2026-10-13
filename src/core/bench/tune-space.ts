@@ -19,6 +19,11 @@
  * --block-size 16/32 and fp8_e4m3 vs fp8_e5m2 when the installed vLLM lists them; one sequence
  * (--max-num-seqs 1) or N for goal 'multi'. Beyond the largest context: smaller CUDA graph capture
  * sizes (when vLLM has a flag for them), then --enforce-eager.
+ *
+ * SGLang: the same shape as vLLM: KV auto / fp8 (fp8_e5m2; "Accurata" also fp8_e4m3 when the installed
+ * SGLang lists both), --chunked-prefill-size, the memory share (--mem-fraction-static) fitted to the free
+ * VRAM, --max-running-requests 1 or N for goal 'multi'. Beyond the largest context: CUDA graphs only up
+ * to the users at once (--cuda-graph-max-bs), then none (--disable-cuda-graph).
  */
 import type { LaunchParams } from '../../contract/engines';
 import type { TuneBudget, TuneTag } from '../../contract/results';
@@ -213,6 +218,48 @@ export function vllmSpace(o: VllmSpaceOptions): TuneSpace {
       if (typeof v.fp8 === 'string' && v.kv === 'fp8') extra.push('--kv-cache-dtype', v.fp8);
       // Conversations of goal 'multi': the cached prompt tokens are reported only when asked.
       if (users && flags.has('--enable-prompt-tokens-details')) extra.push('--enable-prompt-tokens-details');
+      return {
+        ...kept,
+        maxModelLen: ctx,
+        kvCacheType: v.kv as 'auto' | 'fp8',
+        batchSize: v.bt as number,
+        parallel: typeof v.np === 'number' ? v.np : 1,
+        ...(typeof v.gmu === 'number' ? { gpuMemoryUtilization: v.gmu } : {}),
+        extraArgs: extra,
+      };
+    },
+    tags: (v) => tagsOf(v),
+  };
+}
+
+export type SglangSpaceOptions = VllmSpaceOptions;
+
+/** SGLang's KV formats tried by "Accurata", the default (what kvCacheType 'fp8' becomes) first. */
+export const SGLANG_FP8 = ['fp8_e5m2', 'fp8_e4m3'] as const;
+
+export function sglangSpace(o: SglangSpaceOptions): TuneSpace {
+  const kept = keptParams(o.params);
+  const flags = o.flags ?? new Set<string>();
+  const users = o.users !== undefined && o.users > 1 ? o.users : undefined;
+  const dtypes = o.choices?.['--kv-cache-dtype'] ?? [];
+  const fp8 = o.budget === 'thorough' && SGLANG_FP8.every((d) => dtypes.includes(d)) ? [...SGLANG_FP8] : undefined;
+  const dims: Dimension[] = [{ key: 'bt', values: () => preferFirst(BATCHED_TOKENS[o.budget], o.prefer?.bt) }];
+  if (fp8) dims.push({ key: 'fp8', values: (v) => (v.kv === 'fp8' ? fp8 : []) });
+  const utilizations = o.utilizations ?? [];
+  const smallGraphs = flags.has('--cuda-graph-max-bs');
+  return {
+    kvLadder: ['auto', 'fp8'],
+    base: (kv) => ({ kv, bt: 2048, ...(fp8 && kv === 'fp8' ? { fp8: fp8[0] as string } : {}), ...(users ? { np: users } : {}) }),
+    dimensions: dims,
+    ...(utilizations.length ? { startup: { key: 'gmu', values: utilizations } } : {}),
+    // Beyond the largest context: memory from the CUDA graphs (only up to the users at once, then none).
+    extensions: [...(smallGraphs ? [{ graphs: 'small' }] : []), { eager: true }],
+    contextFor: (_users, perUser) => perUser,
+    params: (v, ctx) => {
+      const extra = [...kept.extraArgs];
+      if (v.eager === true) extra.push('--disable-cuda-graph');
+      else if (v.graphs === 'small') extra.push('--cuda-graph-max-bs', String(users ?? 1));
+      if (typeof v.fp8 === 'string' && v.kv === 'fp8' && v.fp8 !== SGLANG_FP8[0]) extra.push('--kv-cache-dtype', v.fp8);
       return {
         ...kept,
         maxModelLen: ctx,

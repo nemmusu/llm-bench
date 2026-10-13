@@ -18,7 +18,7 @@ import type { LaunchParams } from '../../../contract/engines';
 import { AppError, type ErrorCode } from '../../../contract/errors';
 import type { KvCapacity } from '../../../contract/results';
 import type { ExitInfo } from '../../deps';
-import type { LoadUpdate } from './load-progress';
+import type { LoadProgress } from '../../../contract/events';
 import { FlagGate } from './standard-flags';
 import { ropeScalingConfig } from './vllm-args';
 
@@ -114,15 +114,16 @@ function message(line: string): string {
 }
 
 /** What one SGLang start line says about the load. */
-export function sglangProgress(line: string): LoadUpdate | undefined {
+export function sglangProgress(line: string): Omit<LoadProgress, 'elapsedMs' | 'expectedMs'> | undefined {
   const shards = lastCount(line, SHARDS);
   if (shards) return { stage: 'weights', done: shards.done, total: shards.total, ...(shards.total > 0 ? { fraction: Math.min(1, shards.done / shards.total) } : {}) };
   const batches = lastCount(line, BATCHES);
   if (batches) return { stage: 'cuda-graphs', done: batches.done, total: batches.total, ...(batches.total > 0 ? { fraction: Math.min(1, batches.done / batches.total) } : {}) };
   const detail = message(line);
   if (/The server is fired up and ready to roll/.test(line)) return { stage: 'ready' };
-  if (/Application startup complete/.test(line)) return { stage: 'warmup', detail };
-  if (/Started server process|Waiting for application startup|Uvicorn running on/.test(line)) return { stage: 'api-server', detail };
+
+  // The HTTP server comes up, then SGLang sends itself a warm-up request ("fired up" = ready).
+  if (/Started server process|Waiting for application startup|Application startup complete|Uvicorn running on/.test(line)) return { stage: 'api-server', detail };
   if (/Capture cuda graph end/.test(line)) return { stage: 'cuda-graphs', fraction: 1, detail };
   if (/Capture cuda graph begin/.test(line)) return { stage: 'cuda-graphs', detail };
   if (/KV Cache is allocated|Memory pool end/.test(line)) return { stage: 'kv-cache', detail };

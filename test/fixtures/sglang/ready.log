@@ -1,0 +1,27 @@
+[2025-10-01 10:00:00] server_args=ServerArgs(model_path='Qwen/Qwen3-8B', tokenizer_path='Qwen/Qwen3-8B', host='127.0.0.1', port=30000, mem_fraction_static=0.85, context_length=32768, served_model_name='gpubench-1')
+[2025-10-01 10:00:02] Using default HuggingFace chat template with detected content format: string
+[2025-10-01 10:00:05 TP0] Attention backend not explicitly specified. Use flashinfer backend by default.
+[2025-10-01 10:00:05 TP0] Init torch distributed begin.
+[2025-10-01 10:00:06 TP0] Init torch distributed ends. mem usage=0.00 GB
+[2025-10-01 10:00:06 TP0] Load weight begin. avail mem=30.83 GB
+[2025-10-01 10:00:07 TP0] Using model weights format ['*.safetensors']
+Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  40% Completed | 2/5 [00:01<00:02,  1.30it/s]Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:02<00:01,  1.32it/s]
+Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:03<00:00,  1.40it/s]
+[2025-10-01 10:00:11 TP0] Load weight end. type=Qwen3ForCausalLM, dtype=torch.bfloat16, avail mem=15.37 GB, mem usage=15.46 GB.
+[2025-10-01 10:00:11 TP0] KV Cache is allocated. #tokens: 89472, K size: 6.14 GB, V size: 6.14 GB
+[2025-10-01 10:00:11 TP0] Memory pool end. avail mem=2.65 GB
+[2025-10-01 10:00:12 TP0] Capture cuda graph begin. This can take up to several minutes. avail mem=2.02 GB
+[2025-10-01 10:00:12 TP0] Capture cuda graph bs [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64]
+Capturing batches (bs=64 avail_mem=1.98 GB):   0%|          | 0/11 [00:00<?, ?it/s]
+Capturing batches (bs=1 avail_mem=1.51 GB): 100%|██████████| 11/11 [00:09<00:00,  1.21it/s]
+[2025-10-01 10:00:22 TP0] Capture cuda graph end. Time elapsed: 10.21 s. mem usage=0.51 GB. avail mem=1.51 GB.
+[2025-10-01 10:00:22 TP0] max_total_num_tokens=89472, chunked_prefill_size=8192, max_prefill_tokens=16384, max_running_requests=4096, context_len=32768, available_gpu_mem=1.51 GB
+[2025-10-01 10:00:23] INFO:     Started server process [12345]
+[2025-10-01 10:00:23] INFO:     Waiting for application startup.
+[2025-10-01 10:00:23] INFO:     Application startup complete.
+[2025-10-01 10:00:23] INFO:     Uvicorn running on http://127.0.0.1:30000 (Press CTRL+C to quit)
+[2025-10-01 10:00:24] INFO:     127.0.0.1:45678 - "GET /get_model_info HTTP/1.1" 200 OK
+[2025-10-01 10:00:24 TP0] Prefill batch. #new-seq: 1, #new-token: 7, #cached-token: 0, token usage: 0.00, #running-req: 0, #queue-req: 0,
+[2025-10-01 10:00:25] INFO:     127.0.0.1:45690 - "POST /generate HTTP/1.1" 200 OK
+[2025-10-01 10:00:25] The server is fired up and ready to roll!

@@ -1,4 +1,4 @@
-import type { EngineKind, LaunchParams } from '../../contract/engines';
+import { engineBaseOf, type EngineKind, type LaunchParams } from '../../contract/engines';
 import type { Profile, Scenario, SessionsStep, Step } from '../../contract/results';
 import { CONTEXT_MARGIN, sweepDepths } from './sweep';
 
@@ -119,6 +119,11 @@ export function autoLaunchParams(
   // Round first, then cap: the context must never exceed what the model was trained for.
   const sized = (n: number) => (modelContext ? Math.min(roundUp(n, 1024), modelContext) : roundUp(n, 1024));
   const out: LaunchParams = { ...params };
+  if (kind === 'command') {
+    // A command template only takes the context ({ctx}).
+    if (params.contextSize === undefined && (single > 0 || perConcurrent > 0 || perSession > 0)) out.contextSize = sized(Math.max(single, perConcurrent, perSession));
+    return out;
+  }
   const users = Math.max(concurrency, sessions);
   if (isLlamaCpp(kind)) {
     // One slot per user at once; a conversation keeps its slot (and its cached context) between messages.
@@ -136,7 +141,8 @@ export function autoLaunchParams(
   }
   if (params.maxModelLen === undefined && (single > 0 || perSession > 0)) out.maxModelLen = sized(Math.max(single, perConcurrent, perSession));
   if (params.parallel === undefined && users > 1) out.parallel = users;
-  if (sessions > 0 && !out.extraArgs.includes(VLLM_PROMPT_DETAILS_FLAG)) out.extraArgs = [...out.extraArgs, VLLM_PROMPT_DETAILS_FLAG];
+  // SGLang always reports cached tokens (the adapter passes --enable-cache-report).
+  if (engineBaseOf(kind) === 'vllm' && sessions > 0 && !out.extraArgs.includes(VLLM_PROMPT_DETAILS_FLAG)) out.extraArgs = [...out.extraArgs, VLLM_PROMPT_DETAILS_FLAG];
   return out;
 }
 

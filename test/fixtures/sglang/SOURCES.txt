@@ -1,0 +1,15 @@
+SYNTHETIC SGLang fixtures, hand-written on 2026-10-13 from the official server arguments page
+(https://docs.sglang.io/advanced_features/server_arguments.html: --model-path/--model, --host, --port,
+--context-length, --mem-fraction-static, --kv-cache-dtype {auto,fp8_e5m2,fp8_e4m3,bf16,bfloat16,nvfp4,…},
+--chunked-prefill-size, --max-running-requests, --served-model-name, --json-model-override-args,
+--enable-cache-report, --random-seed…), the native API page (/health, /health_generate, /tokenize with
+model/prompt/add_special_tokens → tokens/count/max_model_len) and SGLang's start-up log as printed by
+v0.4/v0.5. They are NOT captures from this PC (no SGLang ran here, no image was pulled). Re-capture them
+in a real-hardware run and replace.
+
+help.stdout.txt   `python3 -m sglang.launch_server --help`, abbreviated (the real one lists ~300 options)
+ready.log         start-up of Qwen3-8B up to "The server is fired up and ready to roll!"
+oom.log           torch.OutOfMemoryError while loading the weights
+mem-fraction.log  "Not enough memory. Please try to increase --mem-fraction-static."
+context.log       --context-length longer than the model's derived context
+arch.log          an architecture SGLang does not support
