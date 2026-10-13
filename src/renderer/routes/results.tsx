@@ -55,6 +55,7 @@ export function ResultsPage() {
   const all = useMemo(() => runs.data ?? [], [runs.data]);
   const data = useMemo(() => filterRuns(all, filters, system.data?.hostId), [all, filters, system.data?.hostId]);
   const chosen = all.filter((r) => selected.has(r.id));
+  const manyGpus = distinct(all, (r) => r.gpuName).length > 1;
   const set = (patch: Partial<RunFilters>) => setFilters((cur) => ({ ...cur, ...patch }));
   const toggle = useCallback(
     (id: string, on: boolean) =>
@@ -123,7 +124,8 @@ export function ResultsPage() {
                 )}
               </span>
               <span className="flex items-center gap-1.5 text-xs text-fg-3">
-                {prettyEngineLabel(r.engineLabel)} · {shortGpuName(r.gpuName)}
+                {/* The card only when the history has more than one (most people have one: the numbers keep the room). */}
+                {manyGpus ? `${prettyEngineLabel(r.engineLabel)} · ${shortGpuName(r.gpuName)}` : prettyEngineLabel(r.engineLabel)}
                 {system.data && r.hostId !== system.data.hostId && (
                   <Badge tone="outline" size="sm" title={r.hostLabel}>
                     {t('results.otherPc')}
@@ -228,7 +230,7 @@ export function ResultsPage() {
         cell: (c) => (c.row.original.status === 'failed' ? null : <CompareToggle compact entry={entryOfSummary(c.row.original, f)} />),
       }),
     ],
-    [t, f, number, integer, dateTime, selected, toggle, all, system.data],
+    [t, f, number, integer, dateTime, selected, toggle, all, system.data, manyGpus],
   );
 
   const onImport = async (e: ChangeEvent<HTMLInputElement>) => {

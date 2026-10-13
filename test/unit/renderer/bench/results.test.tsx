@@ -228,6 +228,8 @@ describe('results list', () => {
     act(() => api.emit({ type: 'runs.changed' }));
     expect(await screen.findByText('1 risultato')).toBeTruthy();
     expect(screen.queryByText('Altro PC')).toBeNull();
+    // One card in the whole history: no need to repeat it on every row.
+    expect(screen.getByText('llama.cpp b11438 (CUDA 13.4)')).toBeTruthy();
     expect(HOST).toBe('WORKSTATION');
   });
 });

@@ -36,7 +36,7 @@ test('history: filter, export the result and a selection, import, delete', async
     await page.getByRole('link', { name: /Qwen3 30B A3B/ }).click();
     await expect(h1(page, /Qwen3 30B A3B/)).toBeVisible();
     const kpis = page.getByRole('region', { name: 'Numeri principali' });
-    await expect(kpis.getByText(/^scrittura con 512 token già nel contesto/)).toBeVisible();
+    await expect(kpis.getByText('scrittura con 512 token già nel contesto')).toBeVisible();
     await expect(kpis.getByText('lettura di un prompt da 512 token')).toBeVisible();
     const csv = tempFile('result.csv');
     await answerSaveDialog(gb, csv);

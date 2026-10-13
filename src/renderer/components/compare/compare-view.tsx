@@ -35,12 +35,12 @@ import { DIFF_GROUPS, diffRows } from './compare-diff';
 import { compareRows, defaultDepth, depthChoices, engineName, itemName, itemShortName, leadSentences, LETTERS, ROW_GROUPS, usersChoice, type CompareItem, type CompareRow, type UsersChoice } from './compare-model';
 
 /** The item colors, in order (the same as the chart lines). */
-export const ITEM_COLORS = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4'] as const;
+export const ITEM_COLORS = ['border-chart-1', 'border-chart-2', 'border-chart-3', 'border-chart-4'] as const;
 
-/** "A" on the item's color. */
+/** "A" framed in the item's color (the letter in the text color: readable on every chart color, both themes). */
 export function ItemMark({ index, className }: { index: number; className?: string }) {
   return (
-    <span aria-hidden className={cn('inline-flex size-5 shrink-0 items-center justify-center rounded-md text-2xs font-bold text-white', ITEM_COLORS[index], className)}>
+    <span aria-hidden className={cn('inline-flex size-5 shrink-0 items-center justify-center rounded-md border-2 bg-surface text-2xs font-bold text-fg', ITEM_COLORS[index], className)}>
       {LETTERS[index]}
     </span>
   );

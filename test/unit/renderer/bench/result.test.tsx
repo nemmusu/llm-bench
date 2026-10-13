@@ -68,9 +68,10 @@ describe('result overview', () => {
     const kpis = screen.getByRole('region', { name: 'Numeri principali' });
     expect(within(kpis).getByText(/misurato sul motore · stima 6,7 GB · su 31,8 GB/)).toBeTruthy();
     // Every speed with what it was measured on: the prompt it read, the context it wrote with, the users.
-    expect(within(kpis).getByText(/^scrittura con 512 token già nel contesto · ≈ \d+ parole\/s/)).toBeTruthy();
+    expect(within(kpis).getByText('scrittura con 512 token già nel contesto')).toBeTruthy();
+    expect(within(kpis).getByText(/^≈ \d+ parole\/s · variazione/)).toBeTruthy();
     expect(within(kpis).getByText('lettura di un prompt da 512 token')).toBeTruthy();
-    expect(within(kpis).getByText(/^dopo un prompt da 512 token/)).toBeTruthy();
+    expect(within(kpis).getByText('dopo un prompt da 512 token')).toBeTruthy();
     expect(within(kpis).getByText('con 16 utenti insieme, prompt da 512 token ciascuno')).toBeTruthy();
     expect(within(kpis).getByText(/disco ~/)).toBeTruthy();
 

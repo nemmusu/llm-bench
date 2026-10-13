@@ -136,7 +136,13 @@ function KpiGrid({ k, totalMiB, sharedMiB, usersPrompt }: { k: Kpis; totalMiB: n
   const cv = (s: Stat | undefined) => (s && s.n > 1 ? t('result.variation', { cv: percent(s.cv, 1) }) : undefined);
   // What every speed was measured on: the headline prompt (it is also what is in the context while writing).
   const tokens = k.promptTokens;
-  const hint = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(' · ');
+  // What the number was measured on, on its own line; the rest (words per second, spread) under it.
+  const hint = (context: string, ...rest: (string | undefined)[]) => (
+    <>
+      <span className="block text-fg-2">{context}</span>
+      <span className="block">{rest.filter(Boolean).join(' · ')}</span>
+    </>
+  );
   const gb = (mib: number) => `${number(mib / MIB_PER_GB, 1)} GB`;
   const vramHint = [
     // A spill: what did not fit, first.
