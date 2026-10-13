@@ -576,10 +576,7 @@ export function gpuKeyOf(g: { hostId: string; gpuUuid?: string | undefined; gpuN
   return g.gpuUuid ? `gpu:${g.gpuUuid}` : `host:${g.hostId}:${g.gpuName ?? 'none'}`;
 }
 
-/**
- * Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4".
- * A custom engine (a fork) comes first ("custom:prismml b11460"): it is never the same configuration as its base.
- */
+/** Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4". */
 export function engineReleaseOf(e: {
   image?: string | undefined;
   build?: string | undefined;
@@ -587,6 +584,7 @@ export function engineReleaseOf(e: {
   variant?: string | undefined;
   customEngine?: { id: string } | undefined;
 }): string {
+  // A custom engine (a fork) comes first ("custom:prismml b11460"): never the same configuration as its base.
   return [e.customEngine ? `custom:${e.customEngine.id}` : undefined, e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
 }
 

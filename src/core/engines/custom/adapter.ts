@@ -28,7 +28,10 @@ export function expandCustom(engine: CustomEngine, cfg: EngineConfig): CoreEngin
   const out: CoreEngineConfig = { ...cfg };
   const run = engine.run;
   if (run.mode === 'docker') out.image = run.image;
-  else if (run.mode === 'command') out.command = run.template;
+  else if (run.mode === 'command') {
+    out.command = run.template;
+    out.flavor = run.api === 'chat' ? 'openai-chat' : 'openai';
+  }
   else if (engine.base === 'llamacpp') out.executable = run.path;
   else if (engine.base === 'vllm') out.vllmPath = run.path;
   else out.sglangPath = run.path;

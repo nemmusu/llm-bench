@@ -1,4 +1,5 @@
 import type { ApiFlavor } from '../../contract/engines';
+import { ChatClient } from './chat-client';
 import type { HttpDeps } from './http';
 import { LlamaCppClient, type ClientOptions } from './llamacpp-client';
 import { OpenAiClient } from './openai-client';
@@ -15,5 +16,6 @@ export function createInferenceClient(
   opts: ClientOptions = {},
 ): InferenceClient {
   if (flavor === 'llamacpp') return new LlamaCppClient(baseUrl, deps, opts);
+  if (flavor === 'openai-chat') return new ChatClient(baseUrl, deps, opts);
   return new OpenAiClient(flavor, baseUrl, deps, opts);
 }
