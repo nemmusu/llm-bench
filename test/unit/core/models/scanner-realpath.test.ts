@@ -1,3 +1,4 @@
+import type * as FsPromises from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { ModelScanner } from '../../../../src/core/models/scanner';
@@ -7,7 +8,7 @@ import { memoryLogger, settingsWith, tempDir } from './helpers';
 // Some drives cannot resolve real paths (a Linux partition mounted on Windows, some network shares):
 // realpath fails there while reading the folders works. Found on the user's Linux copy seen from Windows.
 vi.mock('node:fs/promises', async (importOriginal) => {
-  const real = await importOriginal<typeof import('node:fs/promises')>();
+  const real = await importOriginal<typeof FsPromises>();
   return { ...real, realpath: (p: string) => (String(p).includes('no-realpath') ? Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })) : real.realpath(p)) };
 });
 
