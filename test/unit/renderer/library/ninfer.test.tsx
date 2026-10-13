@@ -260,6 +260,10 @@ describe('Compila NInfer', () => {
     await waitFor(() => expect(api.calls.filter((x) => x.path === '/api/engines/ninfer/build')).toHaveLength(2));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-native', stage: 'done', bytesDone: 0 }));
     expect(await screen.findByText(/NInfer è pronto/)).toBeTruthy();
+    // Opened again and closed without building.
+    await userEvent.click(await within(c).findByRole('button', { name: 'Compila NInfer…' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Compila NInfer' })).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Compila NInfer' })).toBeNull());
   });
 });
 

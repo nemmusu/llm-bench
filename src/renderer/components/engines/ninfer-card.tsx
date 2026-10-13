@@ -215,17 +215,17 @@ const KNOWN_PROBLEMS = ['ninfer_not_found', 'distro_missing', 'wsl_missing'] as 
 type KnownProblem = (typeof KNOWN_PROBLEMS)[number];
 
 /** Why NInfer cannot be used, in its own words (a wrong path, a distro that is gone), else the error catalog's. */
-export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback?: string | undefined }) {
+export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback: string }) {
   const { t } = useI18n();
   const reason = status.problemParams?.reason;
   if (typeof reason === 'string' && (KNOWN_PROBLEMS as readonly string[]).includes(reason)) {
     const r = reason as KnownProblem;
-    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback ?? ''), distro: String(status.problemParams?.distro ?? '') };
+    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback), distro: String(status.problemParams?.distro ?? '') };
     return (
       <Callout tone="danger" title={t(`ninfer.problems.${r}.title`, params)}>
         {t(`ninfer.problems.${r}.body`, params)}
       </Callout>
     );
   }
-  return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_NOT_INSTALLED', message: status.location ?? fallback ?? '', ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
+  return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_NOT_INSTALLED', message: status.location ?? fallback, ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
 }
