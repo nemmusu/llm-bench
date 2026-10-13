@@ -653,7 +653,6 @@ export class BenchRunner {
 
   /** A text prompt's real length, as the server reported it: refines the scale; far from the length asked = approximate. */
   private learnText(s: RunState, chars: number, wanted: number, reported: number | undefined): void {
-    if (!s.textPrompts) return;
     if (reported === undefined || !s.textScale) {
       s.tokensApproximate = true;
       return;

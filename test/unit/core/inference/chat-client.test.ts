@@ -78,6 +78,22 @@ describe('ChatClient', () => {
     const bare = new ChatClient('http://x', deps()).requestBody({ outputTokens: 1, seed: 1 });
     expect(bare).not.toHaveProperty('model');
     expect(bare.messages).toEqual([{ role: 'user', content: CONTINUE_INSTRUCTION }]);
+    // A conversation: its turns, the instruction opening the first; an empty one is a single message.
+    const chat = c.requestBody({
+      chat: [
+        { role: 'user', content: 'A' },
+        { role: 'assistant', content: 'B' },
+        { role: 'user', content: 'C' },
+      ],
+      outputTokens: 4,
+      seed: 1,
+    });
+    expect(chat.messages).toEqual([
+      { role: 'user', content: `${CONTINUE_INSTRUCTION}A` },
+      { role: 'assistant', content: 'B' },
+      { role: 'user', content: 'C' },
+    ]);
+    expect(c.requestBody({ chat: [], promptText: 'x', outputTokens: 1, seed: 1 }).messages).toEqual([{ role: 'user', content: `${CONTINUE_INSTRUCTION}x` }]);
   });
 
   it('generate(): role chunk, reasoning and content deltas, usage and timings at the end', async () => {

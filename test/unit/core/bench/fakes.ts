@@ -102,6 +102,8 @@ export interface ClientOptions {
   /** Generate this many tokens fewer than requested. */
   shortBy?: number;
   tokenizeUnsupported?: boolean;
+  /** Text prompts: the token count the server reports for so many characters (default chars / 4). */
+  promptTokensOf?: (chars: number) => number;
   tokenizeError?: AppError;
   bos?: number;
   /** Throws for request number n (1-based, across the instance's client). */
@@ -170,7 +172,8 @@ export class FakeClient implements InferenceClient {
       }
       throw new AppError('CANCELLED', 'Request aborted');
     }
-    const p = req.promptIds?.length ?? Math.ceil((req.promptText?.length ?? 0) / 4);
+    const chars = req.promptText?.length ?? 0;
+    const p = req.promptIds?.length ?? (this.o.promptTokensOf ? this.o.promptTokensOf(chars) : Math.ceil(chars / 4));
     c.advance((p / (this.o.prefillTps ?? 10_000)) * 1000 + (this.o.firstChunkDelayMs ?? 5));
     if (this.o.silent?.(n)) {
       yield { kind: 'done', t: c.now() };
