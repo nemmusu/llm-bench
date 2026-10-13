@@ -138,7 +138,9 @@ describe('configuration settings from a launch', () => {
 
   it('keeps any other flag (paths as bare names, regexes as written), sorted', () => {
     const o = llama(['--override-tensor', 'blk\\.\\d+\\.ffn=CPU', '--mlock', '--lora', 'D:\\loras\\x.gguf', '--rope-scaling=yarn', '-sm', 'row', '--chat-template-file', './t.jinja', '-x']);
-    expect(o.other).toEqual(['--chat-template-file t.jinja', '--lora x.gguf', '--mlock', '--override-tensor blk\\.\\d+\\.ffn=CPU', '--rope-scaling yarn', '-sm row', '-x']);
+    expect(o.other).toEqual(['--chat-template-file t.jinja', '--lora x.gguf', '--mlock', '--override-tensor blk\\.\\d+\\.ffn=CPU', '-sm row', '-x']);
+    // RoPE scaling is a setting of its own (factor 1 when only the type is given).
+    expect(o.ropeScaling).toBe('yarn:1');
     // Values that look like paths: absolute, relative, home, known file types.
     expect(llama(['--a', '/x/y', '--b', '../z', '--c', '~/w', '--d', 'f.bin', '--e', 'plain/text']).other).toEqual(['--a y', '--b z', '--c w', '--d f.bin', '--e plain/text']);
     // A lone "-" or a negative number is a value, not a flag.

@@ -23,6 +23,14 @@ export const engineCompatSchema = z.object({
     dockerImageCuda13: z.string().optional(),
     notes: z.array(z.string()).default([]),
   }),
+  /** lmsysorg/sglang: the release tag offered by default (files without the section get the built-in one). */
+  sglang: z
+    .object({
+      image: z.string(),
+      recommendedTag: z.string(),
+      notes: z.array(z.string()).default([]),
+    })
+    .default({ image: 'lmsysorg/sglang', recommendedTag: 'v0.5.21', notes: [] }),
   minDriverByCuda: z.record(z.string(), z.object({ linux: z.string(), windows: z.string() })).default({}),
   sources: z.array(z.object({ url: z.string(), fact: z.string(), checked: z.string() })).default([]),
 });
@@ -42,6 +50,7 @@ export const BUILTIN_COMPAT: EngineCompat = {
     notes: [],
   },
   llamacpp: { dockerImage: 'ghcr.io/ggml-org/llama.cpp:server-cuda', notes: [] },
+  sglang: { image: 'lmsysorg/sglang', recommendedTag: 'v0.5.21', notes: [] },
   minDriverByCuda: {},
   sources: [],
 };

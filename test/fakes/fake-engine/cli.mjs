@@ -1,20 +1,48 @@
 #!/usr/bin/env node
-// Command-line twin of llama-server (default) or `vllm serve` (argv "serve <model>" or
-// FAKE_ENGINE_FLAVOR=vllm). Run with plain `node cli.mjs …`.
+// Command-line twin of llama-server (default), `vllm serve` (argv "serve <model>" or
+// FAKE_ENGINE_FLAVOR=vllm) or SGLang's Python (argv "[-X opt] -m sglang.launch_server …",
+// "-c 'import sglang…'" or FAKE_ENGINE_FLAVOR=sglang). Run with plain `node cli.mjs …`.
 //
 // Environment:
 //   FAKE_ENGINE_PROFILE      inline JSON or a path to a JSON file (see FakeProfile in server.mjs)
 //   FAKE_ENGINE_COLD_MARKER  if this file exists the load is "cold" (loadMsCold) and the file is deleted
 //   FAKE_NVIDIA_SMI_STATE    fake nvidia-smi state file updated while loading/generating
-//   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm"
+//   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm" | "sglang"
+//   FAKE_ENGINE_HELP=fork    a llama.cpp fork (PrismML-like): its own --version, no -ub, an extra
+//                            --ternary-kernels option; SGLang: a fork without --chunked-prefill-size
 //   FAKE_ENGINE_ALLOW_MISSING_MODEL=1  do not fail when -m does not exist
 import { readFileSync } from 'node:fs';
+import { SGLANG_VERSION } from './logs.mjs';
 import { readProfile, startFakeEngine } from './server.mjs';
 
 const FIXTURES = new URL('../../fixtures/llamacpp/', import.meta.url);
 const VLLM_FIXTURES = new URL('../../fixtures/vllm/', import.meta.url);
+const SGLANG_FIXTURES = new URL('../../fixtures/sglang/', import.meta.url);
 const argv = process.argv.slice(2);
 const env = process.env;
+const fork = env.FAKE_ENGINE_HELP === 'fork';
+const LLAMA_HELP = fork ? 'help-fork.stdout.txt' : 'help.stdout.txt';
+const LLAMA_VERSION = fork ? 'version-fork.stderr.txt' : 'version.stderr.txt';
+
+/** SGLang's --help, without --chunked-prefill-size for a fork. */
+function sglangHelp() {
+  const text = readFileSync(new URL('help.stdout.txt', SGLANG_FIXTURES), 'utf8');
+  return fork ? text.replace(/^ {2}--chunked-prefill-size[^\n]*\n(?: {20,}[^\n]*\n)*/m, '') : text;
+}
+
+/** argparse options of SGLang's help: spelling → takes a value. */
+function sglangFlags(help) {
+  const flags = new Map();
+  for (const line of help.split(/\r?\n/)) {
+    const spec = /^ {2}(-{1,2}[A-Za-z0-9].*?)(?: {2,}|$)/.exec(line)?.[1];
+    if (spec === undefined) continue;
+    for (const part of spec.split(/,\s+/)) {
+      const m = /^(-{1,2}[\w-]+)( \S+)?/.exec(part);
+      if (m) flags.set(m[1], m[2] !== undefined);
+    }
+  }
+  return flags;
+}
 
 /** Option table of the real b10997 --help: name → takes a value. */
 function knownFlags(help) {
@@ -43,23 +71,63 @@ const err = (lines) => {
 };
 
 async function main() {
-  const flavor = env.FAKE_ENGINE_FLAVOR === 'vllm' || argv[0] === 'serve' ? 'vllm' : 'llamacpp';
+  const sglang = env.FAKE_ENGINE_FLAVOR === 'sglang' || argv.includes('sglang.launch_server') || argv.some((a) => a.includes('import sglang'));
+  const flavor = sglang ? 'sglang' : env.FAKE_ENGINE_FLAVOR === 'vllm' || argv[0] === 'serve' ? 'vllm' : 'llamacpp';
   const profile = readProfile(env);
 
   if (flavor === 'llamacpp') {
     if (argv.includes('--version')) {
-      process.stderr.write(readFileSync(new URL('version.stderr.txt', FIXTURES), 'utf8'));
+      process.stderr.write(readFileSync(new URL(LLAMA_VERSION, FIXTURES), 'utf8'));
       return 0;
     }
     if (argv.includes('--help') || argv.includes('-h') || argv.includes('--usage')) {
-      process.stdout.write(readFileSync(new URL('help.stdout.txt', FIXTURES), 'utf8'));
+      process.stdout.write(readFileSync(new URL(LLAMA_HELP, FIXTURES), 'utf8'));
       return 0;
     }
   }
 
   const o = { flavor, log: (l) => process.stderr.write(`${l}\n`), profile };
-  if (flavor === 'llamacpp') {
-    const flags = knownFlags(readFileSync(new URL('help.stdout.txt', FIXTURES), 'utf8'));
+  if (flavor === 'sglang') {
+    // python -c "import sglang; print(sglang.__version__)": the version check of a native install.
+    if (argv.some((a) => a.includes('import sglang'))) {
+      process.stdout.write(`${SGLANG_VERSION}\n`);
+      return 0;
+    }
+    const at = argv.indexOf('sglang.launch_server');
+    const rest = at >= 0 ? argv.slice(at + 1) : argv;
+    const help = sglangHelp();
+    if (rest.includes('--help') || rest.includes('-h')) {
+      process.stdout.write(help);
+      return 0;
+    }
+    const flags = sglangFlags(help);
+    const val = {};
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (!flags.has(a)) {
+        err([`launch_server.py: error: unrecognized arguments: ${a}`]);
+        return 2;
+      }
+      val[a] = flags.get(a) ? rest[++i] : 'true';
+    }
+    const model = val['--model-path'] ?? val['--model'] ?? 'Qwen/Qwen3-0.6B';
+    o.model = model;
+    o.host = val['--host'] ?? '127.0.0.1';
+    o.port = Number(val['--port'] ?? 30000);
+    o.aliases = [val['--served-model-name'] ?? model];
+    o.ctx = Number(val['--context-length'] ?? 4096);
+    const dtype = val['--kv-cache-dtype'];
+    o.kvType = dtype?.startsWith('fp8') ? 'fp8' : 'auto';
+    if (dtype === 'fp8_e4m3' || dtype === 'fp8_e5m2') o.kvFormat = dtype;
+    o.kvTypeV = o.kvType;
+    if (val['--max-running-requests'] !== undefined) o.np = Number(val['--max-running-requests']);
+    if (val['--chunked-prefill-size'] !== undefined) o.ubatch = Number(val['--chunked-prefill-size']);
+    if (val['--mem-fraction-static'] !== undefined) o.gpuMemoryUtilization = Number(val['--mem-fraction-static']);
+    o.eager = val['--disable-cuda-graph'] !== undefined;
+    if (val['--disable-radix-cache']) o.prefixCaching = false;
+    if (val['--enable-cache-report']) o.promptTokensDetails = true;
+  } else if (flavor === 'llamacpp') {
+    const flags = knownFlags(readFileSync(new URL(LLAMA_HELP, FIXTURES), 'utf8'));
     const val = {};
     for (let i = 0; i < argv.length; i++) {
       const a = argv[i];

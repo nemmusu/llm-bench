@@ -18,6 +18,10 @@ import { profileSchema } from './results';
 
 export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
 
+/**
+ * SGLang reads its settings like vLLM (context, KV dtype, memory share, users, batched tokens): its
+ * own flag spellings are parsed into the same fields, and the engine kind in the key keeps the two apart.
+ */
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
   // A command template is the user's own program: no flags GPU Bench knows, like an external endpoint.
@@ -90,6 +94,12 @@ export const configParamsSchema = z.object({
   cudaGraphSizes: z.array(z.number().int().positive()).optional(),
   dtype: z.string().optional(),
   quantization: z.string().optional(),
+  /**
+   * RoPE context extension as "type:factor" (+ ":originalContext" for YaRN), e.g. "yarn:4:32768":
+   * llama.cpp --rope-scaling/--rope-scale/--yarn-orig-ctx, vLLM --hf-overrides (or --rope-scaling),
+   * SGLang --json-model-override-args.
+   */
+  ropeScaling: z.string().optional(),
   /** Any other engine flag, "flag value" with paths as bare file names, sorted. */
   other: z.array(z.string()).default([]),
 });
@@ -118,6 +128,9 @@ type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' |
   cpuMoe?: number | 'all';
   speculativeModel?: string;
   speculativeTokens?: number;
+  ropeType?: string;
+  ropeFactor?: number;
+  ropeOrig?: number;
   other: Set<string>;
 };
 
@@ -158,7 +171,7 @@ const VALUE_FLAGS = new Map<string, Setter>();
 const add = (flags: string[], set: Setter) => {
   for (const f of flags) VALUE_FLAGS.set(f, set);
 };
-add(['-c', '--ctx-size', '--max-model-len'], (r, v) => {
+add(['-c', '--ctx-size', '--max-model-len', '--context-length'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.contextSize = n;
 });
@@ -177,7 +190,7 @@ add(['-b', '--batch-size'], (r, v) => {
 add(['-ub', '--ubatch-size'], (r, v) => {
   r.ubatchSize = positive(v[0]) ?? r.ubatchSize;
 });
-add(['-np', '--parallel', '--max-num-seqs'], (r, v) => {
+add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests'], (r, v) => {
   r.parallel = positive(v[0]) ?? r.parallel;
 });
 add(['-ngl', '--gpu-layers', '--n-gpu-layers'], (r, v) => {
@@ -210,10 +223,10 @@ add(['--speculative-model'], (r, v) => {
 add(['--num-speculative-tokens'], (r, v) => {
   r.speculativeTokens = int(v[0]) ?? r.speculativeTokens;
 });
-add(['--max-num-batched-tokens'], (r, v) => {
+add(['--max-num-batched-tokens', '--chunked-prefill-size'], (r, v) => {
   r.maxNumBatchedTokens = positive(v[0]) ?? r.maxNumBatchedTokens;
 });
-add(['--gpu-memory-utilization'], (r, v) => {
+add(['--gpu-memory-utilization', '--mem-fraction-static'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
 add(['--cache-reuse'], (r, v) => {
@@ -245,6 +258,31 @@ add(['--compilation-config', '-O'], (r, v) => {
   else if (sizes !== undefined) rest.cudagraph_capture_sizes = sizes;
   if (Object.keys(rest).length) r.other.add(`--compilation-config ${stableStringify(rest)}`);
 });
+add(['--rope-scaling'], (r, v) => {
+  const text = v.join(' ');
+  // llama.cpp: a type ("yarn", "linear", "none"); old vLLM: the rope_scaling JSON itself.
+  if (!ropeFromJson(r, text)) r.ropeType = text.trim().toLowerCase();
+});
+add(['--rope-scale'], (r, v) => {
+  r.ropeFactor = num(v[0]) ?? r.ropeFactor;
+});
+add(['--yarn-orig-ctx'], (r, v) => {
+  r.ropeOrig = positive(v[0]) ?? r.ropeOrig;
+});
+add(['--hf-overrides', '--json-model-override-args'], (r, v) => {
+  const text = v.join(' ');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  const { rope_scaling: rope, ...rest } = obj ?? {};
+  if (rope !== undefined) ropeFromJson(r, JSON.stringify(rope));
+  if (!obj) r.other.add(`--hf-overrides ${text.trim()}`);
+  else if (Object.keys(rest).length) r.other.add(`--hf-overrides ${stableStringify(rest)}`);
+});
 add(['--dtype'], (r, v) => {
   if (v[0]) r.dtype = v[0];
 });
@@ -252,9 +290,28 @@ add(['--quantization'], (r, v) => {
   if (v[0]) r.quantization = v[0];
 });
 
+/** A rope_scaling object ({rope_type|type, factor, original_max_position_embeddings}); false when `text` is not one. */
+function ropeFromJson(r: Raw, text: string): boolean {
+  let o: unknown;
+  try {
+    o = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+  const rope = o as Record<string, unknown>;
+  const type = rope.rope_type ?? rope.type;
+  if (typeof type === 'string') r.ropeType = type.toLowerCase();
+  if (typeof rope.factor === 'number') r.ropeFactor = rope.factor;
+  if (typeof rope.original_max_position_embeddings === 'number') r.ropeOrig = rope.original_max_position_embeddings;
+  return true;
+}
+
 /** Switches without a value. */
 const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['--enforce-eager', (r) => (r.enforceEager = true)],
+  // SGLang: no CUDA graphs, vLLM's eager mode.
+  ['--disable-cuda-graph', (r) => (r.enforceEager = true)],
   ['--kv-unified', (r) => (r.kvUnified = true)],
   ['-kvu', (r) => (r.kvUnified = true)],
   ['--no-kv-unified', (r) => (r.kvUnified = false)],
@@ -286,6 +343,10 @@ const IGNORED_VALUE = new Set([
   '-mmproj',
   '--mmproj',
   '--fit',
+  // SGLang: the model, the seed; Python's -m (the module) and -X (GPU Bench's marker on servers).
+  '--model-path',
+  '--random-seed',
+  '-X',
 ]);
 const IGNORED_SWITCH = new Set([
   '--no-webui',
@@ -299,6 +360,7 @@ const IGNORED_SWITCH = new Set([
   '--log-timestamps',
   // vLLM: only how much of the prompt came from the cache is reported, nothing runs differently.
   '--enable-prompt-tokens-details',
+  '--enable-cache-report',
   '--disable-log-requests',
   '--disable-log-stats',
   '--disable-uvicorn-access-log',
@@ -408,6 +470,11 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
     if (p.threads !== undefined) raw.threads = p.threads;
   }
   if (p.parallel !== undefined) raw.parallel = p.parallel;
+  if (p.ropeScaling) {
+    raw.ropeType = p.ropeScaling.type;
+    raw.ropeFactor = p.ropeScaling.factor;
+    raw.ropeOrig = p.ropeScaling.originalContext;
+  }
   parseArgs(p.extraArgs, raw);
 }
 
@@ -471,6 +538,10 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   if (raw.cudaGraphSizes !== undefined) out.cudaGraphSizes = [...new Set(raw.cudaGraphSizes)].sort((a, b) => a - b);
   if (raw.dtype !== undefined && raw.dtype !== 'auto') out.dtype = raw.dtype;
   if (raw.quantization !== undefined) out.quantization = raw.quantization;
+  // The trained context only matters to YaRN (linear scaling ignores it).
+  if (raw.ropeType !== undefined && raw.ropeType !== 'none') {
+    out.ropeScaling = [raw.ropeType, raw.ropeFactor ?? 1, ...(raw.ropeType === 'yarn' && raw.ropeOrig !== undefined ? [raw.ropeOrig] : [])].join(':');
+  }
   return out;
 }
 
@@ -500,9 +571,18 @@ export function gpuKeyOf(g: { hostId: string; gpuUuid?: string | undefined; gpuN
   return g.gpuUuid ? `gpu:${g.gpuUuid}` : `host:${g.hostId}:${g.gpuName ?? 'none'}`;
 }
 
-/** Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4". */
-export function engineReleaseOf(e: { image?: string | undefined; build?: string | undefined; version?: string | undefined; variant?: string | undefined }): string {
-  return [e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
+/**
+ * Image, build (or version) and variant: "ghcr.io/ggml-org/llama.cpp:server-cuda b6000", "b11438 cuda-13.4".
+ * A custom engine (a fork) comes first ("custom:prismml b11460"): it is never the same configuration as its base.
+ */
+export function engineReleaseOf(e: {
+  image?: string | undefined;
+  build?: string | undefined;
+  version?: string | undefined;
+  variant?: string | undefined;
+  customEngine?: { id: string } | undefined;
+}): string {
+  return [e.customEngine ? `custom:${e.customEngine.id}` : undefined, e.image, e.build ?? e.version, e.variant].filter(Boolean).join(' ');
 }
 
 export interface ConfigKeyParts {
