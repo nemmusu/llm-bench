@@ -59,7 +59,7 @@ test('Models → Sul tuo PC → Avvia server: a model on the PC served with the 
     const { page } = gb;
     await skipWelcome(page);
     await openPage(page, 'Modelli');
-    const list = page.getByRole('list', { name: 'Sul tuo PC' });
+    const list = page.getByRole('list', { name: 'Per llama.cpp (GGUF)' });
     await list.getByRole('button', { name: /^Avvia server: Qwen3/ }).click();
     const confirm = page.getByRole('dialog', { name: 'Avvia il server' });
     await expect(confirm.getByText('32.768 token')).toBeVisible({ timeout: 30_000 });

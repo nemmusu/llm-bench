@@ -88,7 +88,7 @@ test('search a model, open it, download the best version with pause and resume, 
     await page.getByRole('link', { name: 'Modelli' }).first().click();
     await expect(page.getByRole('tab', { name: /Sul tuo PC/ })).toBeVisible();
     await page.getByRole('tab', { name: /Sul tuo PC/ }).click();
-    const library = page.getByRole('list', { name: 'Sul tuo PC' });
+    const library = page.getByRole('list', { name: 'Per llama.cpp (GGUF)' });
     await expect(library.getByRole('listitem')).toHaveCount(2, { timeout: 20_000 });
     await expect(library.getByText('Qwen3-0.6B-Q8_0', { exact: true })).toBeVisible();
     await scan(page, 'library with the new model');
@@ -108,7 +108,7 @@ test('delete a model from the library: results stay, other folders are never tou
     await stubDesktop(gb);
     await skipWelcome(page);
     await openPage(page, 'Modelli');
-    const library = page.getByRole('list', { name: 'Sul tuo PC' });
+    const library = page.getByRole('list', { name: 'Per llama.cpp (GGUF)' });
     await expect(library.getByRole('listitem')).toHaveCount(1, { timeout: 20_000 });
     await library.getByRole('button', { name: /^Mostra nella cartella: / }).click();
     await expect.poll(() => revealed(gb)).toEqual([expect.stringMatching(/Qwen3-0\.6B-Q4_K_M\.gguf$/)]);
