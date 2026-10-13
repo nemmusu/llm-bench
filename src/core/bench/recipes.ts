@@ -6,7 +6,8 @@
  */
 import type { StartServerRequest } from '../../contract/api';
 import { customEngineConfigOf, type CustomEngine } from '../../contract/custom-engines';
-import { launchParamsSchema, type EngineConfig, type LaunchParams } from '../../contract/engines';
+import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { engineRunsFormat, isNinferKind, ninferKindFor } from '../../contract/ninfer';
 import {
   mergeRecipeParams,
   modelRecipeDraftSchema,
@@ -53,14 +54,17 @@ function chosenRecipe(req: Pick<StartServerRequest, 'recipe'>, model: ModelTarge
 /**
  * The request's engine and params with the model's recipe applied. The preferred custom engine
  * replaces the request's engine unless the request already names a custom engine or is an external
- * endpoint; a template with no saved engine yet is reported (missingTemplate). `caps` is asked only
- * for a llama.cpp draft/MTP file (which --spec-type the build knows).
+ * endpoint; a template with no saved engine yet is reported (missingTemplate). A built-in preference
+ * replaces only an engine that cannot read the model (a .ninfer artifact: NInfer, run as `platform`
+ * runs it, in WSL on Windows). `caps` is asked only for a llama.cpp draft/MTP file (which
+ * --spec-type the build knows).
  */
 export async function withRecipe(
   req: Pick<StartServerRequest, 'engine' | 'params' | 'recipe'>,
   model: ModelTarget,
   sources: RecipeSources | undefined,
   caps: (engine: EngineConfig) => Promise<LlamaCaps | undefined>,
+  platform?: string,
 ): Promise<WithRecipe> {
   const user = req.params ?? launchParamsSchema.parse({});
   const recipe = sources ? chosenRecipe(req, model, sources.recipes) : undefined;
@@ -69,12 +73,19 @@ export async function withRecipe(
   let chosen: AppliedRecipe['engine'];
   let missingTemplate: string | undefined;
   const skipped: RecipeSkip[] = [];
-  if (recipe.engine && recipe.engine.type !== 'builtin') {
+  const free = req.engine.kind !== 'external' && req.engine.customEngineId === undefined;
+  if (recipe.engine?.type === 'builtin') {
+    const kind = builtinKind(recipe.engine.kind, platform);
+    if (free && kind !== req.engine.kind && !engineRunsFormat(req.engine.kind, model.identity.format)) {
+      engine = { kind };
+      chosen = { kind, name: kind };
+    }
+  } else if (recipe.engine) {
     const custom = recipeCustomEngine(recipe.engine, (sources as RecipeSources).customEngines, recipeRefOf(model));
     if (!custom) {
       skipped.push({ part: 'engine', reason: 'engine_missing' });
       if (recipe.engine.type === 'template') missingTemplate = recipe.engine.template;
-    } else if (req.engine.kind !== 'external' && req.engine.customEngineId === undefined) {
+    } else if (free) {
       engine = customEngineConfigOf(custom);
       chosen = { customEngineId: custom.id, name: custom.name };
     }
@@ -105,6 +116,11 @@ export async function withRecipe(
     ...(missingTemplate ? { missingTemplate } : {}),
   };
   return { engine, params, applied };
+}
+
+/** A built-in engine as this platform runs it: NInfer natively on Linux, in WSL on Windows. */
+function builtinKind(kind: EngineKind, platform: string | undefined): EngineKind {
+  return isNinferKind(kind) ? (ninferKindFor(platform ?? '') ?? kind) : kind;
 }
 
 /** The recipe notes of a plan or run, for the renderer (RunResult.notes codes). */

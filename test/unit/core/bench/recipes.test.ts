@@ -126,6 +126,20 @@ describe('withRecipe', () => {
     expect((await withRecipe(req(), local, sources([recipe({ engine: { type: 'builtin', kind: 'vllm-docker' } })]), noCaps)).engine).toEqual({ kind: 'llamacpp-native' });
   });
 
+  it('NInfer for a .ninfer artifact: in WSL on Windows, natively on Linux; an engine that reads it already stays', async () => {
+    const artifact: ModelTarget = { identity: modelIdentity({ format: 'ninfer', displayName: 'Qwen3.8 27B NInfer' }) };
+    const ninfer = recipe({ contextSize: undefined, ropeScaling: undefined, engine: { type: 'builtin', kind: 'ninfer-native' } });
+    const win = await withRecipe(req(), artifact, sources([ninfer]), noCaps, 'win32');
+    expect(win.engine).toEqual({ kind: 'ninfer-wsl' });
+    expect(win.applied).toMatchObject({ parts: ['engine'], engine: { kind: 'ninfer-wsl', name: 'ninfer-wsl' } });
+    expect((await withRecipe(req(), artifact, sources([ninfer]), noCaps, 'linux')).engine).toEqual({ kind: 'ninfer-native' });
+    // A platform where it does not run: the kind as written (the engine then says it is not supported).
+    expect((await withRecipe(req(), artifact, sources([ninfer]), noCaps)).engine).toEqual({ kind: 'ninfer-native' });
+    const already = await withRecipe(req({ engine: { kind: 'ninfer-wsl', wslDistro: 'Ubuntu' } }), artifact, sources([ninfer]), noCaps, 'win32');
+    expect(already.engine).toEqual({ kind: 'ninfer-wsl', wslDistro: 'Ubuntu' });
+    expect(already.applied?.parts).toEqual([]);
+  });
+
   it('a template with no saved engine: the rest applies, the guided action is said', async () => {
     const bonsai = recipe({ engine: { type: 'template', template: 'prismml-bonsai' } });
     const w = await withRecipe(req(), local, sources([bonsai], []), noCaps);
@@ -231,6 +245,17 @@ describe('BenchService with a recipe', () => {
     const l = serviceSetup(tmp, { deps: { resolveModel: async () => local, recipes: async () => sources([recipe({ draft: 'auto' })]) } });
     const lp = await new BenchService(l.deps).plan(request());
     expect(lp.recipe?.args).toEqual(['-md', 'C:/m/mtp-Qwen3-4B.gguf']);
+  });
+
+  it('a built-in engine from a recipe is chosen with this PC’s platform', async () => {
+    const artifact: ModelTarget = { identity: modelIdentity({ format: 'ninfer' }) };
+    const ninfer = recipe({ contextSize: undefined, ropeScaling: undefined, engine: { type: 'builtin', kind: 'ninfer-native' } });
+    const s = serviceSetup(tmp, { deps: { resolveModel: async () => artifact, recipes: async () => sources([ninfer]) } });
+    const kinds: string[] = [];
+    s.deps.getAdapter = (kind) => (kinds.push(kind), s.adapter as unknown as EngineAdapter);
+    // The fingerprint fixture is a Windows PC: NInfer runs in WSL there.
+    await new BenchService(s.deps).plan(request());
+    expect(kinds).toContain('ninfer-wsl');
   });
 
   it('a recipe’s custom engine changes the adapter and the request every step uses', async () => {

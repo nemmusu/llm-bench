@@ -540,6 +540,10 @@ export const en: Messages = {
       title: 'A system library is missing: {library}',
       what: 'The engine needs it and this Linux does not have it. Open a terminal, run “sudo apt install {package}”, then try again: nothing needs reinstalling.',
     },
+    ENGINE_GPU_UNSUPPORTED: {
+      title: '{engine} only works with an {gpu}',
+      what: 'This engine is made for one card only, and this PC does not have it. Use llama.cpp, vLLM or SGLang with the same model in another format.',
+    },
     ENGINE_START_FAILED: { title: 'The engine did not start', what: 'Open the log for details, or try simpler settings.' },
     ENGINE_EXITED: { title: 'The engine closed unexpectedly', what: 'Open the log to see what happened and try again.' },
     ENGINE_TIMEOUT: { title: 'The engine did not answer in time', what: 'Try again: the first time can take longer. If it happens again, try a smaller model.' },
@@ -884,6 +888,8 @@ export const en: Messages = {
       'sglang-native': 'SGLang',
       external: 'External server',
       command: 'Program with an OpenAI API',
+      'ninfer-native': 'NInfer',
+      'ninfer-wsl': 'NInfer (WSL)',
     },
     engineDesc: {
       'llamacpp-native': 'The simplest: installs itself, no Docker.',
@@ -894,6 +900,8 @@ export const en: Messages = {
       'sglang-native': 'SGLang installed on the system (Linux only).',
       external: 'A server already running, OpenAI compatible.',
       command: 'Your own program with an OpenAI API: GPU Bench starts and stops it.',
+      'ninfer-native': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
+      'ninfer-wsl': 'The fastest for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
     },
     profiles: {
       quick: 'Quick',
@@ -1028,6 +1036,7 @@ export const en: Messages = {
       dtype: 'Data type',
       quantization: 'Quantization',
       ropeScaling: 'Context extension (RoPE)',
+      ninfer: 'NInfer settings',
       promptLengths: 'Prompt lengths',
       outputTokens: 'Generated tokens',
       repetitions: 'Repetitions',

@@ -226,7 +226,8 @@ export class BenchService {
   private async recipe(req: StartServerRequest, model: ModelTarget): Promise<WithRecipe> {
     const sources = await this.deps.recipes?.().catch(() => undefined);
     // Only a llama.cpp draft/MTP file needs the build's options (which --spec-type it knows).
-    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined));
+    const platform = sources ? (await this.deps.fingerprint().catch(() => undefined))?.os.platform : undefined;
+    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform);
   }
 
   private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {

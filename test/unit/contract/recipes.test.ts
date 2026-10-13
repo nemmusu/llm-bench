@@ -196,7 +196,13 @@ describe('what a recipe adds to a launch', () => {
     expect(recipeArgTargetOf('vllm-native')).toBe('vllm');
     expect(recipeArgTargetOf('sglang-docker')).toBe('sglang');
     expect(recipeArgTargetOf('command')).toBe('command');
+    expect(recipeArgTargetOf('ninfer-wsl')).toBe('ninfer');
     expect(recipeArgTargetOf('external')).toBeUndefined();
+  });
+
+  it('NInfer: the context (--max-context) and its own arguments; it runs its models as trained (no RoPE)', () => {
+    const n = recipePatchFor(recipe({ contextSize: 65_536, ropeScaling: { type: 'yarn', factor: 2, originalContext: 32_768 }, args: { ninfer: ['--kv-dtype', 'int8'] } }), { kind: 'ninfer-native' });
+    expect(n).toMatchObject({ params: { contextSize: 65_536 }, args: ['--kv-dtype', 'int8'], parts: ['context', 'args'], skipped: [{ part: 'rope', reason: 'engine' }] });
   });
 
   it('llama.cpp: context, RoPE, the MTP file next to the model, the projector, its arguments, env', () => {
@@ -329,7 +335,7 @@ describe('built-in recipes', () => {
   const t = (id: string) => recipeTemplate(id)!;
 
   it('the library: YaRN, MTP, PrismML for Bonsai, images; each says what it sets and where it is documented', () => {
-    expect(RECIPE_TEMPLATES.map((x) => x.id)).toEqual(['yarn', 'mtp', 'prismml-bonsai', 'vision']);
+    expect(RECIPE_TEMPLATES.map((x) => x.id)).toEqual(['yarn', 'mtp', 'prismml-bonsai', 'vision', 'ninfer']);
     expect(RECIPE_TEMPLATES.every((x) => x.parts.length > 0 && x.docs.every((d) => d.startsWith('https://')))).toBe(true);
     expect(recipeTemplate('nope')).toBeUndefined();
   });
@@ -349,6 +355,14 @@ describe('built-in recipes', () => {
     expect(t('mtp').blocked({ ...gguf, format: 'safetensors' })).toBeUndefined();
     expect(t('mtp').build(gguf)).toEqual({ draft: DRAFT_AUTO, args: { vllm: [...VLLM_MTP_ARGS], sglang: [...SGLANG_MTP_ARGS] } });
     expect(JSON.parse(VLLM_MTP_ARGS[1])).toEqual({ method: 'mtp', num_speculative_tokens: 1 });
+  });
+
+  it('NInfer: offered for .ninfer artifacts only, it picks the NInfer engine; the others are not for them', () => {
+    const art: RecipeTemplateModel = { displayName: 'Qwen3.8 27B', format: 'ninfer', trainedContext: 262_144, auxKinds: ['mtp', 'mmproj'] };
+    expect(t('ninfer').blocked(art)).toBeUndefined();
+    expect(t('ninfer').blocked(gguf)).toBe('format');
+    expect(t('ninfer').build(art)).toEqual({ engine: { type: 'builtin', kind: 'ninfer-native' } });
+    expect(['yarn', 'mtp', 'vision'].map((id) => t(id).blocked(art))).toEqual(['format', 'format', 'format']);
   });
 
   it('PrismML: only for Bonsai models; images: GGUF with a projector', () => {
