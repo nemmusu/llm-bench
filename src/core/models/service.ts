@@ -3,16 +3,17 @@ import path from 'node:path';
 import type { FitRequest } from '../../contract/api';
 import { launchParamsSchema, type EngineKind } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
+import { NINFER_MANIFEST, parseNinferManifest, precisionFromText, repoLayout, type RepoLayout, type SafetensorsVariant } from '../../contract/formats';
 import type { FitEstimate, HubFile, HubModel, LocalModel, ModelIdentity, QuickFit } from '../../contract/models';
 import type { Settings } from '../../contract/settings';
 import type { CoreDeps } from '../deps';
 import { curatedForVram, loadCurated, tierFor, type CuratedList, type CuratedModel } from './curated';
 import type { ModelKey } from './calibration';
-import { bestQuant, estimateFit, fitFixes, fitParamsFrom, quantChoices, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
+import { estimateFit, FIT_NOTES, fitFixes, fitParamsFrom, pickBest, quantChoices, runsSafetensors, type FitCalibration, type FitInput, type FitParams, type QuantChoice } from './fit';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
 import { isInside, libraryPath, parseShard, REPO_RE, safeRepoPath } from './paths';
-import { quantFromFilename } from './quant';
+import { paramsFromLabel, quantFromFilename } from './quant';
 import { curatedFit, isLanguageModel, maxFittingParamsB, quickFit, quickFits } from './quick-fit';
 import { DOWNLOAD_SIDECAR, ModelScanner } from './scanner';
 import type { GpuInfoFn, GpuMem, ModelFactsEx, TokenFn } from './types';
@@ -117,7 +118,7 @@ export class ModelsService {
 
   private hashInBackground(models: LocalModel[]): void {
     for (const m of models) {
-      if (m.identity.sha256 || m.identity.format !== 'gguf') continue;
+      if (m.identity.sha256 || m.identity.format !== 'gguf' || m.incomplete) continue;
       this.hashes
         .enqueue(m.paths[0] as string)
         .then((sha) => {
@@ -152,6 +153,10 @@ export class ModelsService {
     const models: HubModel[] = [];
     for (const m of page.models) {
       if (!isLanguageModel(m)) continue;
+      // The hub tags MLX repos "safetensors" too: vLLM / SGLang cannot read them.
+      if (opts.format === 'safetensors' && !m.formats.includes('safetensors')) continue;
+      // NInfer: the hub searched "ninfer"; the words typed narrow it here.
+      if (opts.format === 'ninfer' && (!m.formats.includes('ninfer') || !matchesWords(m.repo, q))) continue;
       // HF counts parameters its own way (for GGUF, often from one file); cards show ours, so the size filter follows ours.
       if (m.paramsB !== undefined && (m.paramsB < (opts.minParamsB ?? 0) || m.paramsB > (opts.maxParamsB ?? Infinity))) continue;
       const fit = gpu && quickFit(m, gpu, opts.format);
@@ -187,7 +192,7 @@ export class ModelsService {
     const name = path.posix.basename(file);
     const shard = parseShard(name);
     const first = shard ? name.replace(/-\d{5}-of-(\d{5})\.gguf$/i, '-00001-of-$1.gguf') : name;
-    return (await this.list()).find((m) => m.identity.format === 'gguf' && m.identity.repo === repo && m.identity.file === first);
+    return (await this.list()).find((m) => m.identity.format === 'gguf' && !m.incomplete && m.identity.repo === repo && m.identity.file === first);
   }
 
   /**
@@ -272,30 +277,94 @@ export class ModelsService {
     throw new AppError('VALIDATION', 'Fit needs localId, repo + file, or repo');
   }
 
-  /** Fit of every quant of a hub repo and the preselected best one. */
-  async hubFit(repo: string, engine: EngineKind, opts: { revision?: string; params?: FitRequest['params'] } = {}): Promise<HubFitResult> {
+  /**
+   * Fit of every choice of a hub repo for one engine family, and the preselected best one. llama.cpp:
+   * each GGUF quant (sub-folders included). vLLM / SGLang: each safetensors variant (a folder with its
+   * config.json, judged with its own config), whose `files` are exactly what its download fetches. A
+   * repo without that format gives no choices.
+   */
+  async hubFit(repo: string, engine: EngineKind, opts: { revision?: string; params?: FitRequest['params']; format?: 'ninfer' } = {}): Promise<HubFitResult> {
     const gpu = await this.gpu();
-    const files = await this.hub.files(repo, opts.revision);
-    const ggufWeights = files.filter((f) => f.kind === 'weights' && f.path.toLowerCase().endsWith('.gguf')).sort((a, b) => a.path.localeCompare(b.path));
-    const vllm = engine === 'vllm-docker' || engine === 'vllm-native';
-    const hasSafetensors = files.some((f) => f.kind === 'weights' && f.path.endsWith('.safetensors'));
-    let facts: ModelFactsEx;
-    let usable: HubFile[];
-    // Repos can ship both formats: vLLM loads the safetensors, llama.cpp the GGUF files.
-    if (ggufWeights.length > 0 && !(vllm && hasSafetensors)) {
-      facts = await this.readableFacts(repo, ggufWeights, opts.revision);
-      usable = files.filter((f) => !f.path.endsWith('.safetensors'));
-    } else {
-      facts = (await this.hub.configFacts(repo, opts.revision)).facts;
-      usable = files.filter((f) => !f.path.toLowerCase().endsWith('.gguf'));
-    }
+    const [files, info] = await Promise.all([this.hub.files(repo, opts.revision), this.hub.info(repo, opts.revision).catch(() => undefined)]);
+    const layout = repoLayout(files, { name: info?.name ?? repo, tags: info?.tags ?? [] });
     const params = fitParamsFrom(opts.params);
-    const choices = quantChoices(usable, facts, gpu, engine, params).map((c) => {
+    if (opts.format === 'ninfer') return this.ninferFit(repo, layout, gpu, params, opts.revision);
+    if (runsSafetensors(engine)) return this.variantsFit(repo, layout.safetensors, gpu, engine, params, opts.revision);
+    const ggufWeights = [...layout.gguf.weights].sort((a, b) => a.path.localeCompare(b.path));
+    if (ggufWeights.length === 0) return { choices: [], facts: {} };
+    const facts = await this.readableFacts(repo, ggufWeights, opts.revision);
+    const choices = quantChoices(ggufWeights, facts, gpu, engine, params).map((c) => {
       const first = [...c.files].sort((a, b) => a.path.localeCompare(b.path))[0] as HubFile;
       return { ...c, weakKey: weakKey({ repo, file: first.path, quant: quantFromFilename(path.posix.basename(first.path)), sizeBytes: c.sizeBytes }) };
     });
-    const best = bestQuant(usable, facts, gpu, engine, params);
+    const best = pickBest(choices);
     return { choices, facts, ...(best ? { best: best.groupKey } : {}) };
+  }
+
+  /**
+   * One choice per NInfer artifact: its bytes plus llama.cpp's KV math (marked approximate), with the
+   * layout read from a GGUF of the same repo when there is one, else the manifest and the repo name.
+   */
+  private async ninferFit(repo: string, layout: RepoLayout<HubFile>, gpu: GpuMem, params: FitParams, revision?: string): Promise<HubFitResult> {
+    if (layout.ninfer.length === 0) return { choices: [], facts: {} };
+    const ggufWeights = [...layout.gguf.weights].sort((a, b) => a.path.localeCompare(b.path));
+    const fromGguf = ggufWeights.length > 0 ? await this.readableFacts(repo, ggufWeights, revision).catch(() => undefined) : undefined;
+    const choices: HubFitResult['choices'] = [];
+    let facts: ModelFactsEx = {};
+    for (const a of layout.ninfer) {
+      const manifestFile = a.files.find((f) => NINFER_MANIFEST.test(f.path));
+      const manifest = manifestFile ? parseNinferManifest(await this.hub.json(repo, manifestFile.path, revision).catch(() => undefined)) : undefined;
+      const name = path.posix.basename(a.artifact.path);
+      const quant = precisionFromText(name) ?? 'NVFP4';
+      const paramsB = paramsFromLabel(repo.split('/')[1]) ?? fromGguf?.paramsB;
+      facts = { ...(fromGguf ?? {}), ...(manifest?.architecture ? { architecture: manifest.architecture } : {}), ...(manifest?.name ? { name: manifest.name } : {}), ...(paramsB ? { paramsB } : {}), quant };
+      const fit = estimateFit({ facts: { ...facts, bitsPerWeight: undefined, cpuOnlyFraction: undefined }, fileBytes: a.artifact.sizeBytes, gpu, engine: 'llamacpp-native', params });
+      fit.notes.push(FIT_NOTES.ninferApprox);
+      choices.push({
+        groupKey: a.artifact.path,
+        quant,
+        files: a.files,
+        sizeBytes: a.sizeBytes,
+        fit,
+        dir: a.dir,
+        ...(manifest ? { manifest } : {}),
+        // What the scanner will call the downloaded artifact.
+        weakKey: weakKey({ repo, file: name, sizeBytes: a.artifact.sizeBytes }),
+      });
+    }
+    const best = pickBest(choices);
+    return { choices, facts, ...(best ? { best: best.groupKey } : {}) };
+  }
+
+  /** One choice per safetensors variant, each judged with its own config.json; largest first. */
+  private async variantsFit(repo: string, variants: SafetensorsVariant<HubFile>[], gpu: GpuMem, engine: EngineKind, params: FitParams, revision?: string): Promise<HubFitResult> {
+    const choices: HubFitResult['choices'] = [];
+    let facts: ModelFactsEx | undefined;
+    for (const v of variants) {
+      // A folder whose config cannot be read is left out; the root model, a gated repo or a rate limit stop here.
+      const read = await this.hub.configFacts(repo, revision, v.dir).catch((e: unknown) => {
+        if (v.dir === '' || ['HF_GATED', 'HF_AUTH_REQUIRED', 'HF_RATE_LIMITED'].includes((e as AppError).code)) throw e;
+        return undefined;
+      });
+      if (!read) continue;
+      facts ??= read.facts;
+      const weightsBytes = v.weights.reduce((a, f) => a + f.sizeBytes, 0);
+      const precision = read.precision ?? v.precision;
+      const fit = estimateFit({ facts: { ...read.facts, ...(precision ? { quant: precision } : {}) }, fileBytes: weightsBytes, gpu, engine, params });
+      choices.push({
+        groupKey: v.dir === '' ? '*weights' : `${v.dir}/*`,
+        ...(precision ? { quant: precision } : {}),
+        files: v.files,
+        sizeBytes: v.sizeBytes,
+        fit,
+        dir: v.dir,
+        // What the scanner will call the downloaded folder: first weights file, weights bytes, no quant.
+        weakKey: weakKey({ repo, file: path.posix.basename((v.weights[0] as HubFile).path), sizeBytes: weightsBytes }),
+      });
+    }
+    choices.sort((a, b) => b.sizeBytes - a.sizeBytes);
+    const best = pickBest(choices);
+    return { choices, facts: facts ?? {}, ...(best ? { best: best.groupKey } : {}) };
   }
 
   /**
@@ -350,6 +419,16 @@ export class ModelsService {
     await pruneEmptyDirs(m.identity.format === 'safetensors' ? path.dirname(m.dir) : m.dir, lib as string);
     this.models = this.models?.filter((x) => x.id !== id);
   }
+}
+
+/** Every word of `q` is in `text` (case-insensitive); an empty `q` matches everything. */
+export function matchesWords(text: string, q: string): boolean {
+  const t = text.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => t.includes(w));
 }
 
 /** Removes now-empty folders (or folders holding only our download sidecar) up to the library root. */

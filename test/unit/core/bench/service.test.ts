@@ -342,6 +342,12 @@ describe('BenchService.plan', () => {
     // No fingerprint: nothing says Windows.
     const unknown = serviceSetup(tmp, { deps: { fit: partial, fingerprint: () => Promise.reject(new Error('no')) } });
     expect((await new BenchService(unknown.deps).plan(request())).warnings.map((w) => w.code)).toEqual(['oom_risk']);
+    // The card fits it, but other programs hold the memory now: warned with what is free right now.
+    const busy = serviceSetup(tmp, { deps: { fit: async () => fit({ level: 'good', levelNow: 'partial', needMiB: 20_000, availableMiB: 31_583, freeNowMiB: 9_000, fixes }) } });
+    expect((await new BenchService(busy.deps).plan(request())).warnings).toEqual([{ code: 'spill_risk', params: { needMiB: 20_000, availableMiB: 9_000, ...fixes } }]);
+    // Fits right now too: nothing to say.
+    const fine = serviceSetup(tmp, { deps: { fit: async () => fit({ level: 'good', levelNow: 'tight', freeNowMiB: 21_000 }) } });
+    expect((await new BenchService(fine.deps).plan(request())).warnings).toEqual([]);
     // vLLM never offloads: too large.
     const vllm = serviceSetup(tmp, { adapter: { kind: 'vllm-docker' }, deps: { fit: async () => fit({ level: 'no', needMiB: 90_000, availableMiB: 31_000 }) } });
     expect((await new BenchService(vllm.deps).plan(request({ engine: { kind: 'vllm-docker' } }))).warnings.map((w) => w.code)).toContain('MODEL_TOO_LARGE');
