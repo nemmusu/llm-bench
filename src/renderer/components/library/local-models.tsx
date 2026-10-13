@@ -144,7 +144,8 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   };
   if (local.isError) return <ErrorCallout error={local.error} action={{ label: t('common.retry'), onClick: () => void local.refetch() }} />;
   if (!local.data) return <Skeleton className="h-40" />;
-  const groups = SECTIONS.map((format) => ({ format, models: (local.data ?? []).filter((m) => m.identity.format === format) })).filter((g) => g.models.length > 0);
+  const all = local.data;
+  const groups = SECTIONS.map((format) => ({ format, models: all.filter((m) => m.identity.format === format) })).filter((g) => g.models.length > 0);
   return (
     <>
       {del.isError && <ErrorCallout error={del.error} className="mb-4" />}

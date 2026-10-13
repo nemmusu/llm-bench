@@ -160,6 +160,17 @@ describe('model page', () => {
     expect(await screen.findByText('In questo repository non ci sono file di modello che GPU Bench sa usare.')).toBeTruthy();
   });
 
+  it('a format whose choices are all gone, and a repo of formats GPU Bench does not run', async () => {
+    const api = libApi(world({ related: [], search: [hubModel('org/Model-GGUF', { formats: [], otherFormats: ['MLX'] })] }));
+    api.on('POST /api/models/hub/*/*/fit', () => ({ choices: [], facts: {} }));
+    renderLib(PAGE, api);
+    expect(await screen.findByText('Nessun modello in questo formato.')).toBeTruthy();
+    expect(screen.getAllByText('non supportato').length).toBeGreaterThan(0);
+    const bare = libApi(world({ related: [], search: [hubModel('org/Model-GGUF', { formats: [], otherFormats: [] })] }));
+    renderLib(PAGE, bare);
+    expect(await screen.findAllByText('In breve')).toBeTruthy();
+  });
+
   it('a choice without quant falls back to the file name; without best the first is selected', async () => {
     const api = libApi();
     const base = hubFit();
@@ -208,10 +219,16 @@ describe('model page', () => {
       { path: 'NInfer/mixed_nvfp4.ninfer', sizeBytes: 7e9, kind: 'weights' },
       { path: 'mlx/model.safetensors', sizeBytes: 4e9, kind: 'weights' },
       { path: 'BF16/MTP-BF16/mtp.safetensors', sizeBytes: 8e8, kind: 'mtp' },
+      { path: 'BF16/DFlash/model.safetensors', sizeBytes: 8e8, kind: 'draft' },
+      { path: 'mlx/model-2.safetensors', sizeBytes: 1e9, kind: 'weights' },
+      { path: 'encoder.safetensors', sizeBytes: 5e8, kind: 'weights' },
     ];
     const gguf = { choices: [{ groupKey: 'GGUF/Mixed-Q4_K_M.gguf', quant: 'Q4_K_M', files: [files[1]!], sizeBytes: 5e9, fit: fit('perfect'), weakKey: 'k1' }], best: 'GGUF/Mixed-Q4_K_M.gguf', facts: { paramsB: 9 } };
     const st = {
-      choices: [{ groupKey: 'FP8/*', quant: 'FP8', dir: 'FP8', files: [files[3]!, files[4]!], sizeBytes: 9e9 + 900, fit: fit('good'), weakKey: 'k2' }],
+      choices: [
+        { groupKey: 'FP8/*', quant: 'FP8', dir: 'FP8', files: [files[3]!, files[4]!], sizeBytes: 9e9 + 900, fit: fit('good'), weakKey: 'k2' },
+        { groupKey: '*weights', dir: '', files: [files[4]!], sizeBytes: 1e6, fit: fit('perfect'), weakKey: 'k4' },
+      ],
       best: 'FP8/*',
       facts: { paramsB: 9 },
     };
@@ -225,7 +242,10 @@ describe('model page', () => {
       const body = b as { engine: string; format?: string };
       return body.format === 'ninfer' ? nf : body.engine === 'vllm-docker' ? st : gguf;
     });
-    MODEL_DETAIL_SECTIONS.push({ id: 'test-recipes', order: 1, Component: ({ repo, layout }) => <p>{`Comandi per ${repo}: ${layout?.safetensors.length ?? 0} cartelle`}</p> });
+    MODEL_DETAIL_SECTIONS.push(
+      { id: 'test-later', order: 9, Component: () => <p>Dopo</p> },
+      { id: 'test-recipes', order: 1, Component: ({ repo, layout }) => <p>{`Comandi per ${repo}: ${layout?.safetensors.length ?? 0} cartelle`}</p> },
+    );
     try {
       renderLib(PAGE, api);
       expect(await screen.findByRole('radiogroup', { name: 'Scegli la versione da scaricare: Per llama.cpp (GGUF)' })).toBeTruthy();
@@ -240,11 +260,16 @@ describe('model page', () => {
       // Other formats: listed, never downloaded as a model.
       const other = document.querySelector('[data-format-section="other"]') as HTMLElement;
       expect(within(other).getByText('MLX')).toBeTruthy();
-      expect(within(other).getByText('parte di un modello')).toBeTruthy();
-      // The page's open slot.
+      expect(within(other).getAllByText('parte di un modello')).toHaveLength(2);
+      expect(within(other).getByText('Modello bozza')).toBeTruthy();
+      expect(within(other).getByText('cartella principale')).toBeTruthy();
+      expect(within(other).getByText('2 file')).toBeTruthy();
+      // The page's open slot, its sections in their order.
       expect(screen.getByText('Comandi per org/Model-GGUF: 1 cartelle')).toBeTruthy();
+      const slots = [...document.querySelectorAll('[data-section]')].map((e) => e.getAttribute('data-section'));
+      expect(slots).toEqual(['test-recipes', 'test-later']);
       // The facts card lists every format too, MLX marked as not supported.
-      expect(screen.getAllByText('non supportato').length).toBe(2);
+      expect(screen.getAllByText('non supportato').length).toBe(3);
       // The safetensors folder downloads its own files and nothing else.
       await userEvent.click(screen.getByRole('button', { name: /^Scarica FP8 · / }));
       await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^Scarica · / }));

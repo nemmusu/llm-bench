@@ -26,11 +26,6 @@ export type ModelFormat = 'gguf' | 'safetensors' | 'ninfer';
 
 const ICONS = { gguf: Layers, safetensors: Package, ninfer: Cpu } as const;
 
-/** NInfer runs on an RTX 5090 only. */
-export function isRtx5090(gpuName: string | undefined): boolean {
-  return /rtx\s*5090/i.test(gpuName ?? '');
-}
-
 /**
  * One format as a badge with the engine that runs it: "GGUF · llama.cpp", "Safetensors · vLLM / SGLang · FP8",
  * "NInfer · solo RTX 5090". `active`: the format the catalog filter asks for (drawn stronger).
@@ -101,13 +96,13 @@ export function FormatBadges({ m, engine, className }: { m: Pick<HubModel, 'form
  * "Richiede il fork PrismML di llama.cpp" next to models only a custom engine reads (PrismML's ternary
  * Bonsai quants): one click opens the Engines page with that engine ready to set up.
  */
-export function ForkBadge({ model, weakKey, label }: { model: MatchableModel; weakKey?: string | undefined; label?: string | undefined }) {
+export function ForkBadge({ model, weakKey, label }: { model: MatchableModel; weakKey?: string | undefined; label: string }) {
   const { t } = useI18n();
   const template = templateForModel(model);
   if (!template) return null;
   const name = t(`models.fork.names.${template.id as 'prismml-bonsai'}`);
   // The Engines page reads these (its own route search); an unknown template just opens the page.
-  const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), ...(label ? { modelName: label } : {}) };
+  const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), modelName: label };
   return (
     <Link
       to="/engines"

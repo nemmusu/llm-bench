@@ -425,6 +425,8 @@ describe('outside the tune pages', () => {
     renderApp('/', api);
     expect(await screen.findByText('stima tarata su 5 misure di questa scheda (scarto tipico 3,2%)')).toBeTruthy();
     renderUi(<FitSummary fit={{ level: 'good', needMiB: 7000, weightsMiB: 5000, kvMiB: 1500, overheadMiB: 500, availableMiB: 30000, utilization: 0.23, contextSize: 8192, basis: 'file-size', notes: [], calibration: { samples: 2, errorPct: 10, scope: 'architecture', rawNeedMiB: 7600 } }} />);
+    // No card total known (older estimates): no "how it is judged" help.
+    expect(screen.queryByRole('button', { name: 'Che cos’è «Come giudico la memoria»?' })).toBeNull();
     expect(screen.getByText(/^stima tarata su 2 misure di questa scheda \(scarto tipico 10(,0)?\s?%\)$/)).toBeTruthy();
   });
 

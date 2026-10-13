@@ -25,6 +25,7 @@ function app() {
     related: rec('related', []),
     hubFit: rec('hubFit'),
     fit: rec('fit'),
+    vramNow: rec('vramNow', { totalMiB: 32607, freeMiB: 10000, busyMiB: 22607, reserveMiB: 1024 }),
     deleteLocal: (...args: unknown[]) => {
       calls.push({ fn: 'deleteLocal', args });
       if (args[0] === 'outside') return Promise.reject(new AppError('VALIDATION', 'outside'));
@@ -118,7 +119,16 @@ describe('models routes', () => {
     expect((await hono.request('/api/models/hub/a/b/fit', json({ engine: 'nope' }))).status).toBe(400);
     expect((await hono.request('/api/models/fit', json({ localId: 'x', engine: 'llamacpp-native' }))).status).toBe(200);
     expect(calls[2]?.args).toEqual([{ localId: 'x', engine: 'llamacpp-native' }]);
+    // NInfer artifacts: the same route, by format.
+    await hono.request('/api/models/hub/a/b/fit', json({ engine: 'llamacpp-native', format: 'ninfer' }));
+    expect(calls[3]?.args).toEqual(['a/b', 'llamacpp-native', { format: 'ninfer' }]);
+    expect((await hono.request('/api/models/hub/a/b/fit', json({ engine: 'llamacpp-native', format: 'mlx' }))).status).toBe(400);
     expect((await hono.request('/api/models/fit', { method: 'POST', body: 'not json' })).status).toBe(400);
+  });
+
+  it('says what the card holds right now', async () => {
+    const { hono } = app();
+    expect(await (await hono.request('/api/models/vram')).json()).toEqual({ totalMiB: 32607, freeMiB: 10000, busyMiB: 22607, reserveMiB: 1024 });
   });
 
   it('deletes local models, mapping refusals to 400', async () => {

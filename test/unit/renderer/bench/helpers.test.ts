@@ -42,7 +42,7 @@ import {
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS } from '../../../../src/renderer/components/bench/history';
 import { kpisOf, sentenceKey } from '../../../../src/renderer/components/bench/kpis';
 import { initialLive, liveReducer, MAX_LOG_LINES } from '../../../../src/renderer/components/bench/live-state';
-import { engineFamily, initialModelKey, modelOptions, requestModel, savedModelId, triedOn } from '../../../../src/renderer/components/bench/model-options';
+import { engineFamily, formatNoteOf, initialModelKey, modelOptions, requestModel, savedModelId, triedOn } from '../../../../src/renderer/components/bench/model-options';
 import { guessNeeds, needsFromPlan } from '../../../../src/renderer/components/bench/needs';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
 import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../../../../src/renderer/components/bench/phases';
@@ -342,6 +342,16 @@ describe('model options', () => {
     expect('quant' in bare).toBe(false);
     const vllm = modelOptions('vllm-docker', [gguf, st], list);
     expect(vllm.map((o) => o.key)).toEqual(['local:s', 'curated:w']);
+    // Each engine its format: SGLang reads the safetensors too, NInfer only .ninfer artifacts (no suggestions yet).
+    expect(modelOptions('sglang-docker', [gguf, st], list).map((o) => o.key)).toEqual(['local:s', 'curated:w']);
+    const nf = local('n', { format: 'ninfer', file: 'q.ninfer', repo: 'neroued/Q-NInfer' });
+    expect(modelOptions('ninfer-native', [gguf, st, nf], list).map((o) => o.key)).toEqual(['local:n']);
+    expect(modelOptions('ninfer-native', [nf], list)[0]).toMatchObject({ sub: 'neroued/Q-NInfer · q.ninfer' });
+    // A download stopped halfway is never offered.
+    expect(modelOptions('vllm-docker', [{ ...st, incomplete: { have: 1, total: 4 } }], [])).toEqual([]);
+    // A user command template reads either format, none more than the other.
+    expect(modelOptions('command', [gguf, st], []).map((o) => o.key)).toEqual(['local:a', 'local:s']);
+    expect([formatNoteOf('llamacpp-native'), formatNoteOf('vllm-native'), formatNoteOf('sglang-native'), formatNoteOf('ninfer-wsl'), formatNoteOf('command')]).toEqual(['llamacpp', 'vllm', 'vllm', 'ninfer', undefined]);
   });
 
   it('restores, saves and requests a choice', () => {

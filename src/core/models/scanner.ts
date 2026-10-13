@@ -491,7 +491,7 @@ export class ModelScanner {
     const manifestFile = l.files.find((f) => NINFER_MANIFEST.test(f.name));
     const manifest = manifestFile ? parseNinferManifest(await maybe(readJsonFile(manifestFile.path))) : undefined;
     const sumsFile = l.files.find((f) => NINFER_SUMS.test(f.name));
-    const sums = sumsFile ? parseSha256Sums((await maybe(readFile(sumsFile.path, 'utf8'))) ?? '') : new Map<string, string>();
+    const sums = parseSha256Sums(sumsFile ? await maybe(readFile(sumsFile.path, 'utf8')) : undefined);
     const out: LocalModel[] = [];
     for (const f of artifacts) {
       const mine = manifest && (manifest.filename === undefined || manifest.filename === f.name) ? manifest : undefined;
@@ -518,7 +518,7 @@ export class ModelScanner {
         facts,
       };
       if (src.repo) identity.repo = src.repo;
-      if (src.revision ?? known.revision) identity.revision = (src.revision ?? known.revision) as string;
+      if (src.revision) identity.revision = src.revision;
       if (quant) identity.quant = quant;
       if (sha256) identity.sha256 = sha256;
       out.push({

@@ -197,7 +197,7 @@ export class DownloadService {
     if (rec.running) await this.stop(rec, 'cancel');
     else {
       await this.removeParts(rec);
-      await this.planSidecar(rec, true).catch(() => undefined);
+      await this.dropPlanned(rec);
       this.setState(rec, 'cancelled');
     }
     await this.persist();
@@ -298,7 +298,7 @@ export class DownloadService {
     } catch (e) {
       if (rec.intent === 'cancel') {
         await this.removeParts(rec);
-        await this.planSidecar(rec, true).catch(() => undefined);
+        await this.dropPlanned(rec);
         this.setState(rec, 'cancelled');
       } else if (rec.intent) {
         this.setState(rec, 'paused');
@@ -363,34 +363,30 @@ export class DownloadService {
     rec.job.bytesDone = rec.doneBytes;
   }
 
-  private async writeSidecar(rec: JobRecord, file: string, sha256: string, bytes: number): Promise<void> {
-    const existing = await readSidecar(rec.job.dest);
-    const sidecar: DownloadSidecar = {
-      repo: rec.job.repo as string,
-      revision: rec.commit ?? existing?.revision ?? rec.revision,
-      files: { ...(existing?.files ?? {}), [file]: { sha256, sizeBytes: bytes } },
-      ...(existing?.planned ? { planned: existing.planned } : {}),
-    };
-    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
+  /** Reads the repo folder's sidecar (a fresh one when there is none), changes it and writes it back. */
+  private async updateSidecar(rec: JobRecord, change: (s: DownloadSidecar) => DownloadSidecar): Promise<void> {
+    const existing = (await readSidecar(rec.job.dest)) ?? { repo: rec.job.repo as string, revision: rec.revision, files: {} };
+    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(change(existing), null, 2));
   }
 
-  /**
-   * Records what this job sets out to fetch (`planned`, merged with earlier jobs into the same folder)
-   * before its first byte, or (`drop`) forgets what a cancelled job never finished.
-   */
-  private async planSidecar(rec: JobRecord, drop = false): Promise<void> {
-    const existing = await readSidecar(rec.job.dest);
-    if (drop && !existing) return;
-    const mine = rec.job.files.map((f) => f.path);
-    const unfinished = new Set(mine.filter((p) => !rec.done.includes(p)));
-    const planned = drop ? (existing?.planned ?? []).filter((p) => !unfinished.has(p)) : [...new Set([...(existing?.planned ?? []), ...mine])].sort();
-    const sidecar: DownloadSidecar = {
-      repo: rec.job.repo as string,
-      revision: existing?.revision ?? rec.revision,
-      files: existing?.files ?? {},
-      ...(planned.length > 0 ? { planned } : {}),
-    };
-    await writeFileAtomic(path.join(rec.job.dest, DOWNLOAD_SIDECAR), JSON.stringify(sidecar, null, 2));
+  private writeSidecar(rec: JobRecord, file: string, sha256: string, bytes: number): Promise<void> {
+    // The commit the hub resolved the files at (the revision asked for may be a branch name).
+    return this.updateSidecar(rec, (s) => ({ ...s, revision: rec.commit ?? s.revision, files: { ...s.files, [file]: { sha256, sizeBytes: bytes } } }));
+  }
+
+  /** Records what this job sets out to fetch (`planned`, merged with earlier jobs into the same folder) before its first byte. */
+  private planSidecar(rec: JobRecord): Promise<void> {
+    return this.updateSidecar(rec, (s) => ({ ...s, planned: [...new Set([...(s.planned ?? []), ...rec.job.files.map((f) => f.path)])].sort() }));
+  }
+
+  /** A cancelled job: what it never finished is no longer planned (the folder reads as what it really holds). */
+  private async dropPlanned(rec: JobRecord): Promise<void> {
+    if (!(await readSidecar(rec.job.dest))) return;
+    const unfinished = new Set(rec.job.files.map((f) => f.path).filter((p) => !rec.done.includes(p)));
+    await this.updateSidecar(rec, ({ planned, ...s }) => {
+      const left = (planned as string[]).filter((p) => !unfinished.has(p));
+      return left.length > 0 ? { ...s, planned: left } : s;
+    });
   }
 
   /** Progress of the current file → job bytes, EWMA speed and ETA; throttled event. */

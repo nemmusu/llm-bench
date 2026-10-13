@@ -15,7 +15,26 @@ import {
   variantDownload,
   type RepoFile,
 } from '../../../src/contract/formats';
+import { BUSY_NOTE_SHARE, busyVram, VRAM_RESERVE_MIB } from '../../../src/contract/models';
 import { toHubFile } from '../../../src/core/models/hub';
+
+describe('the "other programs" note', () => {
+  const card = { totalMiB: 32607, level: 'good' as const };
+  it('speaks when the busy memory changes this launch, or is a notable share of the card', () => {
+    // Little in use, nothing changes: nothing to say.
+    expect(busyVram({ ...card, busyMiB: 2300, freeNowMiB: 30307, levelNow: 'good' })).toBeUndefined();
+    // Changes the verdict of a launch now.
+    expect(busyVram({ ...card, busyMiB: 2300, freeNowMiB: 30307, levelNow: 'partial' })).toEqual({ busyMiB: 2300, freeMiB: 30307 });
+    // A notable share of the card beyond the reserve, whatever the model.
+    const notable = Math.ceil(BUSY_NOTE_SHARE * card.totalMiB) + VRAM_RESERVE_MIB;
+    expect(busyVram({ ...card, busyMiB: notable, freeNowMiB: card.totalMiB - notable, levelNow: 'good' })).toEqual({ busyMiB: notable, freeMiB: card.totalMiB - notable });
+    expect(busyVram({ totalMiB: 32607, busyMiB: notable, freeNowMiB: 100 })).toEqual({ busyMiB: notable, freeMiB: 100 });
+    // Unknown: nothing.
+    expect(busyVram({ ...card, freeNowMiB: 1 })).toBeUndefined();
+    expect(busyVram({ ...card, busyMiB: 1 })).toBeUndefined();
+    expect(busyVram({ busyMiB: 1, freeNowMiB: 1 })).toBeUndefined();
+  });
+});
 
 const files = (entries: [string, number][]): RepoFile[] => entries.map(([path, size]) => toHubFile({ path, size }));
 
@@ -125,6 +144,7 @@ describe('precision', () => {
     expect(precisionFromConfig(ct({ num_bits: 8, type: 'int' }))).toBe('INT8');
     expect(precisionFromConfig(ct({ num_bits: 2 }))).toBeUndefined();
     expect(precisionFromConfig({ quantization_config: { quant_method: 'unknown-thing' } })).toBeUndefined();
+    expect(precisionFromConfig({ quantization_config: {} })).toBeUndefined();
     expect(precisionFromConfig({ torch_dtype: 'bfloat16' })).toBe('BF16');
     expect(precisionFromConfig({ dtype: 'float16' })).toBe('FP16');
     expect(precisionFromConfig({ torch_dtype: 'float32' })).toBe('FP32');
@@ -297,6 +317,7 @@ describe('repo layout', () => {
     expect(parseNinferManifest({})).toBeUndefined();
     expect(parseNinferManifest(null)).toBeUndefined();
     const sums = parseSha256Sums(`${'a'.repeat(64)}  q.ninfer\r\n${'B'.repeat(64)} *./manifest.json\nnot a line\n`);
+    expect(parseSha256Sums(undefined).size).toBe(0);
     expect([...sums]).toEqual([
       ['q.ninfer', 'a'.repeat(64)],
       ['manifest.json', 'b'.repeat(64)],

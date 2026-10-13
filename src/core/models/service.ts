@@ -265,7 +265,7 @@ export class ModelsService {
       // A .ninfer artifact: NInfer's own estimate, with what its manifest said (the scanner keeps it in the facts).
       if (m.identity.format === 'ninfer') {
         const manifest = { ...(facts.name ? { name: facts.name } : {}), ...(facts.components ? { components: facts.components } : {}) };
-        return ninferFit({ artifactBytes: m.identity.sizeBytes ?? 0, manifest, label: m.identity.displayName, params: req.params, gpu });
+        return ninferFit({ artifactBytes: m.identity.sizeBytes as number, manifest, label: m.identity.displayName, params: req.params, gpu });
       }
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
       return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(await calibrated(id, facts)) });

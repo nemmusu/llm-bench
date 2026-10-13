@@ -365,6 +365,42 @@ describe('ModelsService', () => {
     expect((await svc.fit({ localId: bare.id, engine: 'llamacpp-native' })).notes).toContain('ninfer.estimate');
   });
 
+  it('what the card holds right now, without the engines GPU Bench started', async () => {
+    gpu = { totalMiB: 32607, freeMiB: 10_000, ownMiB: 8000 };
+    expect(await service().vramNow()).toEqual({ totalMiB: 32607, freeMiB: 10_000, busyMiB: 32607 - 10_000 - 8000, reserveMiB: 1024 });
+    gpu = { totalMiB: 32607, freeMiB: 30_000 };
+    expect((await service().vramNow())?.busyMiB).toBe(2607);
+    gpu = undefined;
+    expect(await service().vramNow()).toBeNull();
+  });
+
+  it('hub fits that survive missing parts: no repo info, unreadable GGUF or manifest, configs without a precision', async () => {
+    const svc = service();
+    hub.addRepo({ id: 'org/Thing-AWQ', files: [{ path: 'config.json', content: '{}' }, { path: 'model.safetensors', size: 64 }] });
+    hub.addRepo({ id: 'org/Plain', files: [{ path: 'config.json', content: '{}' }, { path: 'model.safetensors', size: 64 }] });
+    hub.addRepo({
+      id: 'org/Broken-NInfer',
+      files: [
+        { path: 'GGUF/x-Q4_K_M.gguf', size: 100 },
+        { path: 'GGUF/x-Q8_0.gguf', size: 100 },
+        { path: 'a.ninfer', size: 64 },
+        { path: 'A.artifact-manifest.json', content: '{' },
+      ],
+    });
+    // The repo's info does not answer: the files are enough (the name hint comes from the repo id).
+    hub.behavior.failNext = { status: 500, times: 1, match: 'revision/main' };
+    const awq = await svc.hubFit('org/Thing-AWQ', 'vllm-docker', { revision: 'main' });
+    expect(awq.choices[0]?.quant).toBe('AWQ');
+    const plain = await svc.hubFit('org/Plain', 'sglang-docker');
+    expect(plain.choices[0]).not.toHaveProperty('quant');
+    const broken = await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' });
+    expect(broken.choices[0]).not.toHaveProperty('manifest');
+    expect(broken.facts).toEqual({ quant: 'NVFP4' });
+    // Nothing fits a tiny card: no best.
+    gpu = { totalMiB: 512, freeMiB: 512 };
+    expect((await svc.hubFit('org/Broken-NInfer', 'llamacpp-native', { format: 'ninfer' })).best).toBeUndefined();
+  });
+
   it('serves the repo info of one hub repo, with the hub errors mapped', async () => {
     const svc = service();
     const info = await svc.hubModel('ggml-org/Qwen3-0.6B-GGUF');

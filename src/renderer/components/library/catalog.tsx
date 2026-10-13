@@ -1,7 +1,9 @@
 import { Check, Clock, Cpu, Download, Heart, Loader2, Lock, Search, X } from 'lucide-react';
 import { RadioGroup as R } from 'radix-ui';
 import { useEffect, useId, useState, type ReactNode } from 'react';
+import type { GpuInfo } from '../../../contract/hardware';
 import type { HubModel } from '../../../contract/models';
+import { ninferGpuSupported } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useAllRuns, useCurated, useHubCatalog, useMainGpu, type CatalogParams, type CatalogSort } from '../../lib/queries-library';
@@ -19,7 +21,7 @@ import type { CatalogState } from './catalog-search';
 import { RowFacts, RowTitle, rowClass } from './catalog-rows';
 import { CuratedRows, curatedFor } from './curated-list';
 import { ErrorCallout } from './error-callout';
-import { ENGINE_FILTERS, ForkBadge, FormatBadges, formatOfEngine, isRtx5090, type CatalogFormat, type EngineFilter } from './formats';
+import { ENGINE_FILTERS, ForkBadge, FormatBadges, formatOfEngine, type CatalogFormat, type EngineFilter } from './formats';
 import { bucketRange, triedModels, type SizeBucket, type TriedModel } from './helpers';
 
 /** Authors offered in the filter, by format: the big GGUF quantizers, the labs that publish weights, NInfer's builders. */
@@ -101,7 +103,7 @@ function FilterGroup({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function HubRow({ m, tried, engine, gpuName }: { m: HubModel; tried: TriedModel | undefined; engine: EngineFilter; gpuName: string | undefined }) {
+function HubRow({ m, tried, engine, gpu }: { m: HubModel; tried: TriedModel | undefined; engine: EngineFilter; gpu: GpuInfo | undefined }) {
   const { t, number, compact, relative, bytes } = useI18n();
   const ninferOnly = !m.formats.includes('gguf') && !m.formats.includes('safetensors') && m.formats.includes('ninfer');
   const [owner, name] = m.repo.split('/') as [string, string];
@@ -119,7 +121,7 @@ function HubRow({ m, tried, engine, gpuName }: { m: HubModel; tried: TriedModel 
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <FormatBadges m={m} engine={engine} />
         <ForkBadge model={{ displayName: name, repo: m.repo }} label={m.repo} />
-        {(engine === 'ninfer' || ninferOnly) && m.formats.includes('ninfer') && !isRtx5090(gpuName) && gpuName !== undefined && (
+        {(engine === 'ninfer' || ninferOnly) && m.formats.includes('ninfer') && gpu !== undefined && !ninferGpuSupported({ name: gpu.name, computeCapability: gpu.computeCapability, memTotalMiB: gpu.memoryTotalMiB }) && (
           <Badge tone="warning" size="sm" className="relative z-10">
             {t('models.needs5090')}
           </Badge>
@@ -381,7 +383,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
           <>
             <ul className="grid gap-2 xl:grid-cols-2" aria-label={t('models.catalog.results')}>
               {models.map((m) => (
-                <HubRow key={m.repo} m={m} tried={triedByRepo.get(m.repo)} engine={engine} gpuName={gpu?.name} />
+                <HubRow key={m.repo} m={m} tried={triedByRepo.get(m.repo)} engine={engine} gpu={gpu} />
               ))}
             </ul>
             {catalog.isFetchNextPageError && <ErrorCallout error={catalog.error} action={{ label: t('common.retry'), onClick: () => void fetchNextPage() }} />}

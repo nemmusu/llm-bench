@@ -170,12 +170,14 @@ describe('ModelScanner', () => {
     gguf(path.join(dir, 'partial-Q8_0-00001-of-00003.gguf'));
     gguf(path.join(dir, 'gap-Q8_0-00001-of-00002.gguf'));
     gguf(path.join(dir, 'gap-Q8_0-00003-of-00002.gguf'));
+    gguf(path.join(dir, 'nolabel-00002-of-00002.gguf'));
     writeGguf(path.join(dir, 'mtp-gemma-4-x.gguf'), { metadata: { 'general.architecture': 'gemma4-assistant' } });
     writeGguf(path.join(dir, 'mmproj-F16.gguf'), { metadata: { 'general.architecture': 'clip' } });
     writeGguf(path.join(dir, 'other-model-draft-Q4_0.gguf'), { metadata: {} });
     writeFileSync(path.join(dir, 'notes.txt'), 'hi');
     const models = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
-    expect(models.map((m) => m.identity.displayName).sort()).toEqual(['gap-Q8_0', 'gemma-4-x-UD-Q4_K_XL', 'other-model-Q8_0', 'partial-Q8_0']);
+    expect(models.map((m) => m.identity.displayName).sort()).toEqual(['gap-Q8_0', 'gemma-4-x-UD-Q4_K_XL', 'nolabel', 'other-model-Q8_0', 'partial-Q8_0']);
+    expect(byName(models, 'nolabel')?.identity.quant).toBeUndefined();
     // A split set with parts missing is listed, marked: "incompleto (1 di 3 file)".
     expect(byName(models, 'partial-Q8_0')).toMatchObject({ incomplete: { have: 1, total: 3 }, auxiliary: [], identity: { quant: 'Q8_0', format: 'gguf' } });
     expect(byName(models, 'gap-Q8_0')?.incomplete).toEqual({ have: 1, total: 2 });
@@ -409,6 +411,19 @@ describe('ModelScanner', () => {
     expect(byName(models, 'other')?.identity).toMatchObject({ sha256: 'c'.repeat(64), facts: { paramsB: 27 } });
     expect(byName(models, 'mine')?.identity).toMatchObject({ format: 'ninfer', source: 'local', facts: {} });
     expect(byName(models, 'mine')?.identity.sha256).toBeUndefined();
+  });
+
+  it('a model folder added as a folder of its own (the "exact folder" of the Linux copy); a download with no weights yet', async () => {
+    const exact = path.join(t.dir, 'exact', 'Qwopus3.8-27B-Flash-V2-W4A16');
+    writeFileSync(path.join(mkdirAll(exact), 'config.json'), '{"num_hidden_layers": 1}');
+    writeSafetensors(path.join(exact, 'model.safetensors'));
+    // Only the config arrived so far; the sidecar says what is coming.
+    const coming = path.join(library, 'o', 'coming');
+    writeFileSync(path.join(mkdirAll(coming), 'config.json'), '{"num_hidden_layers": 1}');
+    sidecar(coming, 'o/coming', { 'config.json': {} }, ['config.json', 'model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors']);
+    const models = await scanner({ extraModelDirs: [exact] }).scan();
+    expect(byName(models, 'Qwopus3.8-27B-Flash-V2-W4A16')?.identity).toMatchObject({ format: 'safetensors', source: 'local' });
+    expect(byName(models, 'o/coming')).toMatchObject({ incomplete: { have: 0, total: 2 }, identity: { file: 'model-00001-of-00002.safetensors', files: [] } });
   });
 
   it('a safetensors header that cannot be read costs the parameter count, not the model', async () => {
