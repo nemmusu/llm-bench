@@ -4,6 +4,7 @@ import { hardwareFingerprintSchema } from './hardware';
 import { engineKindSchema, launchParamsSchema } from './engines';
 import { customEngineBaseSchema } from './custom-engines';
 import { fitFixesSchema, modelIdentitySchema } from './models';
+import { appliedRecipeSchema } from './recipes';
 
 export const RESULT_SCHEMA_VERSION = 1;
 /** Bump when a metric definition changes; stored with each run so old runs stay comparable. */
@@ -756,6 +757,8 @@ export const runResultSchema = z.object({
   note: z.string().optional(),
   /** Profile 'tune' only: the search, every launch and the measured combinations. */
   tuning: tuningSchema.optional(),
+  /** "Comandi per questo modello": the recipe the run used (its exact command is `launch`). */
+  recipe: appliedRecipeSchema.optional(),
 });
 export type RunResult = z.infer<typeof runResultSchema>;
 

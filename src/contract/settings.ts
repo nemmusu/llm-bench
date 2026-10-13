@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { customEnginesSettingSchema } from './custom-engines';
 import { engineConfigSchema, launchParamsSchema } from './engines';
 import { ninferSettingsSchema } from './ninfer';
+import { modelRecipesSettingSchema } from './recipes';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -35,6 +36,9 @@ export const settingsSchema = z.object({
   // ---- NInfer (contract/ninfer.ts) ----
   /** Where NInfer's build is: Linux, or a WSL distro and the path inside it (Engines page). */
   ninfer: ninferSettingsSchema.optional(),
+  // ---- recipes: "Comandi per questo modello" (contract/recipes.ts) ----
+  /** Per-model command recipes; invalid entries are dropped on read, never the whole file. */
+  modelRecipes: modelRecipesSettingSchema,
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

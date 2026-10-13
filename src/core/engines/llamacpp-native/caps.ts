@@ -197,7 +197,7 @@ export class CapsProbe {
 
   /** `argv` = launcher prefix + binary path (the last element is the file that identifies the build). */
   async version(argv: readonly string[], env: Record<string, string> = {}): Promise<ProbeResult> {
-    const key = await this.key(argv);
+    const key = await this.key(argv, env);
     let p = this.versions.get(key);
     if (!p) {
       p = this.runVersion(argv, env);
@@ -207,7 +207,7 @@ export class CapsProbe {
   }
 
   async probe(argv: readonly string[], env: Record<string, string> = {}): Promise<LlamaCaps> {
-    const key = await this.key(argv);
+    const key = await this.key(argv, env);
     let p = this.caps.get(key);
     if (!p) {
       p = this.runCaps(argv, env);
@@ -218,9 +218,10 @@ export class CapsProbe {
     return p;
   }
 
-  private async key(argv: readonly string[]): Promise<string> {
+  /** The binary (path, size, mtime) and the environment it runs with (a fork's own variables change what it says). */
+  private async key(argv: readonly string[], env: Record<string, string>): Promise<string> {
     const st = await this.stat(argv[argv.length - 1] as string).catch(() => ({ size: -1, mtimeMs: -1 }));
-    return `${JSON.stringify(argv)}|${st.size}|${st.mtimeMs}`;
+    return `${JSON.stringify(argv)}|${st.size}|${st.mtimeMs}|${JSON.stringify(env)}`;
   }
 
   private async runVersion(argv: readonly string[], env: Record<string, string>): Promise<ProbeResult> {

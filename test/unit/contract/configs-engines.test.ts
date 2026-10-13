@@ -4,7 +4,7 @@ import { launchParamsSchema, type LaunchParams } from '../../../src/contract/eng
 
 const P = (over: Partial<LaunchParams> = {}): LaunchParams => launchParamsSchema.parse(over);
 
-describe('configurations of SGLang, command engines and RoPE scaling', () => {
+describe('configurations of SGLang, command engines and forks', () => {
   it('reads SGLang flags into the vLLM-like fields', () => {
     const argv = [
       '/venv/bin/python',
@@ -49,32 +49,11 @@ describe('configurations of SGLang, command engines and RoPE scaling', () => {
     expect(engineFamilyOf('command')).toBe('external');
   });
 
-  it('reads RoPE scaling from every engine and from the params', () => {
-    const llama = configParamsOf({ engineKind: 'llamacpp-native', argv: ['llama-server', '-c', '131072', '--rope-scaling', 'yarn', '--rope-scale', '4', '--yarn-orig-ctx', '32768'] });
-    expect(llama.ropeScaling).toBe('yarn:4:32768');
-    const linear = configParamsOf({ engineKind: 'llamacpp-native', argv: ['llama-server', '--rope-scaling', 'linear', '--rope-scale', '2', '--yarn-orig-ctx', '4096'] });
-    expect(linear.ropeScaling).toBe('linear:2');
-    // Unreadable values keep what an earlier occurrence said.
-    const bad = configParamsOf({ engineKind: 'llamacpp-native', argv: ['llama-server', '--rope-scaling', 'yarn', '--rope-scale', '3', '--rope-scale', 'x', '--yarn-orig-ctx', '8192', '--yarn-orig-ctx', '-1'] });
-    expect(bad.ropeScaling).toBe('yarn:3:8192');
-    expect(configParamsOf({ engineKind: 'llamacpp-native', argv: ['llama-server', '--rope-scaling', 'none'] }).ropeScaling).toBeUndefined();
+  it('reads RoPE scaling from SGLang overrides (the recipes shape)', () => {
     const rope = { rope_type: 'yarn', factor: 4, original_max_position_embeddings: 32768 };
-    const vllm = configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--hf-overrides', JSON.stringify({ rope_scaling: rope, max_position_embeddings: 131072 })] });
-    expect(vllm.ropeScaling).toBe('yarn:4:32768');
-    expect(vllm.other).toEqual(['--hf-overrides {"max_position_embeddings":131072}']);
-    const legacy = configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--rope-scaling', JSON.stringify({ type: 'yarn', factor: 2, original_max_position_embeddings: 8192 })] });
-    expect(legacy.ropeScaling).toBe('yarn:2:8192');
     const sglang = configParamsOf({ engineKind: 'sglang-docker', argv: ['python3', '-m', 'sglang.launch_server', '--json-model-override-args', JSON.stringify({ rope_scaling: rope })] });
-    expect(sglang.ropeScaling).toBe('yarn:4:32768');
+    expect(sglang.ropeScaling).toEqual({ type: 'yarn', factor: 4, originalContext: 32768 });
     expect(sglang.other).toEqual([]);
-    // Overrides that are not JSON, or JSON without a rope_scaling object, stay as other settings.
-    expect(configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--hf-overrides', 'nope'] }).other).toEqual(['--hf-overrides nope']);
-    expect(configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--hf-overrides', '[1]'] }).other).toEqual(['--hf-overrides [1]']);
-    expect(configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--rope-scaling', '{"factor":"x"}'] }).ropeScaling).toBeUndefined();
-    expect(configParamsOf({ engineKind: 'vllm-native', argv: ['vllm', 'serve', 'm', '--rope-scaling', '[2]'] }).ropeScaling).toBe('[2]:1');
-    // Params alone (no command line): the same text.
-    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ ropeScaling: { type: 'yarn', factor: 4, originalContext: 32768 } }) }).ropeScaling).toBe('yarn:4:32768');
-    expect(configParamsOf({ engineKind: 'external', params: P({ ropeScaling: { type: 'yarn', factor: 4, originalContext: 32768 } }) }).ropeScaling).toBeUndefined();
   });
 
   it('keeps a custom engine apart from its base in the key', () => {

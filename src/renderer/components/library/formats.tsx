@@ -101,12 +101,12 @@ export function ForkBadge({ model, weakKey, label }: { model: MatchableModel; we
   const template = templateForModel(model);
   if (!template) return null;
   const name = t(`models.fork.names.${template.id as 'prismml-bonsai'}`);
-  // The Engines page reads these (its own route search); an unknown template just opens the page.
+  // The Engines page opens its "Aggiungi motore" from these; an unknown template just opens the page.
   const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), modelName: label };
   return (
     <Link
       to="/engines"
-      search={search as never}
+      search={search}
       className="relative z-10 inline-flex rounded-full focus-ring"
       aria-label={`${t('models.fork.requires', { name })} · ${t('models.fork.action')}`}
     >
