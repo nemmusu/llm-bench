@@ -170,7 +170,8 @@ const VALUE_FLAGS = new Map<string, Setter>();
 const add = (flags: string[], set: Setter) => {
   for (const f of flags) VALUE_FLAGS.set(f, set);
 };
-add(['-c', '--ctx-size', '--max-model-len', '--context-length'], (r, v) => {
+// NInfer: --max-context per request, --kv-dtype, --max-concurrency.
+add(['-c', '--ctx-size', '--max-model-len', '--context-length', '--max-context'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.contextSize = n;
 });
@@ -180,7 +181,7 @@ add(['-ctk', '--cache-type-k'], (r, v) => {
 add(['-ctv', '--cache-type-v'], (r, v) => {
   if (v[0]) r.cacheTypeV = v[0].toLowerCase();
 });
-add(['--kv-cache-dtype'], (r, v) => {
+add(['--kv-cache-dtype', '--kv-dtype'], (r, v) => {
   if (v[0]) r.cacheTypeK = r.cacheTypeV = v[0].toLowerCase();
 });
 add(['-b', '--batch-size'], (r, v) => {
@@ -189,7 +190,7 @@ add(['-b', '--batch-size'], (r, v) => {
 add(['-ub', '--ubatch-size'], (r, v) => {
   r.ubatchSize = positive(v[0]) ?? r.ubatchSize;
 });
-add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests'], (r, v) => {
+add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests', '--max-concurrency'], (r, v) => {
   r.parallel = positive(v[0]) ?? r.parallel;
 });
 add(['-ngl', '--gpu-layers', '--n-gpu-layers'], (r, v) => {
@@ -351,6 +352,10 @@ const IGNORED_VALUE = new Set([
   '--model-path',
   '--random-seed',
   '-X',
+  // NInfer: the served name (GPU Bench's marker on benchmarks), its logs.
+  '--model-id',
+  '--log-stats-interval-ms',
+  '--request-log-jsonl',
 ]);
 const IGNORED_SWITCH = new Set([
   '--no-webui',
@@ -409,6 +414,9 @@ export function stableStringify(v: unknown): string {
 
 /** The engine's own arguments: after the image for Docker, after the executable (and subcommand, model) otherwise. */
 function engineArgs(argv: readonly string[], image: string | undefined): { args: readonly string[]; docker: boolean } {
+  // NInfer: its own arguments follow ninfer-serve (in WSL, after wsl.exe, env and the launcher script).
+  const serve = argv.findIndex((a) => /(^|[\\/])ninfer-serve$/.test(a));
+  if (serve >= 0) return { args: argv.slice(serve + 1), docker: false };
   if (image) {
     const at = argv.indexOf(image);
     if (at >= 0) return { args: argv.slice(at + 1), docker: false };

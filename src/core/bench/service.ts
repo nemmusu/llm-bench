@@ -6,6 +6,7 @@ import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
 import { extendedContext, type AppliedRecipe } from '../../contract/recipes';
+import { trainedContextOf } from '../../contract/ninfer';
 import { spilledRun, type Scenario, type TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
@@ -248,7 +249,7 @@ export class BenchService {
       throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
     }
     const adapter = this.deps.getAdapter(kind);
-    const trained = model.identity.facts?.contextLength;
+    const trained = trainedContextOf(model.identity);
     // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
     const modelContext = extendedContext(trained, r.params.ropeScaling);
     const params = autoLaunchParams(kind, scenario, r.params, modelContext);
@@ -290,7 +291,7 @@ export class BenchService {
     if (req.network === 'lan') c.launch = exposeOnLan(c.launch, opts.preview ? API_KEY_PLACEHOLDER : this.serverApiKey());
     const past = opts.preview ? undefined : (await this.expectedLoad(model, kind)).expectedLoadMs;
     const expectedLoadMs = past?.warm ?? past?.cold;
-    const beyond = beyondTrained(kind, c.launch.params, model.identity.facts?.contextLength);
+    const beyond = beyondTrained(kind, c.launch.params, trainedContextOf(model.identity));
     return {
       request: run,
       model,
@@ -347,7 +348,7 @@ export class BenchService {
    * yet), the fallback capped at the model's context.
    */
   private async recommendedContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
-    const max = extendedContext(model.identity.facts?.contextLength, params.ropeScaling);
+    const max = extendedContext(trainedContextOf(model.identity), params.ropeScaling);
     const cap = (n: number) => (max ? Math.min(n, max) : n);
     const candidates = [...new Set(SERVER_CONTEXTS.map(cap))];
     const vllm = isVllm(req.engine.kind);

@@ -10,6 +10,7 @@
  */
 import { engineBaseOf, type EngineKind } from '../../../contract/engines';
 import type { KvCapacity } from '../../../contract/results';
+import { ninferKvCapacity, ninferMemoryReport } from '../ninfer/logs';
 import { sglangKvCapacity } from './sglang';
 import { parseVllmLoadReport } from './vllm-logs';
 
@@ -65,5 +66,21 @@ export function parseKvCapacity(lines: readonly string[], kind: EngineKind): KvC
   const base = engineBaseOf(kind);
   if (base === 'vllm') return vllmKvCapacity(lines);
   if (base === 'sglang') return sglangKvCapacity(lines);
+  if (base === 'ninfer') return ninferKvCapacity(lines);
   return base === 'llamacpp' ? llamaKvCapacity(lines) : undefined;
+}
+
+/**
+ * What the start log says about the largest context a launch could hold (the tuner's capacity hint):
+ * vLLM / SGLang size their KV pool from the memory, whatever the context asked; NInfer only with
+ * --kv-capacity auto (an explicit capacity is just what was asked); llama.cpp echoes -c.
+ */
+export function capacityHintOf(lines: readonly string[], kind: EngineKind): number | undefined {
+  const base = engineBaseOf(kind);
+  if (base === 'llamacpp') return undefined;
+  if (base === 'ninfer') {
+    const r = ninferMemoryReport(lines);
+    return r.kvMode === 'auto' ? r.kvTokens : undefined;
+  }
+  return parseKvCapacity(lines, kind)?.tokens;
 }

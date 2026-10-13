@@ -20,6 +20,8 @@ export const KNOWN_STAGES = [
   'nvidia-toolkit',
   'configure',
   'docker-group',
+  'clone',
+  'build',
 ] as const;
 
 export function stageLabel(t: (k: MessageKey) => string, stage: string): string {

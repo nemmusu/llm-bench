@@ -105,6 +105,8 @@ export interface CoreEndpoints {
   dockerHost?: string;
   /** Docker Desktop installer URL override (tests/E2E point it at a local server). */
   dockerInstaller?: string;
+  /** wsl.exe stand-in (tests, E2E: a fake that runs the fake NInfer), as an argv prefix. */
+  wsl?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

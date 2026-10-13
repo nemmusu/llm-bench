@@ -205,13 +205,19 @@ export function buildPrompt(
 }
 
 /**
- * Text fallback for endpoints without /tokenize: ~CHARS_PER_TOKEN chars per wanted token, so the
- * real token count is approximate (the run is flagged tokens_approximate).
+ * Text fallback for endpoints without /tokenize: ~CHARS_PER_TOKEN chars per wanted token, or the
+ * calibrated scale of this server (text-scale.ts: characters per token and the tokens it adds around
+ * the text). Uncalibrated, the real token count is approximate (the run is flagged tokens_approximate).
  */
-export function buildTextPrompt(corpus: string, length: number, rep: number, opts: { seed: number; salt?: string }): string {
+export function buildTextPrompt(
+  corpus: string,
+  length: number,
+  rep: number,
+  opts: { seed: number; salt?: string; scale?: { charsPerToken: number; overhead: number } | undefined },
+): string {
   if (length <= 0) return '';
   if (corpus.length === 0) throw new AppError('INTERNAL', 'Empty corpus');
-  const chars = length * CHARS_PER_TOKEN;
+  const chars = opts.scale ? Math.max(1, Math.round((length - opts.scale.overhead) * opts.scale.charsPerToken)) : length * CHARS_PER_TOKEN;
   const off = promptOffset(corpus.length, length, rep, opts.seed, opts.salt);
   return promptSegments(corpus.length, chars, off, opts.seed + rep, PASSAGE_CHARS)
     .map(([from, to]) => corpus.slice(from, to))

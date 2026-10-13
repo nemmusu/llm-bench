@@ -106,6 +106,7 @@ export function buildDeps(b: BootEnv): CoreDeps {
       docker: toolOverride(env.GPUBENCH_DOCKER),
       dockerHost: env.GPUBENCH_DOCKER_HOST,
       dockerInstaller: env.GPUBENCH_DOCKER_INSTALLER_URL,
+      wsl: toolOverride(env.GPUBENCH_WSL),
     },
     platform,
     arch: b.arch,

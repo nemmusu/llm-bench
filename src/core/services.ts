@@ -23,11 +23,14 @@ import { SglangNativeAdapter } from './engines/sglang-native/adapter';
 import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
 import { createCustomEngineRoutes } from './engines/custom/routes';
+import { createNinferRoutes } from './engines/ninfer/routes';
+import { createNinferServices, type NinferServices } from './engines/ninfer/setup';
 import { FitCalibrator, type ModelKey } from './models/calibration';
 import { vllmRepoFiles } from './downloads/service';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
 import { engineBaseOf, isDockerKind, type EngineKind } from '../contract/engines';
+import { isNinferKind } from '../contract/ninfer';
 import { createLlamaBench } from './engines/llama-bench/llama-bench';
 import { DockerInstaller } from './setup/docker-installer';
 import { readOsRelease } from './setup/os-release';
@@ -69,6 +72,8 @@ export interface ModelsLookup {
   findGguf?(repo: string, file: string): Promise<LocalModel | undefined>;
   /** What the download of a hub GGUF will create (identity, paths, bytes), for plan previews. */
   plannedGguf?(repo: string, file: string, revision?: string): Promise<PlannedGguf>;
+  /** The library copy of a hub .ninfer artifact (repo + its path in the repo), when downloaded. */
+  findNinfer?(repo: string, file: string): Promise<LocalModel | undefined>;
 }
 
 const LLAMA_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
@@ -80,6 +85,8 @@ export interface CoreServices {
   docker: DockerServices;
   vllmDocker: VllmDockerAdapter;
   sglangDocker: SglangDockerAdapter;
+  /** NInfer: both adapters, its WSL processes, the guided build (engines/ninfer). */
+  ninfer: NinferServices;
   /** Models copied into Docker volumes (fast loads with Docker Desktop). */
   modelVolumes: ModelVolumes;
   models?: ModelsLookup;
@@ -164,6 +171,11 @@ export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
       return m ? getLocal(m.id) : undefined;
     },
     plannedGguf: (repo, file, revision) => ms.models.plannedGguf(repo, file, revision),
+    async findNinfer(repo, file) {
+      const name = path.posix.basename(file);
+      const all = await ms.models.list().catch(() => []);
+      return all.find((m) => m.identity.format === 'ninfer' && !m.incomplete && m.identity.repo === repo && m.identity.file === name);
+    },
   };
 }
 
@@ -196,6 +208,12 @@ export async function resolveModelTarget(
     return { identity: local.identity, local };
   }
   const { repo, file, revision } = req.model;
+  // NInfer: the library copy of a hub .ninfer artifact (downloaded first: there is no preview of one).
+  if (repo && file && isNinferKind(req.engine.kind)) {
+    const local = await models?.findNinfer?.(repo, file);
+    if (local) return { identity: local.identity, local };
+    throw new AppError('MODEL_NOT_FOUND', 'The model is not downloaded yet', { params: { repo, file, reason: 'not_downloaded' } });
+  }
   if (repo && file && LLAMA_KINDS.has(req.engine.kind)) {
     const local = await models?.findGguf?.(repo, file);
     if (local) return { identity: local.identity, local };
@@ -292,6 +310,16 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   const sglangDocker = new SglangDockerAdapter({ ...dockerEngine, hub: docker.hub, api: docker.api, hfToken: () => ctx.secrets.hfToken });
   // "Motori personalizzati": read from the settings on every use, so an edit applies to the next launch.
   const customEngines: CustomEngineSource = { list: async () => (await ctx.settings.get()).customEngines };
+  const ninfer = createNinferServices({
+    deps,
+    createClient,
+    ownership,
+    settings: ctx.settings,
+    gpus: async () =>
+      (await ctx.telemetry.probe().catch(() => [])).map((g) => ({ name: g.name, memTotalMiB: g.memoryTotalMiB, ...(g.computeCapability ? { computeCapability: g.computeCapability } : {}) })),
+  });
+  // NInfer servers a crashed session left in WSL (checked by their marker); no record = WSL is not even asked.
+  void ninfer.cleanupOrphans().catch((e: unknown) => deps.log.warn('NInfer WSL cleanup failed', { error: String(e) }));
   const registry = new EngineRegistry(
     withCustomEngines(
       [
@@ -304,6 +332,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
         sglangDocker,
         new SglangNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
         new CommandAdapter({ deps, createClient, ownership }),
+        ninfer.native,
+        ninfer.wsl,
       ],
       customEngines,
     ),
@@ -530,6 +560,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     docker,
     vllmDocker,
     sglangDocker,
+    ninfer,
     modelVolumes,
     ...(models ? { models } : {}),
     runs,
@@ -586,6 +617,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     (app, ctx) => createCustomEngineRoutes({ settings: ctx.settings, registry: s.registry })(app, ctx),
+    (app, ctx) => createNinferRoutes(s.ninfer.routes({ publish: (e) => ctx.hub.publish(e), shutdown: ctx.shutdown }))(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>

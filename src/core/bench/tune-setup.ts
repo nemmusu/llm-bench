@@ -8,6 +8,7 @@ import type { ServerPlan, StartRunRequest, StartServerRequest } from '../../cont
 import { engineBaseOf, type EngineBase, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import { extendedContext, YARN_TARGETS, yarnScaling } from '../../contract/recipes';
+import { trainedContextOf } from '../../contract/ninfer';
 import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
@@ -20,6 +21,7 @@ import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
 import { llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
+import { ninferTuneInput } from './tune-ninfer';
 import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput, type TuneSpace } from './tuner';
 
 /** VRAM kept free when vLLM's memory share is fitted to the free VRAM, and the highest share used. */
@@ -194,7 +196,7 @@ export async function buildTuneSetup(
   const facts = p.model.identity.facts;
   const fileBytes = p.launch.modelBytes > 0 ? p.launch.modelBytes : p.model.identity.sizeBytes;
   const step = p.scenario.steps.find((s) => s.kind === 'context-sweep');
-  const trained = facts?.contextLength;
+  const trained = trainedContextOf(p.model.identity);
   // The YaRN switch (one user only): the capacity search may go up to its target, the offered targets on the way.
   const target = req.tune?.yarnTarget;
   const yarn = users === undefined && target !== undefined && trained !== undefined && target > trained ? target : undefined;
@@ -221,6 +223,7 @@ export async function buildTuneSetup(
     ...(past ? { learned: past.learned } : {}),
     ...(recheck ? { recheck } : {}),
   };
+  if (engineBaseOf(kind) === 'ninfer') return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, seen, ...(users !== undefined ? { users } : {}) });
   const caps = await p.adapter.capabilities(p.engine).catch(() => undefined);
   const prefer = past?.prefer;
   if (!isLlamaCpp(kind)) {
@@ -362,6 +365,11 @@ export async function tunedServerParams(
   const combo = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
   if (!run || !t || !combo) return undefined;
   const params: LaunchParams = { ...combo.params };
+  // NInfer: the search read every prompt in full and without thinking; a server keeps NInfer's own defaults.
+  if (params.ninfer) {
+    const { prefixReuse: _reuse, thinking: _thinking, ...ninfer } = params.ninfer;
+    params.ninfer = ninfer;
+  }
   if (user) {
     for (const [k, v] of Object.entries(user) as [keyof LaunchParams, unknown][]) {
       if (k === 'extraArgs' || k === 'env' || v === undefined) continue;

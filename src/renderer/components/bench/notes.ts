@@ -28,6 +28,7 @@ export const NOTE_CODES = [
   'context_beyond_trained',
   'recipe_engine_missing',
   'recipe_file_missing',
+  'text_prompts_calibrated',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -54,6 +55,7 @@ const TONES: Record<NoteCode, NoteTone> = {
   context_beyond_trained: 'warning',
   recipe_engine_missing: 'warning',
   recipe_file_missing: 'info',
+  text_prompts_calibrated: 'info',
 };
 
 export interface NoteText {

@@ -126,7 +126,8 @@ export function Launch({ run, rerun, onRerun, onUseSettings, onServe }: LaunchPr
           </KeyValue>
           {run.launch.requestExample && (
             <KeyValue label={t('result.launch.request')}>
-              <pre className="overflow-x-auto rounded-md bg-surface-2 p-3 font-mono text-xs leading-5 text-fg-2">{JSON.stringify(run.launch.requestExample, null, 2)}</pre>
+              {/* Focusable: a long prompt text scrolls sideways, and the keyboard must reach it. */}
+              <pre role="region" tabIndex={0} aria-label={t('result.launch.request')} className="overflow-x-auto rounded-md bg-surface-2 p-3 font-mono text-xs leading-5 text-fg-2 focus-ring">{JSON.stringify(run.launch.requestExample, null, 2)}</pre>
             </KeyValue>
           )}
           <KeyValue label={t('result.details.app')}>GPU Bench {run.app.version}</KeyValue>

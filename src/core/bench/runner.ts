@@ -25,7 +25,7 @@ import {
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
 import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
-import { parseKvCapacity } from '../engines/shared/kv-capacity';
+import { capacityHintOf, parseKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../inference/types';
@@ -51,6 +51,7 @@ import {
   type Window,
 } from './metrics';
 import { buildPrompt, buildTextPrompt, CHARS_PER_TOKEN, getCorpusTokens } from './prompts';
+import { CALIBRATION_TOKENS, closeEnough, fitTextScale, type TextSample, type TextScale } from './text-scale';
 import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
@@ -225,6 +226,10 @@ interface RunState {
   corpus: string;
   tokens?: number[];
   bos?: number;
+  /** The server has no tokenizer: prompts are text, sized with textScale once calibrated (text-scale.ts). */
+  textPrompts?: boolean;
+  textScale?: TextScale;
+  textSamples: TextSample[];
   requestSeq: number;
   requestExample?: Record<string, unknown>;
   latency: LatencyPoint[];
@@ -426,6 +431,7 @@ export class BenchRunner {
       coldMs: [],
       warmMs: [],
       corpus: '',
+      textSamples: [],
       requestSeq: 0,
       latency: [],
       contextSweep: [],
@@ -537,7 +543,8 @@ export class BenchRunner {
       this.setPhase(s, load.cache === 'cold' ? 'cold-load' : 'warm-load', String(n));
       if (i > 0) await this.waitVramSettled(s);
       if (load.cache === 'cold') {
-        const evicted = d.evictCache ? await d.evictCache(plan.modelFiles) : { guaranteed: false };
+        const own = await d.adapter.evict?.(plan, s.signal);
+        const evicted = own ?? (d.evictCache ? await d.evictCache(plan.modelFiles) : { guaranteed: false });
         s.coldGuaranteed = (s.coldGuaranteed ?? true) && evicted.guaranteed;
       }
       checkAbort(s.signal);
@@ -615,9 +622,45 @@ export class BenchRunner {
       if (ct.bos !== undefined) s.bos = ct.bos;
     } catch (e) {
       if (!(isAppError(e) && e.params?.reason === 'tokenize_unsupported')) throw e;
-      s.tokensApproximate = true;
-      s.notes.push('tokenize unsupported by the endpoint: prompts are text, token counts approximate');
+      s.textPrompts = true;
+      await this.calibrateText(s, inst);
     }
+  }
+
+  /**
+   * Text prompts (no tokenizer): two short requests (1 token each, not measured) tell how many characters
+   * make a token here and what the server adds around the text (text-scale.ts), from the prompt tokens
+   * it reports. A server that reports none keeps the rough 4 characters per token (tokens_approximate).
+   */
+  private async calibrateText(s: RunState, inst: EngineInstance): Promise<void> {
+    const seed = s.input.scenario.seed;
+    for (const n of CALIBRATION_TOKENS) {
+      const promptText = buildTextPrompt(s.corpus, n, 0, { seed, salt: 'calibrate' });
+      const events = await this.collect(s, inst, { promptText, outputTokens: 1, seed, ...this.modelField(s) });
+      const reported = events.find((e): e is Extract<StreamEvent, { kind: 'done' }> => e.kind === 'done')?.usage?.promptTokens;
+      if (reported === undefined) {
+        s.tokensApproximate = true;
+        s.notes.push('tokenize unsupported by the endpoint: prompts are text, token counts approximate');
+        return;
+      }
+      s.textSamples.push({ chars: promptText.length, tokens: reported });
+    }
+    s.textScale = fitTextScale(s.textSamples);
+    const charsPerToken = Math.round(s.textScale.charsPerToken * 100) / 100;
+    s.notes.push(`text prompts calibrated on the server's own counts: ${charsPerToken} characters per token, ${s.textScale.overhead} tokens added`);
+    s.codes.push({ code: 'text_prompts_calibrated', params: { charsPerToken, overhead: s.textScale.overhead } });
+  }
+
+  /** A text prompt's real length, as the server reported it: refines the scale; far from the length asked = approximate. */
+  private learnText(s: RunState, chars: number, wanted: number, reported: number | undefined): void {
+    if (!s.textPrompts) return;
+    if (reported === undefined || !s.textScale) {
+      s.tokensApproximate = true;
+      return;
+    }
+    if (!closeEnough(reported, wanted)) s.tokensApproximate = true;
+    s.textSamples.push({ chars, tokens: reported });
+    s.textScale = fitTextScale(s.textSamples, s.textScale);
   }
 
   private async latencyStep(s: RunState, step: Extract<Step, { kind: 'latency' }>): Promise<void> {
@@ -804,6 +847,7 @@ export class BenchRunner {
       ...(s.tokens ? { tokens: s.tokens } : {}),
       ...(s.bos !== undefined ? { bos: s.bos } : {}),
       corpus: s.corpus,
+      ...(s.textScale ? { textScale: s.textScale } : {}),
       ...this.modelField(s),
       nextRep: () => s.requestSeq++,
       // llama.cpp: one slot per conversation keeps its cache; vLLM shares one prefix cache.
@@ -903,7 +947,7 @@ export class BenchRunner {
             }
             s.marks.push({ t: tReady, label: 'ready' });
             this.publishLaunch(s, plan);
-            if (!s.tokens && !s.tokensApproximate) await this.prepareCorpus(s, inst);
+            if (!s.tokens && !s.textPrompts) await this.prepareCorpus(s, inst);
             return { ok: true, loadMs: tReady - inst.t0, engine: this.labEngine(s, inst, plan, info.attempt, inst.t0) };
           },
         };
@@ -920,14 +964,14 @@ export class BenchRunner {
       sessions: async (step) => (await this.sessionsOn(s, inst, plan, step)).points,
       memory: () => this.launchMemory(s, from),
       // vLLM's KV pool does not depend on max-model-len: what it holds is the largest context. (llama.cpp just echoes -c.)
-      capacityHint: () => (isLlamaCpp(plan.kind) ? undefined : parseKvCapacity(inst.logTail(), plan.kind)?.tokens),
+      capacityHint: () => capacityHintOf(inst.logTail(), plan.kind),
       generate: async (promptTokens, tokens) => {
         this.step(s, { kind: 'fidelity', promptTokens, outputTokens: tokens });
         const seed = s.input.scenario.seed;
         // The same prompt on every launch (fixed repetition and salt): the outputs are comparable.
         const prompt: Pick<GenerateRequest, 'promptIds' | 'promptText'> = s.tokens
           ? { promptIds: buildPrompt(s.tokens, promptTokens, 0, { seed, salt: 'fidelity', ...(s.bos !== undefined ? { bos: s.bos } : {}) }) }
-          : { promptText: buildTextPrompt(s.corpus, promptTokens, 0, { seed, salt: 'fidelity' }) };
+          : { promptText: buildTextPrompt(s.corpus, promptTokens, 0, { seed, salt: 'fidelity', scale: s.textScale }) };
         const events = await this.collect(s, inst, { ...prompt, outputTokens: tokens, seed, ...this.modelField(s) });
         return events.flatMap((e): (number | string)[] => (e.kind !== 'chunk' ? [] : (e.ids ?? (e.text !== undefined ? [e.text] : []))));
       },
@@ -1005,12 +1049,16 @@ export class BenchRunner {
     const seed = s.input.scenario.seed;
     const prompt: Pick<GenerateRequest, 'promptIds' | 'promptText'> = s.tokens
       ? { promptIds: buildPrompt(s.tokens, promptTokens, rep, { seed, salt, ...(s.bos !== undefined ? { bos: s.bos } : {}) }) }
-      : { promptText: buildTextPrompt(s.corpus, promptTokens, rep, { seed, salt }) };
+      : { promptText: buildTextPrompt(s.corpus, promptTokens, rep, { seed, salt, scale: s.textScale }) };
     const req: GenerateRequest = { ...prompt, outputTokens, seed, ...this.modelField(s) };
     s.requestExample ??= exampleBody(inst.client.requestBody(req));
     const sentAt = this.deps.clock.now();
     const events = await this.collect(s, inst, req, timeoutMs);
-    return fromStream(events, { sentAt, promptTokens, expectedOutput: outputTokens });
+    if (prompt.promptText === undefined) return fromStream(events, { sentAt, promptTokens, expectedOutput: outputTokens });
+    // Text prompts: the server's own count of what it read (the prompt reading speed uses it).
+    const reported = events.find((e): e is Extract<StreamEvent, { kind: 'done' }> => e.kind === 'done')?.usage?.promptTokens;
+    this.learnText(s, prompt.promptText.length, promptTokens, reported);
+    return fromStream(events, { sentAt, promptTokens: reported ?? promptTokens, expectedOutput: outputTokens });
   }
 
   private record(s: RunState, m: RequestMetrics): void {

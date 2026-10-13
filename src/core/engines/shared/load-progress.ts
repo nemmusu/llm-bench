@@ -6,6 +6,7 @@
  */
 import { engineBaseOf, isDockerKind, type EngineKind } from '../../../contract/engines';
 import { LOAD_STAGES, type LoadProgress, type LoadStage } from '../../../contract/events';
+import { ninferProgress } from '../ninfer/logs';
 import { sglangProgress } from './sglang';
 
 /** What one log line says about the start: the stage and, when the line has it, how far along. */
@@ -79,6 +80,7 @@ export function parseLoadProgress(line: string, kind: EngineKind): LoadUpdate | 
   const base = engineBaseOf(kind);
   if (base === 'vllm') return vllmProgress(line);
   if (base === 'sglang') return sglangProgress(line);
+  if (base === 'ninfer') return ninferProgress(line);
   return base === 'llamacpp' ? llamaProgress(line) : undefined;
 }
 

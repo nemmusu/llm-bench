@@ -19,7 +19,7 @@ export type EngineField = keyof EngineForm;
 export const EMPTY_ENGINE_FORM: EngineForm = { executable: '', image: '', vllmPath: '', sglangPath: '', baseUrl: '', apiKey: '', flavor: 'openai', modelName: '' };
 
 /** The built-in engines in the Benchmark choice ('command' engines are custom engines only). */
-export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native', 'external'];
+export const ENGINE_ORDER: readonly EngineKind[] = ['llamacpp-native', 'llamacpp-docker', 'vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native', 'ninfer-native', 'ninfer-wsl', 'external'];
 
 export function isHttpUrl(text: string): boolean {
   try {
