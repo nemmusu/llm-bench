@@ -73,6 +73,13 @@ export function searchOf(c: Partial<CatalogState>): ModelsSearch {
   });
 }
 
+declare module '@tanstack/history' {
+  interface HistoryState {
+    /** The model page was opened from the catalog: its back link is a history "back". */
+    fromCatalog?: boolean;
+  }
+}
+
 /** The last catalog the user looked at, for the model page's "← Modelli" when it was not opened from there. */
 let lastCatalog: ModelsSearch | undefined;
 

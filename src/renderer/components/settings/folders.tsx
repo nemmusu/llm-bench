@@ -1,8 +1,9 @@
 import { FolderOpen, FolderPlus, X } from 'lucide-react';
 import { useId } from 'react';
 import { useI18n } from '../../i18n';
-import { useSaveFoldersAndRescan, useSystemInfo } from '../../lib/queries-library';
+import { useRescan, useSaveFoldersAndRescan, useSystemInfo } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
+import { useAddModelFolder } from '../library/add-folder';
 import { ErrorCallout } from '../library/error-callout';
 import { Button, IconButton } from '../ui/button';
 import { Switch } from '../ui/switch';
@@ -14,6 +15,8 @@ export function FoldersSection() {
   const { settings, update } = useSettings();
   const system = useSystemInfo();
   const save = useSaveFoldersAndRescan();
+  const rescan = useRescan();
+  const addExtra = useAddModelFolder(save, rescan);
   const knownId = useId();
   const pick = (title: string) => window.gpubench?.pickFolder({ title }) ?? Promise.resolve(null);
 
@@ -24,10 +27,6 @@ export function FoldersSection() {
   const pickModels = async () => {
     const dir = await pick(t('settings.modelsDir'));
     if (dir) save.mutate({ modelsDir: dir });
-  };
-  const addExtra = async () => {
-    const dir = await pick(t('settings.folders.addExtra'));
-    if (dir && !settings.extraModelDirs.includes(dir)) save.mutate({ extraModelDirs: [...settings.extraModelDirs, dir] });
   };
 
   return (
@@ -68,7 +67,7 @@ export function FoldersSection() {
             <span className="text-sm font-medium">{t('settings.extraDirs')}</span>
             <span className="text-xs text-fg-3">{t('settings.folders.extraHint')}</span>
           </div>
-          <Button size="sm" onClick={() => void addExtra()}>
+          <Button size="sm" onClick={() => void addExtra(t('settings.folders.addExtra'))}>
             <FolderPlus aria-hidden />
             {t('settings.folders.addExtra')}
           </Button>
@@ -97,7 +96,7 @@ export function FoldersSection() {
         htmlFor={knownId}
         control={<Switch id={knownId} checked={settings.scanKnownLocations} onCheckedChange={(on) => save.mutate({ scanKnownLocations: on })} />}
       />
-      {save.isError && <ErrorCallout error={save.error} className="mt-3" />}
+      {(save.isError || rescan.isError) && <ErrorCallout error={save.error ?? rescan.error} className="mt-3" />}
     </Section>
   );
 }

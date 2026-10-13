@@ -64,6 +64,7 @@ export function AppShell() {
           <main
             ref={mainRef}
             id="main"
+            data-scroll-restoration-id="main"
             tabIndex={-1}
             className="relative min-w-0 flex-1 overflow-y-auto border-t border-border bg-panel outline-none data-[edge=left]:rounded-tl-xl data-[edge=left]:border-l"
             data-edge={onboarding ? 'none' : 'left'}

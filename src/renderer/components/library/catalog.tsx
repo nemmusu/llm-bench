@@ -4,8 +4,9 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import type { HubModel } from '../../../contract/models';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
-import { useAllRuns, useCurated, useGpuSnapshot, useHubCatalog, useMainGpu, type CatalogParams, type CatalogSort } from '../../lib/queries-library';
+import { useAllRuns, useCurated, useHubCatalog, useMainGpu, type CatalogParams, type CatalogSort } from '../../lib/queries-library';
 import { useDebounced } from '../../lib/queries-runs';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { EmptyState } from '../ui/empty-state';
 import { FitBadge } from '../ui/fit-badge';
@@ -13,20 +14,24 @@ import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { TriedHereBadge } from '../ui/tried-badge';
+import { CatalogBusyNote } from './busy-note';
+import type { CatalogState } from './catalog-search';
 import { RowFacts, RowTitle, rowClass } from './catalog-rows';
-import { CuratedRows, curatedFor, type EngineFormat } from './curated-list';
+import { CuratedRows, curatedFor } from './curated-list';
 import { ErrorCallout } from './error-callout';
+import { ENGINE_FILTERS, ForkBadge, FormatBadges, formatOfEngine, isRtx5090, type CatalogFormat, type EngineFilter } from './formats';
 import { bucketRange, triedModels, type SizeBucket, type TriedModel } from './helpers';
 
-/** Authors offered in the filter, by format: the big GGUF quantizers and the labs that publish weights. */
-export const CATALOG_AUTHORS: Record<EngineFormat, readonly string[]> = {
+/** Authors offered in the filter, by format: the big GGUF quantizers, the labs that publish weights, NInfer's builders. */
+export const CATALOG_AUTHORS: Record<CatalogFormat, readonly string[]> = {
   gguf: ['unsloth', 'bartowski', 'lmstudio-community', 'ggml-org', 'mradermacher', 'Qwen', 'google'],
   safetensors: ['Qwen', 'google', 'meta-llama', 'mistralai', 'microsoft', 'nvidia', 'openai', 'deepseek-ai', 'RedHatAI'],
+  ninfer: ['neroued', 'nerkyor'],
   any: ['unsloth', 'bartowski', 'lmstudio-community', 'Qwen', 'google', 'meta-llama', 'mistralai', 'microsoft', 'nvidia', 'openai', 'deepseek-ai'],
 };
 
 /** What the list shows: every Hugging Face model, the verified suggestions, or what was already measured here. */
-export type CatalogView = 'hub' | 'curated' | 'tried';
+export type CatalogView = CatalogState['view'];
 
 /** Hugging Face's own order of sort options, trending first (its default). */
 const SORTS: readonly CatalogSort[] = ['trendingScore', 'downloads', 'createdAt', 'lastModified', 'likes'];
@@ -96,8 +101,9 @@ function FilterGroup({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function HubRow({ m, tried, showFormats }: { m: HubModel; tried: TriedModel | undefined; showFormats: boolean }) {
+function HubRow({ m, tried, engine, gpuName }: { m: HubModel; tried: TriedModel | undefined; engine: EngineFilter; gpuName: string | undefined }) {
   const { t, number, compact, relative, bytes } = useI18n();
+  const ninferOnly = !m.formats.includes('gguf') && !m.formats.includes('safetensors') && m.formats.includes('ninfer');
   const [owner, name] = m.repo.split('/') as [string, string];
   const mib = (n: number) => bytes(n * 1024 * 1024);
   const gated = m.gated !== false && (
@@ -109,6 +115,16 @@ function HubRow({ m, tried, showFormats }: { m: HubModel; tried: TriedModel | un
   return (
     <li className={rowClass}>
       <RowTitle owner={owner} name={name} extra={gated} />
+      {/* Each format the repo ships, with its engine: mixed repos show them side by side. */}
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <FormatBadges m={m} engine={engine} />
+        <ForkBadge model={{ displayName: name, repo: m.repo }} label={m.repo} />
+        {(engine === 'ninfer' || ninferOnly) && m.formats.includes('ninfer') && !isRtx5090(gpuName) && gpuName !== undefined && (
+          <Badge tone="warning" size="sm" className="relative z-10">
+            {t('models.needs5090')}
+          </Badge>
+        )}
+      </span>
       <RowFacts>
         {[
           m.fit ? (
@@ -125,8 +141,6 @@ function HubRow({ m, tried, showFormats }: { m: HubModel; tried: TriedModel | un
               {t('models.paramsShort', { n: number(m.paramsB, Number.isInteger(m.paramsB) || m.paramsB >= 10 ? 0 : 1) })}
             </span>
           ),
-          // The format is news only when the list mixes both.
-          ...(showFormats ? m.formats.filter((f) => f !== 'other').map((f) => <span key={f}>{f === 'gguf' ? 'GGUF' : 'safetensors'}</span>) : []),
           m.updatedAt && (
             <span className="inline-flex items-center gap-1" title={t('models.search.updated', { when: relative(m.updatedAt) })}>
               <Clock aria-hidden className="size-3" />
@@ -185,28 +199,6 @@ function SkeletonRows() {
   );
 }
 
-/** Share of the card other programs may hold before the fit verdicts deserve an explanation. */
-export const BUSY_VRAM_SHARE = 0.15;
-
-/**
- * Verdicts count the VRAM that is free now. When other programs hold a good part of it (a VM, a
- * game, another LLM server), "partly fits" on a big card looks wrong without this note.
- */
-function BusyVramNote() {
-  const { t, bytes } = useI18n();
-  const s = useGpuSnapshot(5000).data?.[0];
-  const used = s?.memUsedMiB ?? 0;
-  const total = s?.memTotalMiB ?? 0;
-  if (used < total * BUSY_VRAM_SHARE || total === 0) return null;
-  const mib = (n: number) => bytes(n * 1024 * 1024);
-  return (
-    <p className="rounded-lg border border-info/30 bg-info-soft px-3.5 py-2 text-xs text-fg-2">
-      <span className="font-medium text-fg">{t('models.catalog.busyTitle', { used: mib(used), total: mib(total) })}</span>{' '}
-      {t('models.catalog.busyBody', { free: mib(total - used) })}
-    </p>
-  );
-}
-
 /** Loads the next page when the end of the list scrolls into view (and keeps going while it stays there). */
 function useNearEnd(onNear: () => Promise<unknown>, active: boolean): (el: HTMLDivElement | null) => void {
   // A callback ref: the end marker appears only once the first page is in.
@@ -232,28 +224,21 @@ function useNearEnd(onNear: () => Promise<unknown>, active: boolean): (el: HTMLD
  * header line (what is shown, how many, filter by name, sort) and compact rows, page after page.
  * Models show up before anything is typed (trending first, like Hugging Face). Besides every model
  * on the hub, the same list can show the verified suggestions for this GPU or what was already
- * measured here. Models that do not fit stay visible, marked, unless "fits my GPU" is on.
+ * measured here. Models that do not fit stay visible, marked, unless "fits my GPU" is on. Every
+ * choice lives in the URL (`state`, changed with `onChange`): back from a model page, all is as it was.
  */
-export function ModelCatalog({
-  format,
-  onFormatChange,
-  view,
-  onViewChange,
-}: {
-  format: EngineFormat;
-  onFormatChange: (f: EngineFormat) => void;
-  view: CatalogView;
-  onViewChange: (v: CatalogView) => void;
-}) {
+export function ModelCatalog({ state, onChange }: { state: CatalogState; onChange: (patch: Partial<CatalogState>) => void }) {
   const { t, integer } = useI18n();
   const ids = { sort: useId(), title: useId() };
-  const [text, setText] = useState('');
-  const [sort, setSort] = useState<CatalogSort>('trendingScore');
-  const [size, setSize] = useState<SizeBucket>('any');
-  const [author, setAuthor] = useState('');
-  const [onlyFits, setOnlyFits] = useState(false);
+  const { view, sort, size, author, onlyFits, engine } = state;
+  const format = formatOfEngine(engine);
+  // What is typed shows at once; the URL (and the search) follow once typing pauses.
+  const [text, setText] = useState(state.q);
   const q = useDebounced(text.trim(), 350);
-  const params: CatalogParams = { q, format, sort, author, onlyFits, ...bucketRange(size) };
+  useEffect(() => {
+    if (q !== state.q) onChange({ q });
+  }, [q, state.q, onChange]);
+  const params: CatalogParams = { q: state.q, format, sort, author, onlyFits, ...bucketRange(size) };
   const catalog = useHubCatalog(params, view === 'hub');
   const curated = useCurated();
   const runs = useAllRuns();
@@ -265,13 +250,9 @@ export function ModelCatalog({
   // fetchNextPage is stable (bound to the query observer), so the effect re-runs only when the state changes.
   const sentinel = useNearEnd(fetchNextPage, view === 'hub' && hasNextPage && !isFetchingNextPage && !catalog.isError);
   const filtered = author !== '' || size !== 'any' || onlyFits;
-  const clear = () => {
-    setAuthor('');
-    setSize('any');
-    setOnlyFits(false);
-  };
+  const clear = () => onChange({ author: '', size: 'any', onlyFits: false });
   const authors = [...CATALOG_AUTHORS[format], ...(author && !CATALOG_AUTHORS[format].includes(author) ? [author] : [])];
-  const byName = (repo: string, label = '') => `${repo} ${label}`.toLowerCase().includes(q.toLowerCase());
+  const byName = (repo: string, label = '') => `${repo} ${label}`.toLowerCase().includes(state.q.toLowerCase());
   const triedShown = tried.filter((m) => byName(m.repo));
   const curatedShown = curatedFor(curated.data?.models ?? [], format).filter((m) => byName(m.repo, m.label));
 
@@ -282,8 +263,8 @@ export function ModelCatalog({
       ? t('models.catalog.triedTitle')
       : view === 'curated'
         ? t('models.curated.title')
-        : q
-          ? t('models.catalog.resultsFor', { q })
+        : state.q
+          ? t('models.catalog.resultsFor', { q: state.q })
           : t(`models.catalog.heading.${sort}`);
   const showCount = view !== 'hub' || catalog.isSuccess;
 
@@ -296,7 +277,7 @@ export function ModelCatalog({
           <ViewList
             label={t('models.catalog.viewLabel')}
             value={view}
-            onChange={onViewChange}
+            onChange={(v) => onChange({ view: v })}
             options={[
               { value: 'hub', label: t('models.catalog.views.hub') },
               { value: 'curated', label: t('models.catalog.views.curated'), count: curatedFor(curated.data?.models ?? [], format).length },
@@ -307,23 +288,19 @@ export function ModelCatalog({
         <FilterGroup title={t('models.format.label')}>
           <ChipRadios
             label={t('models.format.label')}
-            value={format}
-            onChange={onFormatChange}
-            options={[
-              { value: 'gguf', label: t('models.format.gguf') },
-              { value: 'safetensors', label: t('models.format.safetensors') },
-              { value: 'any', label: t('models.format.any') },
-            ]}
+            value={engine}
+            onChange={(e) => onChange({ engine: e, author: '' })}
+            options={ENGINE_FILTERS.map((e) => ({ value: e, label: t(`models.format.${e}`) }))}
           />
         </FilterGroup>
         {view === 'hub' && (
           <>
             <FilterGroup title={t('models.search.size')}>
-              <ChipRadios label={t('models.search.size')} value={size} onChange={setSize} options={SIZES.map((v) => ({ value: v, label: t(`models.catalog.sizes.${v}`) }))} />
+              <ChipRadios label={t('models.search.size')} value={size} onChange={(v) => onChange({ size: v })} options={SIZES.map((v) => ({ value: v, label: t(`models.catalog.sizes.${v}`) }))} />
             </FilterGroup>
             <FilterGroup title={t('models.catalog.memory')}>
               <div>
-                <FilterChip pressed={onlyFits} onPressedChange={setOnlyFits}>
+                <FilterChip pressed={onlyFits} onPressedChange={(v) => onChange({ onlyFits: v })}>
                   {t('models.catalog.onlyFits')}
                 </FilterChip>
               </div>
@@ -332,7 +309,7 @@ export function ModelCatalog({
               <ChipRadios
                 label={t('models.catalog.author')}
                 value={author || ALL_AUTHORS}
-                onChange={(v) => setAuthor(v === ALL_AUTHORS ? '' : v)}
+                onChange={(v) => onChange({ author: v === ALL_AUTHORS ? '' : v })}
                 options={[{ value: ALL_AUTHORS, label: t('models.catalog.allAuthors') }, ...authors.map((a) => ({ value: a, label: a }))]}
               />
             </FilterGroup>
@@ -368,15 +345,15 @@ export function ModelCatalog({
                 <label htmlFor={ids.sort} className="sr-only">
                   {t('models.search.sort')}
                 </label>
-                <Select id={ids.sort} className="h-9 w-48" value={sort} onValueChange={setSort} options={SORTS.map((s) => ({ value: s, label: t(`models.catalog.sort.${s}`) }))} />
+                <Select id={ids.sort} className="h-9 w-48" value={sort} onValueChange={(s: CatalogSort) => onChange({ sort: s })} options={SORTS.map((s) => ({ value: s, label: t(`models.catalog.sort.${s}`) }))} />
               </>
             )}
           </div>
         </div>
-        {view !== 'tried' && <BusyVramNote />}
+        {view !== 'tried' && <CatalogBusyNote />}
 
         {view === 'curated' ? (
-          <CuratedRows models={curatedShown} showEngine={format === 'any'} />
+          <CuratedRows models={curatedShown} showEngine={engine === 'any'} />
         ) : view === 'tried' ? (
           triedShown.length === 0 ? (
             <EmptyState illustration="search" title={t('models.catalog.triedEmptyTitle')} description={t('models.catalog.triedEmptyBody')} headingLevel={3} className="rounded-xl border border-dashed border-border" />
@@ -404,7 +381,7 @@ export function ModelCatalog({
           <>
             <ul className="grid gap-2 xl:grid-cols-2" aria-label={t('models.catalog.results')}>
               {models.map((m) => (
-                <HubRow key={m.repo} m={m} tried={triedByRepo.get(m.repo)} showFormats={format === 'any'} />
+                <HubRow key={m.repo} m={m} tried={triedByRepo.get(m.repo)} engine={engine} gpuName={gpu?.name} />
               ))}
             </ul>
             {catalog.isFetchNextPageError && <ErrorCallout error={catalog.error} action={{ label: t('common.retry'), onClick: () => void fetchNextPage() }} />}
