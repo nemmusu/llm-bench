@@ -165,7 +165,7 @@ export function fit(level: FitEstimate['level'] = 'perfect'): FitEstimate {
 
 export function hubModel(repo: string, over: Partial<HubModel> = {}): HubModel {
   const [author, name] = repo.split('/') as [string, string];
-  return { repo, author, name, downloads: 1200, likes: 30, gated: false, formats: ['gguf'], tags: [], paramsB: 8, updatedAt: '2026-09-01T00:00:00.000Z', ...over };
+  return { repo, author, name, downloads: 1200, likes: 30, gated: false, formats: ['gguf'], otherFormats: [], tags: [], paramsB: 8, updatedAt: '2026-09-01T00:00:00.000Z', ...over };
 }
 
 export const HUB_FILES: HubFile[] = [

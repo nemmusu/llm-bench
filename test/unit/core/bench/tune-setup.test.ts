@@ -1,3 +1,4 @@
+import { availableNowMiB } from '../../../../src/core/models/fit';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { launchParamsSchema, type LaunchParams } from '../../../../src/contract/engines';
@@ -64,7 +65,9 @@ describe('buildTuneSetup', () => {
     expect(s.space.dimensions.map((d) => d.key)).toEqual(['fa', 'ub', 'b', 'draft']);
     expect(s.space.params({ ...s.space.base('f16'), draft: true }, 8192).extraArgs).toEqual(['--spec-type', 'draft-simple', '-md', 'C:/m/a-draft.gguf', '-ngld', 'all']);
     const est = s.predict!(s.space.params(s.space.base('f16'), 8192));
-    expect(est).toMatchObject({ availableMiB: 32607 - 1600, contextSize: 8192, basis: 'file-size' });
+    // The tuner launches now: it predicts with the VRAM free now (the verdict itself counts the card's total).
+    expect(est).toMatchObject({ freeNowMiB: 32607 - 1600, contextSize: 8192, basis: 'file-size' });
+    expect(availableNowMiB(est!)).toBe(32607 - 1600);
   });
 
   it('defaults (fast, no fidelity), Linux without spills, WSL with them, no GPU reading, no caps, no facts', async () => {
