@@ -346,7 +346,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const status = await adapter.detect(req.engine);
       // Docker answers but the image is not there yet: it is pulled before the run (never part of the load time).
       if (status.problems.includes('ENGINE_NOT_INSTALLED') && status.location) {
-        const plan = await adapter.installPlan?.(req.engine).catch(() => undefined);
+        // Docker adapters always pull their image (DockerEngineAdapter.installPlan).
+        const installPlan = adapter.installPlan as NonNullable<CustomEngineAdapter['installPlan']>;
+        const plan = await installPlan(req.engine).catch(() => undefined);
         out.push({ kind: 'image', label: status.location, ...(plan?.bytes ? { bytes: plan.bytes } : {}) });
       }
     }

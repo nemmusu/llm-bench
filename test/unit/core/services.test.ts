@@ -190,6 +190,13 @@ describe('createServices', () => {
       model: { localId: 'x' },
     });
     expect(needsNoSize).toEqual([{ kind: 'engine', label: 'llama.cpp' }]);
+    // A custom engine (a fork) names its own executable: nothing to install.
+    const needsFork = await (s.bench as unknown as { deps: { needs: (r: StartRunRequest) => Promise<unknown> } }).deps.needs({
+      ...base,
+      engine: { kind: 'llamacpp-native', customEngineId: 'prismml' },
+      model: { localId: 'x' },
+    });
+    expect(needsFork).toEqual([]);
   });
 
   it('plans the image pull of a Docker engine whose image is missing', async () => {
@@ -216,6 +223,11 @@ describe('createServices', () => {
     const vllm = s.registry.require('vllm-docker');
     vllm.detect = () => Promise.resolve({ kind: 'vllm-docker', available: true, installed: true, problems: [], supported: true, location: 'vllm/vllm-openai:v0.12.0' });
     expect(await needs({ ...req, engine: { kind: 'vllm-docker' } })).toEqual([]);
+    // SGLang's image is pulled the same way.
+    const sglang = s.registry.require('sglang-docker');
+    sglang.detect = () => Promise.resolve({ kind: 'sglang-docker', available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true, location: 'lmsysorg/sglang:v0.5.21' });
+    sglang.installPlan = () => Promise.resolve({ kind: 'sglang-docker', label: 'x', bytes: 15_164_770_325, items: [], data: {} });
+    expect(await needs({ ...req, engine: { kind: 'sglang-docker' } })).toEqual([{ kind: 'image', label: 'lmsysorg/sglang:v0.5.21', bytes: 15_164_770_325 }]);
   });
 
   type BenchDeps = {

@@ -102,6 +102,13 @@ describe('buildTuneSetup', () => {
     expect(vllmTuneUtilization({ totalMiB: 32000, freeMiB: 31000 })).toBe(0.94);
     expect(vllmTuneUtilization({ totalMiB: 32000, freeMiB: 32000 })).toBe(0.95);
   });
+
+  it('SGLang: the same memory share fitting, its own space (graphs off as the last resort)', async () => {
+    const s = await buildTuneSetup(deps({ samples: [sample({ memUsedMiB: 2000 })] }), { engine: { kind: 'sglang-docker' } }, prepared({ engine: { kind: 'sglang-docker' } }));
+    expect(s.space.kvLadder).toEqual(['auto', 'fp8']);
+    expect(s.space.startup).toEqual({ key: 'gmu', values: [0.91, 0.9, 0.85, 0.8] });
+    expect(s.space.params({ ...s.space.base('auto'), eager: true }, 4096).extraArgs).toContain('--disable-cuda-graph');
+  });
 });
 
 /** A completed tune run whose recommendation is q4_0 at 40K with ub 2048. */
