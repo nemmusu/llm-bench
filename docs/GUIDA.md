@@ -97,6 +97,10 @@ Solo se il modello non entra nemmeno con 4K di contesto e cache *q4_0*, GPU Benc
 
 In modalità esperto puoi aggiungere il controllo di **fedeltà**: lo stesso testo generato con la cache più precisa e con quella consigliata, per vedere quanti token restano uguali. È un'indicazione, non un test di qualità.
 
+Il **contesto per gradi** misura 1K, 4K, 8K, 16K… (con *Veloce*, sui contesti lunghi: 1K, 4K, 16K, 64K…) e anche **200K** quando il contesto ci arriva, così i test di modelli e schede diverse si confrontano allo stesso punto.
+
+In modalità esperto, **Cerca anche oltre il limite del modello (YaRN)** lascia che la ricerca vada oltre il contesto su cui il modello è stato addestrato, fino a 300K, 500K o al contesto che scegli: oltre quel limite ogni prova usa YaRN con il fattore giusto (contesto ÷ contesto di addestramento). Ci mette di più, e la qualità lassù non è garantita: GPU Bench misura solo velocità e memoria.
+
 Il profilo **Completo** misura anche il **contesto per gradi** con le impostazioni scelte. Il testo di prova è un romanzo di circa 100.000 token: oltre quella lunghezza GPU Bench lo riusa a pezzi rimescolati, così nessun pezzo lungo si ripete; la velocità non cambia (conta quanti token riempiono il contesto, non cosa dicono).
 
 ## 4. Leggere i risultati
@@ -130,6 +134,17 @@ Nella pagina **Modelli**:
 GPU Bench sceglie da solo la versione (quantizzazione) migliore che entra nella tua scheda; se sei esperto puoi sceglierne un'altra. I download si possono mettere in pausa e riprendono da soli se la connessione cade.
 
 Per i modelli che richiedono di accettare una licenza (per esempio Llama o Gemma) GPU Bench apre la pagina giusta e ti chiede il token di Hugging Face una sola volta: viene salvato cifrato.
+
+### Comandi per questo modello
+
+Alcuni modelli vanno avviati con comandi che si scoprono solo leggendo la loro scheda: un contesto più lungo con YaRN, il file MTP per scrivere più in fretta, un fork del motore. Scrivili una volta, nella sezione **Comandi per questo modello** della pagina del modello o con **Comandi** accanto a un modello di *Sul tuo PC*: Benchmark, *Trova le impostazioni migliori* (come punto di partenza) e *Avvia solo il server* li usano da soli.
+
+- **Scegli da una ricetta pronta**: comandi già scritti, presi dalla documentazione dei motori. *Contesto esteso con YaRN* (300K, 500K: il fattore lo calcola GPU Bench), *Decodifica speculativa con MTP / modello draft* (il file MTP accanto al modello per llama.cpp, il metodo mtp per vLLM, EAGLE per SGLang), *Fork PrismML per modelli Bonsai*, *Modelli con immagini* (il proiettore mmproj), *NInfer per i modelli .ninfer*. «Usa» li aggiunge ai comandi del modello: li rivedi prima di salvare.
+- **Scrivi i comandi**: per quali modelli (solo questo, o tutti quelli il cui nome contiene una parola e, se vuoi, con una certa quantizzazione), il contesto, il motore, il file MTP, il proiettore immagini, gli argomenti in più per ogni motore, le variabili d'ambiente, una nota e il link alla scheda. Sotto vedi il **comando completo** che ne viene fuori, mentre scrivi.
+- Una ricetta che vale solo per questo modello vince su una che vale per tutta la famiglia. Salvarla vuota la rimuove.
+- Se la ricetta usa un fork che non hai ancora indicato, **Indica dove si trova il fork** apre la pagina Motori con il fork già scelto per quel modello.
+
+Nella pagina **Benchmark**, quando il modello scelto ha i suoi comandi, compare **Usa i comandi di questo modello** con quello che fanno (per esempio "YaRN 300K · MTP"): con l'interruttore spento il test parte con le impostazioni normali. In modalità esperto i valori della ricetta compaiono nei campi, segnati come tali; quello che scrivi tu li sostituisce, e te lo dice. Nel risultato, *Come è stato avviato* dice quali comandi sono stati usati, insieme al comando esatto.
 
 ## 6. Docker e vLLM (facoltativo)
 
@@ -168,6 +183,8 @@ In **Impostazioni → Cartella dei risultati** puoi scegliere una cartella condi
 ## 10. Modalità esperto
 
 Attiva **Modalità esperto** nella pagina Benchmark per impostare a mano contesto, strati sulla GPU, flash attention, tipo di cache, batch, thread, richieste parallele, argomenti extra, variabili d'ambiente, eseguibile llama-server personalizzato, immagine Docker, lunghezze dei prompt, ripetizioni e livelli di concorrenza. L'**Anteprima comando** mostra sempre la riga esatta che verrà eseguita.
+
+**Contesto oltre il limite del modello (YaRN)**: 300K, 500K o un altro contesto. GPU Bench imposta il contesto e YaRN con fattore = contesto scelto ÷ contesto di addestramento (llama.cpp *--rope-scaling yarn --rope-scale --yarn-orig-ctx*, vLLM e SGLang con il loro *rope_scaling*), e il contesto per gradi misura fino a lì, anche oltre il tempo che il profilo darebbe (la durata prevista te lo dice). Oltre il contesto di addestramento la qualità delle risposte non è garantita: il test misura solo velocità e memoria.
 
 ---
 

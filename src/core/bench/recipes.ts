@@ -4,11 +4,13 @@
  * launch params with the recipe's settings, the user's own winning. Runs, the tuner's base and
  * servers all come through here (BenchService.prepare / prepareServer).
  */
+import { access } from 'node:fs/promises';
 import type { StartServerRequest } from '../../contract/api';
 import { customEngineConfigOf, type CustomEngine } from '../../contract/custom-engines';
 import { launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { engineRunsFormat, isNinferKind, ninferKindFor } from '../../contract/ninfer';
 import {
+  DRAFT_AUTO,
   mergeRecipeParams,
   modelRecipeDraftSchema,
   recipeCustomEngine,
@@ -65,6 +67,8 @@ export async function withRecipe(
   sources: RecipeSources | undefined,
   caps: (engine: EngineConfig) => Promise<LlamaCaps | undefined>,
   platform?: string,
+  /** Whether a file is there (a draft named by path that is gone is left out, as 'no_file'). */
+  exists?: (path: string) => Promise<boolean>,
 ): Promise<WithRecipe> {
   const user = req.params ?? launchParamsSchema.parse({});
   const recipe = sources ? chosenRecipe(req, model, sources.recipes) : undefined;
@@ -90,8 +94,12 @@ export async function withRecipe(
       chosen = { customEngineId: custom.id, name: custom.name };
     }
   }
-  const llamaCaps = recipe.draft !== undefined ? await caps(engine).catch(() => undefined) : undefined;
-  const patch = recipePatchFor(recipe, {
+  // A draft file named by its path that is not there any more: said, never passed to the engine.
+  const gone = recipe.draft !== undefined && recipe.draft !== DRAFT_AUTO && exists !== undefined && !(await exists(recipe.draft));
+  if (gone) skipped.push({ part: 'draft', reason: 'no_file' });
+  const usable = gone ? { ...recipe, draft: undefined } : recipe;
+  const llamaCaps = usable.draft !== undefined ? await caps(engine).catch(() => undefined) : undefined;
+  const patch = recipePatchFor(usable, {
     kind: engine.kind,
     auxiliary: model.local?.auxiliary,
     // Without the build's help (not installed yet: a preview), the plain draft flag.
@@ -121,6 +129,14 @@ export async function withRecipe(
 /** A built-in engine as this platform runs it: NInfer natively on Linux, in WSL on Windows. */
 function builtinKind(kind: EngineKind, platform: string | undefined): EngineKind {
   return isNinferKind(kind) ? (ninferKindFor(platform ?? '') ?? kind) : kind;
+}
+
+/** Whether a file is there (a recipe's draft model named by its path). */
+export function fileExists(file: string): Promise<boolean> {
+  return access(file).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** The recipe notes of a plan or run, for the renderer (RunResult.notes codes). */
