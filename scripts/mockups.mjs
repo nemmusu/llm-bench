@@ -397,7 +397,7 @@ async function fakeWorld(dataDir) {
     FAKE_WSL_CONFIG: path.join(dataDir, 'fake-wsl.json'),
   };
   writeFileSync(env.FAKE_WSL_CONFIG, '{}');
-  return { env, profileFile, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
+  return { env, profileFile, modelsDir: models, close: () => Promise.all([github.close(), hub.close(), dockerApi.close()]) };
 }
 
 function startCore(dataDir, extraEnv) {
@@ -653,13 +653,13 @@ async function spillScenes(browser, info, world, written) {
 }
 
 /** A downloaded NInfer artifact in the library: the .ninfer file, its manifest and its checksums. */
-function seedNinfer(models) {
-  const dir = path.join(models, 'neroued', 'Qwen3.8-27B-nvfp4-NInfer');
+function seedNinfer(models, repo = 'Qwen3.8-27B-nvfp4-NInfer', file = 'qwen3_8_27b_nvfp4.ninfer', o = { version: 3, name: 'qwen3.8-27b' }) {
+  const dir = path.join(models, 'neroued', repo);
   mkdirSync(dir, { recursive: true });
-  const artifact = { filename: 'qwen3_8_27b_nvfp4.ninfer', bytes: 65_536, sha256: '74'.repeat(32), container_version: 3, architecture: 'Qwen3_5ForCausalLM', name: 'qwen3.8-27b', components: ['text', 'vision', 'mtp', 'dflash2'] };
+  const artifact = { filename: file, bytes: 65_536, sha256: '74'.repeat(32), container_version: o.version, architecture: 'Qwen3_5ForCausalLM', name: o.name, components: ['text', 'vision', 'mtp', 'dflash2'] };
   writeFileSync(path.join(dir, artifact.filename), Buffer.alloc(artifact.bytes));
-  writeFileSync(path.join(dir, 'Qwen3.8-27B-nvfp4-NInfer.artifact-manifest.json'), JSON.stringify({ schema: 'ninfer.artifact-manifest', schema_version: 2, artifact }));
-  writeFileSync(path.join(dir, 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS'), `${artifact.sha256}  ${artifact.filename}\n`);
+  writeFileSync(path.join(dir, `${repo}.artifact-manifest.json`), JSON.stringify({ schema: 'ninfer.artifact-manifest', schema_version: 2, artifact }));
+  writeFileSync(path.join(dir, `${repo}.SHA256SUMS`), `${artifact.sha256}  ${artifact.filename}\n`);
 }
 
 /** A 27B NVFP4 artifact with MTP on an RTX 5090, roughly: quick enough for a Rapido in the scenes. */
@@ -673,10 +673,11 @@ const NINFER_SIZES = [
  * NInfer on Windows, as a user meets it (fake WSL): the Engines card still to set up (40) and its
  * guided build (41); the card once it found the build (42); the Benchmark page with its built-in
  * settings for the .ninfer model (43) and the server confirmation with them (44); a Rapido with
- * "Consigliata da NInfer", its result (45) and how it was started (46). Light and dark, 1440 and 1024.
+ * "Consigliata da NInfer", its result (45) and how it was started (46); "Controlla aggiornamenti" with two
+ * new commits and an older artifact to upgrade (47), and "Aggiorna NInfer" (48). Light and dark, 1440 and 1024.
  */
 async function ninferScenes(browser, info, world, written) {
-  const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch'];
+  const names = ['engines-ninfer-setup', 'ninfer-build', 'engines-ninfer', 'benchmark-ninfer', 'serve-ninfer', 'result-ninfer', 'result-ninfer-launch', 'ninfer-update', 'ninfer-update-dialog'];
   const want = (name) => !only || only.includes(name);
   if (!names.some(want)) return;
   const shotAll = async (n, name, route, wait, opts = {}) => {
@@ -704,7 +705,7 @@ async function ninferScenes(browser, info, world, written) {
       }
     }
   };
-  const card = (page) => page.getByRole('region', { name: 'NInfer' });
+  const card = (page) => page.getByRole('region', { name: 'NInfer', exact: true });
   const showCard = async (page) => {
     await card(page).getByRole('combobox', { name: 'Distribuzione WSL' }).or(card(page).getByText('Ricontrolla')).first().waitFor({ timeout: 30000 });
     await card(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
@@ -730,6 +731,17 @@ async function ninferScenes(browser, info, world, written) {
     await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Avvia il server' });
     await dialog.getByRole('region', { name: 'Comando esatto' }).getByText(/--kv-capacity/).waitFor({ timeout: 30000 });
+  };
+  const checkUpdates = async (page) => {
+    await showCard(page);
+    await card(page).getByRole('button', { name: 'Controlla aggiornamenti' }).click();
+    await card(page).getByText(/commit nuovi/).first().waitFor({ timeout: 30000 });
+    await card(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  };
+  const openUpdate = async (page) => {
+    await checkUpdates(page);
+    await card(page).getByRole('button', { name: 'Aggiorna…' }).click();
+    await page.getByRole('dialog', { name: 'Aggiorna NInfer' }).getByRole('region', { name: 'Comandi che eseguirò' }).waitFor({ timeout: 30000 });
   };
   try {
     await idle(info);
@@ -768,6 +780,23 @@ async function ninferScenes(browser, info, world, written) {
         },
         full: true,
       });
+    }
+    if (want('ninfer-update') || want('ninfer-update-dialog')) {
+      // Two commits on GitHub since this build, and an older artifact in the library (container v2).
+      seedNinfer(world.modelsDir, 'Qwen3.6-27B-int4-NInfer', 'qwen3_6_27b_int4.ninfer', { version: 2, name: 'qwen3.6-27b' });
+      await api(info, 'POST', '/api/models/rescan');
+      writeFileSync(
+        world.env.FAKE_WSL_CONFIG,
+        JSON.stringify({
+          incoming: [
+            { sha: '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49', title: 'serve: verify MTP drafts in one pass' },
+            { sha: '9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c', title: 'docs: KV capacity examples for two users' },
+          ],
+        }),
+      );
+      await shotAll(47, 'ninfer-update', '/engines', 'Motori', { act: checkUpdates });
+      await shotAll(48, 'ninfer-update-dialog', '/engines', 'Motori', { act: openUpdate });
+      writeFileSync(world.env.FAKE_WSL_CONFIG, '{}');
     }
   } finally {
     await idle(info).catch(() => undefined);

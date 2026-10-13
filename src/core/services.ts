@@ -301,6 +301,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     settings: ctx.settings,
     gpus: async () =>
       (await ctx.telemetry.probe().catch(() => [])).map((g) => ({ name: g.name, memTotalMiB: g.memoryTotalMiB, ...(g.computeCapability ? { computeCapability: g.computeCapability } : {}) })),
+    // The library is set up below; it is only read when an update is checked.
+    models: () => modelServices?.models.list() ?? Promise.resolve([]),
   });
   // NInfer servers a crashed session left in WSL (checked by their marker); no record = WSL is not even asked.
   void ninfer.cleanupOrphans().catch((e: unknown) => deps.log.warn('NInfer WSL cleanup failed', { error: String(e) }));

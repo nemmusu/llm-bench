@@ -10,12 +10,15 @@
  * packages and a "sudo apt install …" line to copy: GPU Bench never installs system packages, and never
  * changes anything else in the distro. Progress comes from git's and ninja's own lines ("[12/345]").
  */
-import { NINFER_REPO_URL, NINFER_SERVE_PATH, type NinferBuildPlan, type NinferBuildRequest, type NinferKind, type NinferPrereq } from '../../../contract/ninfer';
+import { NINFER_REPO_URL, NINFER_SERVE_PATH, type NINFER_BUILD_STAGES, type NinferBuildPlan, type NinferBuildRequest, type NinferKind, type NinferPrereq } from '../../../contract/ninfer';
 import { AppError } from '../../../contract/errors';
 import type { ManagedProcess, ProcessRunner } from '../../deps';
 import type { ProgressSink } from '../types';
 import { distroRunner, OWNER_ENV, PID_SCRIPT, WSL_ENV, type DistroRun, type WslProcesses } from './wsl';
 import { PID_LINE } from './logs';
+
+/** A step of a build or an update (engine.install stage). */
+export type NinferBuildStage = (typeof NINFER_BUILD_STAGES)[number];
 
 /** One script: the version of every prerequisite, one "##id value" line each (empty = missing). */
 export const PREREQ_SCRIPT = [
@@ -92,7 +95,7 @@ export function parsePrereqs(stdout: string): PrereqReport {
 }
 
 /** Exact argv of the build steps; the folder must be absolute (a ~ is expanded with the user's home first). */
-export function buildSteps(dir: string, o: { existing: boolean; nvcc?: string | undefined }): { stage: 'clone' | 'configure' | 'build'; argv: string[] }[] {
+export function buildSteps(dir: string, o: { existing: boolean; nvcc?: string | undefined }): { stage: NinferBuildStage; argv: string[] }[] {
   const nvccOnPath = o.nvcc === undefined || !o.nvcc.startsWith('/usr/local/cuda/');
   return [
     ...(o.existing ? [] : [{ stage: 'clone' as const, argv: ['git', 'clone', '--progress', NINFER_REPO_URL, dir] }]),
@@ -101,7 +104,10 @@ export function buildSteps(dir: string, o: { existing: boolean; nvcc?: string | 
   ];
 }
 
-const quote = (a: string): string => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+/** A word as a POSIX shell reads it back: bare when safe, else single-quoted. */
+export const shellQuote = (a: string): string => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+/** An argv as one line to copy into a shell. */
+export const shellLine = (argv: readonly string[]): string => argv.map(shellQuote).join(' ');
 
 /** Progress of a build line: ninja "[12/345] Building CUDA object …", git "Receiving objects:  45% (…)". */
 export function buildProgress(line: string): { done: number; total: number } | undefined {
@@ -122,7 +128,8 @@ export interface NinferBuilderOptions {
 export class NinferBuilder {
   constructor(private readonly o: NinferBuilderOptions) {}
 
-  private runner(distro: string | undefined): DistroRun {
+  /** Runs a program where NInfer is built: the distro (WSL) or this system. */
+  runner(distro: string | undefined): DistroRun {
     if (this.o.kind === 'ninfer-wsl') {
       if (!distro) throw new AppError('VALIDATION', 'Choose a WSL distro', { params: { reason: 'distro_missing' } });
       return distroRunner(this.o.proc, (this.o.wsl as NonNullable<NinferBuilderOptions['wsl']>).argv, distro);
@@ -155,7 +162,7 @@ export class NinferBuilder {
       dir,
       servePath: `${dir}/${NINFER_SERVE_PATH}`,
       existing: report.checkout,
-      commands: steps.map((st) => st.argv.map(quote).join(' ')),
+      commands: steps.map((st) => shellLine(st.argv)),
       prereqs: report.prereqs,
       ...(apt.length ? { aptCommand: `sudo apt install ${apt.join(' ')}` } : {}),
       cudaFromNvidia: missing.some((p) => p.id === 'cuda'),
@@ -174,7 +181,12 @@ export class NinferBuilder {
     return plan.servePath;
   }
 
-  private async step(stage: 'clone' | 'configure' | 'build', argv: string[], distro: string | undefined, progress: ProgressSink, signal: AbortSignal): Promise<void> {
+  /**
+   * One step of a build or an update, as its own process (WSL: in its own session, marked as ours),
+   * with progress from its lines; a cancel stops it (and only it). Throws ENGINE_INSTALL_FAILED with
+   * the last lines when it fails, CANCELLED when cancelled.
+   */
+  async step(stage: NinferBuildStage, argv: string[], distro: string | undefined, progress: ProgressSink, signal: AbortSignal): Promise<void> {
     if (signal.aborted) throw new AppError('CANCELLED', 'Build cancelled');
     progress({ stage, bytesDone: 0 });
     const marker = this.o.newMarker();

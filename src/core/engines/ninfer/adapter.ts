@@ -183,6 +183,11 @@ export class NinferAdapter implements EngineAdapter {
     return (cmd, args, opts) => this.o.deps.proc.run(cmd, args, opts);
   }
 
+  /** Every build is asked again at its next probe (after an update: its commit changed). */
+  forget(): void {
+    this.probes.clear();
+  }
+
   /** The build's help and commit, cached per build for probeTtlMs; `fresh` asks again ("Ricontrolla"). */
   probe(where: NinferWhere, fresh = false): Promise<NinferProbe> {
     const key = `${where.distro ?? ''}|${where.serve}`;

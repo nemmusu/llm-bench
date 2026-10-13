@@ -18,6 +18,7 @@ import { Skeleton } from '../ui/skeleton';
 import type { StatusDotProps } from '../ui/status-dot';
 import { EngineCard } from './engine-card';
 import { NinferBuildDialog } from './ninfer-build-dialog';
+import { NinferUpdates } from './ninfer-update';
 import { presetTitle } from './ninfer-format';
 
 type Tone = StatusDotProps['tone'];
@@ -134,6 +135,7 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
               {t('ninfer.where.change')}
             </Button>
           </div>
+          {status?.installed && <NinferUpdates kind={kind} where={wsl ? t('ninfer.build.whereWsl', { distro: savedDistro ?? '' }) : t('ninfer.build.whereLinux')} />}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

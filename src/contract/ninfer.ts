@@ -422,8 +422,73 @@ export const ninferBuildPlanSchema = z.object({
 });
 export type NinferBuildPlan = z.infer<typeof ninferBuildPlanSchema>;
 
-/** Build steps (engine.install stage), in order. */
-export const NINFER_BUILD_STAGES = ['clone', 'configure', 'build'] as const;
+/** Build steps (engine.install stage), in order; an update pulls, then builds. */
+export const NINFER_BUILD_STAGES = ['clone', 'configure', 'pull', 'build'] as const;
+
+// ---- updates -------------------------------------------------------------------------------------
+
+/** How to bring an older artifact to the container version a newer NInfer reads (NInfer's docs). */
+export const NINFER_UPGRADE_DOC = 'https://github.com/Neroued/ninfer/blob/master/docs/weight-conversion.md#upgrade-an-existing-v2-artifact';
+
+/** POST /api/engines/ninfer/update-check and /update: the saved build of that kind. */
+export const ninferUpdateRequestSchema = z.object({ kind: ninferKindSchema });
+export type NinferUpdateRequest = z.infer<typeof ninferUpdateRequestSchema>;
+
+/** POST /api/engines/ninfer/update: the commands the user saw and confirmed. */
+export const ninferUpdateStartSchema = ninferUpdateRequestSchema.extend({ confirm: z.literal(true) });
+export type NinferUpdateStart = z.infer<typeof ninferUpdateStartSchema>;
+
+export const ninferCommitSchema = z.object({ sha: z.string(), title: z.string() });
+export type NinferCommit = z.infer<typeof ninferCommitSchema>;
+
+/** A library artifact older than the container version this build reads. */
+export const ninferArtifactUpgradeSchema = z.object({
+  /** Library id and name of the model. */
+  id: z.string(),
+  name: z.string(),
+  /** The .ninfer file, on this PC. */
+  file: z.string(),
+  /** Its container version, and the one this build reads. */
+  version: z.number().int(),
+  needs: z.number().int(),
+  /** NInfer's own upgrade tool, ready to copy (run from its checkout), when it has one for this step. */
+  command: z.string().optional(),
+});
+export type NinferArtifactUpgrade = z.infer<typeof ninferArtifactUpgradeSchema>;
+
+/**
+ * "Controlla aggiornamenti": where the build's git checkout stands against its upstream (after a
+ * `git fetch`, which only updates the checkout's remote-tracking branches), what "Aggiorna" would run,
+ * and the library artifacts this build cannot read without an upgrade.
+ */
+export const ninferUpdateStatusSchema = z.object({
+  kind: ninferKindSchema,
+  distro: z.string().optional(),
+  /** The checkout (absolute Linux path); unset when the build is not in a git checkout. */
+  dir: z.string().optional(),
+  /** The build is <dir>/build/apps/ninfer-serve: the button can update it. */
+  updatable: z.boolean(),
+  /** The fetch reached the remote (false: the counts are those of the last fetch). */
+  fetched: z.boolean(),
+  /** HEAD and the upstream branch ("origin/master") with its head. */
+  current: z.string().optional(),
+  upstream: z.string().optional(),
+  latest: z.string().optional(),
+  /** Commits only upstream (to pull) and only here (a pull --ff-only would refuse them). */
+  behind: z.number().int(),
+  ahead: z.number().int(),
+  /** The commits to pull, newest first (up to 20). */
+  commits: z.array(ninferCommitSchema),
+  /** Tracked files changed in the checkout (up to 20): an update would refuse them. */
+  dirty: z.array(z.string()),
+  /** Exactly what "Aggiorna" runs, one line per step; `restore` = what puts the previous build back if the build fails. */
+  commands: z.array(z.string()),
+  restore: z.array(z.string()),
+  /** The container version this build reads, and the library artifacts below it. */
+  containerVersion: z.number().int(),
+  artifacts: z.array(ninferArtifactUpgradeSchema),
+});
+export type NinferUpdateStatus = z.infer<typeof ninferUpdateStatusSchema>;
 
 /** settings.ninfer: where NInfer's build is, per kind (Engines page). */
 export const ninferSettingsSchema = z.object({

@@ -21,6 +21,7 @@ export const KNOWN_STAGES = [
   'configure',
   'docker-group',
   'clone',
+  'pull',
   'build',
 ] as const;
 

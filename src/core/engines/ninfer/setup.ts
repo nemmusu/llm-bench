@@ -1,6 +1,7 @@
 /** NInfer's part of the composition root: both adapters, WSL's process records, builders, routes. */
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { LocalModel } from '../../../contract/models';
 import type { NinferKind, NinferSettings } from '../../../contract/ninfer';
 import type { ServerEvent } from '../../../contract/events';
 import type { CoreDeps } from '../../deps';
@@ -9,6 +10,7 @@ import type { ClientFactory } from '../instance';
 import { NinferAdapter, type GpuFacts } from './adapter';
 import { NinferBuilder } from './build';
 import { withBuild, type NinferRouteDeps } from './routes';
+import { NinferUpdater } from './update';
 import { listDistros, WslProcesses } from './wsl';
 
 export interface NinferServices {
@@ -26,6 +28,8 @@ export interface NinferServicesOptions {
   ownership?: Pick<OwnershipRegistry, 'add' | 'remove'>;
   settings: { get(): Promise<{ ninfer?: NinferSettings | undefined }>; update(patch: { ninfer: NinferSettings }): Promise<unknown> };
   gpus: () => Promise<GpuFacts[]>;
+  /** The library (the artifacts an updated build would no longer read). */
+  models?: () => Promise<LocalModel[]>;
 }
 
 export function createNinferServices(o: NinferServicesOptions): NinferServices {
@@ -40,6 +44,8 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     'ninfer-wsl': new NinferBuilder({ kind: 'ninfer-wsl', proc: deps.proc, wsl: { argv, processes }, newMarker: () => `gpubench-${randomUUID()}` }),
   };
   const adapters: Record<NinferKind, NinferAdapter> = { 'ninfer-native': native, 'ninfer-wsl': wsl };
+  const updaterOf = (kind: NinferKind) =>
+    new NinferUpdater({ kind, builder: builders[kind], where: () => adapters[kind].where(), models: async () => (o.models ? o.models() : []) });
   return {
     native,
     wsl,
@@ -56,6 +62,8 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
       saveBuild: async (kind, where) => {
         await o.settings.update({ ninfer: withBuild((await o.settings.get()).ninfer, kind, where) });
       },
+      updater: updaterOf,
+      updated: (kind) => adapters[kind].forget(),
       publish: r.publish,
       ...(r.shutdown ? { shutdown: r.shutdown } : {}),
     }),
