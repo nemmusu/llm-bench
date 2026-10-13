@@ -1,0 +1,5 @@
+[2025-10-01 10:00:06 TP0] Load weight begin. avail mem=30.83 GB
+[2025-10-01 10:00:06 TP0] Scheduler hit an exception: Traceback (most recent call last):
+  File "/sgl-workspace/sglang/python/sglang/srt/model_loader/utils.py", line 98, in get_model_architecture
+    raise ValueError(
+ValueError: Model architectures ['BonsaiTernaryForCausalLM'] are not supported for now. Supported architectures: dict_keys(['LlamaForCausalLM', 'Qwen3ForCausalLM'])

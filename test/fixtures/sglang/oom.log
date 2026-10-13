@@ -1,0 +1,7 @@
+[2025-10-01 10:00:06 TP0] Load weight begin. avail mem=30.83 GB
+Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:02<00:01,  1.32it/s]
+[2025-10-01 10:00:09 TP0] Scheduler hit an exception: Traceback (most recent call last):
+  File "/sgl-workspace/sglang/python/sglang/srt/managers/scheduler.py", line 2511, in run_scheduler_process
+    scheduler = Scheduler(server_args, port_args, gpu_id, tp_rank, moe_ep_rank, pp_rank, dp_rank)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.16 GiB. GPU 0 has a total capacity of 31.36 GiB of which 812.00 MiB is free.
+[2025-10-01 10:00:09] Received sigquit from a child process. It usually means the child failed.

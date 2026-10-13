@@ -300,3 +300,90 @@ export function vllmVramBusy(freeMiB, totalMiB, util) {
     'RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}',
   ];
 }
+
+// ---------------------------------------------------------------------------------- SGLang
+
+/** The version `python -c "import sglang; print(sglang.__version__)"` prints. */
+export const SGLANG_VERSION = '0.5.21';
+
+const sts = (tp = true) => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `[${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${tp ? ' TP0' : ''}]`;
+};
+
+export function sglangBanner(c) {
+  return [
+    `${sts(false)} server_args=ServerArgs(model_path='${c.model}', host='${c.host}', context_length=${c.ctx}, random_seed=0)`,
+    `${sts()} Attention backend not explicitly specified. Use flashinfer backend by default.`,
+    `${sts()} Init torch distributed begin.`,
+    `${sts()} Init torch distributed ends. mem usage=0.00 GB`,
+  ];
+}
+
+export function sglangLoadBegin() {
+  return [`${sts()} Load weight begin. avail mem=30.83 GB`, `${sts()} Using model weights format ['*.safetensors']`];
+}
+
+export function sglangLoadEnd(c) {
+  return [`${sts()} Load weight end. type=Qwen3ForCausalLM, dtype=torch.bfloat16, avail mem=15.37 GB, mem usage=${((c.vramMiB * 0.6) / 1024).toFixed(2)} GB.`];
+}
+
+export function sglangKvCache(c) {
+  return [`${sts()} KV Cache is allocated. #tokens: ${c.kvTokens}, K size: 6.14 GB, V size: 6.14 GB`, `${sts()} Memory pool end. avail mem=2.65 GB`];
+}
+
+export function sglangGraphsBegin() {
+  return [`${sts()} Capture cuda graph begin. This can take up to several minutes. avail mem=2.02 GB`];
+}
+
+/** One redraw of the "Capturing batches" bar. */
+export function sglangGraphs(done, total) {
+  const pct = Math.round((done / total) * 100);
+  const bar = '█'.repeat(Math.round(pct / 10)).padEnd(10);
+  return `Capturing batches (bs=${Math.max(1, total - done)} avail_mem=1.51 GB): ${String(pct).padStart(3)}%|${bar}| ${done}/${total} [00:00<00:00, 3.71it/s]`;
+}
+
+export function sglangGraphsEnd(seconds) {
+  return [`${sts()} Capture cuda graph end. Time elapsed: ${seconds.toFixed(2)} s. mem usage=0.51 GB. avail mem=1.51 GB.`];
+}
+
+export function sglangPool(c) {
+  return [
+    `${sts()} max_total_num_tokens=${c.kvTokens}, chunked_prefill_size=8192, max_prefill_tokens=16384, max_running_requests=4096, context_len=${c.ctx}, available_gpu_mem=1.51 GB`,
+  ];
+}
+
+export function sglangServing(c) {
+  return [
+    `${sts(false)} INFO:     Started server process [${process.pid}]`,
+    `${sts(false)} INFO:     Waiting for application startup.`,
+    `${sts(false)} INFO:     Application startup complete.`,
+    `${sts(false)} INFO:     Uvicorn running on http://${c.host}:${c.port} (Press CTRL+C to quit)`,
+  ];
+}
+
+export function sglangReady() {
+  return [`${sts(false)} The server is fired up and ready to roll!`];
+}
+
+export function sglangOom() {
+  return [
+    `${sts()} Scheduler hit an exception: Traceback (most recent call last):`,
+    'torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.16 GiB. GPU 0 has a total capacity of 31.36 GiB of which 812.00 MiB is free.',
+    `${sts(false)} Received sigquit from a child process. It usually means the child failed.`,
+  ];
+}
+
+/** The KV pool does not fit what is left after the weights. */
+export function sglangMemFraction() {
+  return [
+    `${sts()} Scheduler hit an exception: Traceback (most recent call last):`,
+    'RuntimeError: Not enough memory. Please try to increase --mem-fraction-static.',
+    `${sts(false)} Received sigquit from a child process. It usually means the child failed.`,
+  ];
+}
+
+export function sglangNoKernelImage() {
+  return [`${sts()} Scheduler hit an exception: Traceback (most recent call last):`, 'RuntimeError: CUDA error: no kernel image is available for execution on the device'];
+}
