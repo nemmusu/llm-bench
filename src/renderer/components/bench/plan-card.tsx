@@ -1,6 +1,6 @@
 import { Box, ChevronDown, Container, Download, ListChecks, Timer } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { RunPlan } from '../../../contract/api';
 import type { LaunchParams } from '../../../contract/engines';
 import type { AppErrorData } from '../../../contract/errors';
@@ -127,11 +127,14 @@ export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCar
   }
   const fit = plan?.fit;
   const pending = plan?.pending ?? [];
+  const titleId = useId();
   return (
-    <Card className="flex flex-col" aria-busy={loading}>
+    <Card role="region" aria-labelledby={titleId} className="flex flex-col" aria-busy={loading}>
       <div className="flex items-center gap-2 px-card pt-card">
         <ListChecks aria-hidden className="size-4 text-accent-text" />
-        <h2 className="text-md font-semibold tracking-[-0.01em]">{t('benchmark.plan.title')}</h2>
+        <h2 id={titleId} className="text-md font-semibold tracking-[-0.01em]">
+          {t('benchmark.plan.title')}
+        </h2>
         <HelpTip term={t('benchmark.plan.title')}>{t('benchmark.plan.help')}</HelpTip>
         {needs.length > 0 && (
           <Badge tone="accent" size="sm" className="ml-auto">

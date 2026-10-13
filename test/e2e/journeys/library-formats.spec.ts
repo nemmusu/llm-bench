@@ -55,7 +55,7 @@ test.afterAll(async () => {
   await world.close();
 });
 
-const main = (page: Page) => page.locator('#main');
+const main = (page: Page) => page.getByRole('main');
 const scrollTop = (page: Page) => main(page).evaluate((el) => el.scrollTop);
 
 test('search, scroll two pages, open a model, come back: everything is as it was', async () => {
@@ -187,7 +187,7 @@ test('a busy card: the verdict stays on the card, a calm note says what is free 
     const { page } = gb;
     await stubDesktop(gb);
     await skipWelcome(page);
-    const plan = page.getByRole('heading', { name: 'Anteprima' }).locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
+    const plan = page.getByRole('region', { name: 'Anteprima' });
     await expect(plan.getByText(/^Ora altri programmi usano .+ della scheda\.$/)).toBeVisible({ timeout: 30_000 });
     await expect(plan.getByText(/oppure il test partirà con meno memoria/)).toBeVisible();
     await expect(plan.getByText('Entra perfettamente')).toBeVisible();
