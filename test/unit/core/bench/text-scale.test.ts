@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { closeEnough, DEFAULT_TEXT_SCALE, fitTextScale } from '../../../../src/core/bench/text-scale';
+import { calibrationLengths, closeEnough, DEFAULT_TEXT_SCALE, fitTextScale } from '../../../../src/core/bench/text-scale';
+import { longestPrompt } from '../../../../src/core/bench/runner';
+import { buildScenario } from '../../../../src/core/bench/scenarios';
 import { kvPrecisionRank } from '../../../../src/core/bench/tune-rank';
 
 describe('text prompts calibrated on the server', () => {
@@ -25,6 +27,26 @@ describe('text prompts calibrated on the server', () => {
     expect(fitTextScale([{ chars: 1000, tokens: 400 }, { chars: 9000, tokens: 300 }], prev)).toBe(prev);
     // A negative overhead.
     expect(fitTextScale([{ chars: 1000, tokens: 100 }, { chars: 2000, tokens: 300 }], prev)).toBe(prev);
+  });
+
+  it('calibrates within the scenario\'s own longest prompt', () => {
+    expect(calibrationLengths(65_536)).toEqual([256, 2048]);
+    expect(calibrationLengths(512)).toEqual([128, 512]);
+    expect(calibrationLengths(3)).toEqual([3]);
+    expect(calibrationLengths(0)).toEqual([1]);
+    expect(longestPrompt(buildScenario('quick'))).toBeGreaterThan(0);
+    expect(longestPrompt(buildScenario('full'))).toBeGreaterThanOrEqual(longestPrompt(buildScenario('standard')));
+    expect(
+      longestPrompt({
+        profile: 'custom',
+        seed: 1,
+        steps: [
+          { kind: 'context-sweep', depths: [1024, 8192], outputTokens: 8 },
+          { kind: 'sessions', depth: 300, levels: [1], turns: 2, followupTokens: 8, outputTokens: 4 },
+          { kind: 'load', cache: 'warm', reps: 1 },
+        ],
+      } as never),
+    ).toBe(8192);
   });
 
   it('says when a prompt has the length asked (2 %, at least 16 tokens)', () => {

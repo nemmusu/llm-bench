@@ -309,7 +309,8 @@ describe('BenchRunner — happy paths', () => {
       new AbortController().signal,
     );
     expect(result.status).toBe('completed');
-    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([1024, 256, 256, 64]);
+    // One calibration request within the scenario's own longest prompt (64 tokens: 16 first), then the prompts.
+    expect(s.adapter.client.requests.slice(1).map((r) => r.promptText?.length)).toEqual([64, 256, 256, 64]);
     expect(result.metrics.latency[0]?.itlPerChunk).toBe(true);
     expect(result.metrics.firstTokenAfterLoadMs).toBeGreaterThan(0);
     expect(result.metrics.concurrency).toHaveLength(1);

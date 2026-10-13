@@ -51,7 +51,7 @@ import {
   type Window,
 } from './metrics';
 import { buildPrompt, buildTextPrompt, CHARS_PER_TOKEN, getCorpusTokens } from './prompts';
-import { CALIBRATION_TOKENS, closeEnough, fitTextScale, type TextSample, type TextScale } from './text-scale';
+import { calibrationLengths, closeEnough, fitTextScale, type TextSample, type TextScale } from './text-scale';
 import { DEFAULT_EXPECTATIONS, isLlamaCpp, requestSeconds, stepSeconds } from './scenarios';
 import { scoreRun, type ScoreReference } from './score';
 import { summarize } from './stats';
@@ -144,6 +144,18 @@ export interface RunInput {
   fitFixes?: FitFixes;
   /** "Comandi per questo modello": the recipe applied to this launch (saved with the result). */
   recipe?: AppliedRecipe;
+}
+
+/** The longest prompt a scenario sends, tokens (its steps were fitted to the launch's context). */
+export function longestPrompt(scenario: Scenario): number {
+  let n = 0;
+  for (const step of scenario.steps) {
+    if (step.kind === 'latency') n = Math.max(n, ...step.promptTokens);
+    else if (step.kind === 'concurrency') n = Math.max(n, step.promptTokens);
+    else if (step.kind === 'context-sweep') n = Math.max(n, ...step.depths);
+    else if (step.kind === 'sessions') n = Math.max(n, step.depth);
+  }
+  return n;
 }
 
 /** A localized note on the run (RunResult.notes): planning warnings and skipped steps. */
@@ -634,7 +646,7 @@ export class BenchRunner {
    */
   private async calibrateText(s: RunState, inst: EngineInstance): Promise<void> {
     const seed = s.input.scenario.seed;
-    for (const n of CALIBRATION_TOKENS) {
+    for (const n of calibrationLengths(longestPrompt(s.input.scenario))) {
       const promptText = buildTextPrompt(s.corpus, n, 0, { seed, salt: 'calibrate' });
       const events = await this.collect(s, inst, { promptText, outputTokens: 1, seed, ...this.modelField(s) });
       const reported = events.find((e): e is Extract<StreamEvent, { kind: 'done' }> => e.kind === 'done')?.usage?.promptTokens;
