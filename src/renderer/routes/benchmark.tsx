@@ -19,13 +19,16 @@ import { BenchModelPicker } from '../components/bench/model-picker';
 import { initialModelKey, modelOptions, newestTried, requestModel, savedModelId, triedHere, type ModelOption } from '../components/bench/model-options';
 import { PlanCard, type FitPatch } from '../components/bench/plan-card';
 import { RecentRuns } from '../components/bench/recent-runs';
+import { useOpenServerFlow } from '../components/servers/use-open-flow';
 import { RecipeChip } from '../components/recipes/recipe-chip';
 import { targetOfOption } from '../components/recipes/recipe-model';
 import { useModelRecipe } from '../components/recipes/use-model-recipe';
-import { ServersPanel } from '../components/bench/servers';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
+import { serverNinfer, withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
+import { NinferPresetPicker } from '../components/engines/ninfer-presets';
+import { isNinferKind, ninferPresetsFor } from '../../contract/ninfer';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
 import { DEFAULT_TUNE, TuneOptions, tuneRequestOf, type TuneRequest } from '../components/tune/tune-options';
@@ -181,6 +184,7 @@ function BenchmarkScreen() {
   const curated = useCurated(vramGB);
   const tierGB = curated.data?.tierGB;
   const flow = useStartFlow();
+  const openServer = useOpenServerFlow();
   const expert = settings.expertMode;
 
   const savedEngine = draft?.engine ?? settings.lastEngine;
@@ -197,6 +201,9 @@ function BenchmarkScreen() {
   const [previousTune, setPreviousTune] = useState<RunPlan['previousTune']>(undefined);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // NInfer: a result's own settings when its preset brought them, else NInfer's recommended ones.
+  const draftNinfer = draft?.params?.ninfer;
+  const [ninferChoice, setNinferChoice] = useState<NinferChoice>(draftNinfer ? 'run' : 'ninfer-recommended');
 
   const statusOf = (k: EngineKind) => engines.data?.find((e) => e.kind === k);
   // A saved custom engine whose kind runs here (vLLM / SGLang native only on Linux).
@@ -220,6 +227,10 @@ function BenchmarkScreen() {
       ? picked
       : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
+  // NInfer: the built-in settings of a .ninfer model (NInfer's README quick start, one tested on an RTX 5090).
+  const ninferPresets = isNinferKind(effEngine) && option?.source === 'local' ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.local.identity.displayName }) : [];
+  const ninferRun = ninferChoice === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
+  const ninferPreset = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChoice)?.params ?? ninferRun) : undefined;
 
   const plainEngine = engineConfigOf(effEngine, engineForm, expert);
   // A custom engine brings its own executable, image or command: the request only names it.
@@ -233,6 +244,7 @@ function BenchmarkScreen() {
   const parsedParams = paramsFromForm(paramsForm, { trainedContext });
   const parsedScenario = scenarioFromForm(scenarioForm);
   const sendParams = expert && effEngine !== 'external' && hasCustomParams(parsedParams.params);
+  const runParams = withNinferPreset(sendParams ? parsedParams.params : undefined, ninferPreset);
   const external = effEngine === 'external';
   const model: StartRunRequest['model'] | undefined = external ? (engineForm.modelName.trim() ? { name: engineForm.modelName.trim() } : {}) : option ? requestModel(option) : undefined;
   const valid =
@@ -245,8 +257,8 @@ function BenchmarkScreen() {
     model: model ?? {},
     profile: effProfile,
     ...(custom ? { scenario: parsedScenario.scenario } : {}),
-    ...(sendParams ? { params: parsedParams.params } : {}),
     ...recipe.requestPart(recipeOn),
+    ...(runParams ? { params: runParams } : {}),
     allowSharedGpu: false,
     // "Ricontrollo rapido" only while the plan says the last tune of this question ran with another build.
     ...(effProfile === 'tune' ? { tune: tuneRequestOf(tune, { expert, previous: previousTune }) } : {}),
@@ -309,9 +321,20 @@ function BenchmarkScreen() {
     toast.success(t('spill.fix.applied'));
   };
 
-  /** The same engine, model and expert parameters, without a test: the core fills in the rest for this card. */
+  /**
+   * The same engine, model and expert parameters, without a test: "Avvia un server" opens with them
+   * (the core fills in the rest for this card), and that page starts it.
+   */
   const serve = () => {
-    flow.serve({ engine: base.engine, model: base.model, params: base.params, ...recipe.requestPart(recipeOn) }, { modelLabel, engineLabel, onStarted: () => remember() });
+    remember();
+    openServer({
+      engine: base.engine,
+      model: base.model,
+      ...(base.params ? { params: serverNinfer(base.params) } : {}),
+      ...(option?.source === 'curated' && option.preset && draft?.hub ? { hub: draft.hub } : {}),
+      // The model's recipe stays off when the chip turned it off here.
+      ...(recipe.recipe && !recipeOn ? { recipeOff: true } : {}),
+    });
   };
 
   const engineFooter = (() => {
@@ -337,7 +360,7 @@ function BenchmarkScreen() {
     return (
       <span className="flex w-full items-center justify-between gap-2">
         <Note icon={<TriangleAlert />} tone="warning">
-          {problem ? t(`errors.${problem as 'INTERNAL'}.title`) : t('common.notInstalled')}
+          {problem ? t(`errors.${problem as 'INTERNAL'}.title`, status.problemParams) : t('common.notInstalled')}
         </Note>
         <Button size="sm" variant="link" onClick={() => void navigate({ to: '/engines' })}>
           {t('benchmark.openEngines')}
@@ -522,6 +545,7 @@ function BenchmarkScreen() {
               setPicked(undefined);
             }}
           />
+          {ninferPresets.length > 0 && <NinferPresetPicker presets={ninferPresets} run={draftNinfer} value={ninferChoice} onChange={setNinferChoice} />}
 
           <div className="flex items-center gap-3 self-start px-1 py-1">
             <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
@@ -560,7 +584,6 @@ function BenchmarkScreen() {
 
         <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
           <GpuCard />
-          <ServersPanel />
           <RecentRuns />
         </section>
       </div>

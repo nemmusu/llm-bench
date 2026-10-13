@@ -1,5 +1,6 @@
 /** Shared builders for the sweep / ranking / tuner tests. */
 import type { ConcurrencyPoint, LatencyPoint, SessionsPoint, Stat, TuneCombination } from '../../../../src/contract/results';
+import type { LaunchParams } from '../../../../src/contract/engines';
 
 export function stat(median: number, cv = 0): Stat {
   return { n: 2, median, mean: median, min: median, max: median, stddev: median * cv, cv, values: [median, median] };
@@ -59,7 +60,7 @@ export function sessionsPoint(sessions: number, depth: number, laterTtft: number
 
 export function combo(kvType: TuneCombination['kvType'], maxContext: number, sweep: LatencyPoint[], over: Partial<TuneCombination> = {}): TuneCombination {
   return {
-    params: { contextSize: maxContext, kvCacheType: kvType, extraArgs: [], env: {} },
+    params: { contextSize: maxContext, kvCacheType: kvType as LaunchParams['kvCacheType'], extraArgs: [], env: {} },
     kvType,
     maxContext,
     sweep,

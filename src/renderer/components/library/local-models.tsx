@@ -7,7 +7,7 @@ import { isNinferKind, ninferKindFor } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { useDeleteModel, useEngineStatuses, useLibraryModels, useSystemInfo } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
-import { useStartFlow } from '../bench/start-flow';
+import { useOpenServerFlow } from '../servers/use-open-flow';
 import { targetOfLocal, type RecipeTarget } from '../recipes/recipe-model';
 import { ModelRecipeDialog } from '../recipes/recipe-section';
 import { useModelRecipe } from '../recipes/use-model-recipe';
@@ -152,17 +152,18 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
   const engines = useEngineStatuses();
   const platform = useSystemInfo().data?.os.platform;
   const { settings } = useSettings();
-  const flow = useStartFlow();
+  const openServer = useOpenServerFlow();
   const [target, setTarget] = useState<LocalModel>();
   const [recipeFor, setRecipeFor] = useState<RecipeTarget>();
   /** "Avvia server": this model with the recommended settings for this card (the core picks them). */
   const serve = (m: LocalModel) => {
     const engine = serveEngineFor(m, settings.lastEngine, engines.data, platform);
-    flow.serve({ engine, model: { localId: m.id } }, { modelLabel: m.identity.displayName, engineLabel: t(`benchmark.engines.${engine.kind}`) });
+    openServer({ suggestedEngine: engine, model: { localId: m.id } });
   };
   if (local.isError) return <ErrorCallout error={local.error} action={{ label: t('common.retry'), onClick: () => void local.refetch() }} />;
   if (!local.data) return <Skeleton className="h-40" />;
-  const groups = SECTIONS.map((format) => ({ format, models: (local.data ?? []).filter((m) => m.identity.format === format) })).filter((g) => g.models.length > 0);
+  const models = local.data;
+  const groups = SECTIONS.map((format) => ({ format, models: models.filter((m) => m.identity.format === format) })).filter((g) => g.models.length > 0);
   return (
     <>
       {del.isError && <ErrorCallout error={del.error} className="mb-4" />}
@@ -218,7 +219,6 @@ export function LocalModels({ onDownload }: { onDownload: () => void }) {
         onConfirm={() => del.mutate((target as LocalModel).id)}
       />
       <ModelRecipeDialog target={recipeFor} onOpenChange={(o) => !o && setRecipeFor(undefined)} />
-      {flow.ui}
     </>
   );
 }

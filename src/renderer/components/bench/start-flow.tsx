@@ -9,10 +9,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import type { RunPlan, ServerInfo, ServerPlan, StartRunRequest, StartServerRequest } from '../../../contract/api';
 import type { AppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
 import type { DownloadJob } from '../../../contract/models';
+import { useI18n } from '../../i18n';
 import { useApi, useServerEvents } from '../../lib/api-context';
 import { apiErrorData, ENGINES_KEY, LOCAL_MODELS_KEY, SERVERS_KEY } from '../../lib/queries-runs';
 import { needsFromPlan, type Need } from './needs';
@@ -32,10 +34,14 @@ export interface StartOptions {
 }
 
 export interface ServeOptions {
+  /** The preview of exactly this request: the Server page shows it before "Avvia" (it is the confirmation). */
+  plan: ServerPlan;
   modelLabel: string;
   engineLabel: string;
-  /** Called once the server answers. */
+  /** Called once the server answers (also after "Continua in background"). */
   onStarted?: (info: ServerInfo) => void;
+  /** "Continua in background": the dialog closes, the server keeps loading (its card shows how far it is). */
+  onBackground?: () => void;
 }
 
 type Waiter = (e: ServerEvent) => void;
@@ -56,6 +62,9 @@ export function processList(params: Record<string, unknown> | undefined): string
 }
 const DOWNLOAD_DONE = new Set<DownloadJob['state']>(['done', 'failed', 'cancelled']);
 
+/** "Il test non è partito" / "Il server non è partito", for a start that failed after its dialog went away. */
+const TEXT_STARTFAILED = { run: 'benchmark.startFailed', serve: 'servers.flow.startFailed' } as const;
+
 /** Whether the user already accepted a GPU other programs are using. */
 const sharedOk = (job: Job): boolean => (job.mode === 'run' ? job.request.allowSharedGpu : job.sharedOk === true);
 
@@ -67,7 +76,9 @@ export function useStartFlow(): {
   const api = useApi();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [flow, setFlow] = useState<Flow>({ step: 'idle' });
+  const background = useRef<(() => void) | undefined>(undefined);
   const waiters = useRef(new Set<Waiter>());
   const generation = useRef(0);
   const downloadId = useRef<string | undefined>(undefined);
@@ -119,19 +130,25 @@ export function useStartFlow(): {
         } else {
           const server = await api.post<ServerInfo>('/api/servers', job.request);
           void qc.invalidateQueries({ queryKey: SERVERS_KEY });
+          // Also after "Continua in background": the server card already shows it, now ready.
           job.onStarted?.(server);
-          // Closed while it was loading: it keeps running (the "Server attivi" panel lists it).
-          if (generation.current === gen) setFlow({ step: 'ready', job, opts, server });
+          if (generation.current === gen) setFlow({ step: 'idle' });
         }
       } catch (e) {
         const error = apiErrorData(e);
+        // Sent to the background meanwhile: nobody is looking at the dialog any more.
+        if (generation.current !== gen) {
+          toast.error(t(TEXT_STARTFAILED[job.mode]), { description: t(`errors.${error.code}.title`) });
+          void qc.invalidateQueries({ queryKey: SERVERS_KEY });
+          return;
+        }
         if (error.code === 'VRAM_BUSY') {
           const own = error.params?.reason === 'own_server' ? await api.get<ServerInfo[]>('/api/servers').catch(() => []) : [];
           setFlow({ step: 'busy', job, opts, names: processList(error.params), ownServers: own });
         } else setFlow({ step: 'error', job, opts, error });
       }
     },
-    [api, qc, navigate],
+    [api, qc, navigate, t],
   );
 
   /** VRAM check from the plan, then start. */
@@ -250,27 +267,19 @@ export function useStartFlow(): {
     [qc, install, download, planOf, proceed],
   );
 
-  /** "Scarica e avvia" / "Avvia server": fetch what is missing first, or go straight on. */
-  const confirm = useCallback(
-    async (job: Job, opts: FlowOpts) => {
-      if (opts.needs.length) await fetchNeeds(job, opts);
-      else proceed(job, opts, { install: false, download: false });
-    },
-    [fetchNeeds, proceed],
-  );
-
   /**
    * With the plan of this job (if one could be made): a run asks only when something must be
-   * fetched first; a server always shows what will run (context, command) before starting.
+   * fetched first; a server was already confirmed on its page ("Avvia" / "Scarica e avvia").
    */
   const decide = useCallback(
     (job: Job, opts: FlowOpts) => {
       const needs = opts.plan ? needsFromPlan(job.request, opts.plan, opts.modelLabel) : opts.needs;
       const next: FlowOpts = { ...opts, needs };
-      if (job.mode === 'serve' || needs.length) setFlow({ step: 'confirm', job, opts: next });
+      if (job.mode === 'serve' && needs.length) void fetchNeeds(job, next);
+      else if (needs.length) setFlow({ step: 'confirm', job, opts: next });
       else proceed(job, next, { install: false, download: false });
     },
-    [proceed],
+    [proceed, fetchNeeds],
   );
 
   /** Started before the preview of these exact choices arrived: get it now (downloads, GPU check, phases, duration). */
@@ -302,9 +311,10 @@ export function useStartFlow(): {
 
   const serve = useCallback(
     (request: StartServerRequest, opts: ServeOptions) => {
-      begin({ mode: 'serve', request, onStarted: opts.onStarted }, { needs: [], modelLabel: opts.modelLabel, engineLabel: opts.engineLabel });
+      background.current = opts.onBackground;
+      decide({ mode: 'serve', request, onStarted: opts.onStarted }, { needs: [], plan: opts.plan, modelLabel: opts.modelLabel, engineLabel: opts.engineLabel });
     },
-    [begin],
+    [decide],
   );
 
   const close = () => {
@@ -322,5 +332,16 @@ export function useStartFlow(): {
     await post(job, opts, { install: false, download: false });
   };
 
-  return { start, serve, ui: <StartDialogs flow={flow} onClose={close} onConfirm={confirm} onContinue={post} onStopServers={stopServersAndStart} /> };
+  /** "Continua in background": the dialog goes, the start does not (nothing is cancelled). */
+  const toBackground = () => {
+    generation.current++;
+    setFlow({ step: 'idle' });
+    background.current?.();
+  };
+
+  return {
+    start,
+    serve,
+    ui: <StartDialogs flow={flow} onClose={close} onConfirm={fetchNeeds} onContinue={post} onStopServers={stopServersAndStart} onBackground={toBackground} />,
+  };
 }

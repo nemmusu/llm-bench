@@ -34,7 +34,7 @@ function withPlans(api: LibApi): StartServerRequest[] {
     seen.push(req);
     const inline = req.recipe?.inline;
     const words = [`llama-server --engine ${req.engine.kind}`, ...(inline?.contextSize ? ['-c', String(inline.contextSize)] : []), ...(inline?.args.llamacpp ?? []), ...(req.recipe?.id ? [`--recipe ${req.recipe.id}`] : [])].join(' ');
-    return { command: { argv: words.split(' '), powershell: words, bash: words }, needs: [], params: { extraArgs: [], env: {} }, warnings: [] } satisfies ServerPlan;
+    return { command: { argv: words.split(' '), powershell: words, bash: words }, needs: [], params: { extraArgs: [], env: {} }, warnings: [], port: 8080, network: 'local' } satisfies ServerPlan;
   });
   return seen;
 }

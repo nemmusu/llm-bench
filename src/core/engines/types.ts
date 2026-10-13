@@ -2,6 +2,7 @@ import type { MissingFlag } from '../../contract/custom-engines';
 import { engineBaseOf, type EngineConfig, type EngineKind, type EngineStatus, type LaunchParams } from '../../contract/engines';
 import type { EngineIdentity, LaunchRecord } from '../../contract/results';
 import type { LocalModel, ModelIdentity } from '../../contract/models';
+import type { EvictResult } from '../cache/evictor';
 import type { ExitInfo, LogLine } from '../deps';
 import type { InferenceClient } from '../inference/types';
 
@@ -136,6 +137,11 @@ export interface LaunchPlan {
   pending?: PendingPart[];
   /** GPU Bench flags the build does not know: left out of argv (the engine's default applies). */
   unsupported?: MissingFlag[];
+  /**
+   * The API key the engine was started with (a server shared on the local network, servers/lan.ts):
+   * readiness probes send it. A secret: never stored, displayed or logged (commands are redacted).
+   */
+  apiKey?: string;
 }
 
 export interface EngineInstance {
@@ -166,6 +172,11 @@ export interface EngineAdapter {
   /** Pure: builds the exact command. Used for "Anteprima comando" (opts.preview) and by start(). */
   plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan>;
   start(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance>;
+  /**
+   * Cold loads, for an engine whose files live behind another page cache (NInfer in WSL: the distro's
+   * kernel): drops the model's pages there. Absent, or undefined returned = the core's own evictor.
+   */
+  evict?(plan: LaunchPlan, signal?: AbortSignal): Promise<EvictResult | undefined>;
 }
 
 export function toLaunchRecord(plan: LaunchPlan, display: { powershell: string; bash: string }): LaunchRecord {

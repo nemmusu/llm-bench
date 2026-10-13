@@ -81,7 +81,6 @@ export function PresetActions({ run, combo, at, layout = 'full', className }: Pr
           {note}
         </span>
       )}
-      {p.ui}
     </div>
   );
 }

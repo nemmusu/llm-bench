@@ -28,10 +28,11 @@ export const TIE_CV = 2;
 /** Tail numbers (p95 of a handful of requests) are noisier: never decided below this difference. */
 export const TIE_TAIL = 0.1;
 
-/** f16 / auto are the most precise, then the 8-bit caches, then q4_0. */
+/** f16 / auto / bf16 are the most precise, then the 8-bit caches, then K 8-bit with V 4-bit, then the 4-bit ones. */
 export function kvPrecisionRank(kv: TuneKvType): number {
-  if (kv === 'f16' || kv === 'auto') return 0;
-  if (kv === 'q8_0' || kv === 'fp8') return 1;
+  if (kv === 'f16' || kv === 'auto' || kv === 'bf16') return 0;
+  if (kv === 'q8_0' || kv === 'fp8' || kv === 'int8') return 1;
+  if (kv === 'k8v4') return 1.5;
   return 2;
 }
 

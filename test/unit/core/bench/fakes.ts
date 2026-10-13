@@ -289,6 +289,8 @@ export interface AdapterOptions {
   gate?: Promise<unknown>;
   /** Instances without a PID (external endpoints). */
   noPid?: boolean;
+  /** argv says `--host 127.0.0.1` like the real engines (servers shared on the local network rebind it). */
+  hostArg?: boolean;
 }
 
 export function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -323,7 +325,7 @@ export class FakeAdapter implements EngineAdapter {
     const planParams = this.o.parallel === null ? rest : { ...rest, parallel: parallel ?? this.o.parallel ?? 1 };
     return {
       kind: cfg.kind,
-      argv: ['llama-server', '-m', 'C:/models/m.gguf', '--port', String(opts.port), '--alias', opts.marker],
+      argv: ['llama-server', '-m', 'C:/models/m.gguf', ...(this.o.hostArg ? ['--host', '127.0.0.1'] : []), '--port', String(opts.port), '--alias', opts.marker],
       env: { CUDA_VISIBLE_DEVICES: '0' },
       host: '127.0.0.1',
       port: opts.port,

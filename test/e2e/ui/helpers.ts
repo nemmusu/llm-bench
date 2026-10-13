@@ -4,6 +4,7 @@ import { expect, type Page } from '@playwright/test';
 export const PAGES = {
   it: [
     ['Benchmark', 'Benchmark'],
+    ['Server', 'Server'],
     ['Risultati', 'Risultati'],
     ['Modelli', 'Modelli'],
     ['Motori', 'Motori'],
@@ -12,6 +13,7 @@ export const PAGES = {
   ],
   en: [
     ['Benchmark', 'Benchmark'],
+    ['Servers', 'Servers'],
     ['Results', 'Results'],
     ['Models', 'Models'],
     ['Engines', 'Engines'],

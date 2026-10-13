@@ -110,6 +110,8 @@ export interface CoreEndpoints {
   /** git and cmake, to update an engine built from a git checkout (default from PATH). */
   git?: string[];
   cmake?: string[];
+  /** wsl.exe stand-in (tests, E2E: a fake that runs the fake NInfer), as an argv prefix. */
+  wsl?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

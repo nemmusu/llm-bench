@@ -2,17 +2,15 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider, Outlet, createRoute } from '@tanstack/react-router';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { toast } from 'sonner';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppErrorData, ErrorCode } from '../../../../src/contract/errors';
 import { ErrorCard, fixFor } from '../../../../src/renderer/components/bench/error-card';
 import { RecentRuns } from '../../../../src/renderer/components/bench/recent-runs';
-import { ServersPanel } from '../../../../src/renderer/components/bench/servers';
 import { ApiProvider } from '../../../../src/renderer/lib/api-context';
 import { newQueryClient, renderUi } from '../helpers';
 import { IDS, seeded, seededRuns } from './fixtures';
-import { apiError, benchApi, deferred } from './world';
+import { benchApi, deferred } from './world';
 
 const clipboard = { writeText: vi.fn(async (_t: string) => undefined) };
 beforeEach(() => {
@@ -85,41 +83,6 @@ describe('ErrorCard', () => {
     );
     expect(await screen.findAllByText('Cosa fare:')).toHaveLength(3);
     expect(screen.queryAllByRole('button')).toHaveLength(0);
-  });
-});
-
-describe('ServersPanel', () => {
-  const server = {
-    id: 's1',
-    baseUrl: 'http://127.0.0.1:5000',
-    openaiUrl: 'http://127.0.0.1:5000/v1',
-    modelName: 'Qwen3 8B',
-    engineLabel: 'llama.cpp b11438',
-    startedAt: new Date(Date.now() - 120_000).toISOString(),
-    command: { argv: [], powershell: '', bash: '' },
-  };
-
-  it('lists running servers, copies the address, stops them', async () => {
-    const api = benchApi({ servers: [server] });
-    let fail = true;
-    api.world.routes['DELETE /api/servers/s1'] = () => {
-      if (fail) throw apiError('VALIDATION');
-      api.world.servers = [];
-      return { ok: true };
-    };
-    const error = vi.spyOn(toast, 'error');
-    const success = vi.spyOn(toast, 'success');
-    inRouter(<ServersPanel />, api);
-    expect(await screen.findByRole('heading', { name: /Server attivi/ })).toBeTruthy();
-    expect(screen.getByText(/llama\.cpp b11438 · avviato 2 minuti fa/)).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI' }));
-    expect(clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:5000/v1');
-    await userEvent.click(screen.getByRole('button', { name: 'Ferma il server di Qwen3 8B' }));
-    await waitFor(() => expect(error).toHaveBeenCalledWith('Alcuni valori non sono validi'));
-    fail = false;
-    await userEvent.click(screen.getByRole('button', { name: 'Ferma il server di Qwen3 8B' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: /Server attivi/ })).toBeNull());
-    expect(success).toHaveBeenCalledWith('Server di Qwen3 8B fermato');
   });
 });
 

@@ -54,9 +54,11 @@ describe('the Benchmark chip', () => {
     await userEvent.click(within(chip).getByRole('switch', { name: 'Usa i comandi di questo modello' }));
     expect(within(chip).getByText('Il test parte con le impostazioni normali, senza i comandi di questo modello.')).toBeTruthy();
     await waitFor(() => expect(lastPlan(api).recipe).toEqual({ use: false }));
+    // "Avvia un server" opens with the chip still off, and its plan says so too.
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server' }));
-    await screen.findByRole('dialog', { name: 'Avvia il server' });
-    expect((posted(api, '/api/servers/plan').at(-1) as StartServerRequest).recipe).toEqual({ use: false });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    expect((await screen.findByRole('switch', { name: 'Usa i comandi di questo modello' })).getAttribute('aria-checked')).toBe('false');
+    await waitFor(() => expect((posted(api, '/api/servers/plan').at(-1) as StartServerRequest).recipe).toEqual({ use: false }));
   });
 
   it('"Apri" opens the recipe; a model picker badge says which models have one', async () => {

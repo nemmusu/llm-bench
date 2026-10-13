@@ -4,7 +4,7 @@ import { ChevronDown, CircleStop, Loader } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import type { ActiveRun } from '../../contract/api';
+import type { ActiveRun, ActiveRunResponse } from '../../contract/api';
 import type { RunPhase } from '../../contract/events';
 import { MIB_PER_GB, prettyEngineLabel } from '../components/bench/format';
 import { initialLive, liveReducer, seedFromActive, type LiveState } from '../components/bench/live-state';
@@ -78,8 +78,10 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   });
 
   // The core is the source of truth: resume the phase after a reload, leave when the run is over.
+  // prevActive starts undefined (not with the cached data): a warm cache at mount (another screen read
+  // the active run first) must still seed the screen once.
   const activeRun = active.data?.active;
-  const [prevActive, setPrevActive] = useState(active.data);
+  const [prevActive, setPrevActive] = useState<ActiveRunResponse | undefined>(undefined);
   if (active.data !== prevActive) {
     setPrevActive(active.data);
     if (activeRun?.runId === runId) {

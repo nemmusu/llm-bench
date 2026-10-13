@@ -86,9 +86,11 @@ export class ChatClient implements InferenceClient {
 
   requestBody(req: GenerateRequest): Record<string, unknown> {
     const model = req.model ?? this.opts.model;
+    // A conversation goes as its turns (the instruction opens the first message), anything else as one message.
+    const turns = req.chat?.length ? req.chat : [{ role: 'user' as const, content: req.promptText ?? '' }];
     return {
       ...(model !== undefined ? { model } : {}),
-      messages: [{ role: 'user', content: `${CONTINUE_INSTRUCTION}${req.promptText ?? ''}` }],
+      messages: turns.map((m, i) => (i === 0 ? { role: m.role, content: `${CONTINUE_INSTRUCTION}${m.content}` } : { role: m.role, content: m.content })),
       max_tokens: req.outputTokens,
       temperature: 0,
       seed: req.seed,

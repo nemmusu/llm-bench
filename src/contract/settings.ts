@@ -3,6 +3,7 @@ import { customEnginesSettingSchema } from './custom-engines';
 import { engineConfigSchema, launchParamsSchema } from './engines';
 import { ninferSettingsSchema } from './ninfer';
 import { modelRecipesSettingSchema } from './recipes';
+import { closeBehaviorSchema, serverPresetsSettingSchema } from './servers';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -33,12 +34,19 @@ export const settingsSchema = z.object({
   // ---- engines: custom engines and forks (contract/custom-engines.ts) ----
   /** "Motori personalizzati": forks and other OpenAI servers; invalid entries are dropped on read, never the whole file. */
   customEngines: customEnginesSettingSchema,
-  // ---- NInfer (contract/ninfer.ts) ----
-  /** Where NInfer's build is: Linux, or a WSL distro and the path inside it (Engines page). */
-  ninfer: ninferSettingsSchema.optional(),
   // ---- recipes: "Comandi per questo modello" (contract/recipes.ts) ----
   /** Per-model command recipes; invalid entries are dropped on read, never the whole file. */
   modelRecipes: modelRecipesSettingSchema,
+  // ---- NInfer (contract/ninfer.ts) ----
+  /** Where NInfer's build is: Linux, or a WSL distro and the path inside it (Engines page). */
+  ninfer: ninferSettingsSchema.optional(),
+  // ---- servers and tray (contract/servers.ts) ----
+  /** "I tuoi preset" of the Server page; invalid entries are dropped on read, never the whole file. */
+  serverPresets: serverPresetsSettingSchema,
+  /** Closing the window: hide to the tray while a server runs (default), always hide, or quit. */
+  closeBehavior: closeBehaviorSchema.default('tray-if-servers'),
+  /** "Avvia GPU Bench all'accesso": opt-in (Windows login item, Linux autostart entry). */
+  launchAtLogin: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

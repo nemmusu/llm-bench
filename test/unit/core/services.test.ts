@@ -5,6 +5,7 @@ import type { StartRunRequest } from '../../../src/contract/api';
 import type { LocalModel } from '../../../src/contract/models';
 import type { ProcessRunner } from '../../../src/core/deps';
 import { clientFactory, createServices, modelsLookup, parseArgvEnv, resolveModelTarget, serviceModules } from '../../../src/core/services';
+import type { ServeServiceDeps } from '../../../src/core/servers/service';
 import type { OwnershipRegistry } from '../../../src/core/process/ownership';
 import { systemClock } from '../../../src/core/node-deps';
 import { createApp } from '../../../src/core/server/app';
@@ -263,6 +264,25 @@ describe('createServices', () => {
     } as unknown as OwnershipRegistry;
     await createServices(testContext(deps), { ownership: failing });
     expect(logs).toContain('orphan cleanup failed');
+  });
+
+  it('wires the servers: addresses on the network cards, the API key for network plans and logs, VRAM from telemetry', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quietProc }));
+    const card = { address: '192.168.1.20', netmask: '255.255.255.0', family: 'IPv4' as const, mac: '00:00:00:00:00:01', internal: false, cidr: '192.168.1.20/24' };
+    const s = await createServices(ctx, { networkInterfaces: () => ({ Ethernet: [card] }) });
+    const d = (s.serve as unknown as { deps: ServeServiceDeps }).deps;
+    expect(d.lanUrls(8080)).toEqual(['http://192.168.1.20:8080/v1']);
+    expect(d.secrets()).toEqual([]);
+    const key = (s.bench as unknown as { deps: { serverApiKey: () => string } }).deps.serverApiKey();
+    expect(key).toMatch(/^gpub-/);
+    expect(d.secrets()).toEqual([key]);
+    ctx.telemetry.snapshot = () => Promise.resolve([{ memUsedMiB: 4096 } as never]);
+    expect(await d.vramUsedMiB!()).toBe(4096);
+    ctx.telemetry.snapshot = () => Promise.resolve([]);
+    expect(await d.vramUsedMiB!()).toBeUndefined();
+    // This PC's own cards when none are given.
+    const real = (((await createServices(testContext(testDeps(t.dir, { proc: quietProc })))).serve as unknown as { deps: ServeServiceDeps }).deps).lanUrls(8080);
+    expect(Array.isArray(real)).toBe(true);
   });
 
   it('wires the bench service to the hub, evictor, settings and telemetry', async () => {

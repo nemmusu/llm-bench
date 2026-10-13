@@ -267,46 +267,35 @@ describe('how it was started', () => {
     expect(await screen.findByText('Scelto 1 su 4: scegline almeno un altro')).toBeTruthy();
   });
 
-  it('starts only the server with the run’s exact settings: confirmation, address, stop', async () => {
+  it('starts only the server with the run’s exact settings: the start flow with them, from this test; a failure, a retry', async () => {
     const api = withLibrary();
     const info = serverInfo('srv1', { contextSize: 8192 });
-    const started = deferred<typeof info>();
     let fail = true;
     api.world.routes['POST /api/servers'] = () => {
       if (fail) throw apiError('ENGINE_START_FAILED', undefined, 500);
       api.world.servers = [info];
-      return started.promise;
+      return info;
     };
     api.world.serverPlan = (body) => serverPlanFor({ contextSize: 8192, params: (body as StartServerRequest).params! });
-    renderApp(`/results/${IDS.full}`, api);
+    const { router } = renderApp(`/results/${IDS.full}`, api);
     await h1(/Qwen3 8B/);
     await tab('Come è stato avviato');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    // The confirmation says how much text it takes, and that it comes from the run's own settings.
-    expect(await screen.findByText('8.192 token')).toBeTruthy();
-    let dialog = screen.getByRole('dialog', { name: 'Avvia il server' });
-    expect(within(dialog).getByText(/Viene dalle impostazioni scelte/)).toBeTruthy();
-    expect(within(dialog).getByRole('region', { name: 'Comando esatto' }).textContent).toContain('llama-server');
-    expect(posted(api, '/api/servers/plan')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 } });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server così' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server' }));
-    dialog = await screen.findByRole('dialog', { name: 'Il server non è partito' });
+    // "Avvia un server" with this test's settings chosen ("Dal test del …"), and how much text it takes.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /Dal test del/ }).getAttribute('data-state')).toBe('checked');
+    expect(await screen.findByText('8.192')).toBeTruthy();
+    expect(screen.getByText('Viene dalle impostazioni scelte.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Comando esatto' }).textContent).toContain('llama-server');
+    // (The other preview is of GPU Bench's own choice, said next to it.)
+    expect(posted(api, '/api/servers/plan').map((c) => c.body)).toContainEqual(expect.objectContaining({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: expect.objectContaining({ contextSize: 8192 }) }));
+    await userEvent.click(screen.getByRole('button', { name: 'Avvia' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Il server non è partito' });
     expect(within(dialog).getByRole('heading', { name: 'Il motore non è partito' })).toBeTruthy();
     fail = false;
     await userEvent.click(within(dialog).getByRole('button', { name: 'Riprova' }));
-    expect(await screen.findByText('Avvio il motore e carico il modello…')).toBeTruthy();
-    await act(async () => started.resolve(info));
-    dialog = await screen.findByRole('dialog', { name: 'Il server è pronto' });
-    expect(within(dialog).getByText('Indirizzo compatibile OpenAI')).toBeTruthy();
-    expect(within(dialog).getByText('Modello: Qwen3 8B · Contesto 8.192 token')).toBeTruthy();
-    expect(posted(api, '/api/servers')[1]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 } });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI' }));
-    expect(clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:5123/v1');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Copia l’indirizzo del server' }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Ferma' }));
-    expect(await screen.findByText('Server di Qwen3 8B fermato')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(router.state.location.pathname).toBe('/servers'));
+    expect(posted(api, '/api/servers')[1]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192 }, port: 8080 });
   });
 });
 

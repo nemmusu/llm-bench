@@ -18,7 +18,7 @@ import { HelpTip } from '../ui/help-tip';
 import { UsersTable } from './concurrency-users';
 import { prefillStat, prettyEngineLabel } from './format';
 import { MeasureTable, type MeasureRow } from './measure-table';
-import { copyText } from './servers';
+import { copyText } from '../../lib/clipboard';
 
 /** "Configurazione del server": engine, settings in words, and the exact command to copy. */
 export function LiveConfig({ launch, engineKind }: { launch: RunLaunch | undefined; engineKind: EngineKind }) {

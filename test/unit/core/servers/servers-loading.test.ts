@@ -5,6 +5,7 @@ import type { EngineAdapter, EngineInstance, LaunchPlan } from '../../../../src/
 import { systemClock } from '../../../../src/core/node-deps';
 import { AsyncQueue } from '../../../../src/core/process/runner';
 import { ServeService, type ServeServiceDeps } from '../../../../src/core/servers/service';
+import { fakePorts } from './helpers';
 
 /** An engine that answers only when the test says so, with a log the test writes. */
 function slowInstance(o: { logsFail?: boolean } = {}) {
@@ -84,6 +85,9 @@ function setup(o: { startFails?: Error; logsFail?: boolean; expectedLoadMs?: num
     displayCommand: (argv) => ({ powershell: argv.join(' '), bash: argv.join(' ') }),
     redact: (argv, env) => ({ argv, env }),
     onChange: () => changes++,
+    ports: fakePorts(),
+    lanUrls: () => [],
+    secrets: () => [],
   };
   return { svc: new ServeService(deps), made, changes: () => changes };
 }

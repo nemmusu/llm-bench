@@ -17,6 +17,8 @@ export interface CodeBlockProps {
   className?: string;
   /** Hide the shell toggle (single-format snippets). */
   single?: boolean;
+  /** What the copy button copies, when it differs from what is shown (a secret shown hidden). */
+  copyCommands?: Record<Shell, string>;
 }
 
 export function defaultShellFor(platform: string | undefined): Shell {
@@ -55,7 +57,7 @@ const tokenClass: Record<TokenKind, string> = {
 };
 
 /** Monospace command with a PowerShell/bash toggle and a copy button. */
-export function CodeBlock({ commands, defaultShell, label, className, single }: CodeBlockProps) {
+export function CodeBlock({ commands, defaultShell, label, className, single, copyCommands }: CodeBlockProps) {
   const { t } = useI18n();
   const [shell, setShell] = useState<Shell>(defaultShell ?? defaultShellFor(window.gpubench?.platform ?? 'win32'));
   const [copied, setCopied] = useState(false);
@@ -69,7 +71,7 @@ export function CodeBlock({ commands, defaultShell, label, className, single }: 
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(copyCommands?.[shell] ?? text);
       setCopied(true);
       toast.success(t('codeblock.copied'));
     } catch {

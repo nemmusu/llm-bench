@@ -64,7 +64,8 @@ export async function createCore(deps: CoreDeps, opts: CoreOptions): Promise<Cor
     close: () =>
       new Promise<void>((resolve) => {
         shutdown.abort();
-        void services.bench.whenIdle().finally(() => server.close(() => resolve()));
+        // Our servers (processes and containers) are stopped before the core goes: quitting GPU Bench stops them.
+        void Promise.all([services.bench.whenIdle(), services.serve.stopAll()]).finally(() => server.close(() => resolve()));
         // SSE streams keep connections open: drop them so close() completes.
         (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
       }),

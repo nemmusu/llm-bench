@@ -55,6 +55,10 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     FAKE_DOCKER_STATE: dockerState,
     GPUBENCH_USER_DATA: userData,
     GPUBENCH_MODELS_DIR: path.join(userData, 'models'),
+    // The tray and the window through globalThis.__gpubench (Playwright cannot click the OS tray); no desktop toasts.
+    GPUBENCH_TEST_HOOKS: '1',
+    // "Avvia GPU Bench all'accesso" writes here, never to this PC's real login items.
+    GPUBENCH_FAKE_LOGIN_ITEM: path.join(userData, 'login-item.json'),
     ...(process.env.GPUBENCH_E2E_COVERAGE ? { NODE_V8_COVERAGE: process.env.GPUBENCH_E2E_COVERAGE } : {}),
     ...opts.env,
   });

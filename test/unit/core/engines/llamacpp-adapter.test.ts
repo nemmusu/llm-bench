@@ -349,6 +349,19 @@ describe('start', () => {
     }
   });
 
+  it('a server shared on the network (--api-key) is probed with its key', async () => {
+    const ours = await startFakeEngine({ alias: MARK, apiKey: 'gpub-secret-key', profile: { loadMsWarm: 30 } });
+    try {
+      const inst = await adapter(deps(), { pollMs: 5, readyTimeoutMs: 3000 }).start(basePlan({ port: ours.port, apiKey: 'gpub-secret-key' }), new AbortController().signal);
+      expect((await inst.waitReady()).tReady).toBeGreaterThan(0);
+      await inst.stop();
+      // Other requests without the key are refused by the engine.
+      expect((await fetch(`${ours.url}/v1/chat/completions`, { method: 'POST', body: '{}' })).status).toBe(401);
+    } finally {
+      await ours.close();
+    }
+  });
+
   it('a server without /v1/models is accepted on /health alone', async () => {
     const http = await import('node:http');
     const srv = http.createServer((req, res) => {

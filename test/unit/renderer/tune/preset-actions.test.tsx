@@ -1,7 +1,9 @@
 /** "Usa questo preset" / "Avvia il server così" of a whole run (no tune combination): its own launch parameters. */
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { takeServerDraft } from '../../../../src/renderer/components/servers/server-flow';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PresetActions } from '../../../../src/renderer/components/presets/preset-actions';
@@ -27,15 +29,32 @@ describe('preset of a run saved before the context sweep existed', () => {
   });
 });
 
+/** What "Avvia un server" would read: the handed-over settings. */
+function ServerDraftPage() {
+  const qc = useQueryClient();
+  const [draft] = useState(() => takeServerDraft(qc));
+  return (
+    <p>
+      server draft {draft?.params?.contextSize}
+      {draft?.hub ? ` from ${draft.hub.repo}` : ''}
+    </p>
+  );
+}
+
 describe('preset actions of a run', () => {
-  it('use the run’s own launch parameters', async () => {
+  it.each([
+    ['on the PC', false],
+    ['deleted since: downloaded again first', true],
+  ])('use the run’s own launch parameters (model %s)', async (_label, gone) => {
     const run = seeded(IDS.full);
     run.launch = { ...run.launch, params: { ...run.launch.params, contextSize: 12288 } };
+    if (gone) run.model = { ...run.model, source: 'hf', repo: 'org/gone-GGUF', file: 'gone.gguf', weakKey: 'hf/gone', sha256: undefined, path: undefined };
     const api = benchApi({ runs: [run] });
     const root = createRootRoute();
     const tree = root.addChildren([
       createRoute({ getParentRoute: () => root, path: '/x', component: () => <PresetActions run={run} /> }),
       createRoute({ getParentRoute: () => root, path: '/', component: () => <p>home</p> }),
+      createRoute({ getParentRoute: () => root, path: '/servers/new', component: ServerDraftPage }),
     ]);
     const router = createRouter({ routeTree: tree, history: createMemoryHistory({ initialEntries: ['/x'] }) });
     render(
@@ -52,9 +71,9 @@ describe('preset actions of a run', () => {
       </ApiProvider>,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Avvia il server così' }));
-    await waitFor(() => expect(api.calls.find((c) => c.path === '/api/servers/plan')?.body).toMatchObject({ params: { contextSize: 12288 } }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Annulla' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Usa questo preset' }));
+    expect(await screen.findByText(gone ? 'server draft 12288 from org/gone-GGUF' : 'server draft 12288')).toBeTruthy();
+    act(() => router.history.back());
+    await userEvent.click(await screen.findByRole('button', { name: 'Usa questo preset' }));
     expect(await screen.findByText('home')).toBeTruthy();
   });
 });

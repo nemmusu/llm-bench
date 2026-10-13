@@ -214,7 +214,7 @@ export class SglangNativeAdapter implements EngineAdapter {
       baseUrl,
       client: this.o.createClient('sglang', baseUrl, { model: served }),
       clock,
-      probe: modelReadyProbe(fetch, baseUrl, served),
+      probe: modelReadyProbe(fetch, baseUrl, served, plan.apiKey),
       phaseOf: sglangPhaseOf,
       diagnose: (lines, exit) => diagnoseSglang(lines, exit, repo !== undefined ? { repo } : {}),
       startSignal: signal,

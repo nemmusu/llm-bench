@@ -67,8 +67,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         // Apply synchronously: a navigation right after update() must already see the new values.
         const next = { ...(qc.getQueryData<Settings>(SETTINGS_QUERY_KEY) ?? fallback), ...patch };
         qc.setQueryData<Settings>(SETTINGS_QUERY_KEY, next);
-        // Send the whole object: the core currently fills omitted fields with defaults.
-        mutate(next);
+        // Send the whole object (a save that failed is carried by the next one), but never what other
+        // routes own: a copy read before a preset or an engine was saved would erase it.
+        const { serverPresets: _presets, customEngines: _engines, ...mine } = next;
+        mutate(mine);
       },
     }),
     [settings, query.isFetched, query.isError, resolvedTheme, mutate, qc, fallback],

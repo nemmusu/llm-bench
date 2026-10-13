@@ -51,6 +51,21 @@ export function useActiveRun(pollMs: number | false = false) {
   });
 }
 
+/**
+ * The sidebar's copy of the active run: its own cache key, so it never changes the query the live
+ * screen decides on (a run that is starting would otherwise look over before it exists). Polled
+ * because the card must follow a run from any page.
+ */
+export function useShellActiveRun() {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['shell', 'active-run'],
+    queryFn: () => api.get<ActiveRunResponse>('/api/runs/active'),
+    refetchInterval: 5000,
+    staleTime: 0,
+  });
+}
+
 /** GET /api/runs/tried: past results of one model, this PC + GPU first. */
 export function useTried(model: { weakKey: string; sha256?: string } | undefined) {
   const api = useApi();

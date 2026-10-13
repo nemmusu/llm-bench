@@ -149,7 +149,7 @@ export class LlamaDockerAdapter extends DockerEngineAdapter {
       log: deps.log,
       plan,
       client: this.o.createClient('llamacpp', baseUrl),
-      probe: modelReadyProbe(deps.fetch, baseUrl, plan.marker),
+      probe: modelReadyProbe(deps.fetch, baseUrl, plan.marker, plan.apiKey),
       phaseOf: llamaPhaseOf,
       diagnose: diagnoseExit,
       signal,

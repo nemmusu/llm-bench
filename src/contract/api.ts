@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { engineConfigSchema, engineStatusSchema, launchParamsSchema } from './engines';
+import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsSchema } from './engines';
 import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
 import { appliedRecipeSchema, MAX_RECIPE_CONTEXT, recipeChoiceSchema } from './recipes';
 import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuningSchema } from './results';
+import { serverNetworkSchema, serverPortSchema } from './servers';
 
 /**
  * HTTP API between renderer and core. All routes live under /api, need
@@ -37,10 +38,11 @@ import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGo
  *   GET    /api/runs/active                  -> ActiveRunResponse
  *   GET    /api/runs/tried?weakKey=&sha256=  -> RunSummary[] (results for a model, this GPU first)
  *   GET    /api/configs?gpu=&model=&engine=&minContext= -> ConfigsResponse (results by configuration, contract/configs.ts)
- *   GET    /api/servers                      -> ServerInfo[] ("Avvia solo il server", "Avvia solo il server così")
- *   POST   /api/servers/plan                 (StartServerRequest) -> ServerPlan (preview: command, downloads, context, fit)
+ *   GET    /api/servers                      -> ServerInfo[] (the Server page, the sidebar, the tray)
+ *   POST   /api/servers/plan                 (StartServerRequest) -> ServerPlan (preview: command, downloads, context, fit, port)
  *   POST   /api/servers                      (StartServerRequest) -> ServerInfo (when ready)
  *   DELETE /api/servers/:id                  -> { ok: true }
+ *   (presets, API key, restart, log and notices: contract/servers.ts)
  *
  * Feature routes (setup, docker, cache, models extras) document themselves next to their handlers;
  * their response types are re-exported for the renderer from contract/views.ts.
@@ -263,7 +265,17 @@ export const apiSchemas = {
  * A server outside a benchmark. `params` are what the user chose: whatever is left unset gets the
  * recommended value for this card (see ServerPlan.params).
  */
-export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true, recipe: true });
+export const startServerRequestSchema = startRunRequestSchema.pick({ engine: true, model: true, params: true, recipe: true }).extend({
+  /** The port other programs use. Absent = the first free one from 8080 (ServerPlan.port says which). */
+  port: serverPortSchema.optional(),
+  /**
+   * 'lan': reachable from other devices on the local network (bound to 0.0.0.0), only with GPU Bench's
+   * API key (--api-key). Absent = 'local' (127.0.0.1 only).
+   */
+  network: serverNetworkSchema.optional(),
+  /** Started from this saved preset: listed with its name, and "Riavvia" keeps it. */
+  presetId: z.string().optional(),
+});
 export type StartServerRequest = z.infer<typeof startServerRequestSchema>;
 
 /** Preview of "Avvia solo il server": what will run, what is fetched first, and how much text it takes. */
@@ -302,6 +314,11 @@ export const serverPlanSchema = z.object({
   warnings: runPlanSchema.shape.warnings,
   /** The model's command recipe this server uses (as in RunPlan.recipe). */
   recipe: appliedRecipeSchema.optional(),
+  /** The port it will listen on: the request's, else the first free one from 8080. */
+  port: z.number().int(),
+  network: serverNetworkSchema,
+  /** 'lan': the addresses other devices will use (…/v1), one per network card of this PC. */
+  lanUrls: z.array(z.string()).optional(),
 });
 export type ServerPlan = z.infer<typeof serverPlanSchema>;
 
@@ -322,5 +339,22 @@ export const serverInfoSchema = z.object({
    * launched): what it is doing now. Absent once it answers.
    */
   loading: loadProgressSchema.optional(),
+  /** The model as the library names it ("Qwen3-8B-Q4_K_M"); `modelName` is what the API answers to. */
+  modelLabel: z.string(),
+  engineKind: engineKindSchema,
+  /** The launch params it runs with (the request's plus the ones chosen for this card): its configuration in words. */
+  params: launchParamsSchema,
+  /** The model's layer count, for the configuration label (-ngl at or above it is "all on the GPU"). */
+  blockCount: z.number().int().optional(),
+  port: z.number().int(),
+  network: serverNetworkSchema,
+  /** 'lan': the addresses other devices use (…/v1), one per network card of this PC. */
+  lanUrls: z.array(z.string()).default([]),
+  /** The request it was started with, its port included: "Riavvia" and "Salva come preset" reuse it. */
+  request: startServerRequestSchema,
+  presetId: z.string().optional(),
+  presetName: z.string().optional(),
+  /** VRAM the server took when it started (GPU memory in use once ready, minus before the start), MiB. */
+  vramMiB: z.number().optional(),
 });
 export type ServerInfo = z.infer<typeof serverInfoSchema>;

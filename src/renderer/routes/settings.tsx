@@ -4,6 +4,7 @@ import { AboutSection } from '../components/settings/about';
 import { ColdCacheRow } from '../components/settings/cold-cache';
 import { DataSection } from '../components/settings/data-section';
 import { FoldersSection } from '../components/settings/folders';
+import { TraySection } from '../components/settings/tray-section';
 import { Row, Section } from '../components/settings/section';
 import { HfTokenForm } from '../components/library/hf-token';
 import { Page } from '../components/shell/page';
@@ -94,6 +95,8 @@ export function SettingsPage() {
             }
           />
         </Section>
+
+        <TraySection />
 
         <FoldersSection />
 

@@ -166,8 +166,13 @@ describe('Risultati → Configurazioni', () => {
     renderApp('/results?view=configs', api);
     await table();
     await userEvent.click(await within(rowOf(/Qwen3 8B/)).findByRole('button', { name: 'Avvia il server così' }));
-    expect(await screen.findByRole('dialog', { name: 'Avvia il server' })).toBeTruthy();
-    expect(posted(api, '/api/servers/plan')[0]!.body).toMatchObject({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: { contextSize: 8192, flashAttention: 'on' } });
+    // "Avvia un server" with that configuration's settings.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    await waitFor(() =>
+      expect(posted(api, '/api/servers/plan').map((c) => c.body)).toContainEqual(
+        expect.objectContaining({ engine: { kind: 'llamacpp-native' }, model: { localId: 'qwen3-8b' }, params: expect.objectContaining({ contextSize: 8192, flashAttention: 'on' }) }),
+      ),
+    );
   });
 
   it('a model no longer on the PC: download it first, or look for it', async () => {

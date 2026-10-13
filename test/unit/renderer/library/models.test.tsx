@@ -158,20 +158,12 @@ describe('models: on your PC', () => {
 describe('models: start a server', () => {
   const planned = (api: ReturnType<typeof libApi>) => api.calls.filter((c) => c.method === 'POST' && c.path === '/api/servers/plan').map((c) => c.body);
 
-  it('starts a local model with the recommended settings, with the llama.cpp used last', async () => {
+  it('"Avvia server" opens "Avvia un server" with the model, and the llama.cpp used last', async () => {
     const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' } } }));
     renderLib('/models', api);
     await userEvent.click(await screen.findByRole('button', { name: 'Avvia server: Model m1' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Avvia il server' });
-    expect(await within(dialog).findByText('32.768 token')).toBeTruthy();
-    expect(within(dialog).getByText('Model m1 con llama.cpp (Docker). Altri programmi potranno usarlo finché non lo fermi.')).toBeTruthy();
-    expect(planned(api)).toEqual([{ engine: { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }, model: { localId: 'm1' } }]);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Avvia server' }));
-    const done = await screen.findByRole('dialog', { name: 'Il server è pronto' });
-    expect(within(done).getByText('http://127.0.0.1:5123/v1')).toBeTruthy();
-    await userEvent.click(within(done).getByRole('button', { name: 'Ferma' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/api/servers/gpubench-srv')).toBe(true);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Avvia un server' })).toBeTruthy();
+    await waitFor(() => expect(planned(api)[0]).toMatchObject({ engine: { kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }, model: { localId: 'm1' } }));
   });
 
   it('picks the engine from the file: GGUF with llama.cpp, safetensors with vLLM', () => {
@@ -185,6 +177,12 @@ describe('models: start a server', () => {
     expect(serveEngineFor(st, { kind: 'llamacpp-native' }, engines)).toEqual({ kind: 'vllm-docker' });
     expect(serveEngineFor(st, undefined, undefined)).toEqual({ kind: 'vllm-docker' });
     expect(serveEngineFor(st, undefined, linux)).toEqual({ kind: 'vllm-native' });
+    // A .ninfer artifact: the NInfer that is ready, else the one this OS runs.
+    const nf = localModel('n', { identity: { format: 'ninfer', quant: undefined } });
+    const wsl = [...engines, { ...engines[0]!, kind: 'ninfer-wsl' as const, available: true }];
+    expect(serveEngineFor(nf, undefined, wsl, 'linux')).toEqual({ kind: 'ninfer-wsl' });
+    expect(serveEngineFor(nf, undefined, engines, 'win32')).toEqual({ kind: 'ninfer-wsl' });
+    expect(serveEngineFor(nf, undefined, undefined)).toEqual({ kind: 'ninfer-native' });
   });
 });
 

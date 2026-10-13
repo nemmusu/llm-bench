@@ -17,7 +17,7 @@ import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -673,6 +673,9 @@ async function fakeWorld(dataDir) {
   const fullFile = path.join(results, readdirSync(results).find((f) => f.includes(RESULT_ID)));
   const full = JSON.parse(readFileSync(fullFile, 'utf8'));
   full.model.path = path.join(models, 'Qwen3-8B-Q4_K_M.gguf');
+  // …and are that library file (same weak key: name, quant and size), so "Avvia un server" lists their configurations.
+  full.model.weakKey = `local/Qwen3-8B-Q4_K_M.gguf/Q4_K_M/${statSync(full.model.path).size}`;
+  delete full.model.sha256;
   writeFileSync(fullFile, JSON.stringify(full));
   for (const run of configRuns(full)) writeFileSync(path.join(results, `${run.id}.json`), JSON.stringify(run));
   const base = JSON.parse(readFileSync(path.join(results, readdirSync(results).find((f) => f.includes(COMPARE_A))), 'utf8'));
@@ -960,6 +963,137 @@ async function spillScenes(browser, info, world, written) {
   }
 }
 
+/**
+ * The Server page and "Avvia un server" (34-40): llama.cpp installed from the fake GitHub, two servers
+ * started through the API like the page does (Qwen3 8B on 8080 from a preset, Gemma 4 12B on 8081
+ * shared on the local network), two presets (one "Avvia all'apertura"); then the start flow on each of
+ * its three sources, the network option with its API key, and the sidebar cards expanded and collapsed.
+ * Light and dark, at 1440 and 1024.
+ */
+async function serverScenes(browser, info, written) {
+  const names = ['servers-page', 'server-start-best', 'server-start-presets', 'server-start-custom', 'server-start-lan', 'sidebar-cards', 'sidebar-collapsed'];
+  const want = (name) => !only || only.includes(name);
+  if (!names.some(want)) return;
+  await idle(info);
+  // llama.cpp, once (the fake release's llama-server is the fake engine).
+  const installed = async () => (await api(info, 'GET', '/api/engines')).some((e) => e.kind === 'llamacpp-native' && e.installed);
+  if (!(await installed())) {
+    await api(info, 'POST', '/api/engines/llamacpp-native/install', {});
+    for (let i = 0; i < 240 && !(await installed()); i++) await sleep(500);
+  }
+  const models = await api(info, 'GET', '/api/models/local');
+  const qwen = models.find((m) => /Qwen3[ -]8B/.test(m.identity.displayName));
+  const gemma = models.find((m) => /gemma/i.test(m.identity.displayName));
+  for (const p of await api(info, 'GET', '/api/servers/presets')) await api(info, 'DELETE', `/api/servers/presets/${p.id}`);
+  const chat = await api(info, 'POST', '/api/servers/presets', {
+    name: 'Chat veloce',
+    engine: { kind: 'llamacpp-native' },
+    model: { localId: qwen.id },
+    modelLabel: 'Qwen3 8B · Q4_K_M',
+    params: { contextSize: 32768, kvCacheType: 'q8_0', flashAttention: 'on', extraArgs: ['--metrics'] },
+    port: 8080,
+    autoStart: true,
+    source: { kind: 'config' },
+  });
+  await api(info, 'POST', '/api/servers/presets', {
+    name: 'Revisione codice',
+    engine: { kind: 'llamacpp-native' },
+    model: { localId: gemma.id },
+    modelLabel: 'Gemma 4 12B · Q4_K_M',
+    params: { contextSize: 65536, kvCacheType: 'q4_0', flashAttention: 'on' },
+    port: 8090,
+    source: { kind: 'custom' },
+  });
+  await stopServers(info);
+  await api(info, 'POST', `/api/servers/presets/${chat.id}/start`);
+  await api(info, 'POST', '/api/servers', { engine: { kind: 'llamacpp-native' }, model: { localId: gemma.id }, params: { contextSize: 16384, extraArgs: [], env: {} }, port: 8081, network: 'lan' });
+
+  const chooseQwen = async (page) => {
+    await page.getByRole('button', { name: /^Cambia modello:/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Scegli un modello' });
+    await dialog.getByRole('radio', { name: /^Qwen3[ -]8B/ }).first().click();
+    await dialog.getByRole('button', { name: 'Conferma' }).click();
+    await page.getByText('Comando esatto').first().waitFor({ timeout: 30000 });
+  };
+  const scenes = [
+    { n: 34, name: 'servers-page', route: '/servers', wait: 'Server attivi', full: true },
+    { n: 35, name: 'server-start-best', route: '/servers/new', wait: 'Cosa verrà avviato', act: chooseQwen, full: true },
+    {
+      n: 36,
+      name: 'server-start-presets',
+      route: '/servers/new',
+      wait: 'Cosa verrà avviato',
+      act: async (page) => {
+        await chooseQwen(page);
+        await page.getByRole('tab', { name: 'I tuoi preset' }).click();
+        await page.getByRole('radio', { name: /Chat veloce/ }).click();
+      },
+      full: true,
+    },
+    {
+      n: 37,
+      name: 'server-start-custom',
+      route: '/servers/new',
+      wait: 'Cosa verrà avviato',
+      act: async (page) => {
+        await chooseQwen(page);
+        await page.getByRole('tab', { name: 'Comandi personalizzati' }).click();
+        await page.getByLabel('Argomenti extra').fill('--metrics\n--jinja');
+      },
+      full: true,
+    },
+    {
+      n: 38,
+      name: 'server-start-lan',
+      route: '/servers/new',
+      wait: 'Cosa verrà avviato',
+      act: async (page) => {
+        await chooseQwen(page);
+        await page.getByLabel('Porta', { exact: true }).fill('8095');
+        await page.getByRole('switch', { name: 'Rendi raggiungibile dalla rete locale' }).click();
+        await page.getByText('Altri dispositivi della tua rete potranno usare il modello').waitFor({ timeout: 10000 });
+        await page.getByText('Altri dispositivi della tua rete potranno usare il modello').scrollIntoViewIfNeeded();
+      },
+      full: true,
+    },
+    { n: 39, name: 'sidebar-cards', route: '/results', wait: 'Risultati' },
+    { n: 40, name: 'sidebar-collapsed', route: '/results', wait: 'Risultati', collapsed: true },
+  ];
+  try {
+    for (const s of scenes) {
+      if (!want(s.name)) continue;
+      for (const theme of ['light', 'dark']) {
+        for (const size of [
+          { w: 1440, h: 900, suffix: '' },
+          { w: 1024, h: 700, suffix: '-1024' },
+        ]) {
+          await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true });
+          const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+          const page = await context.newPage();
+          if (s.collapsed) await page.addInitScript(() => localStorage.setItem('gpubench.sidebarCollapsed', '1'));
+          await page.goto(`${info.url}#${s.route}`);
+          await page.getByText(s.wait).first().waitFor({ timeout: 60000 });
+          if (s.act) await s.act(page);
+          await page.evaluate(() => document.fonts.ready);
+          await page.waitForTimeout(1200);
+          await page.mouse.move(size.w - 4, size.h - 4);
+          const file = path.join(outDir, `${s.n}-${s.name}-${theme}${size.suffix}.png`);
+          await shoot(page, file);
+          written.push(file);
+          if (s.full && !size.suffix) {
+            const fullFile = file.replace(/\.png$/, '-full.png');
+            await shoot(page, fullFile, { full: true });
+            written.push(fullFile);
+          }
+          await context.close();
+        }
+      }
+    }
+  } finally {
+    await stopServers(info).catch(() => undefined);
+  }
+}
+
 async function shoot(page, file, { full } = {}) {
   if (full) {
     // The page scrolls inside <main>: grow the viewport to the content so one image shows it all.
@@ -1035,6 +1169,7 @@ async function main() {
     }
     await tuneScenes(browser, info, world, written);
     await spillScenes(browser, info, world, written);
+    await serverScenes(browser, info, written);
   } finally {
     await browser.close();
     const active = await api(info, 'GET', '/api/runs/active').catch(() => ({ active: null }));

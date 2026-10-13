@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import type { RunPlan, StartServerRequest } from '../contract/api';
 import { AppError } from '../contract/errors';
@@ -25,11 +26,14 @@ import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } 
 import { createCustomEngineRoutes } from './engines/custom/routes';
 import { createEngineUpdateRoutes } from './engines/updates/routes';
 import { EngineUpdates } from './engines/updates/service';
+import { createNinferRoutes } from './engines/ninfer/routes';
+import { createNinferServices, type NinferServices } from './engines/ninfer/setup';
 import { FitCalibrator, type ModelKey } from './models/calibration';
 import { vllmRepoFiles } from './downloads/service';
 import { createModelServices, type ModelServices } from './models/setup';
 import type { PlannedGguf } from './models/service';
 import { engineBaseOf, isDockerKind, type EngineKind } from '../contract/engines';
+import { isNinferKind } from '../contract/ninfer';
 import { createLlamaBench } from './engines/llama-bench/llama-bench';
 import { DockerInstaller } from './setup/docker-installer';
 import { readOsRelease } from './setup/os-release';
@@ -52,6 +56,11 @@ import { pickFreePort } from './process/ports';
 import type { RouteModule } from './server/app';
 import { ConfigsIndex } from './store/configs-index';
 import { RunsRepo } from './store/runs-repo';
+import { ServerKeys } from './servers/api-key';
+import { lanAddresses, lanUrls } from './servers/lan';
+import { ServerNotices } from './servers/notices';
+import { systemPorts, type ServerPorts } from './servers/ports';
+import { ServerPresets } from './servers/presets';
 import { createServerRoutes } from './servers/routes';
 import { ServeService } from './servers/service';
 import { createSystemRoutes } from './system/routes';
@@ -66,6 +75,8 @@ export interface ModelsLookup {
   findGguf?(repo: string, file: string): Promise<LocalModel | undefined>;
   /** What the download of a hub GGUF will create (identity, paths, bytes), for plan previews. */
   plannedGguf?(repo: string, file: string, revision?: string): Promise<PlannedGguf>;
+  /** The library copy of a hub .ninfer artifact (repo + its path in the repo), when downloaded. */
+  findNinfer?(repo: string, file: string): Promise<LocalModel | undefined>;
 }
 
 const LLAMA_KINDS: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
@@ -79,13 +90,21 @@ export interface CoreServices {
   sglangDocker: SglangDockerAdapter;
   /** "Aggiorna" on the engine cards (vLLM, SGLang, custom engines). */
   updates: EngineUpdates;
+  /** NInfer: both adapters, its WSL processes, the guided build (engines/ninfer). */
+  ninfer: NinferServices;
   /** Models copied into Docker volumes (fast loads with Docker Desktop). */
   modelVolumes: ModelVolumes;
   models?: ModelsLookup;
   runs: RunsRepo;
   bench: BenchService;
-  /** Engines started with "Avvia solo il server così". */
+  /** Servers for other programs (the Server page, presets, the tray). */
   serve: ServeService;
+  /** "I tuoi preset" (settings.serverPresets). */
+  presets: ServerPresets;
+  /** The API key of servers shared on the local network. */
+  keys: ServerKeys;
+  /** Unattended starts that failed (start-up, tray). */
+  notices: ServerNotices;
   /** "Controllo sistema" checklist and guided installs (Docker, uv). */
   setup: SetupService;
   systemCheck: SystemCheck;
@@ -114,6 +133,10 @@ export interface ServicesOptions {
   llamaLauncherPrefix?: string[];
   /** Injected in tests; defaults to dataDir/processes.json. */
   ownership?: OwnershipRegistry;
+  /** Server ports (tests); defaults to the real ones from 8080. */
+  serverPorts?: ServerPorts;
+  /** This PC's network cards (tests); defaults to os.networkInterfaces(). */
+  networkInterfaces?: () => ReturnType<typeof os.networkInterfaces>;
 }
 
 export function parseArgvEnv(value: string | undefined): string[] | undefined {
@@ -153,6 +176,11 @@ export function modelsLookup(ms: Pick<ModelServices, 'models'>): ModelsLookup {
       return m ? getLocal(m.id) : undefined;
     },
     plannedGguf: (repo, file, revision) => ms.models.plannedGguf(repo, file, revision),
+    async findNinfer(repo, file) {
+      const name = path.posix.basename(file);
+      const all = await ms.models.list().catch(() => []);
+      return all.find((m) => m.identity.format === 'ninfer' && !m.incomplete && m.identity.repo === repo && m.identity.file === name);
+    },
   };
 }
 
@@ -185,6 +213,12 @@ export async function resolveModelTarget(
     return { identity: local.identity, local };
   }
   const { repo, file, revision } = req.model;
+  // NInfer: the library copy of a hub .ninfer artifact (downloaded first: there is no preview of one).
+  if (repo && file && isNinferKind(req.engine.kind)) {
+    const local = await models?.findNinfer?.(repo, file);
+    if (local) return { identity: local.identity, local };
+    throw new AppError('MODEL_NOT_FOUND', 'The model is not downloaded yet', { params: { repo, file, reason: 'not_downloaded' } });
+  }
   if (repo && file && LLAMA_KINDS.has(req.engine.kind)) {
     const local = await models?.findGguf?.(repo, file);
     if (local) return { identity: local.identity, local };
@@ -281,6 +315,16 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   const sglangDocker = new SglangDockerAdapter({ ...dockerEngine, hub: docker.hub, api: docker.api, hfToken: () => ctx.secrets.hfToken });
   // "Motori personalizzati": read from the settings on every use, so an edit applies to the next launch.
   const customEngines: CustomEngineSource = { list: async () => (await ctx.settings.get()).customEngines };
+  const ninfer = createNinferServices({
+    deps,
+    createClient,
+    ownership,
+    settings: ctx.settings,
+    gpus: async () =>
+      (await ctx.telemetry.probe().catch(() => [])).map((g) => ({ name: g.name, memTotalMiB: g.memoryTotalMiB, ...(g.computeCapability ? { computeCapability: g.computeCapability } : {}) })),
+  });
+  // NInfer servers a crashed session left in WSL (checked by their marker); no record = WSL is not even asked.
+  void ninfer.cleanupOrphans().catch((e: unknown) => deps.log.warn('NInfer WSL cleanup failed', { error: String(e) }));
   const registry = new EngineRegistry(
     withCustomEngines(
       [
@@ -293,6 +337,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
         sglangDocker,
         new SglangNativeAdapter({ deps, createClient, ownership, hfToken: () => ctx.secrets.hfToken, uv: uvArgv }),
         new CommandAdapter({ deps, createClient, ownership }),
+        ninfer.native,
+        ninfer.wsl,
       ],
       customEngines,
     ),
@@ -440,6 +486,11 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   // Servers are planned like runs (same model resolution, engine tweaks, fit), with their own settings.
+  const serversChanged = () => ctx.hub.publish({ type: 'servers.changed' });
+  const keys = new ServerKeys();
+  const notices = new ServerNotices({ now: () => deps.clock.wall(), onChange: serversChanged });
+  const presets = new ServerPresets({ store: ctx.settings, now: () => deps.clock.wall() });
+  const interfaces = opts.networkInterfaces ?? (() => os.networkInterfaces());
   const serve: ServeService = new ServeService({
     clock: deps.clock,
     prepare: (req, marker) => bench.prepareServer(req, { preview: false, marker }),
@@ -451,7 +502,16 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     displayCommand,
     redact: (argv, env) => ({ argv: redactArgv(argv), env: redactEnv(env) }),
     // A native server is one of our engine processes: never reported as "another program on the GPU".
-    onChange: () => void refreshPids(),
+    onChange: () => {
+      void refreshPids();
+      serversChanged();
+    },
+    ports: opts.serverPorts ?? systemPorts(),
+    lanUrls: (port) => lanUrls(lanAddresses(interfaces()), port),
+    secrets: () => keys.secrets(),
+    vramUsedMiB: async () => (await ctx.telemetry.snapshot())[0]?.memUsedMiB ?? undefined,
+    presets,
+    notices,
   });
 
   let lastMarker: string | undefined;
@@ -498,6 +558,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       const id = model.identity;
       return calibration({ weakKey: id.weakKey, sha256: id.sha256, architecture: id.facts?.architecture }, kind);
     },
+    serverApiKey: () => keys.current().key,
     // "Comandi per questo modello": recipes and custom engines are settings.
     recipes: async () => {
       const s = await ctx.settings.get();
@@ -507,6 +568,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   });
 
   return {
+    keys,
+    presets,
+    notices,
     ownership,
     registry,
     llama,
@@ -514,6 +578,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     vllmDocker,
     sglangDocker,
     updates,
+    ninfer,
     modelVolumes,
     ...(models ? { models } : {}),
     runs,
@@ -577,6 +642,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         busy: () => s.bench.active() !== undefined || s.serve.busy(),
         shutdown: ctx.shutdown,
       })(app, ctx),
+    (app, ctx) => createNinferRoutes(s.ninfer.routes({ publish: (e) => ctx.hub.publish(e), shutdown: ctx.shutdown }))(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>
@@ -586,7 +652,8 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         publish: (e) => ctx.hub.publish(e),
         shutdown: ctx.shutdown,
       })(app, ctx),
-    createServerRoutes(s.serve),
+    (app, ctx) =>
+      createServerRoutes({ serve: s.serve, presets: s.presets, keys: s.keys, notices: s.notices, changed: () => ctx.hub.publish({ type: 'servers.changed' }) })(app, ctx),
     createSetupRoutes(s.setup),
     createCacheRoutes(s),
     ...(s.modelServices?.routes ?? []),

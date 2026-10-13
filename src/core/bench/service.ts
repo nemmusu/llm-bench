@@ -6,12 +6,15 @@ import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
 import { extendedContext, type AppliedRecipe } from '../../contract/recipes';
+import { trainedContextOf } from '../../contract/ninfer';
 import { spilledRun, type Scenario, type TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { availableNowMiB, levelNowOf } from '../models/fit';
 import { serverApiName } from '../engines/types';
+import { API_KEY_PLACEHOLDER } from '../engines/command-display';
+import { exposeOnLan } from '../servers/lan';
 import { newRunId } from '../store/runs-id';
 import { engineBuildOf, engineLabelOf, type HereIdentity, type RunsRepo } from '../store/runs-repo';
 import type { TelemetrySampler } from '../telemetry/types';
@@ -79,6 +82,8 @@ export interface BenchServiceDeps {
   blockedBy?: () => AppError | undefined;
   /** Fit estimate corrected with the VRAM peaks measured on this GPU (the tuner's pruning). */
   calibration?: TuneSetupDeps['calibration'];
+  /** The API key of servers shared on the local network (servers/api-key.ts), made the first time it is asked for. */
+  serverApiKey?: () => string;
   /** "Comandi per questo modello": the saved recipes and the custom engines they name (settings). */
   recipes?: () => Promise<RecipeSources>;
   /** Whether a file exists (a recipe's draft model named by its path). */
@@ -215,9 +220,9 @@ export class BenchService {
     model: ModelTarget,
     adapter: EngineAdapter,
     params: LaunchParams,
-    o: { preview: boolean; marker: () => string; apiName?: string },
+    o: { preview: boolean; marker: () => string; apiName?: string; port?: number | undefined },
   ): Promise<Pick<Launched, 'engine' | 'port' | 'marker' | 'launch'>> {
-    const port = await this.deps.pickPort();
+    const port = o.port ?? (await this.deps.pickPort());
     const marker = o.marker();
     const engine = (await this.deps.adjustEngine?.(req, model)) ?? req.engine;
     const launch = await adapter.plan(engine, model, params, { port, marker, preview: o.preview, ...(o.apiName !== undefined ? { apiName: o.apiName } : {}) });
@@ -246,7 +251,7 @@ export class BenchService {
       throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
     }
     const adapter = this.deps.getAdapter(kind);
-    const trained = model.identity.facts?.contextLength;
+    const trained = trainedContextOf(model.identity);
     // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
     const modelContext = extendedContext(trained, r.params.ropeScaling);
     const params = autoLaunchParams(kind, scenario, r.params, modelContext);
@@ -283,10 +288,12 @@ export class BenchService {
     const memWarning = await this.fitVllmMemory(kind, params);
     const contextSize = await this.fillServerContext(run, model, params);
     const apiName = serverApiName(kind, model);
-    const c = await this.command(run, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName });
+    const c = await this.command(run, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName, port: req.port });
+    // "Rendi raggiungibile dalla rete locale": every card, GPU Bench's API key (the preview shows it redacted).
+    if (req.network === 'lan') c.launch = exposeOnLan(c.launch, opts.preview ? API_KEY_PLACEHOLDER : this.serverApiKey());
     const past = opts.preview ? undefined : (await this.expectedLoad(model, kind)).expectedLoadMs;
     const expectedLoadMs = past?.warm ?? past?.cold;
-    const beyond = beyondTrained(kind, c.launch.params, model.identity.facts?.contextLength);
+    const beyond = beyondTrained(kind, c.launch.params, trainedContextOf(model.identity));
     return {
       request: run,
       model,
@@ -300,6 +307,13 @@ export class BenchService {
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
     };
+  }
+
+  /** The API key of network servers (made the first time it is needed). */
+  private serverApiKey(): string {
+    const key = this.deps.serverApiKey?.();
+    if (!key) throw new AppError('VALIDATION', 'No API key for a network server', { params: { reason: 'api_key_missing' } });
+    return key;
   }
 
   private async tunedServer(req: StartServerRequest & { params: LaunchParams }, model: ModelTarget, adapter: EngineAdapter): ReturnType<typeof tunedServerParams> {
@@ -336,7 +350,7 @@ export class BenchService {
    * yet), the fallback capped at the model's context.
    */
   private async recommendedContext(req: StartServerRequest, model: ModelTarget, params: LaunchParams): Promise<number> {
-    const max = extendedContext(model.identity.facts?.contextLength, params.ropeScaling);
+    const max = extendedContext(trainedContextOf(model.identity), params.ropeScaling);
     const cap = (n: number) => (max ? Math.min(n, max) : n);
     const candidates = [...new Set(SERVER_CONTEXTS.map(cap))];
     const vllm = isVllm(req.engine.kind);
@@ -498,7 +512,15 @@ export class BenchService {
   async planServer(req: StartServerRequest): Promise<ServerPlan> {
     const p = await this.prepareServer(req, { preview: true, marker: `gpubench-${randomUUID()}` });
     const preview = await this.preview(p.request, p);
-    return { ...preview, params: p.launch.params, contextSize: p.contextSize, ...(p.tuned ? { tuned: p.tuned } : {}), ...(p.recipe ? { recipe: p.recipe } : {}) };
+    return {
+      ...preview,
+      params: p.launch.params,
+      contextSize: p.contextSize,
+      port: p.port,
+      network: req.network ?? 'local',
+      ...(p.tuned ? { tuned: p.tuned } : {}),
+      ...(p.recipe ? { recipe: p.recipe } : {}),
+    };
   }
 
   /**

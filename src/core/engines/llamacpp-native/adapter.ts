@@ -240,7 +240,7 @@ export class LlamaNativeAdapter implements EngineAdapter {
       baseUrl,
       client: this.o.createClient('llamacpp', baseUrl),
       clock,
-      probe: (s) => this.probeReady(baseUrl, plan.marker, s),
+      probe: (s) => this.probeReady(baseUrl, plan.marker, s, plan.apiKey),
       phaseOf: llamaPhaseOf,
       diagnose: diagnoseExit,
       startSignal: signal,
@@ -255,13 +255,14 @@ export class LlamaNativeAdapter implements EngineAdapter {
    * ready. The alias check makes sure the 200 comes from our process, not from another server
    * that grabbed the port first.
    */
-  private async probeReady(baseUrl: string, marker: string, signal: AbortSignal): Promise<boolean> {
+  private async probeReady(baseUrl: string, marker: string, signal: AbortSignal, apiKey: string | undefined): Promise<boolean> {
     const t = timeoutSignal(5000, signal);
     try {
       const health = await this.o.deps.fetch(`${baseUrl}/health`, { signal: t.signal });
       await health.text();
       if (health.status !== 200) return false;
-      const models = await this.o.deps.fetch(`${baseUrl}/v1/models`, { signal: t.signal });
+      // A server shared on the network answers /v1/models only with its key.
+      const models = await this.o.deps.fetch(`${baseUrl}/v1/models`, { signal: t.signal, ...(apiKey ? { headers: { authorization: `Bearer ${apiKey}` } } : {}) });
       const body = await models.text();
       return !models.ok || body.includes(marker);
     } finally {

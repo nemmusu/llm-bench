@@ -69,35 +69,36 @@ describe('“Avvia solo il server”', () => {
     const { router } = renderApp('/', api);
     await screen.findAllByText('≈ 1 min 35 s');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Avvia il server' });
-    expect(within(dialog).getByText(/Contesto 64K e cache q4_0 dal test «Trova le impostazioni migliori» del 07\/10\./)).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole('link', { name: 'Apri il risultato' }));
+    expect(await screen.findByText(/Contesto 64K e cache q4_0 dal test «Trova le impostazioni migliori» del 07\/10\./)).toBeTruthy();
+    // "Scelte da GPU Bench" says the same.
+    expect(screen.getByText('Dal test «Trova le impostazioni migliori» del 07/10: contesto 64K, cache q4_0.')).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: 'Apri il risultato' }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/results/${TUNE_ID}`));
   });
 
-  it('while the server starts, the dialog and the servers panel say what the engine is doing', async () => {
+  it('while the server starts, the dialog and then its card say what the engine is doing', async () => {
     const api = benchApi();
     const gate = deferred<unknown>();
     api.world.routes['POST /api/servers'] = () => gate.promise;
-    const loading = serverInfo('srv1', { engineLabel: 'vLLM v0.12.0', loading: { stage: 'weights', elapsedMs: 18_000, done: 3, total: 7, fraction: 0.43 } });
+    const loading = serverInfo('srv1', { port: 8080, engineLabel: 'vLLM v0.12.0', engineKind: 'vllm-docker', loading: { stage: 'weights', elapsedMs: 18_000, done: 3, total: 7, fraction: 0.43 } });
     renderApp('/', api);
     await screen.findAllByText('≈ 1 min 35 s');
     await userEvent.click(screen.getByRole('button', { name: 'Avvia solo il server' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Avvia server' }));
+    await screen.findByRole('region', { name: 'Comando esatto' });
+    await userEvent.click(screen.getByRole('button', { name: 'Avvia' }));
     const starting = await screen.findByRole('dialog', { name: 'Avvio il server…' });
     expect(within(starting).queryByText(/Caricamento dei pesi/)).toBeNull();
     api.world.servers = [loading];
     expect(await within(starting).findByText('Caricamento dei pesi · 3 di 7 parti (43%)', {}, { timeout: 3000 })).toBeTruthy();
     expect(within(starting).getByText('0:18')).toBeTruthy();
-    // The panel lists it too, with the same line instead of the address.
-    // (behind the dialog: hidden from the accessibility tree while it is open)
-    const panel = screen.getByRole('heading', { name: /Server attivi/, hidden: true }).closest('div')!.parentElement!;
-    expect(within(panel).getByText('Caricamento dei pesi · 3 di 7 parti (43%)')).toBeTruthy();
-    expect(within(panel).queryByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI', hidden: true })).toBeNull();
+    // In the background: its card shows the same line instead of the address.
+    await userEvent.click(within(starting).getByRole('button', { name: 'Continua in background' }));
+    const card = await screen.findByRole('region', { name: 'Server Qwen3 8B sulla porta 8080' });
+    expect(within(card).getByText('Caricamento dei pesi · 3 di 7 parti (43%)')).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: 'Copia l’URL base di Qwen3 8B' })).toBeNull();
     api.world.servers = [{ ...loading, loading: undefined }];
     gate.resolve(api.world.servers[0]);
-    expect(await screen.findByRole('dialog', { name: 'Il server è pronto' })).toBeTruthy();
-    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Copia l’indirizzo compatibile OpenAI', hidden: true })).toBeTruthy());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Server Qwen3 8B sulla porta 8080' })).getByRole('button', { name: 'Copia l’URL base di Qwen3 8B' })).toBeTruthy());
   });
 });
 

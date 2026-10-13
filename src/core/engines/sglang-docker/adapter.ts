@@ -191,7 +191,7 @@ export class SglangDockerAdapter extends DockerEngineAdapter {
       plan,
       secretEnv,
       client: this.o.createClient('sglang', baseUrl, { model: served }),
-      probe: modelReadyProbe(deps.fetch, baseUrl, served),
+      probe: modelReadyProbe(deps.fetch, baseUrl, served, plan.apiKey),
       phaseOf: sglangPhaseOf,
       diagnose: (lines, exit) => diagnoseSglang(lines, exit, { docker: true, ...(repo !== undefined ? { repo } : {}) }),
       signal,

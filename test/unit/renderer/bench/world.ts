@@ -6,6 +6,7 @@ import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { ActiveRun, RunPlan, ServerInfo, ServerPlan, StartServerRequest, SystemResponse } from '../../../../src/contract/api';
 import type { CustomEngineInfo } from '../../../../src/contract/custom-engines';
+import type { ServerApiKeyInfo, ServerNotice, ServerPreset } from '../../../../src/contract/servers';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
@@ -102,21 +103,31 @@ export function serverPlanFor(over: Partial<ServerPlan> = {}): ServerPlan {
     contextSize: 32768,
     fit: FIT,
     warnings: [],
+    port: 8080,
+    network: 'local',
     ...over,
   };
 }
 
 /** A server GPU Bench started (GET/POST /api/servers). */
 export function serverInfo(id: string, over: Partial<ServerInfo> = {}): ServerInfo {
+  const port = over.port ?? 5123;
   return {
     id,
-    baseUrl: 'http://127.0.0.1:5123',
-    openaiUrl: 'http://127.0.0.1:5123/v1',
+    baseUrl: `http://127.0.0.1:${port}`,
+    openaiUrl: `http://127.0.0.1:${port}/v1`,
     modelName: 'Qwen3 8B',
+    modelLabel: 'Qwen3 8B',
     engineLabel: 'llama.cpp b11438',
+    engineKind: 'llamacpp-native',
     startedAt: new Date().toISOString(),
     command: { argv: ['llama-server'], powershell: 'llama-server', bash: 'llama-server' },
     contextSize: 32768,
+    params: { contextSize: 32768, extraArgs: [], env: {} },
+    port,
+    network: 'local',
+    lanUrls: [],
+    request: { engine: { kind: 'llamacpp-native' }, model: { localId: 'm1' }, port },
     ...over,
   };
 }
@@ -171,6 +182,12 @@ export interface World {
   /** POST /api/servers/plan; by default serverPlanFor() with the needs of coreNeeds. */
   serverPlan: (body: unknown) => ServerPlan;
   fit: FitEstimate;
+  /** The Server page: saved presets, notices, the API key. */
+  presets: ServerPreset[];
+  notices: ServerNotice[];
+  apiKey: ServerApiKeyInfo;
+  /** Server logs by id (GET /api/servers/:id/log). */
+  logs: Record<string, string[]>;
   /** Overrides by "METHOD /path" (exact) or "METHOD /prefix*" (prefix); throw an ApiError to fail. */
   routes: Record<string, Handler>;
   /** GET /api/engines/custom (the saved engines with their checks). */
@@ -194,9 +211,44 @@ export function defaultWorld(): World {
     plan: () => planFor(),
     serverPlan: () => serverPlanFor(),
     fit: FIT,
+    presets: [],
+    notices: [],
+    apiKey: { key: 'gpub-test-key-0123456789abcdef', storage: 'encrypted' },
+    logs: {},
     routes: {},
     custom: [],
   };
+}
+
+/** A saved server preset ("I tuoi preset"). */
+export function serverPreset(id: string, over: Partial<ServerPreset> = {}): ServerPreset {
+  return {
+    id,
+    name: `Preset ${id}`,
+    engine: { kind: 'llamacpp-native' },
+    model: { localId: 'qwen3-8b' },
+    modelLabel: 'qwen3-8b model · Q4_K_M',
+    params: { contextSize: 16384, kvCacheType: 'q8_0', extraArgs: [], env: {} },
+    port: 8090,
+    network: 'local',
+    autoStart: false,
+    createdAt: '2026-10-07T10:00:00.000Z',
+    updatedAt: '2026-10-07T10:00:00.000Z',
+    ...over,
+  };
+}
+
+/** The server POST /api/servers (or a preset's start) returns for a request in this world. */
+function startedServer(world: World, req: StartServerRequest): ServerInfo {
+  const port = req.port ?? 8080;
+  const preset = world.presets.find((p) => p.id === req.presetId);
+  return serverInfo(`srv${world.servers.length + 1}`, {
+    port,
+    network: req.network ?? 'local',
+    lanUrls: req.network === 'lan' ? [`http://192.168.1.20:${port}/v1`] : [],
+    request: { ...req, port },
+    ...(preset ? { presetId: preset.id, presetName: preset.name } : {}),
+  });
 }
 
 function handle(world: World, method: string, path: string, body: unknown): unknown {
@@ -225,6 +277,11 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
       return summaries(world.runs).filter((r) => r.modelWeakKey === weakKey);
     }
     if (bare === '/api/servers') return world.servers;
+    if (bare === '/api/servers/presets') return world.presets;
+    if (bare === '/api/servers/notices') return world.notices;
+    if (bare === '/api/servers/api-key') return world.apiKey;
+    const log = /^\/api\/servers\/([^/]+)\/log$/.exec(bare);
+    if (log) return { lines: world.logs[decodeURIComponent(log[1]!)] ?? [] };
     if (bare === '/api/engines/custom') return world.custom;
     if (bare === '/api/setup/check') return { checkedAt: '2026-10-06T10:00:00.000Z', canBenchmark: true, platform: 'win32', items: [{ id: 'llamacpp', state: 'missing', required: true, params: {}, ...(world.installBytes === null ? {} : { action: { kind: 'install-llamacpp', bytes: world.installBytes } }) }] };
     const run = /^\/api\/runs\/([^/]+)$/.exec(bare);
@@ -238,8 +295,33 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     if (bare === '/api/runs/plan') return world.plan(body);
     if (bare === '/api/servers/plan') return world.serverPlan(body);
     if (bare === '/api/servers') {
-      const info = serverInfo(`srv${world.servers.length + 1}`);
+      const info = startedServer(world, body as StartServerRequest);
       world.servers = [...world.servers, info];
+      return info;
+    }
+    if (bare === '/api/servers/presets') {
+      const input = body as ServerPreset;
+      if (world.presets.some((p) => p.name.toLowerCase() === input.name.toLowerCase())) throw apiError('VALIDATION', { reason: 'preset_name_taken', name: input.name });
+      const saved = serverPreset(`p${world.presets.length + 1}`, { ...input, network: input.network ?? 'local', autoStart: input.autoStart ?? false });
+      world.presets = [...world.presets, saved];
+      return saved;
+    }
+    if (bare === '/api/servers/api-key/regenerate') {
+      world.apiKey = { ...world.apiKey, key: `${world.apiKey.key}-new` };
+      return world.apiKey;
+    }
+    const presetStart = /^\/api\/servers\/presets\/([^/]+)\/start$/.exec(bare);
+    if (presetStart) {
+      const p = world.presets.find((x) => x.id === decodeURIComponent(presetStart[1]!))!;
+      const info = startedServer(world, { engine: p.engine, model: p.model, params: p.params, ...(p.port !== undefined ? { port: p.port } : {}), network: p.network, presetId: p.id });
+      world.servers = [...world.servers, info];
+      return info;
+    }
+    const restart = /^\/api\/servers\/([^/]+)\/restart$/.exec(bare);
+    if (restart) {
+      const old = world.servers.find((x) => x.id === decodeURIComponent(restart[1]!))!;
+      const info = { ...old, id: `${old.id}-r` };
+      world.servers = world.servers.map((x) => (x.id === old.id ? info : x));
       return info;
     }
     if (bare === '/api/models/fit') return world.fit;
@@ -249,7 +331,26 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     }
     if (bare === '/api/models/rescan') return world.local;
   }
+  if (method === 'PUT') {
+    const preset = /^\/api\/servers\/presets\/([^/]+)$/.exec(bare);
+    if (preset) {
+      const id = decodeURIComponent(preset[1]!);
+      const next = { ...world.presets.find((p) => p.id === id)!, ...(body as Partial<ServerPreset>) };
+      world.presets = world.presets.map((p) => (p.id === id ? next : p));
+      return next;
+    }
+  }
   if (method === 'DELETE') {
+    const notice = /^\/api\/servers\/notices\/([^/]+)$/.exec(bare);
+    if (notice) {
+      world.notices = world.notices.filter((n) => n.id !== decodeURIComponent(notice[1]!));
+      return { ok: true };
+    }
+    const preset = /^\/api\/servers\/presets\/([^/]+)$/.exec(bare);
+    if (preset) {
+      world.presets = world.presets.filter((p) => p.id !== decodeURIComponent(preset[1]!));
+      return { ok: true };
+    }
     const server = /^\/api\/servers\/([^/]+)$/.exec(bare);
     if (server) {
       world.servers = world.servers.filter((x) => x.id !== decodeURIComponent(server[1]!));
@@ -294,7 +395,19 @@ export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof
   const base = fakeApi(settings);
   const world: World = { ...defaultWorld(), ...patch };
   if (!patch.plan) world.plan = (body) => planFor(coreNeeds(world, body as StartServerRequest));
-  if (!patch.serverPlan) world.serverPlan = (body) => serverPlanFor(coreNeeds(world, body as StartServerRequest));
+  if (!patch.serverPlan) {
+    world.serverPlan = (body) => {
+      const req = body as StartServerRequest;
+      const port = req.port ?? 8080;
+      return serverPlanFor({
+        ...coreNeeds(world, req),
+        ...(req.params?.contextSize !== undefined ? { params: req.params, contextSize: req.params.contextSize } : {}),
+        port,
+        network: req.network ?? 'local',
+        ...(req.network === 'lan' ? { lanUrls: [`http://192.168.1.20:${port}/v1`] } : {}),
+      });
+    };
+  }
   const api = base as BenchApi;
   api.world = world;
   const baseGet = base.get;
@@ -308,6 +421,8 @@ export function benchApi(patch: Partial<World> = {}, settings: Parameters<typeof
   }) as ApiClient['get'];
   api.post = vi.fn(async <T,>(path: string, body?: unknown) => call<T>('POST', path, body)) as ApiClient['post'];
   api.del = vi.fn(async <T,>(path: string) => call<T>('DELETE', path)) as ApiClient['del'];
+  const basePut = base.put;
+  api.put = vi.fn(async <T,>(path: string, body?: unknown) => (path === '/api/settings' ? basePut<T>(path, body) : call<T>('PUT', path, body))) as ApiClient['put'];
   return api;
 }
 

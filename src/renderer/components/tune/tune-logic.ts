@@ -7,7 +7,7 @@ import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus,
 import { prefillStat } from '../bench/format';
 
 /** More precise KV cache first (ties go to the more precise one). */
-export const KV_PRECISION: Record<TuneKvType, number> = { f16: 0, auto: 0, q8_0: 1, fp8: 1, q4_0: 2 };
+export const KV_PRECISION: Record<TuneKvType, number> = { f16: 0, auto: 0, bf16: 0, q8_0: 1, fp8: 1, int8: 1, k8v4: 1.5, q4_0: 2, nvfp4: 2 };
 
 /** Smallest relative difference that is never noise (the core's ranking rule). */
 export const TIE_MIN = 0.02;

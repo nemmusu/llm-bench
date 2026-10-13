@@ -7,6 +7,7 @@ import { createLogger, systemClock } from './node-deps';
 import { createProcessRunner } from './process/runner';
 import type { CoreDeps, Platform } from './deps';
 import { parseArgvEnv } from './services';
+import { attachShell } from './servers/shell-link';
 
 /** Channel to the Electron main process when running as a utilityProcess. */
 export interface ParentPort {
@@ -108,6 +109,7 @@ export function buildDeps(b: BootEnv): CoreDeps {
       pypi: env.GPUBENCH_PYPI ?? 'https://pypi.org',
       git: toolOverride(env.GPUBENCH_GIT),
       cmake: toolOverride(env.GPUBENCH_CMAKE),
+      wsl: toolOverride(env.GPUBENCH_WSL),
     },
     platform,
     arch: b.arch,
@@ -141,7 +143,8 @@ export async function boot(b: BootEnv): Promise<CoreHandle> {
   b.onSignal('SIGINT', () => void shutdown());
 
   if (b.parentPort) {
-    b.parentPort.on('message', (e) => {
+    const parent = b.parentPort;
+    parent.on('message', (e) => {
       const msg = e.data as { type?: string; token?: string | null } | null;
       if (msg?.type === 'shutdown') void shutdown();
       if (msg?.type === 'hf-token') {
@@ -149,7 +152,21 @@ export async function boot(b: BootEnv): Promise<CoreHandle> {
         else delete core.ctx.secrets.hfToken;
       }
     });
-    b.parentPort.postMessage({ type: 'ready', port: core.port });
+    parent.postMessage({ type: 'ready', port: core.port });
+    // The tray, close-to-tray and "Avvia all'apertura": servers and presets go to the main process, its commands come back.
+    const s = core.services;
+    s.keys.persistWith((key) => parent.postMessage({ type: 'server-api-key-save', key }));
+    attachShell({
+      channel: parent,
+      serve: s.serve,
+      presets: s.presets,
+      keys: s.keys,
+      notices: s.notices,
+      settings: core.ctx.settings,
+      hub: core.ctx.hub,
+      shutdown: core.ctx.shutdown,
+      log: deps.log,
+    });
   } else {
     b.stdout(JSON.stringify({ ready: true, port: core.port, token, url: `${core.url}/?token=${token}` }) + '\n');
   }

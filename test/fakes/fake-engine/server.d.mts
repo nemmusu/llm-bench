@@ -114,6 +114,8 @@ export interface FakeEngineOptions {
   blockSize?: number;
   /** vLLM CUDA graph capture sizes (--cuda-graph-sizes, cudagraph_capture_sizes of --compilation-config). */
   graphSizes?: number[];
+  /** --api-key: other requests need `Authorization: Bearer <key>` (llama.cpp keeps /health and the model list public). */
+  apiKey?: string;
 }
 
 export interface FakeEngine {
