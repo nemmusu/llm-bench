@@ -355,7 +355,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
         </div>
         {view !== 'tried' && <CatalogBusyNote />}
         {/* vLLM and SGLang models need Docker: say it now if it is off or stuck, with the button. */}
-        {(engine === 'vllm' || engine === 'sglang') && <DockerSearchNote className="mb-3" />}
+        {(engine === 'vllm' || engine === 'sglang') && <DockerSearchNote />}
 
         {view === 'curated' ? (
           <CuratedRows models={curatedShown} showEngine={engine === 'any'} />

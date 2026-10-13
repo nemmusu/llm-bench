@@ -154,7 +154,7 @@ export function DockerCard() {
       {gpuCheck.isError && <ErrorCallout error={gpuCheck.error} />}
       {cleanup.isError && <ErrorCallout error={cleanup.error} />}
       <DockerInstallDialog platform={linux ? 'linux' : 'win32'} open={confirm} onOpenChange={setConfirm} onConfirm={install} />
-      <DockerGateDialog open={gate} onOpenChange={setGate} {...(linux ? {} : { auto: 'restart' as const })} />
+      <DockerGateDialog open={gate} onOpenChange={setGate} autoRestart={!linux} />
     </EngineCard>
   );
 }

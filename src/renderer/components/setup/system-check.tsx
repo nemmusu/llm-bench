@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Box, Check, Cpu, Download, ExternalLink, FolderOpen, HardDrive, Layers, Minus, MonitorCog, Play, RefreshCw, Server, TriangleAlert, X } from 'lucide-react';
+import { Box, Check, Cpu, Download, ExternalLink, FolderOpen, HardDrive, Layers, Minus, MonitorCog, Play, RefreshCw, RotateCcw, Server, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CheckActionKind, CheckId, CheckItem, CheckState, SystemCheckReport } from '../../../contract/views';
 import { useI18n, type Formatters } from '../../i18n';
@@ -162,7 +162,7 @@ function CheckRow({ item, platform, onPickModel }: { item: CheckItem; platform: 
     const base = t(`setup.actions.${action.kind === 'open-driver-page' && item.params.guidance ? 'open-driver-guide' : action.kind}`);
     label = action.bytes ? t('setup.actions.withSize', { label: base, size: bytes(action.bytes) }) : base;
   }
-  const icon = action?.kind === 'start-docker' ? <Play aria-hidden /> : action?.kind === 'open-driver-page' ? <ExternalLink aria-hidden /> : action?.kind === 'free-disk' ? <FolderOpen aria-hidden /> : <Download aria-hidden />;
+  const icon = action?.kind === 'start-docker' ? <Play aria-hidden /> : action?.kind === 'restart-docker' ? <RotateCcw aria-hidden /> : action?.kind === 'open-driver-page' ? <ExternalLink aria-hidden /> : action?.kind === 'free-disk' ? <FolderOpen aria-hidden /> : <Download aria-hidden />;
   const failed = !active && (event?.stage === 'error' || event?.stage === 'failed');
   const title = t(`setup.items.${item.id}.title`);
 

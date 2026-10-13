@@ -87,7 +87,7 @@ export function DockerAlerts() {
   return (
     <>
       {banner && <div className="mx-auto w-full max-w-[1240px] px-8 pt-6 compact:px-6 compact:pt-4">{banner}</div>}
-      <DockerGateDialog open={dialog !== undefined} onOpenChange={(o) => !o && setDialog(undefined)} {...(dialog === 'restart' ? { auto: 'restart' as const } : {})} />
+      <DockerGateDialog open={dialog !== undefined} onOpenChange={(o) => !o && setDialog(undefined)} autoRestart={dialog === 'restart'} />
       {/* A screen asked for Docker (a preset started from the Server page): its retry runs once Docker answers. */}
       <DockerGateDialog
         open={need !== undefined}

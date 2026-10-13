@@ -6,7 +6,7 @@
  * the command to run instead.
  */
 import { useNavigate } from '@tanstack/react-router';
-import { Check, Loader, Play, RotateCcw, TriangleAlert } from 'lucide-react';
+import { Check, Loader, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { DOCKER_RESTART_STEPS, type DockerState } from '../../../contract/docker';
 import type { AppErrorData, ErrorCode } from '../../../contract/errors';
@@ -36,8 +36,8 @@ export interface DockerGateOptions {
   engineLabel?: string;
   /** Docker answers: carry on with what the user was doing (called once). */
   onReady: () => void;
-  /** Start or restart at once when Docker is in that state (the user already clicked it elsewhere). */
-  auto?: 'start' | 'restart';
+  /** Restart at once when Docker does not answer (the user already clicked "Riavvia Docker" elsewhere). */
+  autoRestart?: boolean;
 }
 
 /** The error a state stands for, for the states no button here can fix. */
@@ -51,7 +51,7 @@ const CODE: Partial<Record<DockerState, ErrorCode>> = {
 export function RestartProgress({ event, className }: { event: InstallEvent; className?: string }) {
   const { t, duration } = useI18n();
   const step = (DOCKER_RESTART_STEPS as readonly string[]).includes(event.stage) ? (event.stage as (typeof DOCKER_RESTART_STEPS)[number]) : 'restart';
-  const servers = step === 'servers' && event.bytesTotal ? ` · ${event.label ?? ''} (${event.bytesDone + 1}/${event.bytesTotal})` : '';
+  const servers = step === 'servers' && event.bytesTotal ? `${event.label ? ` · ${event.label}` : ''} (${event.bytesDone + 1}/${event.bytesTotal})` : '';
   return (
     <div className={cn('flex flex-col gap-2', className)} aria-live="polite">
       <div className="flex items-center gap-2 text-sm">
@@ -84,7 +84,7 @@ function Waiting({ ms, slow }: { ms: number | undefined; slow: boolean | undefin
 }
 
 /** Docker's state for this screen, worked out with a real check, and what to say and offer about it. */
-export function useDockerGate({ engineLabel, onReady, auto }: DockerGateOptions): DockerGate {
+export function useDockerGate({ engineLabel, onReady, autoRestart }: DockerGateOptions): DockerGate {
   const { t } = useI18n();
   const navigate = useNavigate();
   const system = useSystemInfo();
@@ -93,7 +93,7 @@ export function useDockerGate({ engineLabel, onReady, auto }: DockerGateOptions)
   const probe = useDockerProbe(true, 3000);
   const actions = useDockerActions();
   /** A start or restart begun here: its end decides what comes next. */
-  const [mine, setMine] = useState<'start' | 'restart' | undefined>(auto);
+  const [mine, setMine] = useState<'start' | 'restart' | undefined>(autoRestart ? 'restart' : undefined);
   const startActive = activeEvent(actions.startEvent);
   const restartActive = activeEvent(actions.restartEvent);
   const state = probe.data?.state;
@@ -125,15 +125,13 @@ export function useDockerGate({ engineLabel, onReady, auto }: DockerGateOptions)
     fireReady();
   }, [ready]);
 
-  // The user already asked for it (the banner's "Riavvia Docker"): `mine` starts as `auto`.
-  const fireAuto = useEffectEvent((what: 'start' | 'restart') => (what === 'start' ? actions.start() : actions.restart(false)));
+  // The user already asked for it (the banner's "Riavvia Docker"): `mine` starts as 'restart'.
+  const fireRestart = useEffectEvent(() => actions.restart(false));
   const autoDone = useRef(false);
   useEffect(() => {
-    if (!auto || autoDone.current || !control || startActive || restartActive) return;
-    if ((auto === 'start' && state === 'stopped') || (auto === 'restart' && state === 'not-responding')) {
-      autoDone.current = true;
-      fireAuto(auto);
-    }
+    if (!autoRestart || autoDone.current || !control || restartActive || state !== 'not-responding') return;
+    autoDone.current = true;
+    fireRestart();
   });
 
   // A restart that did not bring Docker back says what to try next wherever it was asked from
@@ -268,8 +266,8 @@ export function useDockerGate({ engineLabel, onReady, auto }: DockerGateOptions)
   }
 }
 
-function GateDialogContent({ auto, onReady, engineLabel }: { auto?: 'start' | 'restart'; onReady: () => void; engineLabel?: string }) {
-  const gate = useDockerGate({ onReady, ...(auto ? { auto } : {}), ...(engineLabel ? { engineLabel } : {}) });
+function GateDialogContent({ autoRestart, onReady, engineLabel }: { autoRestart: boolean; onReady: () => void; engineLabel?: string }) {
+  const gate = useDockerGate({ onReady, autoRestart, ...(engineLabel ? { engineLabel } : {}) });
   return (
     <DialogContent title={gate.title} description={gate.description} size="lg" {...(gate.actions ? { footer: gate.actions } : {})}>
       {gate.body}
@@ -279,18 +277,19 @@ function GateDialogContent({ auto, onReady, engineLabel }: { auto?: 'start' | 'r
 
 /**
  * The gate in its own dialog (the banner's "Riavvia Docker" and "Perché e come evitarlo", the Engines
- * page): it closes by itself once Docker answers.
+ * page, a preset that needs Docker): it closes by itself once Docker answers, then `onReady`.
  */
 export function DockerGateDialog({
   open,
   onOpenChange,
-  auto,
+  autoRestart = false,
   engineLabel,
   onReady,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  auto?: 'start' | 'restart';
+  /** The user already clicked "Riavvia Docker". */
+  autoRestart?: boolean;
   engineLabel?: string;
   /** Docker answers (after the dialog closed): carry on with what needed it. */
   onReady?: () => void;
@@ -301,26 +300,7 @@ export function DockerGateDialog({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {open && <GateDialogContent {...(auto ? { auto } : {})} {...(engineLabel ? { engineLabel } : {})} onReady={ready} />}
+      {open && <GateDialogContent autoRestart={autoRestart} {...(engineLabel ? { engineLabel } : {})} onReady={ready} />}
     </Dialog>
-  );
-}
-
-/** The gate as a panel on a page (the catalog, a banner's details): title, words, progress, buttons. */
-export function DockerGatePanel({ gate, className, headingLevel = 2 }: { gate: DockerGate; className?: string; headingLevel?: 2 | 3 }) {
-  const Heading = headingLevel === 2 ? 'h2' : 'h3';
-  const warn = gate.view !== 'ready' && gate.view !== 'checking' && gate.view !== 'starting' && gate.view !== 'restarting';
-  return (
-    <section className={cn('flex flex-col gap-3 rounded-xl border p-5', warn ? 'border-warning/30 bg-warning-soft' : 'border-border bg-surface', className)} aria-live="polite">
-      <div className="flex items-start gap-3">
-        {warn && <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-warning-text" />}
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Heading className="text-md font-semibold text-fg">{gate.title}</Heading>
-          {gate.description && <p className="text-sm text-fg-2">{gate.description}</p>}
-        </div>
-      </div>
-      {gate.body}
-      {gate.actions && <div className="flex flex-wrap justify-end gap-2">{gate.actions}</div>}
-    </section>
   );
 }

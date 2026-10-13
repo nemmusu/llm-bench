@@ -89,7 +89,7 @@ export function useStartFlow(): {
   const generation = useRef(0);
   const downloadId = useRef<string | undefined>(undefined);
   /** `begin`, for the failures met before it is defined (Docker off or stuck: plan and start again). */
-  const beginRef = useRef<(job: Job, opts: FlowOpts) => void>(() => undefined);
+  const beginRef = useRef<((job: Job, opts: FlowOpts) => void) | null>(null);
 
   useServerEvents((e) => {
     for (const w of [...waiters.current]) w(e);
@@ -146,7 +146,7 @@ export function useStartFlow(): {
         const error = apiErrorData(e);
         // Docker went off or stopped answering: "Serve Docker", then a fresh plan and the start again.
         if (generation.current === gen && DOCKER_CODES.has(error.code)) {
-          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current(job, baseOf(opts)) });
+          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current!(job, baseOf(opts)) });
           return;
         }
         // Sent to the background meanwhile: nobody is looking at the dialog any more.
@@ -269,7 +269,7 @@ export function useStartFlow(): {
         const data = (e as { data?: AppErrorData }).data ?? apiErrorData(e);
         // An image pull that met a Docker off or stuck: "Serve Docker", then everything again.
         if (DOCKER_CODES.has(data.code)) {
-          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current(job, baseOf(opts)) });
+          setFlow({ step: 'docker', job, opts, resume: () => beginRef.current!(job, baseOf(opts)) });
           return;
         }
         setFlow({ step: 'fetching', job, opts, progress: progress.map((p) => (p.state === 'running' ? { ...p, state: 'failed' as const } : p)), error: data });

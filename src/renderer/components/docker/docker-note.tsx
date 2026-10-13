@@ -10,7 +10,7 @@ import { DockerGateDialog, RestartProgress } from './docker-gate';
  * Models for vLLM / SGLang (they run in Docker on Windows): a short note with "Avvia Docker" when
  * Docker is off, "Riavvia Docker" when it does not answer, and their progress. Nothing otherwise.
  */
-export function DockerSearchNote({ className }: { className?: string }) {
+export function DockerSearchNote() {
   const { t } = useI18n();
   const status = useDockerStatus();
   const system = useSystemInfo();
@@ -21,17 +21,17 @@ export function DockerSearchNote({ className }: { className?: string }) {
   const restarting = activeEvent(actions.restartEvent);
   const state = status.data?.state;
   let note = null;
-  if (restarting) note = <RestartProgress event={restarting} className={className} />;
-  else if (starting) note = <InstallProgress event={starting} label={t('engines.docker.title')} {...(className ? { className } : {})} />;
+  if (restarting) note = <RestartProgress event={restarting} />;
+  else if (starting) note = <InstallProgress event={starting} label={t('engines.docker.title')} />;
   else if (state === 'not-responding') {
-    note = <Callout tone="danger" title={t('dockerFix.search.stuck')} action={{ label: t(windows ? 'dockerFix.restart' : 'dockerFix.banner.details'), onClick: () => setGate(true) }} {...(className ? { className } : {})} />;
+    note = <Callout tone="danger" title={t('dockerFix.search.stuck')} action={{ label: t(windows ? 'dockerFix.restart' : 'dockerFix.banner.details'), onClick: () => setGate(true) }} />;
   } else if (state === 'stopped' && windows) {
-    note = <Callout tone="warning" title={t('dockerFix.search.stopped')} action={{ label: t('dockerFix.start'), onClick: actions.start }} {...(className ? { className } : {})} />;
+    note = <Callout tone="warning" title={t('dockerFix.search.stopped')} action={{ label: t('dockerFix.start'), onClick: actions.start }} />;
   }
   return (
     <>
-      {note}
-      <DockerGateDialog open={gate} onOpenChange={setGate} {...(windows ? { auto: 'restart' as const } : {})} />
+      {note && <div className="mb-3">{note}</div>}
+      <DockerGateDialog open={gate} onOpenChange={setGate} autoRestart={windows} />
     </>
   );
 }
