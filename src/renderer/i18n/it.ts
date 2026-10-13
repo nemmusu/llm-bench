@@ -3299,6 +3299,10 @@ export const it = {
         title: 'ninfer-serve non è qui: {path}',
         body: 'Controlla il percorso (la cartella di NInfer, o build/apps/ninfer-serve dentro), oppure compila NInfer con «Compila NInfer…».',
       },
+      ninfer_not_built: {
+        title: 'NInfer c’è ma non è ancora compilato',
+        body: 'Il codice di NInfer (commit {commit}) è nella cartella, ma manca {path}. Premi «Compila NInfer…»: compilo questa copia così com’è, senza scaricare niente.',
+      },
       distro_missing: { title: 'La distribuzione {distro} non c’è', body: 'Scegli una delle distribuzioni WSL di questo PC.' },
       wsl_missing: { title: 'WSL non risponde', body: 'Su Windows NInfer gira dentro WSL 2: controlla che sia installato, poi riprova.' },
     },

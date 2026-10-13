@@ -3297,6 +3297,10 @@ export const en: Messages = {
         title: 'ninfer-serve is not here: {path}',
         body: 'Check the path (the NInfer folder, or build/apps/ninfer-serve inside it), or build NInfer with “Build NInfer…”.',
       },
+      ninfer_not_built: {
+        title: 'NInfer is there but not built yet',
+        body: 'NInfer’s code (commit {commit}) is in the folder, but {path} is missing. Press “Build NInfer…”: I build this copy as it is, without downloading anything.',
+      },
       distro_missing: { title: 'There is no {distro} distribution', body: 'Pick one of this PC’s WSL distributions.' },
       wsl_missing: { title: 'WSL does not answer', body: 'On Windows NInfer runs inside WSL 2: check that it is installed, then try again.' },
     },

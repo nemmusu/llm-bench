@@ -290,7 +290,11 @@ async function exec(cfg, distro, cmd, args) {
       vars[args[i].slice(0, eq)] = args[i].slice(eq + 1);
     }
     let rest = args.slice(i);
-    if (rest[0] === 'setsid') rest = rest.slice(1);
+    if (rest[0] === 'setsid') {
+      // As the real one under `wsl --exec` (already a group leader): without -w it forks and answers 0 at once.
+      if (rest[1] !== '-w') return 0;
+      rest = rest.slice(2);
+    }
     // /bin/sh -c '<pid script>' sh <program> <args…>
     if (rest[0] !== '/bin/sh' || rest[1] !== '-c' || !String(rest[2]).includes('gpubench-pid')) {
       err('env: unsupported command\n');

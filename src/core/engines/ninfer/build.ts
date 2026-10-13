@@ -192,8 +192,10 @@ export class NinferBuilder {
     const marker = this.o.newMarker();
     const wsl = this.o.kind === 'ninfer-wsl' ? (this.o.wsl as NonNullable<NinferBuilderOptions['wsl']>) : undefined;
     // WSL: in its own session (setsid) so a cancel stops the whole compile (cmake, ninja, nvcc), and only it.
+    // `-w`: under `wsl --exec` the command is already a group leader, so setsid forks; without waiting it
+    // would answer 0 at once and the step would look done (and successful) while it is still running.
     const [cmd, ...args] = wsl
-      ? ([...wsl.argv, '-d', distro as string, '--exec', '/usr/bin/env', `${OWNER_ENV}=${marker}`, 'setsid', '/bin/sh', '-c', PID_SCRIPT, 'sh', ...argv] as [string, ...string[]])
+      ? ([...wsl.argv, '-d', distro as string, '--exec', '/usr/bin/env', `${OWNER_ENV}=${marker}`, 'setsid', '-w', '/bin/sh', '-c', PID_SCRIPT, 'sh', ...argv] as [string, ...string[]])
       : (argv as [string, ...string[]]);
     let mp: ManagedProcess;
     try {

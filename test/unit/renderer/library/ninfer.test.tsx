@@ -176,6 +176,11 @@ describe('NInfer card', () => {
     v = await where(status({ problemParams: { reason: 'ninfer_not_found' } }));
     expect(await within(v.c).findByText('ninfer-serve non è qui: /home/u/ninfer')).toBeTruthy();
     v.r.unmount();
+    // The checkout is there (its commit known) but not built: say so, the build compiles it in place.
+    v = await where(status({ version: '81c8ce093b2c', location: '/home/u/ninfer/build/apps/ninfer-serve', problemParams: { reason: 'ninfer_not_found' } }));
+    expect(await within(v.c).findByText('NInfer c’è ma non è ancora compilato')).toBeTruthy();
+    expect(within(v.c).getByText(/commit 81c8ce093b2c.*senza scaricare niente/)).toBeTruthy();
+    v.r.unmount();
     // No reason at all: the catalog's words for a missing engine.
     v = await where(status({ problems: [], problemParams: undefined }));
     expect(await within(v.c).findByText('Il motore non è installato')).toBeTruthy();

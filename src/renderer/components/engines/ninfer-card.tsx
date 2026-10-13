@@ -212,15 +212,16 @@ function NinferSetup({ kind, status }: { kind: NinferKind; status: EngineStatus 
 }
 
 const KNOWN_PROBLEMS = ['ninfer_not_found', 'distro_missing', 'wsl_missing'] as const;
-type KnownProblem = (typeof KNOWN_PROBLEMS)[number];
+type KnownProblem = (typeof KNOWN_PROBLEMS)[number] | 'ninfer_not_built';
 
 /** Why NInfer cannot be used, in its own words (a wrong path, a distro that is gone), else the error catalog's. */
 export function NinferProblem({ status, fallback }: { status: EngineStatus; fallback: string }) {
   const { t } = useI18n();
   const reason = status.problemParams?.reason;
   if (typeof reason === 'string' && (KNOWN_PROBLEMS as readonly string[]).includes(reason)) {
-    const r = reason as KnownProblem;
-    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback), distro: String(status.problemParams?.distro ?? '') };
+    // The checkout is there (its commit is known) but nothing is built yet: say so, the build compiles it in place.
+    const r = reason === 'ninfer_not_found' && status.version ? 'ninfer_not_built' : (reason as KnownProblem);
+    const params = { path: String(status.problemParams?.path ?? status.location ?? fallback), distro: String(status.problemParams?.distro ?? ''), commit: status.version ?? '' };
     return (
       <Callout tone="danger" title={t(`ninfer.problems.${r}.title`, params)}>
         {t(`ninfer.problems.${r}.body`, params)}
