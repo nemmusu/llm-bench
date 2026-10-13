@@ -282,7 +282,9 @@ export class DockerEnvironment {
       this.versionMisses++;
       // One slow answer can be a busy PC; two in a row is an engine that hangs.
       if (this.versionMisses >= 2) this.markHang('version-timeout', 'docker version did not answer');
-      if (this.hang && !this.restarting) return this.stuck({ state: 'not-responding' }, this.hang);
+      // Our own start or restart: not up yet (an old "running" must not end it early).
+      if (this.restarting || this.starting) return { state: 'starting', reason: 'slow-answer', ...(this.restarting ? { restarting: true } : {}) };
+      if (this.hang) return this.stuck({ state: 'not-responding' }, this.hang);
       const prev = this.cached?.value;
       return { ...(prev ?? { state: 'unknown' }), reason: 'slow-answer' };
     }

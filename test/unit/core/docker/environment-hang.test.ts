@@ -444,6 +444,30 @@ describe('edges of probe and restart', () => {
   });
 });
 
+describe('a slow answer during our own start or restart', () => {
+  it('is "starting", never the old "running" (the restart must not end early)', async () => {
+    let calls = 0;
+    const { e } = env((a) => {
+      if (a[0] === 'desktop' && a[1] === 'status') return desktop('running');
+      if (a[0] === 'desktop') return ok();
+      calls++;
+      // running (before, and the restart's first look), then a slow answer while it waits, then running again.
+      return calls === 3 ? HUNG : running();
+    });
+    expect((await e.status()).state).toBe('running');
+    const states: string[] = [];
+    await e.restartDesktop(new AbortController().signal, (p) => states.push(p.state));
+    expect(states.slice(0, 2)).toEqual(['starting', 'starting']);
+    expect(states.at(-1)).toBe('running');
+
+    let n = 0;
+    const start = env((a) => (a[0] === 'desktop' ? ok() : ++n === 1 ? DOWN : n === 2 ? HUNG : running('Docker Engine - Community')));
+    const progress: string[] = [];
+    await start.e.startDesktop(new AbortController().signal, (p) => progress.push(p.state));
+    expect(progress).toEqual(['starting', 'running']);
+  });
+});
+
 describe('openDesktop', () => {
   it('runs Docker Desktop (its window comes up), only on Windows', async () => {
     const launched: string[] = [];
