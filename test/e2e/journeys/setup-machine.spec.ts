@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { startFakeDockerApi } from '../../fakes/fake-docker/api.mjs';
 import { expect, launchApp, test, type AppHandle } from '../fixtures';
 import { h1, openPage, opened, scan, skipWelcome, startLibraryWorld, stubDesktop, type LibraryWorld } from './library-helpers';
 
@@ -74,7 +75,9 @@ async function startDocker(gb: AppHandle, docker: Locator): Promise<void> {
 }
 
 test('Docker stopped: started from here (Windows) or with its command (Linux); then GPU check, image download and cleanup', async () => {
-  const gb = await launchApp({ env: { ...world.env, FAKE_DOCKER_MODE: 'daemon-down', FAKE_DOCKER_START_MS: '1500' } });
+  // Docker of its own: another journey pulling the same image into the shared fake must not make it "already on the PC".
+  const docker = await startFakeDockerApi();
+  const gb = await launchApp({ env: { ...world.env, FAKE_DOCKER_MODE: 'daemon-down', FAKE_DOCKER_START_MS: '1500', GPUBENCH_DOCKER_HOST: docker.socketPath } });
   try {
     const { page } = gb;
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -109,6 +112,7 @@ test('Docker stopped: started from here (Windows) or with its command (Linux); t
     await scan(page, 'vllm versions on the PC');
   } finally {
     await gb.close();
+    await docker.close();
   }
 });
 

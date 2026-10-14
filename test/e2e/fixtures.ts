@@ -101,7 +101,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
         writeFileSync(path.join(dir, `${randomUUID()}.json`), JSON.stringify({ result: ours }));
       }
       await app.close();
-      if (!opts.userData) rmSync(userData, { recursive: true, force: true });
+      // Windows can hold a file of the closed app for a moment (EPERM): retried.
+      if (!opts.userData) rmSync(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     },
   };
 }

@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { startFakeDockerApi } from '../../fakes/fake-docker/api.mjs';
 import type { Page } from '@playwright/test';
 import { expect, launchApp, ROOT, test } from '../fixtures';
 import { h1, scan, skipWelcome } from './bench-helpers';
@@ -101,7 +102,9 @@ test('SGLang in Docker: pulled before the run, benchmarked like vLLM', async () 
     JSON.stringify({ architectures: ['Qwen3ForCausalLM'], num_hidden_layers: 28, hidden_size: 1024, num_attention_heads: 16, num_key_value_heads: 8, max_position_embeddings: 40960, quantization_config: { quant_method: 'fp8' } }),
   );
   writeFileSync(path.join(dir, 'model.safetensors'), Buffer.alloc(4096));
-  const gb = await launchApp({ env: world.env, userData });
+  // Docker of its own: another journey pulling the same image into the shared fake must not make it "already on the PC".
+  const docker = await startFakeDockerApi();
+  const gb = await launchApp({ env: { ...world.env, GPUBENCH_DOCKER_HOST: docker.socketPath }, userData });
   try {
     const { page } = gb;
     await skipWelcome(page);
@@ -127,6 +130,7 @@ test('SGLang in Docker: pulled before the run, benchmarked like vLLM', async () 
     await scan(page, 'sglang result');
   } finally {
     await gb.close();
+    await docker.close();
     rmSync(userData, { recursive: true, force: true });
   }
 });
