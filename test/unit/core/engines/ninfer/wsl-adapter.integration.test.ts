@@ -73,7 +73,8 @@ describe('NInfer in WSL (fake wsl.exe, real processes)', () => {
     const linuxFile = process.platform === 'win32' ? `/mnt/${windowsFile[0]?.toLowerCase()}/${windowsFile.slice(3).replace(/\\/g, '/')}` : windowsFile;
     expect(plan.argv.slice(2, 10)).toEqual(['-d', 'Ubuntu-24.04', '--exec', '/usr/bin/env', 'GPUBENCH_OWNER=gpubench-wsl-1', '/bin/sh', '-c', 'echo "gpubench-pid $$" >&2; exec "$@"']);
     expect(plan.argv.slice(10, 13)).toEqual(['sh', '/home/user/ninfer/build/apps/ninfer-serve', linuxFile]);
-    expect(plan.slowSharedFilesystem).toBe(process.platform === 'win32');
+    // Only a model on a Windows drive (/mnt/c…) is read slowly from WSL.
+    expect(plan.slowSharedFilesystem).toBe(process.platform === 'win32' ? true : undefined);
     const inst = await adapter.start(plan, new AbortController().signal);
     expect(inst.pid).toBeUndefined();
     const ready = await inst.waitReady();

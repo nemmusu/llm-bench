@@ -237,7 +237,7 @@ describe('plan', () => {
     // No distro chosen: a preview says <distro>; a start is refused.
     const unset = wsl(undefined);
     const preview = await unset.plan({ kind: 'ninfer-wsl', ninferPath: '/n' }, model, P(), { port: 1, marker: 'gpubench-w-3', preview: true });
-    expect(preview).toMatchObject({ slowSharedFilesystem: process.platform === 'win32' ? true : undefined });
+    expect(preview.slowSharedFilesystem).toBe(process.platform === 'win32' ? true : undefined);
     expect(preview.argv.slice(1, 3)).toEqual(['-d', '<distro>']);
     await expect(unset.plan({ kind: 'ninfer-wsl', ninferPath: '/n' }, local, P(), { port: 1, marker: 'gpubench-w-4' })).rejects.toMatchObject({ params: { reason: 'distro_missing' } });
     expect(await unset.detect({ kind: 'ninfer-wsl', ninferPath: '/n' })).toMatchObject({ problemParams: { reason: 'distro_missing' } });

@@ -138,6 +138,14 @@ export function desktopExecutables(env: Record<string, string | undefined>): str
   return out;
 }
 
+/** Whether a path is there on this PC's disk (the default for DockerEnvironment's `exists`). */
+export function pathExists(p: string): Promise<boolean> {
+  return fs.access(p).then(
+    () => true,
+    () => false,
+  );
+}
+
 /** Docker's own WSL machine: the only distribution the last-resort restart ever stops (never `wsl --shutdown`). */
 export const DOCKER_WSL_DISTRO = 'docker-desktop';
 
@@ -185,13 +193,7 @@ export class DockerEnvironment {
   private readonly launch: (cmd: string, args: string[]) => Promise<void>;
 
   constructor(private readonly o: DockerEnvironmentOptions) {
-    this.exists =
-      o.exists ??
-      ((p) =>
-        fs.access(p).then(
-          () => true,
-          () => false,
-        ));
+    this.exists = o.exists ?? pathExists;
     this.launch = o.launchDetached ?? defaultLaunchDetached;
   }
 
