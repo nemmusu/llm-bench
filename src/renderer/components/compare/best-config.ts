@@ -90,6 +90,12 @@ export function configSpeedWords(e: ConfigEntry, at: CompareAt | undefined, f: C
   return f.t(at === AT_MAX && e.contextSize !== undefined ? 'compare.card.speedFull' : 'compare.card.speedAt', { value, depth: tokensK(p.depth, f) });
 }
 
+/** A configuration as a choice of a picker: its words (the first: "La più veloce…"), and its speed with its context under them. */
+export function configOption(e: ConfigEntry, first: boolean, words: string, at: CompareAt | undefined, f: CompareFormatters): { value: string; label: string; text: string; description?: string } {
+  const speed = configSpeedWords(e, at, f);
+  return { value: e.id, label: first ? bestConfigLabel(at, words, f) : words, text: words, ...(speed === undefined ? {} : { description: speed }) };
+}
+
 /** The test to compare for a configuration: the newest one that measured it where it is ranked, else the newest. */
 export function refOfConfig(entry: ConfigEntry, at: CompareAt | undefined): CompareRef {
   const s = sourceFor(entry, depthFor(entry, at));

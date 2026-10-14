@@ -8,7 +8,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ConfigEntry } from '../../../../src/contract/configs';
 import type { RunResult } from '../../../../src/contract/results';
-import { bestConfigLabel, configSpeedWords, rankConfigs, rankingAt, refOfConfig } from '../../../../src/renderer/components/compare/best-config';
+import { bestConfigLabel, configOption, configSpeedWords, rankConfigs, rankingAt, refOfConfig } from '../../../../src/renderer/components/compare/best-config';
 import {
   compareAtOf,
   compareRows,
@@ -24,6 +24,7 @@ import {
   pointAt,
   reservesMemory,
   rowLead,
+  speedsWhere,
 } from '../../../../src/renderer/components/compare/compare-model';
 import { AT_MAX } from '../../../../src/renderer/components/configs/depths';
 import { sheetOf } from '../../../../src/renderer/lib/export/sheet';
@@ -143,6 +144,11 @@ describe('"Contesto massimo": each at its own largest context, full', () => {
     expect(missingSpeed({ points: [], maxContext: 256 * K }, AT_MAX, it_)).toBe('non misurata a 256K');
     expect(missingSpeed({ points: [] }, AT_MAX, it_)).toBe('non misurato');
     expect(missingSpeed({ points: [], maxContext: 256 * K }, AT_MAX, en)).toBe('not measured at 256K');
+    // Where each column's speeds were read, said once on its card.
+    expect(speedsWhere(list[0]!, AT_MAX, it_)).toBe('Velocità con il contesto pieno a 208K');
+    expect(speedsWhere({ maxContext: 256 * K }, AT_MAX, it_)).toBe('Contesto pieno (256K) non misurato');
+    expect(speedsWhere({}, AT_MAX, it_)).toBeUndefined();
+    expect(speedsWhere(list[0]!, 64 * K, it_)).toBeUndefined();
     const [vllm, llama] = threeTunes();
     const short = structuredClone(llama!);
     short.tuning!.combinations[0]!.sweep = short.tuning!.combinations[0]!.sweep.filter((p) => p.promptTokens <= 64 * K);
@@ -213,6 +219,11 @@ describe('"Contesto massimo": each at its own largest context, full', () => {
     // Each one at its best says where; two with the best number are both named.
     expect(table.rows.find((r) => (r[0] as string).startsWith('Scrittura più veloce'))!.slice(1, 3)).toEqual(['55,8 tok/s (a 1K di contesto)', '67,0 tok/s (a 1K di contesto)']);
     expect(table.rows.find((r) => (r[0] as string).startsWith('Contesto massimo'))!.at(-1)).toBe('B, C: +23%');
+    // A search's combination has no load time of its own: "–" next to a test's.
+    const mixed = [list[0]!, itemOf(seeded(IDS.moe))];
+    const other = sheetOf({ run: mixed[1]!.run, compare: { items: mixed, names: ['A', 'B'], at: 512, subject: 1 }, appVersion: '0.5.0', now: new Date('2026-10-14T10:00:00Z') }, it_);
+    const warm = other.sections.find((s) => s.title === 'Confronto con le altre configurazioni')!.table!.rows.find((r) => (r[0] as string).startsWith('Caricamento a caldo'))!;
+    expect(warm[1]).toBe('–');
   });
 });
 
@@ -252,9 +263,14 @@ describe('the configurations of a model, ranked as in Configurazioni', () => {
     expect(configSpeedWords(q4, 64 * K, it_)).toBe('non misurata a 64K');
     expect(configSpeedWords(q4, undefined, it_)).toBeUndefined();
     expect(configSpeedWords(q4, AT_MAX, en)).toBe('35.0 tok/s with the context full at 256K');
-    // A server whose context is not known: its deepest speed, at that depth.
+    // A server whose context is not known: its deepest speed, at that depth; after the larger known context.
     const server = config('ext', undefined, [{ depth: 4 * K, decodeTps: 20 }]);
     expect(configSpeedWords(server, AT_MAX, it_)).toBe('20,0 tok/s a 4K');
+    expect(rankConfigs([server, q4]).configs).toEqual([q4, server]);
+    expect(rankConfigs([q4, server]).configs).toEqual([q4, server]);
+    // As a picker's choices: the first says where it is the fastest, every one its speed (none where nothing is known).
+    expect(configOption(q4, true, 'cache KV q4_0', AT_MAX, it_)).toEqual({ value: 'q4_0', label: 'La più veloce al contesto massimo: cache KV q4_0', text: 'cache KV q4_0', description: '35,0 tok/s con il contesto pieno a 256K' });
+    expect(configOption(q4, false, 'cache KV q4_0', undefined, it_)).toEqual({ value: 'q4_0', label: 'cache KV q4_0', text: 'cache KV q4_0' });
     // The test to compare: the one that measured it where it is ranked.
     expect(refOfConfig(q4, AT_MAX)).toEqual({ runId: 'run-q4_0', combo: 0 });
   });
@@ -296,6 +312,13 @@ describe('the Compare page with three searches', () => {
     fireEvent.keyDown(at2, { key: 'Enter' });
     fireEvent.click(await screen.findByRole('option', { name: /^256K/ }));
     await waitFor(() => expect(screen.getAllByText('arriva solo a 208K').length).toBe(3));
+    // And back to each one's largest context.
+    const at3 = screen.getByRole('combobox', { name: 'Confronta a' });
+    at3.focus();
+    fireEvent.keyDown(at3, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: /^Contesto massimo/ }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ at: AT_MAX }));
+    expect(await screen.findByText('Velocità con il contesto pieno a 208K')).toBeTruthy();
   });
 
   it('a card that never filled its context says so at "Contesto massimo"', async () => {

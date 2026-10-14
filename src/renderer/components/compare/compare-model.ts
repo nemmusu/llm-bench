@@ -110,7 +110,8 @@ export function itemOf(run: RunResult, ref: CompareRef = { runId: run.id }): Com
   if (vram !== undefined) item.vramMiB = vram;
   if (maxContext !== undefined) item.maxContext = maxContext;
   if (kvTokens !== undefined) item.kvTokens = kvTokens;
-  const deepest = item.points.reduce<DepthPoint | undefined>((a, p) => (a === undefined || p.point.promptTokens > a.point.promptTokens ? p : a), undefined);
+  // Points go shallow to deep: the last one is the deepest.
+  const deepest = item.points[item.points.length - 1];
   if (deepest && maxContext !== undefined && fillsContext(deepest.point.promptTokens, maxContext)) item.full = deepest;
   return item;
 }
@@ -388,6 +389,16 @@ function speedRows(items: readonly CompareItem[], at: CompareAt, f: CompareForma
     { ...common, id: 'prefill', label: t('compare.rows.prefill'), context: ctx.read, values: points.map((p) => (p ? prefillStat(p.point).median : undefined)), higherIsBetter: true, kind: 'speed', format: (v) => `${integer(v)} tok/s` },
     { ...common, id: 'ttft', label: t('compare.rows.ttft'), context: ctx.first, values: points.map((p) => p?.point.ttftMs.median), higherIsBetter: false, kind: 'time', format: f.duration },
   ];
+}
+
+/**
+ * Where an item's speeds were read, said once on its column: at "Contesto massimo" each column has its
+ * own context ("Velocità con il contesto pieno a 208K"), or that it never filled it; nothing at one depth for all.
+ */
+export function speedsWhere(item: Pick<CompareItem, 'full' | 'maxContext'>, at: CompareAt | undefined, f: CompareFormatters): string | undefined {
+  if (at !== AT_MAX) return undefined;
+  if (item.full) return f.t('compare.card.speedsFull', { ctx: tokensK(item.full.depth, f) });
+  return item.maxContext === undefined ? undefined : f.t('compare.card.speedsNotFull', { ctx: tokensK(item.maxContext, f) });
 }
 
 /** The point where an item writes (or reads) fastest, among everything it measured. */

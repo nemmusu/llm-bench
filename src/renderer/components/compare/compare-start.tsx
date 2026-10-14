@@ -29,8 +29,8 @@ import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { AT_MAX, pointFor } from '../configs/depths';
-import { bestConfigLabel, configSpeedWords, modelsOf, type ModelConfigs } from './best-config';
+import { AT_MAX } from '../configs/depths';
+import { configOption, configSpeedWords, modelsOf, type ModelConfigs } from './best-config';
 import { entryOfConfig, entryOfSummary } from './compare-entries';
 import { CompareToggle } from './compare-tray';
 
@@ -72,7 +72,8 @@ function Picked() {
  */
 function bestLine(m: ModelConfigs, f: ReturnType<typeof useI18n>): string | undefined {
   const best = m.configs[0]!;
-  if (m.at === AT_MAX) return pointFor(best, AT_MAX)?.decodeTps === undefined ? undefined : configSpeedWords(best, AT_MAX, f);
+  // Ranked there because it was measured there: its speed with its context full.
+  if (m.at === AT_MAX) return configSpeedWords(best, AT_MAX, f);
   const v = best.points.find((p) => p.depth === m.at)?.decodeTps;
   return v === undefined ? undefined : speedAt(v, { kind: 'write', tokens: m.at! }, f);
 }
@@ -156,10 +157,7 @@ function ModelsPicker() {
                     value={pick.config.id}
                     onValueChange={(v) => swap(m, v)}
                     className="mt-auto h-8 text-xs [&>span]:truncate"
-                    options={m.configs.map((e, i) => {
-                      const speed = configSpeedWords(e, m.at, f);
-                      return { value: e.id, label: i === 0 ? bestConfigLabel(m.at, words(e), f) : words(e), text: words(e), ...(speed ? { description: speed } : {}) };
-                    })}
+                    options={m.configs.map((e, i) => configOption(e, i === 0, words(e), m.at, f))}
                   />
                 )}
               </Card>

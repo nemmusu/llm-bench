@@ -32,7 +32,7 @@ import { SegmentedControl } from '../ui/segmented-control';
 import { Select } from '../ui/select';
 import { Switch } from '../ui/switch';
 import { AT_MAX, type CompareAt } from '../configs/depths';
-import { bestConfigLabel, configSpeedWords, refOfConfig, rankConfigs } from './best-config';
+import { configOption, refOfConfig, rankConfigs } from './best-config';
 import { speedSeries, usersLinesOption, usersSeries } from './compare-charts';
 import { DIFF_GROUPS, diffRows } from './compare-diff';
 import {
@@ -46,6 +46,7 @@ import {
   LETTERS,
   maxChoice,
   pointAt,
+  speedsWhere,
   ROW_GROUPS,
   usersChoice,
   type CompareItem,
@@ -89,33 +90,21 @@ function ConfigPicker({ item, at, onPick }: { item: CompareItem; at: CompareAt |
   if (!current || ranked.configs.length < 2) return null;
   // The context is always said, so the words are never empty.
   const words = (e: ConfigEntry) => configLabelOf(e.engineKind, e.params, f, { tags: e.tags }).text;
-  const label = (e: ConfigEntry) => (e === ranked.configs[0] ? bestConfigLabel(ranked.at, words(e), f) : words(e));
+  const options = ranked.configs.map((e, i) => configOption(e, i === 0, words(e), ranked.at, f));
+  const shown = options.find((o) => o.value === current.id)!;
   // The trigger may cut the words: the whole of them, with the speed and its context, on hover.
-  const title = [label(current), configSpeedWords(current, ranked.at, f)].filter(Boolean).join(' · ');
+  const title = [shown.label, shown.description].filter(Boolean).join(' · ');
   return (
     <div title={title} className="min-w-0">
       <Select
         aria-label={t('compare.card.pickConfig', { name: item.run.model.displayName })}
         value={current.id}
-        onValueChange={(id) => onPick(refOfConfig(ranked.configs.find((e) => e.id === id)!, at ?? ranked.at))}
+        onValueChange={(id) => onPick(refOfConfig(ranked.configs.find((e) => e.id === id)!, at))}
         className="h-8 w-full text-xs [&>span]:truncate"
-        options={ranked.configs.map((e) => {
-          const speed = configSpeedWords(e, ranked.at, f);
-          return { value: e.id, label: label(e), text: words(e), ...(speed ? { description: speed } : {}) };
-        })}
+        options={options}
       />
     </div>
   );
-}
-
-/**
- * Where an item's speeds were read, said once on its column: at "Contesto massimo" each column has its
- * own context ("Velocità con il contesto pieno a 208K"), or that it never filled it.
- */
-function speedsWhere(item: CompareItem, at: CompareAt | undefined, f: ReturnType<typeof useI18n>): string | undefined {
-  if (at !== AT_MAX) return undefined;
-  if (item.full) return f.t('compare.card.speedsFull', { ctx: tokensK(item.full.depth, f) });
-  return item.maxContext === undefined ? undefined : f.t('compare.card.speedsNotFull', { ctx: tokensK(item.maxContext, f) });
 }
 
 /** The card on top of an item's column. */
