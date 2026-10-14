@@ -103,12 +103,17 @@ describe('NInfer KV types and the model card', () => {
   it('"Consigliata dalla scheda del modello" first for GGUF-NInfer artifacts: the card\'s run example', () => {
     const presets = ninferPresetsFor({ label: GGUF_NINFER.displayName, repo: GGUF_NINFER.repo, file: GGUF_NINFER.file });
     expect(presets.map((p) => p.id)).toEqual(['model-card', 'ninfer-recommended', 'rtx5090-tested']);
-    expect(presets[0]?.params).toEqual({ contextSize: 102_400, parallel: 4, ninfer: { kvCapacity: 409_600, kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 3 } });
+    expect(presets[0]?.params).toEqual({ contextSize: 102_400, parallel: 4, ninfer: { kvCapacity: 'auto', kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 3 } });
     expect(ninferPresetsFor({ name: 'qwen3.8-27b' }).map((p) => p.id)).toEqual(['ninfer-recommended', 'rtx5090-tested']);
-    // Its VRAM estimate with the card's settings: a 23.4 GB Q6_K artifact is tight on an RTX 5090.
-    const fit = ninferFit({ artifactBytes: 23_379_962_880, manifest: ninferManifestFromName(GGUF_NINFER.file), label: GGUF_NINFER.displayName, params: presets[0]?.params, gpu: { totalMiB: 32_607 } });
-    expect(fit.kvMiB).toBeGreaterThan(7000);
-    expect(['good', 'tight', 'no']).toContain(fit.level);
+    // The card's own 409,600 shared tokens do not fit an RTX 5090 next to a 23.4 GB Q6_K artifact (as on the user's PC)…
+    const input = { artifactBytes: 23_379_962_880, manifest: ninferManifestFromName(GGUF_NINFER.file), label: GGUF_NINFER.displayName, gpu: { totalMiB: 32_607 } };
+    const card = presets[0]?.params as NonNullable<(typeof presets)[number]['params']>;
+    expect(ninferFit({ ...input, params: { ...card, ninfer: { ...card.ninfer, kvCapacity: 409_600 } } }).level).toBe('no');
+    // …the pool sized to what fits does, with room for a full 100K request and more.
+    const fit = ninferFit({ ...input, params: card });
+    expect(fit.level).toBe('tight');
+    expect(fit.notes).toContain('ninfer.auto-capacity');
+    expect(fit.maxConcurrency).toBeGreaterThan(1);
   });
 });
 

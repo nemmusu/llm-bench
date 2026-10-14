@@ -181,6 +181,32 @@ export function buildSafetensors({ tensors = {}, metadata, totalSize, seed = 1 }
 }
 
 /**
+ * Builds a .ninfer file as NInfer's container lays it out: "NINFER", the container version (00 03), the
+ * manifest's length (u64 LE at byte 8), 16 bytes of checksum, the JSON manifest from byte 32 (padded
+ * with spaces, as NInfer's converter does), then the weights (seeded). `layouts`: one tensor object per
+ * layout (a GGUF-NInfer artifact: "gguf_blocks_v1" among them).
+ */
+export function buildNinfer({ name = 'qwen3.8-27b', components = ['text', 'mtp'], layouts = ['contiguous_le_v1', 'row_split_k128_v1'], version = 3, totalSize, seed = 1 } = {}) {
+  const manifest = {
+    components: Object.fromEntries(components.map((c) => [c, { config: {} }])),
+    objects: [
+      { id: 'resource/text/tokenizer.json', encoding: 'raw_bytes_v1', offset: 0, bytes: 16, kind: 'resource' },
+      ...layouts.map((layout, i) => ({ id: `weight/${String(i).padStart(6, '0')}`, shape: [16, 16], format: layout === 'gguf_blocks_v1' ? 'gguf_q6_k' : 'bf16', layout, offset: 16 + i * 64, bytes: 64, kind: 'tensor' })),
+    ],
+    bindings: {},
+    metadata: { name },
+  };
+  const json = Buffer.from(`${JSON.stringify(manifest)}${' '.repeat(64)}`, 'utf8');
+  const size = Math.max(totalSize ?? 0, 32 + json.length + 16 + layouts.length * 64);
+  const out = Buffer.from(seededBytes(seed, size));
+  out.write('NINFER', 0, 'latin1');
+  out.writeUInt16BE(version, 6);
+  out.writeBigUInt64LE(BigInt(json.length), 8);
+  json.copy(out, 32);
+  return new Uint8Array(out.buffer, out.byteOffset, out.length);
+}
+
+/**
  * Metadata + tensors of a small decoder-only model that look like a real llama.cpp conversion.
  * `layers`, `kvHeads`… shape the KV facts; tensors are tiny so files stay a few KB.
  */

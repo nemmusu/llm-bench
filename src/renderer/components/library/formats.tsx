@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Cpu, FileBox, Layers, Package, Wrench } from 'lucide-react';
 import { templateForModel, type MatchableModel } from '../../../contract/custom-engines';
 import type { HubModel } from '../../../contract/models';
+import { ninferBuildFor, type NinferBuildModel } from '../../../contract/ninfer';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
@@ -104,28 +105,60 @@ export function FormatBadges({ m, engine, className }: { m: Pick<HubModel, 'form
 }
 
 /**
- * "Richiede il fork PrismML di llama.cpp" next to models only a custom engine reads (PrismML's ternary
- * Bonsai quants; "Richiede NInfer-all" for GGUF-NInfer artifacts): one click opens the Engines page with
- * that engine ready to set up.
+ * "Funziona con NInfer-all" next to a .ninfer artifact only NInfer-all reads (its manifest's layouts, else
+ * a "GGUF-NInfer" name: contract/ninfer.ts ninferBuildFor): one click opens NInfer's card on its
+ * NInfer-all build, which LLM Bench downloads and builds.
  */
-export function ForkBadge({ model, weakKey, label }: { model: MatchableModel; weakKey?: string | undefined; label: string }) {
+export function NinferAllBadge({ model, weakKey, label, plain = false }: { model: NinferBuildModel; weakKey?: string | undefined; label: string; plain?: boolean }) {
   const { t } = useI18n();
-  const template = templateForModel(model);
+  if (ninferBuildFor(model).build !== 'all') return null;
+  const badge = (
+    <Badge tone="accent" size="sm" className="hover:brightness-95">
+      <Cpu aria-hidden />
+      {t('models.fork.ninferAll')}
+    </Badge>
+  );
+  // Inside something that is itself clicked (a quant to choose): just said.
+  if (plain) return badge;
+  return (
+    <Tooltip content={t('models.fork.ninferAllHelp')}>
+      <Link
+        to="/engines"
+        search={{ ninfer: 'all', ...(weakKey ? { model: weakKey } : {}), modelName: label }}
+        className="relative z-10 inline-flex rounded-full focus-ring"
+        aria-label={`${t('models.fork.ninferAll')} · ${t('models.fork.ninferAllAction')}`}
+      >
+        {badge}
+      </Link>
+    </Tooltip>
+  );
+}
+
+/**
+ * "Richiede il fork PrismML di llama.cpp" next to models only a custom engine reads (PrismML's ternary
+ * Bonsai quants): one click opens the Engines page with that engine ready to set up. A .ninfer artifact
+ * only NInfer-all reads: "Funziona con NInfer-all" (NinferAllBadge).
+ */
+export function ForkBadge({ model, weakKey, label, plain = false }: { model: MatchableModel & Pick<NinferBuildModel, 'facts'>; weakKey?: string | undefined; label: string; plain?: boolean }) {
+  const { t } = useI18n();
+  const template = model.format === 'ninfer' ? undefined : templateForModel(model);
+  // NInfer-all is a build of NInfer (on its card), not a fork to add.
+  if (model.format === 'ninfer' || template?.builtIn) return <NinferAllBadge model={{ ...model, format: 'ninfer' }} weakKey={weakKey} label={label} plain={plain} />;
   if (!template) return null;
-  const name = t(`models.fork.names.${template.id as 'prismml-bonsai' | 'ninfer-all'}`);
+  const name = t(`models.fork.names.${template.id as 'prismml-bonsai'}`);
+  const badge = (
+    <Badge tone="warning" size="sm" className="hover:brightness-95">
+      <Wrench aria-hidden />
+      {t('models.fork.requires', { name })}
+    </Badge>
+  );
+  // Inside something that is itself clicked (a quant to choose): just said.
+  if (plain) return badge;
   // The Engines page opens its "Aggiungi motore" from these; an unknown template just opens the page.
   const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), modelName: label };
   return (
-    <Link
-      to="/engines"
-      search={search}
-      className="relative z-10 inline-flex rounded-full focus-ring"
-      aria-label={`${t('models.fork.requires', { name })} · ${t('models.fork.action')}`}
-    >
-      <Badge tone="warning" size="sm" className="hover:brightness-95">
-        <Wrench aria-hidden />
-        {t('models.fork.requires', { name })}
-      </Badge>
+    <Link to="/engines" search={search} className="relative z-10 inline-flex rounded-full focus-ring" aria-label={`${t('models.fork.requires', { name })} · ${t('models.fork.action')}`}>
+      {badge}
     </Link>
   );
 }

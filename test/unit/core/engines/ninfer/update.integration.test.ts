@@ -64,7 +64,7 @@ function setup(config: Record<string, unknown> = {}, saved: { distro: string; pa
     if (stages[stages.length - 1] !== p.stage) stages.push(p.stage);
   };
   const fakeState = () => JSON.parse(readFileSync(path.join(state, 'config.json'), 'utf8')) as Record<string, unknown>;
-  return { adapter, updater, stages, progress, old, fakeState };
+  return { adapter, builder, updater, stages, progress, old, fakeState };
 }
 
 const linux = (p: string) => (process.platform === 'win32' ? `/mnt/${p[0]?.toLowerCase()}/${p.slice(3).replace(/\\/g, '/')}` : p);
@@ -91,6 +91,7 @@ describe('NInfer update (fake WSL, real processes)', () => {
         ['cp', '-p', SERVE, `${SERVE}.gpubench-previous`],
         ['git', '-C', '/home/user/ninfer', 'pull', '--ff-only'],
         ['cmake', '--build', '/home/user/ninfer/build', '-j'],
+        ['git', '-C', '/home/user/ninfer', 'rev-parse', 'HEAD', '>', '/home/user/ninfer/build/.llmbench-built-commit'],
       ],
       restore: [
         ['mv', '-f', `${SERVE}.gpubench-previous`, SERVE],
@@ -118,7 +119,8 @@ describe('NInfer update (fake WSL, real processes)', () => {
     expect((await adapter.detect()).version).toBe(OLD.slice(0, 12));
     expect(await run(updater, progress)).toEqual({ version: '4f2a9c1' });
     expect(stages).toEqual(['git-pull', 'build', 'verify']);
-    expect(fakeState()).toMatchObject({ kept: [], commit: INCOMING[0]?.sha, incoming: [] });
+    // The commit the new program was built from is written next to it ("Da ricompilare" compares it).
+    expect(fakeState()).toMatchObject({ kept: [], commit: INCOMING[0]?.sha, incoming: [], built: { '/home/user/ninfer': INCOMING[0]?.sha } });
     // The check of the new build already ran (verify): the card shows the new commit at once.
     expect((await adapter.detect()).version).toBe(INCOMING[0]?.sha.slice(0, 12));
     expect((await updater.plan()).check).toMatchObject({ state: 'current', current: '4f2a9c1' });
@@ -160,6 +162,37 @@ describe('NInfer update (fake WSL, real processes)', () => {
     // Not set up: nothing to update.
     expect((await setup({}, null).updater.plan()).check).toMatchObject({ state: 'blocked', reason: 'not-installed' });
   }, 120_000);
+
+  it('a checkout pulled by hand and never rebuilt is not "up to date": a rebuild, then it is', async () => {
+    // HEAD's commit is newer than the program (no record of what it was built from: built by hand).
+    const byHand = setup({ headTime: 1_760_200_000 });
+    const { check } = await byHand.updater.plan();
+    expect(check).toMatchObject({ state: 'available', stale: true, commits: 0, current: 'e31bc99' });
+    expect(await run(byHand.updater, byHand.progress)).toEqual({ version: 'e31bc99' });
+    expect(byHand.stages).toEqual(['build', 'verify']);
+    // No pull: the commit stays where it was (never written), the program's record is the commit checked out.
+    expect(byHand.fakeState()).toMatchObject({ kept: [], built: { '/home/user/ninfer': OLD } });
+    expect(byHand.fakeState()).not.toHaveProperty('commit');
+    expect((await byHand.updater.plan()).check).toMatchObject({ state: 'current' });
+    // Built by LLM Bench from another commit than the one checked out now.
+    const other = setup({ built: { '/home/user/ninfer': INCOMING[1]?.sha } });
+    expect((await other.updater.plan()).check).toMatchObject({ state: 'available', stale: true, built: INCOMING[1]?.sha.slice(0, 7) });
+    // Its rebuild fails: the program is put back, the checkout is not touched.
+    const failing = setup({ headTime: 1_760_200_000, failStage: 'build' });
+    await expect(run(failing.updater, failing.progress)).rejects.toMatchObject({ params: { reason: 'cmake', restored: true, reading: 'cuda-too-old' } });
+    expect(failing.fakeState()).toMatchObject({ kept: [] });
+    expect(failing.fakeState()).not.toHaveProperty('commit');
+  }, 90_000);
+
+  it('a pull that meets local changes stops with what git said, and changes nothing', async () => {
+    // The check says so first (no pull is offered); a pull that meets them anyway is refused by git itself.
+    const { builder, progress, fakeState } = setup({ incoming: INCOMING, dirty: ['src/serve/main.cpp'] });
+    const err = (await builder.step('git-pull', ['git', '-C', '/home/user/ninfer', 'pull', '--ff-only'], 'Ubuntu-24.04', progress, new AbortController().signal, []).catch((e: unknown) => e)) as AppError;
+    expect(err).toMatchObject({ code: 'ENGINE_INSTALL_FAILED', params: { stage: 'git-pull', reading: 'local-changes' } });
+    expect(err.detail).toContain('src/serve/main.cpp');
+    // Nothing was written: no commit moved, nothing reset.
+    expect(() => fakeState()).toThrow();
+  }, 60_000);
 
   it('says when the program cannot be kept aside, or the rebuilt one does not answer', async () => {
     // The checkout is there but its build is not (removed by hand): nothing to keep, nothing changes.

@@ -135,7 +135,10 @@ export type PhaseCatalogIsExhaustive = Assert<Exact<Exclude<keyof Messages['phas
  */
 function whyKey(code: ErrorCode, params?: Params): MessageKey | undefined {
   const reason = params?.reason;
+  if (code === 'ENGINE_NOT_INSTALLED' && reason === 'ninfer_all_missing') return 'errors.ENGINE_NOT_INSTALLED.why.ninferAll';
   if (code === 'ENGINE_MODEL_UNSUPPORTED') {
+    // A layout only NInfer-all reads: NInfer's own second build, not a variant to add.
+    if (params?.template === 'ninfer-all') return 'errors.ENGINE_MODEL_UNSUPPORTED.why.ninferAll';
     if (params?.variant !== undefined && (reason === 'layout' || reason === 'format')) return 'errors.ENGINE_MODEL_UNSUPPORTED.why.variant';
     if (reason === 'architecture' || reason === 'container') return `errors.ENGINE_MODEL_UNSUPPORTED.why.${reason}`;
   }

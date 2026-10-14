@@ -170,6 +170,58 @@ export function parseNinferManifest(raw: unknown): NinferManifest | undefined {
   return out;
 }
 
+/** A .ninfer file starts with these bytes ("NINFER"), its container version, then the manifest's length. */
+export const NINFER_MAGIC = 'NINFER';
+/** Where the JSON manifest starts in a .ninfer file. */
+export const NINFER_HEADER_BYTES = 32;
+/** The largest manifest read from a file's start (a 27B artifact's is about 340 KB): never the weights. */
+export const NINFER_MANIFEST_MAX = 64 * 1024 * 1024;
+
+/**
+ * The fixed start of a .ninfer file: "NINFER", the container version (bytes 6–7; read either way round,
+ * the smaller value: 00 03 is version 3), the manifest's length (u64 little-endian at byte 8). undefined:
+ * not a .ninfer container, or a manifest length no header has.
+ */
+export function parseNinferContainer(head: Uint8Array): { containerVersion: number; manifestBytes: number } | undefined {
+  if (head.length < NINFER_HEADER_BYTES) return undefined;
+  const magic = String.fromCharCode(...head.subarray(0, NINFER_MAGIC.length));
+  if (magic !== NINFER_MAGIC) return undefined;
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const containerVersion = Math.min(view.getUint16(6, false), view.getUint16(6, true));
+  const manifestBytes = Number(view.getBigUint64(8, true));
+  if (manifestBytes <= 2 || manifestBytes > NINFER_MANIFEST_MAX) return undefined;
+  return { containerVersion, manifestBytes };
+}
+
+/** What the manifest inside a .ninfer file says: its name, the parts packed in it, its tensors' layouts and formats. */
+export interface NinferEmbeddedManifest {
+  name?: string;
+  components: string[];
+  /** Tensor layouts, sorted, without repeats ("contiguous_le_v1", "gguf_blocks_v1", "row_split_k128_v1"). */
+  layouts: string[];
+  /** Tensor formats, sorted, without repeats ("bf16", "gguf_q6_k"…). */
+  formats: string[];
+}
+
+/** The embedded manifest's JSON (its `components`, `objects[].layout|format`, `metadata.name`), leniently. */
+export function parseNinferEmbeddedManifest(raw: unknown): NinferEmbeddedManifest | undefined {
+  const m = obj(raw);
+  if (!m || !Array.isArray(m.objects)) return undefined;
+  const layouts = new Set<string>();
+  const formats = new Set<string>();
+  for (const o of m.objects.map(obj)) {
+    if (typeof o?.layout === 'string' && o.layout) layouts.add(o.layout);
+    if (typeof o?.format === 'string' && o.format) formats.add(o.format);
+  }
+  const name = obj(m.metadata)?.name;
+  return {
+    ...(typeof name === 'string' && name ? { name } : {}),
+    components: Object.keys(obj(m.components) ?? {}),
+    layouts: [...layouts].sort(),
+    formats: [...formats].sort(),
+  };
+}
+
 /**
  * What an artifact without a manifest tells by its name alone: the text model, plus the speculative
  * heads its name announces ("…-Q6_K-MTP.ninfer": MTP; "DFlash2", "DFlash"). Vision is never assumed.

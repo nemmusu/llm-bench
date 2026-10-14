@@ -16,8 +16,12 @@ export function commandLine(argv: readonly string[]): string {
   return argv.map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' ');
 }
 
-/** "Aggiornamento disponibile: v0.5.21 → v0.5.22 · 9,8 GB", "3 commit nuovi: a1b2c3d → e4f5a6b". */
+/** Only a rebuild is due: the newest code, an older program (NInfer: built from another commit, or pulled by hand). */
+export const rebuildOnly = (c: Pick<EngineUpdateCheck, 'stale' | 'commits'>): boolean => c.stale === true && !c.commits;
+
+/** "Aggiornamento disponibile: v0.5.21 → v0.5.22 · 9,8 GB", "3 commit nuovi: a1b2c3d → e4f5a6b", "Il codice è più nuovo della build". */
 export function updateHeadline(f: Pick<Formatters, 't' | 'bytes'>, c: EngineUpdateCheck): string {
+  if (rebuildOnly(c)) return f.t('engines.update.stale');
   const p = { current: c.current ?? '', latest: c.latest ?? '' };
   const text =
     c.method === 'git'
@@ -30,10 +34,16 @@ export function updateHeadline(f: Pick<Formatters, 't' | 'bytes'>, c: EngineUpda
   return c.sizeBytes ? f.t('engines.update.withSize', { text, size: f.bytes(c.sizeBytes) }) : text;
 }
 
+/** "Hai l'ultima versione (a1b2c3d)", or why it cannot be updated from here ("In ~/ninfer ci sono modifiche non salvate…"). */
+export function updateStateText(t: Formatters['t'], c: EngineUpdateCheck): string {
+  if (c.state === 'current') return c.current ? t('engines.update.current', { current: c.current }) : t('engines.update.currentNoVersion');
+  return t(`engines.update.reasons.${c.reason ?? 'tools'}`, { repo: c.repo ?? '', n: c.changed ?? 0, branch: c.branch ?? '' });
+}
+
 /** What the update does, in the confirmation. */
 function confirmText(t: Formatters['t'], c: EngineUpdateCheck, name: string): string {
   const p = { name, image: c.image ?? '', current: c.current ?? '', latest: c.latest ?? '', repo: c.repo ?? '' };
-  if (c.method === 'git') return t('engines.update.confirm.git', p);
+  if (c.method === 'git') return t(rebuildOnly(c) ? 'engines.update.confirm.gitRebuild' : 'engines.update.confirm.git', p);
   if (c.method === 'uv') return t('engines.update.confirm.uv', p);
   if (c.method === 'docker-tag') return t(c.target.startsWith('custom:') ? 'engines.update.confirm.dockerTagCustom' : 'engines.update.confirm.dockerTag', p);
   return t('engines.update.confirm.dockerPull', p);
@@ -53,10 +63,11 @@ export interface EngineUpdatePanelProps {
 /** Commit titles shown before "e altri N". */
 const SHOWN_COMMITS = 5;
 
-/** The new commits of a git update, newest first (`total`: how many there are). */
-function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['log']>; total: number }) {
+/** The new commits of a git update, newest first (`total`: how many there are; a git check with a log always says). */
+export function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['log']>; total: number | undefined }) {
   const { t } = useI18n();
-  const more = total - Math.min(log.length, SHOWN_COMMITS);
+  // Without a count: none beyond the ones listed (NaN is never more than 0).
+  const more = Number(total) - Math.min(log.length, SHOWN_COMMITS);
   return (
     <>
       <ul className="flex flex-col gap-0.5 text-sm text-fg-2">
@@ -73,7 +84,7 @@ function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['log']>;
 }
 
 /** A failed rebuild: whether the previous build is back in place (NInfer keeps it aside until the new one is built). */
-function Restored({ params }: { params: Record<string, unknown> | undefined }) {
+export function Restored({ params }: { params: Record<string, unknown> | undefined }) {
   const { t } = useI18n();
   if (params?.restored === undefined) return null;
   return <p className="text-sm text-fg-2">{params.restored === true ? t('engines.update.restored', { commit: String(params.commit ?? '') }) : t('engines.update.notRestored')}</p>;
@@ -130,7 +141,7 @@ export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdate
     const reason = c.reason ?? 'tools';
     body = (
       <div className="flex flex-col gap-2">
-        <Callout tone={reason === 'no-docker' || reason === 'busy' ? 'info' : 'warning'} title={t(`engines.update.reasons.${reason}`, { repo: c.repo ?? '', n: c.changed ?? 0, branch: c.branch ?? '' })}>
+        <Callout tone={reason === 'no-docker' || reason === 'busy' ? 'info' : 'warning'} title={updateStateText(t, c)}>
           {c.detail ? <pre className="font-mono text-xs break-all whitespace-pre-wrap">{c.detail}</pre> : undefined}
         </Callout>
         {checkButton}
@@ -141,7 +152,7 @@ export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdate
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-sm text-fg-2">
           <CircleCheck aria-hidden className="size-4 text-success-text" />
-          {c.current ? t('engines.update.current', { current: c.current }) : t('engines.update.currentNoVersion')}
+          {updateStateText(t, c)}
         </p>
         {checkButton}
       </div>
@@ -158,8 +169,8 @@ export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdate
     );
   } else {
     body = (
-      <Callout tone="info" title={updateHeadline({ t, bytes }, c)} action={{ label: t('engines.update.update'), onClick: () => setConfirm(true) }}>
-        {c.log?.length ? <CommitLog log={c.log} total={c.commits ?? c.log.length} /> : undefined}
+      <Callout tone="info" title={updateHeadline({ t, bytes }, c)} action={{ label: rebuildOnly(c) ? t('engines.update.rebuild') : t('engines.update.update'), onClick: () => setConfirm(true) }}>
+        {c.log?.length ? <CommitLog log={c.log} total={c.commits} /> : undefined}
       </Callout>
     );
   }
@@ -186,7 +197,7 @@ export function EngineUpdatePanel({ target, name, enabled, extra }: EngineUpdate
                     start.mutate({ key, path: updatePath(target) });
                   }}
                 >
-                  {c.state === 'unknown' ? t('engines.update.repull') : t('engines.update.update')}
+                  {c.state === 'unknown' ? t('engines.update.repull') : rebuildOnly(c) ? t('engines.update.rebuild') : t('engines.update.update')}
                 </Button>
               </>
             }

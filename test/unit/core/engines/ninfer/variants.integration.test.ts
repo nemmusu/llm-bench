@@ -111,13 +111,16 @@ describe('NInfer-all, a variant of NInfer', () => {
       source: ALL,
       downloadBytes: 39_367 * 1024,
       cpus: 16,
-      minutes: 10,
+      minutes: 29,
       ready: true,
       commands: [
         'git clone --progress --branch master https://github.com/iamwavecut/ninfer-all.git /home/user/ninfer-all',
-        'cmake -S /home/user/ninfer-all -B /home/user/ninfer-all/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc',
+        'cmake -S /home/user/ninfer-all -B /home/user/ninfer-all/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.1/bin/nvcc',
         'cmake --build /home/user/ninfer-all/build -j',
+        'git -C /home/user/ninfer-all rev-parse HEAD > /home/user/ninfer-all/build/.llmbench-built-commit',
       ],
+      // NInfer-all's own minimum for the RTX 5090.
+      cuda: { need: '13.1', have: '13.1', allNeeds: true },
     });
     expect((await r.post('/api/engines/ninfer/build', { ...req, confirm: true })).status).toBe(200);
     const end = await r.done(1);
@@ -143,7 +146,11 @@ describe('NInfer-all, a variant of NInfer', () => {
 
     // Built again in place (its checkout is there, cloned from NInfer-all): the same engine, updated.
     const again = { ...req, variant: { id: 'ninfer-all', name: 'NInfer-all' } };
-    expect(await (await r.post('/api/engines/ninfer/build-plan', again)).json()).toMatchObject({ existing: true, ready: true, commands: [expect.stringContaining('cmake -S'), 'cmake --build /home/user/ninfer-all/build -j'] });
+    expect(await (await r.post('/api/engines/ninfer/build-plan', again)).json()).toMatchObject({
+      existing: true,
+      ready: true,
+      commands: [expect.stringContaining('cmake -S'), 'cmake --build /home/user/ninfer-all/build -j', expect.stringContaining('.llmbench-built-commit')],
+    });
     await r.post('/api/engines/ninfer/build', { ...again, confirm: true });
     expect((await r.done(2)).result).toMatchObject({ customEngineId: 'ninfer-all' });
     expect(r.saved().customEngines).toHaveLength(1);

@@ -10,7 +10,7 @@
 // NInfer-all: its help, its KV types, GGUF-NInfer artifacts).
 import { readFileSync } from 'node:fs';
 import { readProfile } from './server.mjs';
-import { ninferLog, startFakeNinfer } from './ninfer.mjs';
+import { FAKE_NINFER_RELEASE, ninferLog, startFakeNinfer } from './ninfer.mjs';
 
 const ALL = process.env.FAKE_NINFER_VARIANT === 'all';
 const HELP = new URL(`../../fixtures/ninfer/${ALL ? 'help-all' : 'help'}.stdout.txt`, import.meta.url);
@@ -35,6 +35,11 @@ async function main() {
   const help = readFileSync(HELP, 'utf8');
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(help);
+    return 0;
+  }
+  // NInfer-all's help lists --version (the official one does not).
+  if (argv[0] === '--version' && help.includes('--version')) {
+    process.stdout.write(`ninfer-serve ${FAKE_NINFER_RELEASE}\n`);
     return 0;
   }
   const flags = ninferFlags(help);

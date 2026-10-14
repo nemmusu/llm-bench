@@ -4,28 +4,40 @@
 //
 //   -l -v                                        distros (UTF-16LE like the real one, UTF-8 with WSL_UTF8=1)
 //   -d <distro> --exec /bin/sh -c <script> sh …  LLM Bench's probe (##gpubench-help), prerequisite check (##home),
-//                                                update check (##nocheckout), keep / drop / restore of the build
-//   -d <distro> --exec /usr/bin/env VAR=v… [setsid] /bin/sh -c '<pid script>' sh <program> <args…>
-//                                                ninfer-serve (the fake), git clone / pull, cmake configure / build
+//                                                update check (##nocheckout), keep / drop / restore of the build,
+//                                                the record of the commit a build was made from (##gpubench-recorded)
+//   -d <distro> --exec /usr/bin/env VAR=v… [setsid -w] /bin/sh -c '<pid script>' sh <program> <args…>
+//                                                ninfer-serve (the fake), git clone / pull, rm of a CMake cache,
+//                                                cmake configure / build
 //   -d <distro> --exec cat /proc/<pid>/environ   the environment of a process it started (NUL separated)
 //   -d <distro> --exec kill -TERM|-KILL [--] [-]<pid>
 //   -d <distro> --exec dd … | stat -c %s F | fincore …   cold-load eviction
+//   --host <program> <args…>                     a Linux PC instead of a distro (GPUBENCH_NINFER_HOST: native NInfer):
+//                                                the same scripts, and git / cmake / rm / ninfer-serve run as they are
 //
 // Environment:
-//   FAKE_WSL_STATE   state dir (config.json with what the guided build added, procs.json); default <tmp>/gpubench-fake-wsl
-//   FAKE_WSL_CONFIG  inline JSON or a file, merged over the defaults: { noWsl, distros: [{ name, default, version, state }],
-//                    home, builds: [ninfer-serve paths], checkouts: [dirs], prereqs: { git: "git version 2.43.0", … ("" = missing) },
-//                    origins: { dir: clone URL } (a checkout cloned from a repository with "ninfer-all" in it is NInfer-all:
-//                    its ninfer-serve prints NInfer-all's help and reads GGUF-NInfer artifacts), cpus,
-//                    commit, stepMs, failStage: 'clone' | 'configure' | 'pull' | 'build',
-//                    branch ("master", "HEAD" = detached), upstream ("origin/master", null = none),
-//                    incoming: [{ sha, title }] (to pull, newest first), ahead, dirty: [tracked files changed],
-//                    offline (the fetch fails), tools: [upgrade tools in the checkout]; prereqs.git / .cmake "" = missing }
+//   FAKE_WSL_STATE   state dir (config.json with what the builds changed, procs.json); default <tmp>/gpubench-fake-wsl
+//   FAKE_WSL_CONFIG  inline JSON or a file, merged over the defaults:
+//     noWsl, distros: [{ name, default, version, state }], home, cpus
+//     builds: [ninfer-serve paths], checkouts: [dirs], origins: { dir: clone URL } (a checkout cloned from a
+//       repository with "ninfer-all" in it is NInfer-all: its ninfer-serve prints NInfer-all's help and reads
+//       GGUF-NInfer artifacts, its CMakeLists.txt refuses a sm_120a build with CUDA older than 13.1)
+//     folders: { dir: 'empty' | 'files' }: folders that are there without a checkout
+//     prereqs: { git: "git version 2.43.0", … ("" = missing) }
+//     nvccs: [{ path, version }]: the CUDA compilers installed (real paths); aptCuda: ["cuda-toolkit-13-3", …]
+//       (what apt offers); driverCuda: "13.4"
+//     caches: { dir: { nvcc, configured } }: what an earlier configure left in <dir>/build
+//     built: { dir: commit }: the commit LLM Bench recorded for a build; headTime, serveTimes: { serve: seconds }
+//     commit, stepMs, failStage: 'clone' | 'configure' | 'pull' | 'build', failWith: 'network' | 'oom' | 'disk'
+//     branch ("master", "HEAD" = detached), upstream ("origin/master", null = none),
+//     incoming: [{ sha, title }] (to pull, newest first), ahead, dirty: [tracked files changed],
+//     offline (the fetch fails), tools: [upgrade tools in the checkout]; prereqs.git / .cmake "" = missing
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FAKE_NINFER_RELEASE } from '../fake-engine/ninfer.mjs';
 
 const env = process.env;
 const STATE = env.FAKE_WSL_STATE ?? path.join(os.tmpdir(), 'gpubench-fake-wsl');
@@ -41,17 +53,23 @@ const DEFAULTS = {
   home: '/home/user',
   builds: ['/home/user/ninfer/build/apps/ninfer-serve'],
   checkouts: ['/home/user/ninfer'],
+  folders: {},
   prereqs: {
     git: 'git version 2.43.0',
     cmake: 'cmake version 3.28.3',
     ninja: '1.11.1',
     compiler: 'g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0',
     'pkg-config': '1.8.1',
-    nvcc: '/usr/local/cuda/bin/nvcc',
-    cuda: 'Cuda compilation tools, release 13.1, V13.1.80',
     ffmpeg: '60.16.100 60.31.102 58.29.100 7.5.100 ',
     curl: '8.5.0',
   },
+  nvccs: [{ path: '/usr/local/cuda-13.1/bin/nvcc', version: '13.1' }],
+  aptCuda: [],
+  driverCuda: '13.4',
+  caches: {},
+  built: {},
+  headTime: 1_760_000_000,
+  serveTimes: {},
   commit: 'e31bc99b13f517c8aae70b997b7c4a49b4dcdc5d',
   stepMs: 30,
   branch: 'master',
@@ -66,14 +84,22 @@ const DEFAULTS = {
   cpus: 16,
 };
 
+/** A program built before the defaults' last commit: never "older than the code" unless a test says so. */
+const BUILT_AT = 1_760_100_000;
+
 const OFFICIAL = 'https://github.com/Neroued/ninfer.git';
+/** The "distro" of a Linux host (--host), and the programs it runs as they are. */
+const HOST = '(host)';
+const HOST_PROGRAMS = ['git', 'cmake', 'rm'];
 /** The checkout a ninfer-serve was built in, and whether it is NInfer-all (cloned from it). */
 const checkoutOfServe = (serve) => serve.replace(/\/build\/apps\/ninfer-serve$/, '');
 const isAll = (cfg, dir) => /ninfer-all/i.test(cfg.origins?.[dir] ?? '');
+const home = (cfg, dir) => (dir.startsWith('~') ? `${cfg.home}${dir.slice(1)}` : dir);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = (s) => process.stdout.write(s);
 const err = (s) => process.stderr.write(s);
+const nowSec = () => Math.floor(Date.now() / 1000);
 
 function readJson(file, fallback) {
   try {
@@ -127,30 +153,55 @@ function list(cfg) {
   return 0;
 }
 
-/** LLM Bench's probe: the help (exit code after it) and the checkout's commit. */
-function probe(cfg, serve, repo) {
+/** LLM Bench's probe: the help (exit code after it), the checkout's commit, the build's record, the times. */
+function probe(cfg, given, givenRepo) {
+  // "~/…" is the home there, like the real script's `case`.
+  const serve = home(cfg, given);
+  const repo = givenRepo && home(cfg, givenRepo);
+  const all = cfg.builds.includes(serve) && isAll(cfg, checkoutOfServe(serve));
   if (cfg.builds.includes(serve)) {
-    const help = isAll(cfg, checkoutOfServe(serve)) ? 'help-all.stdout.txt' : 'help.stdout.txt';
-    out(readFileSync(new URL(`../../fixtures/ninfer/${help}`, import.meta.url), 'utf8'));
+    out(readFileSync(new URL(`../../fixtures/ninfer/${all ? 'help-all' : 'help'}.stdout.txt`, import.meta.url), 'utf8'));
     out('##gpubench-help 0\n');
   } else {
     out(`sh: 2: ${serve}: not found\n##gpubench-help 127\n`);
   }
-  if (repo) out(`##gpubench-commit ${cfg.checkouts.includes(repo) ? cfg.commit : ''}\n`);
+  out(`##gpubench-at ${serve}\n`);
+  // NInfer-all's help lists --version: the script asks it.
+  if (all) out(`##gpubench-release ninfer-serve ${FAKE_NINFER_RELEASE}\n`);
+  if (repo) {
+    const checkout = cfg.checkouts.includes(repo);
+    out(`##gpubench-commit ${checkout ? cfg.commit : ''}\n`);
+    out(`##gpubench-built ${cfg.built?.[repo] ?? ''}\n`);
+    out(`##gpubench-headtime ${checkout ? cfg.headTime : ''}\n`);
+  }
+  out(`##gpubench-servetime ${cfg.builds.includes(serve) ? (cfg.serveTimes?.[serve] ?? BUILT_AT) : ''}\n`);
   return 0;
 }
 
 /** The prerequisite script: one "##id value" line each. */
 function prereqs(cfg, dir) {
-  const d = dir.startsWith('~') ? `${cfg.home}${dir.slice(1)}` : dir;
+  const d = home(cfg, dir);
   const p = cfg.prereqs;
   const checkout = cfg.checkouts.includes(d);
+  const folder = cfg.folders?.[d];
+  const cache = checkout ? cfg.caches?.[d] : undefined;
   const lines = [
     `##home ${cfg.home}`,
-    ...['git', 'cmake', 'ninja', 'compiler', 'pkg-config', 'nvcc', 'cuda', 'ffmpeg', 'curl'].map((k) => `##${k} ${p[k] ?? ''}`),
+    ...['git', 'cmake', 'ninja', 'compiler', 'pkg-config'].map((k) => `##${k} ${p[k] ?? ''}`),
+    ...cfg.nvccs.map((n) => `##nvcc ${n.path} release ${n.version}`),
+    `##apt-cuda ${(cfg.aptCuda ?? []).join(' ')}`,
+    `##driver-cuda ${cfg.driverCuda ? `CUDA Version: ${cfg.driverCuda}` : ''}`,
+    ...['ffmpeg', 'curl'].map((k) => `##${k} ${p[k] ?? ''}`),
     `##cpus ${cfg.cpus ?? ''}`,
     `##checkout ${checkout ? 'yes' : ''}`,
     `##origin ${checkout ? (cfg.origins?.[d] ?? OFFICIAL) : ''}`,
+    `##exists ${checkout || folder ? 'yes' : ''}`,
+    `##empty ${folder === 'empty' ? 'yes' : ''}`,
+    // NInfer-all's CMakeLists.txt refuses a sm_120a build with CUDA older than 13.1.
+    `##cmake-cuda ${checkout && isAll(cfg, d) ? '13.1' : ''}`,
+    `##cache ${cache ? 'yes' : ''}`,
+    `##cache-nvcc ${cache?.nvcc ?? ''}`,
+    `##configured ${cache?.configured ? 'yes' : ''}`,
   ];
   out(`${lines.join('\n')}\n`);
   return 0;
@@ -158,12 +209,12 @@ function prereqs(cfg, dir) {
 
 /** The checkout a folder is in (the folder itself or one below it), as `git rev-parse --show-toplevel`. */
 function checkoutOf(cfg, start) {
-  const d = start.startsWith('~') ? `${cfg.home}${start.slice(1)}` : start;
+  const d = home(cfg, start);
   return cfg.checkouts.find((c) => d === c || d.startsWith(`${c}/`));
 }
 
 /** LLM Bench's update check: "##key value" lines, as the real script prints them (`fetch` "1": git fetch first). */
-function updateCheck(cfg, start, fetch) {
+function updateCheck(cfg, start, fetch, serve) {
   if (cfg.prereqs.git === '') {
     out('##nogit\n');
     return 0;
@@ -181,11 +232,13 @@ function updateCheck(cfg, start, fetch) {
   for (const f of cfg.dirty) lines.push(`##dirty  M ${f}`);
   for (const t of cfg.tools) lines.push(`##tool ${t}`);
   lines.push(`##cmake ${cfg.prereqs.cmake === '' ? '' : '/usr/bin/cmake'}`);
+  lines.push(`##built ${cfg.built?.[dir] ?? ''}`, `##headtime ${cfg.headTime}`);
+  if (serve) lines.push(`##servetime ${cfg.builds.includes(serve) ? (cfg.serveTimes?.[serve] ?? BUILT_AT) : ''}`);
   out(`${lines.join('\n')}\n`);
   return 0;
 }
 
-/** cp -p <serve> <serve>.gpubench-previous; rm -f of it; mv back + git reset --hard <commit>. */
+/** cp -p <serve> <serve>.gpubench-previous; rm -f of it; mv back (+ git reset --hard <commit> after a pull). */
 function keep(cfg, script, args) {
   const serve = args[3] ?? '';
   if (script.includes('##gpubench-kept')) {
@@ -202,15 +255,38 @@ function keep(cfg, script, args) {
     out('##gpubench-dropped\n');
     return 0;
   }
-  // Restore: the program kept aside back, the checkout back on the commit it was on.
+  // Restore: the program kept aside back, the checkout back on the commit it was on (none after a rebuild only).
   if (!cfg.kept.includes(serve)) {
     err(`mv: cannot stat '${serve}.gpubench-previous': No such file or directory\n`);
     return 1;
   }
-  save({ kept: cfg.kept.filter((k) => k !== serve), commit: args[5], incoming: cfg.pulled?.incoming ?? cfg.incoming, pulled: null });
+  const back = args[5] ? { commit: args[5], incoming: cfg.pulled?.incoming ?? cfg.incoming, headTime: cfg.pulled?.headTime ?? cfg.headTime, pulled: null } : {};
+  save({ kept: cfg.kept.filter((k) => k !== serve), ...back });
   out('##gpubench-restored\n');
   return 0;
 }
+
+/** git -C <dir> rev-parse HEAD > <dir>/build/.llmbench-built-commit */
+function record(cfg, dir) {
+  if (!cfg.checkouts.includes(dir)) {
+    err(`fatal: cannot change to '${dir}': No such file or directory\n`);
+    return 128;
+  }
+  save({ built: { ...cfg.built, [dir]: cfg.commit } });
+  out('##gpubench-recorded\n');
+  return 0;
+}
+
+/** What a failed step prints, by `failWith` (else the step's own usual failure). */
+function failure(cfg, usual) {
+  if (cfg.failWith === 'network') return "fatal: unable to access 'https://github.com/iamwavecut/ninfer-all.git/': Could not resolve host: github.com\n";
+  if (cfg.failWith === 'oom') return 'c++: fatal error: Killed signal terminated program cc1plus\ncompilation terminated.\n';
+  if (cfg.failWith === 'disk') return 'fatal error: error writing to /tmp/ccA1b2c3.s: No space left on device\n';
+  return usual;
+}
+
+/** The release of a CUDA compiler by its path (an /usr/local/cuda symlink path counts as the version it points to). */
+const nvccVersion = (cfg, p) => cfg.nvccs.find((n) => n.path === p)?.version ?? (p === '/usr/local/cuda/bin/nvcc' ? cfg.nvccs[0]?.version : undefined);
 
 /** A program started through the PID script: its PID first (stderr), then the program itself. */
 async function launched(cfg, distro, vars, program, args) {
@@ -221,7 +297,7 @@ async function launched(cfg, distro, vars, program, args) {
     }
     const variant = isAll(cfg, checkoutOfServe(program)) ? { FAKE_NINFER_VARIANT: 'all' } : {};
     const child = spawn(process.execPath, [NINFER, ...args], { env: { ...env, ...vars, ...variant }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    err(`gpubench-pid ${child.pid}\n`);
+    if (distro !== HOST) err(`gpubench-pid ${child.pid}\n`);
     setProc(child.pid, { distro, env: Object.entries(vars).map(([k, v]) => `${k}=${v}`) });
     child.stdout.pipe(process.stdout);
     child.stderr.pipe(process.stderr);
@@ -230,20 +306,24 @@ async function launched(cfg, distro, vars, program, args) {
     return code;
   }
   // Build steps run in this process: its PID is the one LLM Bench may stop.
-  err(`gpubench-pid ${process.pid}\n`);
+  if (distro !== HOST) err(`gpubench-pid ${process.pid}\n`);
   setProc(process.pid, { distro, env: Object.entries(vars).map(([k, v]) => `${k}=${v}`) });
   try {
     const step = cfg.stepMs ?? 30;
     if (program === 'git' && args[0] === 'clone') {
       const dir = args[args.length - 1];
       err(`Cloning into '${dir}'...\n`);
+      if (cfg.folders?.[dir] === 'files') {
+        err(`fatal: destination path '${dir}' already exists and is not an empty directory.\n`);
+        return 128;
+      }
       for (const pct of [25, 50, 100]) {
         await sleep(step);
         err(`Receiving objects: ${String(pct).padStart(3)}% (${pct * 12}/1200)\r`);
       }
       err('\n');
       if (cfg.failStage === 'clone') {
-        err('fatal: unable to access the repository\n');
+        err(failure(cfg, "fatal: unable to access 'https://github.com/Neroued/ninfer.git/': Could not resolve host: github.com\n"));
         return 128;
       }
       const now = config();
@@ -252,23 +332,52 @@ async function launched(cfg, distro, vars, program, args) {
     }
     if (program === 'git' && args[2] === 'pull') {
       await sleep(step);
-      if (cfg.failStage === 'pull' || cfg.dirty.length || cfg.ahead) {
-        err('fatal: Not possible to fast-forward, aborting.\n');
+      if (cfg.dirty.length) {
+        err(`error: Your local changes to the following files would be overwritten by merge:\n${cfg.dirty.map((f) => `\t${f}`).join('\n')}\nPlease commit your changes or stash them before you merge.\nAborting\n`);
+        return 1;
+      }
+      if (cfg.failStage === 'pull' || cfg.ahead) {
+        err(failure(cfg, 'fatal: Not possible to fast-forward, aborting.\n'));
         return 128;
       }
       const to = cfg.incoming[0]?.sha ?? cfg.commit;
       out(`Updating ${cfg.commit.slice(0, 7)}..${to.slice(0, 7)}\nFast-forward\n`);
-      save({ commit: to, incoming: [], pulled: { commit: cfg.commit, incoming: cfg.incoming } });
+      save({ commit: to, incoming: [], pulled: { commit: cfg.commit, incoming: cfg.incoming, headTime: cfg.headTime }, headTime: nowSec() - 60 });
+      return 0;
+    }
+    if (program === 'rm') {
+      // Only ever a CMake cache inside a build folder: anything else is a bug in LLM Bench.
+      const [flags, dash, cache, files, ...more] = args;
+      const dir = String(cache).replace(/\/build\/CMakeCache\.txt$/, '');
+      if (flags !== '-rf' || dash !== '--' || cache !== `${dir}/build/CMakeCache.txt` || files !== `${dir}/build/CMakeFiles` || more.length) {
+        err(`fake-wsl: refusing rm ${args.join(' ')}\n`);
+        return 2;
+      }
+      const { [dir]: _gone, ...caches } = cfg.caches ?? {};
+      save({ caches });
       return 0;
     }
     if (program === 'cmake' && args[0] === '-S') {
       await sleep(step);
-      out('-- The CXX compiler identification is GNU 13.3.0\n-- The CUDA compiler identification is NVIDIA 13.1.80\n');
+      const dir = args[1];
+      const asked = args.find((a) => a.startsWith('-DCMAKE_CUDA_COMPILER='))?.slice('-DCMAKE_CUDA_COMPILER='.length) ?? '/usr/local/cuda/bin/nvcc';
+      // CMake keeps the compiler it found first in its cache: a new one is seen only once the cache is cleared.
+      const used = cfg.caches?.[dir]?.nvcc ?? asked;
+      const version = nvccVersion(cfg, used);
+      out(`-- The CXX compiler identification is GNU 13.3.0\n-- The CUDA compiler identification is NVIDIA ${version ?? '?'}.88\n`);
+      const caches = { ...cfg.caches, [dir]: { nvcc: used, configured: false } };
+      if (isAll(cfg, dir) && args.includes('-DCMAKE_CUDA_ARCHITECTURES=120a') && version && !versionAtLeast(version, '13.1')) {
+        err(`CMake Error at CMakeLists.txt:36 (message):\n  A 120a build needs CUDA 13.1 or newer; CUDA ${version}.88 miscompiles sm_120a\n  kernels\n\n\n-- Configuring incomplete, errors occurred!\n`);
+        save({ caches });
+        return 1;
+      }
       if (cfg.failStage === 'configure') {
-        err('CMake Error: Could not find FFmpeg (missing: libavformat)\n');
+        err('CMake Error at CMakeLists.txt:52 (find_package):\n  Could not find FFmpeg (missing: libavformat)\n-- Configuring incomplete, errors occurred!\n');
+        save({ caches });
         return 1;
       }
       out(`-- Build files have been written to: ${args[3]}\n`);
+      save({ caches: { ...caches, [dir]: { nvcc: used, configured: true } } });
       return 0;
     }
     if (program === 'cmake' && args[0] === '--build') {
@@ -277,11 +386,13 @@ async function launched(cfg, distro, vars, program, args) {
         await sleep(step);
         out(`[${i}/${total}] ${i === total ? 'Linking CXX executable apps/ninfer-serve' : `Building CUDA object src/ops/kernel_${i}.cu.o`}\n`);
         if (cfg.failStage === 'build' && i === 2) {
-          err('nvcc fatal: Unsupported gpu architecture compute_120a\n');
+          err(failure(cfg, "nvcc fatal   : Unsupported gpu architecture 'compute_120a'\n"));
           return 1;
         }
       }
-      save({ builds: [...new Set([...config().builds, `${args[1]}/apps/ninfer-serve`])] });
+      const serve = `${args[1]}/apps/ninfer-serve`;
+      const now = config();
+      save({ builds: [...new Set([...now.builds, serve])], serveTimes: { ...now.serveTimes, [serve]: nowSec() } });
       return 0;
     }
     err(`sh: 1: exec: ${program}: not found\n`);
@@ -291,12 +402,21 @@ async function launched(cfg, distro, vars, program, args) {
   }
 }
 
+/** "13.3" ≥ "13.1". */
+function versionAtLeast(have, need) {
+  const a = have.split('.').map(Number);
+  const b = need.split('.').map(Number);
+  for (let i = 0; i < b.length; i++) if ((a[i] ?? 0) !== b[i]) return (a[i] ?? 0) > b[i];
+  return true;
+}
+
 async function exec(cfg, distro, cmd, args) {
   if (cmd === '/bin/sh' && args[0] === '-c') {
     const script = args[1] ?? '';
     if (script.includes('##gpubench-help')) return probe(cfg, args[3] ?? '', args[4] ?? '');
     if (script.includes('##home')) return prereqs(cfg, args[3] ?? '~/ninfer');
-    if (script.includes('##nocheckout')) return updateCheck(cfg, args[3] ?? '', args[4]);
+    if (script.includes('##nocheckout')) return updateCheck(cfg, args[3] ?? '', args[4], args[5]);
+    if (script.includes('##gpubench-recorded')) return record(cfg, args[3] ?? '');
     if (script.includes('##gpubench-kept') || script.includes('##gpubench-dropped') || script.includes('##gpubench-restored')) return keep(cfg, script, args);
     err('sh: unsupported script\n');
     return 2;
@@ -341,6 +461,8 @@ async function exec(cfg, distro, cmd, args) {
     process.kill(pid);
     return 0;
   }
+  // On a Linux host the programs are run as they are (in a distro they come through env and the PID script).
+  if (distro === HOST && (HOST_PROGRAMS.includes(cmd) || cmd.endsWith('ninfer-serve'))) return launched(cfg, distro, {}, cmd, args);
   if (cmd === 'dd') return 0;
   if (cmd === 'stat') {
     out('1000\n');
@@ -357,6 +479,8 @@ async function exec(cfg, distro, cmd, args) {
 async function main() {
   const cfg = config();
   if (argv[0] === '-l' || argv[0] === '--list') return list(cfg);
+  // A Linux PC instead of a distro (GPUBENCH_NINFER_HOST): its programs as the distro's.
+  if (argv[0] === '--host') return exec(cfg, HOST, argv[1] ?? '', argv.slice(2));
   const d = argv.indexOf('-d') >= 0 ? argv.indexOf('-d') : argv.indexOf('--distribution');
   const e = argv.findIndex((a) => a === '--exec' || a === '-e');
   if (d < 0 || e < 0) {

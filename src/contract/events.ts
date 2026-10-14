@@ -201,6 +201,8 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     /** Script steps (docker-linux) instead of bytes. */
     step: z.number().optional(),
     steps: z.number().optional(),
+    /** A compile's time left, seconds, from the pace of its steps so far (NInfer's builds). */
+    etaSec: z.number().optional(),
     /** Docker image being pulled. */
     image: z.string().optional(),
     /** What is being updated, in words ("PrismML", "SGLang (Docker)"): the engine updates' events. */

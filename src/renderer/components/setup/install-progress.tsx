@@ -47,9 +47,13 @@ export function InstallProgress({ event, label, className }: InstallProgressProp
   const done = stepMode ? (event.step ?? event.bytesDone) : event.bytesDone;
   const ratio = total ? Math.min(1, done / total) : undefined;
   let detail = '';
-  // A build's steps are compile units (or Make's percentage): the percentage says it all.
-  if (ratio !== undefined && event.stage === 'build') detail = percent(ratio);
-  else if (ratio !== undefined) {
+  // A build's steps are compile units ("412 di 811 file", NInfer's long compiles with the time left) or
+  // Make's percentage (100 "steps": the percentage says it all).
+  if (ratio !== undefined && event.stage === 'build') {
+    const units = total !== 100 ? `${t('setup.progress.units', { n: done, total: total as number })} · ` : '';
+    const eta = event.etaSec === undefined ? '' : ` · ${event.etaSec < 60 ? t('setup.progress.etaSoon') : t('setup.progress.etaMin', { n: Math.round(event.etaSec / 60) })}`;
+    detail = `${units}${percent(ratio)}${eta}`;
+  } else if (ratio !== undefined) {
     detail = `${stepMode ? t('setup.progress.step', { n: done, total: total as number }) : t('setup.progress.bytes', { done: bytes(done), total: bytes(total as number) })} · ${percent(ratio)}`;
   } else if (event.state !== undefined) detail = duration(event.bytesDone);
   const stage = stageLabel(t, event.stage);

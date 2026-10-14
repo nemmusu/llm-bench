@@ -10,24 +10,33 @@
  *                  disk (a Windows folder through /mnt/c works, but reads much more slowly).
  *
  *   GET  /api/engines/ninfer/distros          -> NinferDistros (Windows: WSL and its distros)
+ *   GET  /api/engines/ninfer/builds?fresh=1   -> NinferBuilds: the official build and NInfer-all, each with its
+ *        state (pronto, da ricompilare, da compilare, non funziona, non installato), commit and the commit its
+ *        program was built from
+ *   PUT  /api/engines/ninfer/builds/:build    (NinferBuildPath) -> NinferBuildPathResult ("Cambia cartella": checked,
+ *        saved only when it answers)
  *   POST /api/engines/ninfer/check            (EngineConfig) -> EngineStatus ("Indica dove si trova")
  *   POST /api/engines/ninfer/build-plan       (NinferBuildRequest) -> NinferBuildPlan (commands, prerequisites,
  *        download size, time estimate)
  *   POST /api/engines/ninfer/build            (NinferBuildStart) -> { ok: true }; progress as 'engine.install'
- *        events (kind = ninferBuildEventKind: the NInfer kind, or 'ninfer-variant' for a variant; stage
- *        clone | configure | build | done | error, step/steps, result.ninferPath at 'done'). Nothing is
- *        installed with apt: missing packages are only listed. The official build is saved as
- *        settings.ninfer, a variant's (request.variant, cloned from request.source) as its custom engine.
+ *        events (kind = ninferBuildEventKind: the NInfer kind, 'ninfer-all' for NInfer-all, 'ninfer-variant'
+ *        for another variant; stage clone | configure | build | done | error, step/steps, result.ninferPath
+ *        at 'done'). Nothing is installed with apt: missing packages are only listed. The official build is
+ *        saved as settings.ninfer, NInfer-all and other variants as their custom engine.
+ *   POST /api/engines/ninfer/build/cancel     -> { ok: true, cancelled }: stops the build that is running
  *
- * Variants and forks of NInfer (NInfer-all, ninfer-fusion-kvmem…) are custom engines of base 'ninfer'
- * (contract/custom-engines.ts): the same adapter, with their own build, --help and extra arguments.
+ * NInfer has two builds of its own (NINFER_BUILDS): the official one and NInfer-all, which reads the GGUF
+ * quantization blocks of GGUF-NInfer artifacts. Every launch of a .ninfer model whose manifest needs
+ * NInfer-all uses it (ninferBuildFor; the plan says so in RunPlan.ninferBuild). Other variants and forks
+ * (ninfer-fusion-kvmem…) are custom engines of base 'ninfer' (contract/custom-engines.ts): the same
+ * adapter, with their own build, --help and extra arguments.
  *
  * Launch settings: LaunchParams.contextSize → --max-context, parallel → --max-concurrency, and
  * LaunchParams.ninfer (contract/engines.ts) for the rest. Where its build is: EngineConfig.ninferPath /
  * wslDistro, else settings.ninfer.
  */
 import { z } from 'zod';
-import { CUSTOM_ENGINE_ID, gitSourceSchema, type GitSource } from './custom-engines';
+import { CUSTOM_ENGINE_ID, gitSourceSchema, isNinferAllEngine, NINFER_ALL_DIR, NINFER_ALL_SOURCE, type CustomEngine, type GitSource } from './custom-engines';
 import { engineBaseOf, engineStatusSchema, type EngineKind, type LaunchParams, type NinferKvDtype, type NinferParams, type NinferSpec } from './engines';
 import type { FitEstimate, FitLevel } from './models';
 
@@ -65,6 +74,90 @@ export function ninferServeOf(p: string): { serve: string; repo?: string } {
   if (base === 'build') return { serve: `${clean}/apps/ninfer-serve`, repo: slash < 0 ? '.' : clean.slice(0, slash) || '/' };
   return { serve: `${clean}/${NINFER_SERVE_PATH}`, repo: clean };
 }
+/** Written next to the build by LLM Bench's guided build and update: the commit its program was built from. */
+export const NINFER_BUILT_COMMIT_FILE = 'build/.llmbench-built-commit';
+
+// ---- NInfer's builds: the official one and NInfer-all ---------------------------------------------
+
+/**
+ * NInfer's two builds, both on its card: the official one (github.com/Neroued/ninfer, settings.ninfer) and
+ * NInfer-all (github.com/iamwavecut/ninfer-all, branch master), saved as a custom engine made from its
+ * template ('ninfer-all') so runs, presets and recipes name it as they always did.
+ */
+export const NINFER_BUILDS = ['official', 'all'] as const;
+export const ninferBuildIdSchema = z.enum(NINFER_BUILDS);
+export type NinferBuildId = z.infer<typeof ninferBuildIdSchema>;
+
+/** NInfer-all's name (a project name, the same in every language). */
+export const NINFER_ALL_NAME = 'NInfer-all';
+
+/** Tensor layouts only NInfer-all reads: the official build stops with "unknown tensor layout: …". */
+export const NINFER_ALL_LAYOUTS: readonly string[] = ['gguf_blocks_v1'];
+
+/**
+ * CUDA a build for the RTX 5090 (sm_120a) needs: 12.8 for the official NInfer; NInfer-all refuses less
+ * than 13.1 (its CMakeLists.txt: older nvcc releases miscompile its sm_120a kernels).
+ */
+export const NINFER_CUDA_MIN = '12.8';
+export const NINFER_ALL_CUDA_MIN = '13.1';
+
+/** What tells which build a model needs: its format, names, the layouts of its manifest, and what earlier runs could not read. */
+export interface NinferBuildModel {
+  format: string;
+  displayName?: string | undefined;
+  repo?: string | undefined;
+  file?: string | undefined;
+  facts?: { layouts?: readonly string[] | undefined } | undefined;
+  /** Layouts an engine could not read for this model in earlier runs (RunSummary.unreadable). */
+  unreadable?: readonly string[] | undefined;
+}
+
+export type NinferNeed = { build: 'official' } | { build: 'all'; why: 'layout' | 'name' | 'history'; layout: string };
+
+/**
+ * The build of NInfer a model needs. The manifest at the start of its .ninfer file decides (a layout only
+ * NInfer-all reads: 'layout'); only when that manifest could not be read, a name saying "GGUF-NInfer"
+ * ('name'), else an earlier run that could not read one of those layouts ('history').
+ */
+export function ninferBuildFor(model: NinferBuildModel): NinferNeed {
+  if (model.format !== 'ninfer') return { build: 'official' };
+  const layouts = model.facts?.layouts;
+  if (layouts !== undefined) {
+    const layout = layouts.find((l) => NINFER_ALL_LAYOUTS.includes(l));
+    return layout ? { build: 'all', why: 'layout', layout } : { build: 'official' };
+  }
+  const text = [model.repo, model.file, model.displayName].join('\n').toLowerCase();
+  if (text.includes('gguf-ninfer')) return { build: 'all', why: 'name', layout: NINFER_ALL_LAYOUTS[0] as string };
+  const seen = model.unreadable?.find((l) => NINFER_ALL_LAYOUTS.includes(l));
+  return seen ? { build: 'all', why: 'history', layout: seen } : { build: 'official' };
+}
+
+/**
+ * A launch of this model on this engine runs on NInfer-all (core/engines/ninfer/choose.ts does the same):
+ * a NInfer engine — the official one, or NInfer-all itself, not another variant chosen on purpose — and a
+ * model only NInfer-all reads.
+ */
+export function runsOnNinferAll(kind: EngineKind, custom: Pick<CustomEngine, 'base' | 'template' | 'run'> | undefined, model: NinferBuildModel | undefined): boolean {
+  if (!isNinferKind(kind) || model === undefined) return false;
+  if (custom !== undefined && !isNinferAllEngine(custom)) return false;
+  return ninferBuildFor(model).build === 'all';
+}
+
+/**
+ * RunPlan.ninferBuild / ServerPlan.ninferBuild: the model needs NInfer-all, and that is what runs (or
+ * will run once it is built: `ready` false, the start flow builds it first).
+ */
+export const ninferBuildChoiceSchema = z.object({
+  build: ninferBuildIdSchema,
+  why: z.enum(['layout', 'name', 'history']),
+  /** The layout only that build reads ("gguf_blocks_v1"). */
+  layout: z.string(),
+  ready: z.boolean(),
+  /** Its saved engine, once built. */
+  customEngineId: z.string().optional(),
+});
+export type NinferBuildChoice = z.infer<typeof ninferBuildChoiceSchema>;
+
 /** Official artifacts on Hugging Face (one .ninfer + "<Repo>.artifact-manifest.json" + "<Repo>.SHA256SUMS" each). */
 export const NINFER_OFFICIAL_REPOS = [
   'neroued/Qwen3.8-27B-nvfp4-NInfer',
@@ -324,11 +417,14 @@ export interface NinferPreset {
 /**
  * Settings a model card recommends for a family of .ninfer artifacts, matched like custom-engine rules
  * (repo, file or name containing `names`). GGUF-NInfer (nerkyor's GGUF-converted artifacts, for
- * NInfer-all): "--max-context 102400 --kv-capacity 409600 --kv-dtype rk8v4 --max-concurrency 4 --spec mtp
- * --draft-tokens 3", as their card's run example.
+ * NInfer-all): their card's run example "--max-context 102400 --kv-capacity 409600 --kv-dtype rk8v4
+ * --max-concurrency 4 --spec mtp --draft-tokens 3", except the shared pool: 409,600 tokens do not fit a
+ * 32 GB RTX 5090 next to the Q6_K weights (measured: 21.5 GiB of weights, 65,536 rk8v4 tokens left
+ * 5.33 GiB free), so NInfer sizes it to what fits ("--kv-capacity auto", 1 GiB kept free: about 200K
+ * tokens there, two full requests at once and more of shorter ones).
  */
 export const NINFER_CARD_PRESETS: readonly { names: readonly string[]; params: NinferPreset['params'] }[] = [
-  { names: ['GGUF-NInfer'], params: { contextSize: 102_400, parallel: 4, ninfer: { kvCapacity: 409_600, kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 3 } } },
+  { names: ['GGUF-NInfer'], params: { contextSize: 102_400, parallel: 4, ninfer: { kvCapacity: 'auto', kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 3 } } },
 ];
 
 /** What the presets look at: the artifact's metadata name, its label, and (for model-card presets) its repo and file. */
@@ -348,8 +444,15 @@ export interface NinferPresetModel {
  *    as the README says for that model);
  *  - 'rtx5090-tested' ("Provata su RTX 5090"): 64K per request in a shared 128K int8 pool, 2 users,
  *    vision on, MTP 3 with the optimized head (about 27 GB of VRAM with Qwen3.8-27B NVFP4). 27B models only.
+ * `kvDtypes`: the KV types the build that will run lists in its --help, when known: a preset with another
+ * one is left out (rk8v4 is offered only by a build that has it).
  */
-export function ninferPresetsFor(model: NinferPresetModel): NinferPreset[] {
+export function ninferPresetsFor(model: NinferPresetModel, kvDtypes?: readonly string[]): NinferPreset[] {
+  const all = ninferPresetsOf(model);
+  return kvDtypes ? all.filter((p) => p.params.ninfer.kvDtype === undefined || kvDtypes.includes(p.params.ninfer.kvDtype)) : all;
+}
+
+function ninferPresetsOf(model: NinferPresetModel): NinferPreset[] {
   const family = ninferFamilyOf(model.name ?? model.label);
   const cache = { deviceStateSlots: 2, hostStateSlots: 8, hostKvMib: 8192 } as const;
   const speculative: Pick<NinferParams, 'spec' | 'draftTokens' | 'lmHeadDraft'> =
@@ -472,8 +575,13 @@ export const ninferBuildRequestSchema = z.object({
   kind: ninferKindSchema,
   /** ninfer-wsl: the distro to build in. */
   distro: z.string().min(1).optional(),
-  /** Where the checkout goes (a Linux path; default ~/ninfer). An existing checkout is built in place. */
+  /** Where the checkout goes (a Linux path; default ~/ninfer, NInfer-all's ~/ninfer-all). An existing checkout is built in place. */
   dir: z.string().min(1).optional(),
+  /**
+   * One of NInfer's own builds: 'all' = NInfer-all (its repository, its folder, saved as its engine: the
+   * request needs nothing else). Absent = the official NInfer, or the variant `source` / `variant` say.
+   */
+  build: ninferBuildIdSchema.optional(),
   /** The repository to clone (and its branch); absent = the official NInfer. */
   source: gitSourceSchema.optional(),
   /** A variant: the custom engine the build is saved as (absent = the official NInfer, settings.ninfer). */
@@ -485,9 +593,39 @@ export type NinferBuildRequest = z.infer<typeof ninferBuildRequestSchema>;
 export const ninferBuildStartSchema = ninferBuildRequestSchema.extend({ confirm: z.literal(true) });
 export type NinferBuildStart = z.infer<typeof ninferBuildStartSchema>;
 
-/** The 'engine.install' kind of a build's progress: the official build's is its NInfer kind, every variant's this one. */
+/** The 'engine.install' kind of a build's progress: the official build's is its NInfer kind, NInfer-all's 'ninfer-all', any other variant's 'ninfer-variant'. */
 export const NINFER_VARIANT_BUILD = 'ninfer-variant';
-export const ninferBuildEventKind = (req: Pick<NinferBuildRequest, 'kind' | 'variant'>): string => (req.variant ? NINFER_VARIANT_BUILD : req.kind);
+export const NINFER_ALL_BUILD = 'ninfer-all';
+export const ninferBuildEventKind = (req: Pick<NinferBuildRequest, 'kind' | 'variant' | 'build'>): string =>
+  req.build === 'all' ? NINFER_ALL_BUILD : req.variant ? NINFER_VARIANT_BUILD : req.kind;
+
+/** The repository, folder and saved engine a build request stands for once NInfer-all's are filled in. */
+export function ninferAllRequest(req: NinferBuildRequest, existing?: { id: string; name: string } | undefined): NinferBuildRequest {
+  if (req.build !== 'all') return req;
+  return {
+    ...req,
+    dir: req.dir ?? NINFER_ALL_DIR,
+    source: req.source ?? NINFER_ALL_SOURCE,
+    variant: { template: 'ninfer-all', name: existing?.name ?? NINFER_ALL_NAME, ...(existing ? { id: existing.id } : {}) },
+  };
+}
+
+/** The CUDA compiler a build uses and the toolkit it needs. */
+export const ninferCudaSchema = z.object({
+  /** The minimum release: 12.8, NInfer-all's 13.1, or what the checkout's CMakeLists.txt asks for sm_120a. */
+  need: z.string(),
+  /** The newest release installed, when there is one. */
+  have: z.string().optional(),
+  /** The nvcc the build uses (the newest installed that is new enough), passed as -DCMAKE_CUDA_COMPILER. */
+  nvcc: z.string().optional(),
+  /** The toolkit package apt offers to install when none is new enough ("cuda-toolkit-13-3"). */
+  package: z.string().optional(),
+  /** The newest CUDA the driver runs ("13.4"), when it says. */
+  driver: z.string().optional(),
+  /** The minimum is NInfer-all's own, above the official build's: the reason is said in words. */
+  allNeeds: z.boolean().optional(),
+});
+export type NinferCuda = z.infer<typeof ninferCudaSchema>;
 
 export const ninferBuildPlanSchema = z.object({
   kind: ninferKindSchema,
@@ -506,8 +644,14 @@ export const ninferBuildPlanSchema = z.object({
   prereqs: z.array(ninferPrereqSchema),
   /** "sudo apt install …" for what is missing: shown to copy, never run by LLM Bench. */
   aptCommand: z.string().optional(),
-  /** CUDA is missing or too old: its toolkit (13.1 validated) comes from NVIDIA's repository, not Ubuntu's. */
+  /** CUDA is missing or too old and apt offers no toolkit new enough: it comes from NVIDIA's repository, not Ubuntu's. */
   cudaFromNvidia: z.boolean(),
+  /** The CUDA compiler the build uses, the minimum it needs and what apt offers. */
+  cuda: ninferCudaSchema.optional(),
+  /** An earlier configure of this checkout did not finish, or used another compiler: its CMake cache is cleared first. */
+  clearCache: z.boolean().optional(),
+  /** The folder holds other files and no checkout: nothing is cloned there (another folder is needed). */
+  notEmpty: z.boolean().optional(),
   /** What the clone downloads (GitHub's repository size), when known; nothing for a checkout already there. */
   downloadBytes: z.number().int().nonnegative().optional(),
   /** CPU cores the compile can use, and how long it should take with them (minutes, approximate). */
@@ -540,6 +684,54 @@ export const ninferArtifactUpgradeSchema = z.object({
   command: z.string().optional(),
 });
 export type NinferArtifactUpgrade = z.infer<typeof ninferArtifactUpgradeSchema>;
+
+// ---- the card's two builds (GET /api/engines/ninfer/builds) ----------------------------------------
+
+/**
+ * ready: it answers and was built from the code it has; stale: it answers, but the code is newer than the
+ * program (built from another commit, or the program is older than the last commit): "Da ricompilare";
+ * not-built: the checkout is there, its program is not (never built, or a build that stopped);
+ * broken: it does not answer (why: `status`); missing: nothing saved yet ("Non installato").
+ */
+export const NINFER_BUILD_STATES = ['ready', 'stale', 'not-built', 'broken', 'missing'] as const;
+export type NinferBuildState = (typeof NINFER_BUILD_STATES)[number];
+
+export const ninferBuildInfoSchema = z.object({
+  build: ninferBuildIdSchema,
+  kind: ninferKindSchema,
+  state: z.enum(NINFER_BUILD_STATES),
+  /** Where its code comes from. */
+  source: gitSourceSchema,
+  /** Its checkout (a Linux path; for a build not saved yet, the folder its guided build uses). */
+  dir: z.string(),
+  /** Its ninfer-serve, once saved. */
+  path: z.string().optional(),
+  distro: z.string().optional(),
+  /** The checkout's commit (short). */
+  commit: z.string().optional(),
+  /** The commit its program was built from (short), when LLM Bench built it. */
+  built: z.string().optional(),
+  /** Its program's version (`ninfer-serve --version`, NInfer-all: "0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669"). */
+  release: z.string().optional(),
+  /** The check of its program: why it does not answer, the GPU. */
+  status: engineStatusSchema.optional(),
+  /** NInfer-all: its saved engine. */
+  customEngineId: z.string().optional(),
+  /** The KV types its --help lists. */
+  kvDtypes: z.array(z.string()).optional(),
+});
+export type NinferBuildInfo = z.infer<typeof ninferBuildInfoSchema>;
+
+/** Both builds of this PC's NInfer kind (none where NInfer does not run). */
+export const ninferBuildsSchema = z.object({ kind: ninferKindSchema.optional(), builds: z.array(ninferBuildInfoSchema) });
+export type NinferBuilds = z.infer<typeof ninferBuildsSchema>;
+
+/** PUT /api/engines/ninfer/builds/:build ("Cambia cartella"): a build the user made, by its path (and distro). */
+export const ninferBuildPathSchema = z.object({ path: z.string().trim().min(1), distro: z.string().min(1).optional() });
+export type NinferBuildPath = z.infer<typeof ninferBuildPathSchema>;
+/** Saved only when it answers. */
+export const ninferBuildPathResultSchema = z.object({ saved: z.boolean(), status: engineStatusSchema });
+export type NinferBuildPathResult = z.infer<typeof ninferBuildPathResultSchema>;
 
 /** settings.ninfer: where NInfer's build is, per kind (Engines page). */
 export const ninferSettingsSchema = z.object({

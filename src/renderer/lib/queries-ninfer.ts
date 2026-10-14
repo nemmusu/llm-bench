@@ -1,9 +1,19 @@
-/** Data hooks of NInfer (contract/ninfer.ts): WSL distros, "Indica dove si trova", the guided build. */
+/** Data hooks of NInfer (contract/ninfer.ts): WSL distros, its two builds, "Cambia cartella", the guided build. */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { EngineConfig, EngineStatus } from '../../contract/engines';
-import { ninferKindFor, type NinferBuildPlan, type NinferBuildRequest, type NinferDistros, type NinferKind, type NinferSettings } from '../../contract/ninfer';
-import type { Settings } from '../../contract/settings';
+import {
+  ninferKindFor,
+  type NinferBuildId,
+  type NinferBuildInfo,
+  type NinferBuildPath,
+  type NinferBuildPathResult,
+  type NinferBuildPlan,
+  type NinferBuildRequest,
+  type NinferBuilds,
+  type NinferDistros,
+  type NinferKind,
+} from '../../contract/ninfer';
 import { useApi } from './api-context';
+import { engineKeys } from './queries-engines';
 import { libKeys, useSystemInfo } from './queries-library';
 import { ENGINES_KEY } from './queries-runs';
 import { SETTINGS_QUERY_KEY } from './settings';
@@ -11,6 +21,7 @@ import { SETTINGS_QUERY_KEY } from './settings';
 export const ninferKeys = {
   distros: ['lib', 'ninfer', 'distros'] as const,
   plan: ['lib', 'ninfer', 'build-plan'] as const,
+  builds: libKeys.ninferBuilds,
 };
 
 /**
@@ -29,31 +40,25 @@ export function useNinferDistros(enabled: boolean) {
   return useQuery({ queryKey: ninferKeys.distros, queryFn: () => api.get<NinferDistros>('/api/engines/ninfer/distros'), enabled, staleTime: 60_000 });
 }
 
-/** Every engine status shown (Engines page, Benchmark page) is read again. */
+/** The distro NInfer runs in: the official build's, else the default one (WSL only). */
+export function useNinferDistro(kind: NinferKind | null | undefined, saved: string | undefined): string | undefined {
+  const distros = useNinferDistros(kind === 'ninfer-wsl');
+  if (kind !== 'ninfer-wsl') return undefined;
+  const list = distros.data?.distros ?? [];
+  return saved ?? (list.find((d) => d.default) ?? list[0])?.name;
+}
+
+/** Every engine status shown (Engines page, Benchmark page) and NInfer's builds are read again. */
 export function refreshEngines(qc: QueryClient): void {
-  for (const k of [libKeys.engines, ENGINES_KEY, libKeys.check]) void qc.invalidateQueries({ queryKey: k });
+  for (const k of [libKeys.engines, ENGINES_KEY, libKeys.check, ninferKeys.builds]) void qc.invalidateQueries({ queryKey: k });
 }
 
-/** POST /api/engines/ninfer/check: the status NInfer would have with this path (and distro). */
-export function useNinferCheck() {
-  const api = useApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (cfg: EngineConfig) => api.post<EngineStatus>('/api/engines/ninfer/check', cfg),
-    onSuccess: () => refreshEngines(qc),
-  });
-}
-
-/** Saves where NInfer is (settings.ninfer), then every engine status is read again with it. */
-export function useSaveNinfer() {
-  const api = useApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (ninfer: NinferSettings) => {
-      qc.setQueryData(SETTINGS_QUERY_KEY, await api.put<Settings>('/api/settings', { ninfer }));
-    },
-    onSuccess: () => refreshEngines(qc),
-  });
+/** After a build or a "Cambia cartella": the settings, the custom engines (NInfer-all is one), every status. */
+export function refreshAfterBuild(qc: QueryClient): void {
+  void qc.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
+  void qc.invalidateQueries({ queryKey: engineKeys.custom });
+  void qc.invalidateQueries({ queryKey: engineKeys.updates });
+  refreshEngines(qc);
 }
 
 /** POST /api/engines/ninfer/build-plan: the commands and the prerequisites (read-only checks). */
@@ -65,5 +70,41 @@ export function useNinferBuildPlan(req: NinferBuildRequest | undefined) {
     enabled: req !== undefined,
     staleTime: 0,
     retry: false,
+  });
+}
+
+/** GET /api/engines/ninfer/builds: the official build and NInfer-all, each with its state. */
+export function useNinferBuilds(enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: ninferKeys.builds, queryFn: () => api.get<NinferBuilds>('/api/engines/ninfer/builds'), enabled, staleTime: 30_000 });
+}
+
+/** One of the two builds (undefined while they are read, or where NInfer does not run). */
+export function useNinferBuild(build: NinferBuildId, enabled = true): NinferBuildInfo | undefined {
+  return useNinferBuilds(enabled).data?.builds.find((b) => b.build === build);
+}
+
+/** "Ricontrolla": both builds probed again (not the probe the core trusts for a few minutes). */
+export function useRecheckBuilds() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<NinferBuilds>('/api/engines/ninfer/builds?fresh=1'),
+    onSuccess: (builds) => {
+      qc.setQueryData(ninferKeys.builds, builds);
+      for (const k of [libKeys.engines, ENGINES_KEY, engineKeys.custom]) void qc.invalidateQueries({ queryKey: k });
+    },
+  });
+}
+
+/** "Cambia cartella": a build of the user's own, saved only when it answers. */
+export function useSetBuildPath(build: NinferBuildId) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NinferBuildPath) => api.put<NinferBuildPathResult>(`/api/engines/ninfer/builds/${build}`, body),
+    onSuccess: (r) => {
+      if (r.saved) refreshAfterBuild(qc);
+    },
   });
 }

@@ -1,7 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { rowFormatOf } from '../../../../src/renderer/components/library/formats';
+import { ForkBadge, rowFormatOf } from '../../../../src/renderer/components/library/formats';
+import { renderUi } from '../helpers';
 import { serveEngineFor } from '../../../../src/renderer/components/library/local-models';
 import { bridge, curated, ENGINES, fail, GPU, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
@@ -128,7 +129,7 @@ describe('models: on your PC', () => {
     expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');
   });
 
-  it('a GGUF-NInfer artifact without a manifest: "senza manifest", and "Richiede NInfer-all" one click away', async () => {
+  it('a GGUF-NInfer artifact without a manifest: "senza manifest", and "Funziona con NInfer-all" one click away', async () => {
     const gguf = localModel('gg', {
       identity: {
         displayName: 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP',
@@ -139,11 +140,16 @@ describe('models: on your PC', () => {
         facts: { noManifest: true, components: ['text', 'mtp'], paramsB: 27 },
       },
     });
-    renderLib('/models', libApi(world({ local: [gguf] })));
+    // Its manifest (read at the start of the file) decides, whatever its name: one NInfer reads, one only NInfer-all reads.
+    const plain = localModel('pl', { identity: { displayName: 'renamed', format: 'ninfer', repo: 'me/Renamed-GGUF-NInfer', facts: { layouts: ['contiguous_le_v1'] } } });
+    const blocks = localModel('bl', { identity: { displayName: 'mine', format: 'ninfer', file: 'mine.ninfer', facts: { layouts: ['contiguous_le_v1', 'gguf_blocks_v1'] } } });
+    renderLib('/models', libApi(world({ local: [gguf, plain, blocks] })));
     const list = await screen.findByRole('list', { name: 'Per NInfer (RTX 5090)' });
     expect(within(list).getByText('senza manifest')).toBeTruthy();
-    const link = within(list).getByRole('link', { name: /Richiede NInfer-all/ });
-    expect(link.getAttribute('href')).toContain('customTemplate=ninfer-all');
+    const links = within(list).getAllByRole('link', { name: /Funziona con NInfer-all/ });
+    expect(links).toHaveLength(2);
+    expect(links[0]?.getAttribute('href')).toContain('ninfer=all');
+    expect(links[0]?.getAttribute('href')).not.toContain('customTemplate');
   });
 
   it('serves each format with its engine', () => {
@@ -468,8 +474,17 @@ describe('models: download', () => {
     const mlx = within(list).getAllByRole('listitem').find((li) => within(li).queryByRole('link', { name: 'mlx-community/Q-4bit' })) as HTMLElement;
     expect(within(mlx).queryByText('Dimensione non indicata')).toBeNull();
     expect(within(list).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ }).getAttribute('href')).toContain('modelName=prism-ml');
-    expect(within(list).getAllByRole('link', { name: /Richiede NInfer-all/ }).map((a) => a.getAttribute('href'))).toEqual([expect.stringContaining('modelName=nerkyor')]);
+    expect(within(list).getAllByRole('link', { name: /Funziona con NInfer-all/ }).map((a) => a.getAttribute('href'))).toEqual([expect.stringContaining('modelName=nerkyor')]);
     expect(screen.queryByText(/^Ora altri programmi usano/)).toBeNull();
+    // Inside a quant to choose (itself a button): said, not a second thing to click.
+    renderUi(
+      <>
+        <ForkBadge plain model={{ displayName: 'Ternary-Bonsai-2-27B', repo: 'prism-ml/Ternary-Bonsai-2-27B-gguf', file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf', quant: 'PQ2_0', format: 'gguf' }} label="b" />
+        <ForkBadge plain model={{ displayName: 'Coder', repo: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', file: 'x.ninfer', format: 'ninfer' }} label="n" />
+      </>,
+    );
+    expect(screen.getAllByText('Richiede il fork PrismML di llama.cpp').some((el) => el.closest('a') === null)).toBe(true);
+    expect(screen.getAllByText('Funziona con NInfer-all').some((el) => el.closest('a') === null)).toBe(true);
     // A "…-GGUF-NInfer" repo: NInfer-all for its NInfer artifacts, never for the plain GGUFs of a mixed one.
     expect(rowFormatOf(['gguf', 'safetensors', 'ninfer'], 'any')).toBe('gguf');
     expect(rowFormatOf(['gguf', 'ninfer'], 'ninfer')).toBe('ninfer');

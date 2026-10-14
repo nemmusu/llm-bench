@@ -84,6 +84,8 @@ export const libKeys = {
   panel: ['lib', 'ui', 'downloads-panel'] as const,
   updates: ['lib', 'models', 'updates'] as const,
   plan: ['lib', 'plan'] as const,
+  /** NInfer's two builds (queries-ninfer.ts): read again whenever a build or an update ends. */
+  ninferBuilds: ['lib', 'ninfer', 'builds'] as const,
 };
 
 /** The core's error behind any failure (ApiError carries it, events carry it bare; anything else is INTERNAL). */
@@ -592,7 +594,7 @@ export function handleLibraryEvent(
   setInstall(qc, installKey(e), e);
   if (activeEvent(e)) return;
   // Something finished: everything derived from the machine state may have changed.
-  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.system]) void qc.invalidateQueries({ queryKey: k });
+  for (const k of [libKeys.engines, libKeys.builds, libKeys.docker, libKeys.check, libKeys.system, libKeys.ninferBuilds]) void qc.invalidateQueries({ queryKey: k });
   // A Docker restart started our servers again.
   if (e.kind === 'docker-restart') void qc.invalidateQueries({ queryKey: ['bench', 'servers'] });
   // An engine update: its check, the custom engines' checks, and the settings it may have changed (the image in use).

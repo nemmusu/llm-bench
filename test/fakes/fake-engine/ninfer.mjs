@@ -35,6 +35,9 @@ function stamp() {
 }
 const fmt = (n) => n.toLocaleString('en-US');
 
+/** NInfer-all's build string, as `ninfer-serve --version` and its log's first line say it on the user's PC. */
+export const FAKE_NINFER_RELEASE = '0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669';
+
 /** One ninfer-serve log line ("2026-10-13 21:01:51.829  FATAL server failed during startup | …") written with `write`. */
 export function ninferLog(write, level, msg) {
   write(`${stamp()}  ${level.padEnd(5)} ${msg}`);

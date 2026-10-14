@@ -28,6 +28,7 @@ import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
 import { serverNinfer, withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
 import { NinferPresetPicker } from '../components/engines/ninfer-presets';
+import { NinferAllCallout, useNinferAllNeed, withNinferAll } from '../components/engines/ninfer-all-note';
 import { isNinferKind, ninferPresetsFor } from '../../contract/ninfer';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
@@ -228,13 +229,16 @@ function BenchmarkScreen() {
       ? picked
       : initialModelKey(options, preset.modelKey(options) ?? draft?.localId ?? draft?.repo ?? settings.lastModelId, curated.data?.models);
   const option = options.find((o) => o.key === modelKey);
-  // NInfer: the built-in settings of a .ninfer model (its model card's, NInfer's README quick start, one tested on an RTX 5090).
+  // A .ninfer model only NInfer-all reads (its manifest, else its name, else what a run could not read): NInfer-all runs it.
+  const localIdentity = option?.source === 'local' ? option.local.identity : undefined;
+  const ninferAll = useNinferAllNeed(effEngine, effCustom, localIdentity ? { ...localIdentity, unreadable: unreadableFor(runs.data, localIdentity.weakKey) } : undefined);
+  // NInfer: the built-in settings of a .ninfer model (its model card's, NInfer's README quick start, one tested on an RTX 5090), those the build that runs it has.
   const ninferPresets =
-    isNinferKind(effEngine) && option?.source === 'local'
-      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.local.identity.displayName, repo: option.local.identity.repo, file: option.local.identity.file })
+    isNinferKind(effEngine) && localIdentity
+      ? ninferPresetsFor({ name: localIdentity.facts?.name, label: localIdentity.displayName, repo: localIdentity.repo, file: localIdentity.file }, ninferAll.kvDtypes)
       : [];
-  // A variant of NInfer runs its model card's settings by default (they may need its own KV type); NInfer itself its recommended ones.
-  const ninferChoice: NinferChoice = ninferPicked ?? (effCustom?.base === 'ninfer' && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended');
+  // A variant of NInfer (NInfer-all among them) runs its model card's settings by default (they may need its own KV type); NInfer itself its recommended ones.
+  const ninferChoice: NinferChoice = ninferPicked ?? ((effCustom?.base === 'ninfer' || ninferAll.needed) && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended');
   const ninferRun = ninferChoice === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
   const ninferPreset = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChoice)?.params ?? ninferRun) : undefined;
 
@@ -290,7 +294,7 @@ function BenchmarkScreen() {
   const modelNeed = needs.find((n) => n.kind === 'model');
 
   const gpuShort = gpu ? shortGpuName(gpu.name) : 'GPU';
-  const engineLabel = effCustom ? customEngineLabel(t, effCustom) : t(`benchmark.engines.${effEngine}`);
+  const engineLabel = withNinferAll(effCustom ? customEngineLabel(t, effCustom) : t(`benchmark.engines.${effEngine}`), ninferAll, t);
   const profileTime = planData ? `≈ ${duration(planData.estimatedSeconds * 1000)}` : t(`benchmark.profileTime.${effProfile}`);
   const list = new Intl.ListFormat(f.locale, { type: 'conjunction' });
 
@@ -345,6 +349,18 @@ function BenchmarkScreen() {
 
   const engineFooter = (() => {
     if (external) return <Note icon={<Check />}>{t('benchmark.engineExternal')}</Note>;
+    // "NInfer · versione NInfer-all (serve per questo modello)", or that it is built before the test.
+    if (ninferAll.needed) {
+      return ninferAll.ready ? (
+        <Note icon={<Check />} tone="success">
+          {t('ninfer.allNote.ready')}
+        </Note>
+      ) : (
+        <Note icon={<Download />} tone="accent">
+          {t('ninfer.allNote.toBuild')}
+        </Note>
+      );
+    }
     if (engineNeed) {
       const b = engineNeed.bytes;
       const [soon, sized] = engineNeed.kind === 'engine' ? (['engineToInstallSoon', 'engineToInstall'] as const) : (['imageToPullSoon', 'imageToPull'] as const);
@@ -563,6 +579,7 @@ function BenchmarkScreen() {
               setPicked(undefined);
             }}
           />
+          {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
           {ninferPresets.length > 0 && <NinferPresetPicker presets={ninferPresets} run={draftNinfer} value={ninferChoice} onChange={setNinferChoice} />}
 
           <div className="flex items-center gap-3 self-start px-1 py-1">

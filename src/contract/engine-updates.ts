@@ -85,6 +85,13 @@ export const engineUpdateCheckSchema = z.object({
   distro: z.string().optional(),
   /** NInfer: the container version this build reads, and the library artifacts older than it (NInfer's upgrade tool). */
   ninfer: z.object({ containerVersion: z.number().int(), artifacts: z.array(ninferArtifactUpgradeSchema) }).optional(),
+  /**
+   * git (NInfer): the program is older than its checkout's code: built from another commit (`built`), or
+   * older than the last commit. Up to date with its branch, the update is a rebuild ("Ricompila").
+   */
+  stale: z.boolean().optional(),
+  /** git (NInfer): the commit the program was built from (short), when LLM Bench built it. */
+  built: z.string().optional(),
 });
 export type EngineUpdateCheck = z.infer<typeof engineUpdateCheckSchema>;
 
@@ -93,6 +100,10 @@ export const UPDATABLE_KINDS = ['vllm-docker', 'sglang-docker', 'vllm-native', '
 export type UpdatableKind = (typeof UPDATABLE_KINDS)[number];
 
 export const customUpdateTarget = (id: string): string => `custom:${id}`;
+
+/** POST …/update/cancel: stops an update that is running (its rebuild is stopped, its previous build put back). */
+export const updateCancelPath = (target: string): string =>
+  target.startsWith('custom:') ? `/api/engines/custom/${encodeURIComponent(target.slice('custom:'.length))}/update/cancel` : `/api/engines/${target}/update/cancel`;
 
 /** The 'engine.install' kind of an update's progress events. */
 export const updateEventKind = (target: string): string => `update:${target}`;

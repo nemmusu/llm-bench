@@ -10,6 +10,7 @@ import { modelIdFor } from '../../../../src/core/models/paths';
 import { auxKindOf, DOWNLOAD_SIDECAR, knownLocations, ModelScanner, readSidecar, type ScannerOptions } from '../../../../src/core/models/scanner';
 import type { ModelFactsEx } from '../../../../src/core/models/types';
 import { llamaLikeGguf, writeGguf, writeSafetensors } from '../../../fixtures/gguf/writer';
+import { buildNinfer } from '../../../fakes/fake-hub/model-files.mjs';
 import { memoryLogger, settingsWith, tempDir } from './helpers';
 
 const PLATFORM = process.platform === 'win32' ? 'win32' : 'linux';
@@ -454,6 +455,23 @@ describe('ModelScanner', () => {
       sizeBytes: 3000,
       facts: { noManifest: true, components: ['text', 'mtp'], paramsB: 27, contextLength: 262_144 },
     });
+  });
+
+  it('a .ninfer file with its manifest at its start: its layouts (which NInfer reads it), name, parts and container, read once', async () => {
+    const repo = path.join(library, 'nerkyor', 'Qwen3.8-27B-Coder390-GGUF-NInfer');
+    const file = path.join(mkdirAll(path.join(repo, 'GGUF-NInfer')), 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer');
+    writeFileSync(file, buildNinfer({ name: 'qwen3.8-27b-coder390-q6k-mtp', components: ['text', 'mtp', 'vision'], layouts: ['gguf_blocks_v1', 'contiguous_le_v1', 'row_split_k128_v1', 'gguf_blocks_v1'] }));
+    // Its manifest lists no part at all, nor a name: the parts its name says.
+    const bare = path.join(mkdirAll(path.join(library, 'me', 'bare')), 'bare-MTP.ninfer');
+    writeFileSync(bare, buildNinfer({ name: '', components: [], layouts: ['contiguous_le_v1'] }));
+    const s = scanner();
+    const models = await s.scan();
+    const facts = byName(models, 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP')?.identity.facts;
+    expect(facts).toEqual({ name: 'qwen3.8-27b-coder390-q6k-mtp', components: ['text', 'mtp', 'vision'], layouts: ['contiguous_le_v1', 'gguf_blocks_v1', 'row_split_k128_v1'], containerVersion: 3, paramsB: 27, contextLength: 262_144 });
+    expect(byName(models, 'bare-MTP')?.identity.facts).toMatchObject({ components: ['text', 'mtp'], layouts: ['contiguous_le_v1'] });
+    // Read once per file version: the next scan uses what it read (the file gone unreadable would not change it).
+    const again = await s.scan();
+    expect(byName(again, 'Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP')?.identity.facts?.layouts).toEqual(['contiguous_le_v1', 'gguf_blocks_v1', 'row_split_k128_v1']);
   });
 
   it('a model folder added as a folder of its own (the "exact folder" of the Linux copy); a download with no weights yet', async () => {

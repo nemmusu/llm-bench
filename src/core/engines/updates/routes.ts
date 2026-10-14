@@ -18,16 +18,23 @@ type InstallEvent = Extract<ServerEvent, { type: 'engine.install' }>;
 /**
  *   GET  /api/engines/:kind/update?fetch=1       -> EngineUpdateCheck (vllm-docker, sglang-docker, vllm-native, sglang-native)
  *   POST /api/engines/:kind/update               -> { ok: true }; progress as 'engine.install' events of kind `update:<kind>`
+ *   POST /api/engines/:kind/update/cancel        -> { ok: true, cancelled }: stops it (NInfer: its rebuild, its previous build put back)
  *   GET  /api/engines/custom/:id/update?fetch=1  -> EngineUpdateCheck of a custom engine
  *   POST /api/engines/custom/:id/update          -> { ok: true }; events of kind `update:custom:<id>`
+ *   POST /api/engines/custom/:id/update/cancel   -> { ok: true, cancelled }
  * `fetch=1` asks the remote again (Docker Hub, PyPI without their cache; `git fetch`). The last event
  * of an update is stage 'done' (with `result.version`) or 'error'.
  */
 export function createEngineUpdateRoutes(d: EngineUpdateRoutesDeps): RouteModule {
-  const running = new Set<string>();
+  const running = new Map<string, AbortController>();
 
-  const run = async (target: string, label: string): Promise<void> => {
-    const ac = new AbortController();
+  const cancel = (target: string): boolean => {
+    const ac = running.get(target);
+    ac?.abort();
+    return ac !== undefined;
+  };
+
+  const run = async (target: string, label: string, ac: AbortController): Promise<void> => {
     const onShutdown = () => ac.abort();
     d.shutdown?.addEventListener('abort', onShutdown, { once: true });
     const emit = (p: UpdateProgress, extra: Partial<InstallEvent> = {}) => {
@@ -35,6 +42,7 @@ export function createEngineUpdateRoutes(d: EngineUpdateRoutesDeps): RouteModule
       if (p.bytesTotal !== undefined) ev.bytesTotal = p.bytesTotal;
       if (p.step !== undefined) ev.step = p.step;
       if (p.steps !== undefined) ev.steps = p.steps;
+      if (p.etaSec !== undefined) ev.etaSec = p.etaSec;
       d.publish(ev);
     };
     try {
@@ -54,8 +62,9 @@ export function createEngineUpdateRoutes(d: EngineUpdateRoutesDeps): RouteModule
     if (running.has(target)) throw new AppError('VALIDATION', `An update of ${target} is already running`, { params: { reason: 'busy' } });
     if (d.busy?.()) throw new AppError('ENGINE_UPDATE_FAILED', 'A benchmark or a server is using the engines', { params: { reason: 'busy' } });
     const label = await d.updates.labelOf(target);
-    running.add(target);
-    void run(target, label);
+    const ac = new AbortController();
+    running.set(target, ac);
+    void run(target, label, ac);
   };
 
   return (app) => {
@@ -64,10 +73,12 @@ export function createEngineUpdateRoutes(d: EngineUpdateRoutesDeps): RouteModule
       await start(customUpdateTarget(c.req.param('id')));
       return c.json({ ok: true as const });
     });
+    app.post('/api/engines/custom/:id/update/cancel', (c) => c.json({ ok: true as const, cancelled: cancel(customUpdateTarget(c.req.param('id'))) }));
     app.get('/api/engines/:kind/update', async (c) => c.json(await d.updates.check(c.req.param('kind'), { fetch: c.req.query('fetch') === '1' })));
     app.post('/api/engines/:kind/update', async (c) => {
       await start(c.req.param('kind'));
       return c.json({ ok: true as const });
     });
+    app.post('/api/engines/:kind/update/cancel', (c) => c.json({ ok: true as const, cancelled: cancel(c.req.param('kind')) }));
   };
 }

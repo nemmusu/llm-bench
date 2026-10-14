@@ -67,6 +67,12 @@ export function wslPathOf(p: string, distro: string): { path: string; slow: bool
 /** Runs programs inside one distro (`wsl.exe -d <distro> --exec …`), as ProcessRunner.run does on the host. */
 export type DistroRun = (cmd: string, args: string[], opts?: RunOptions) => Promise<RunOutput>;
 
+/** A program and its arguments run under `prefix` (none: as they are; tests: a fake Linux host). */
+export function hostArgv(prefix: readonly string[], argv: readonly string[]): [string, string[]] {
+  const all = [...prefix, ...argv];
+  return [all[0] as string, all.slice(1)];
+}
+
 export function distroRunner(proc: ProcessRunner, wsl: readonly string[], distro: string): DistroRun {
   const [exe, ...pre] = wsl as [string, ...string[]];
   return (cmd, args, opts = {}) => proc.run(exe, [...pre, '-d', distro, '--exec', cmd, ...args], { ...opts, env: { ...opts.env, ...WSL_ENV } });

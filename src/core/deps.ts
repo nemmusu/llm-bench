@@ -114,6 +114,11 @@ export interface CoreEndpoints {
   cmake?: string[];
   /** wsl.exe stand-in (tests, E2E: a fake that runs the fake NInfer), as an argv prefix. */
   wsl?: string[];
+  /**
+   * Native NInfer (Linux), tests and E2E only: an argv placed before every program NInfer's support runs
+   * (its checks, its builds, ninfer-serve), so a fake Linux host stands in for this one.
+   */
+  ninferHost?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

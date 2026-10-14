@@ -6,7 +6,9 @@ import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
 import type { FitEstimate } from '../../contract/models';
 import { extendedContext, type AppliedRecipe } from '../../contract/recipes';
-import { trainedContextOf } from '../../contract/ninfer';
+import { isNinferKind, NINFER_ALL_NAME, NINFER_SERVE_PATH, trainedContextOf, type NinferBuildChoice, type NinferKind } from '../../contract/ninfer';
+import { NINFER_ALL_DIR, type CustomEngine } from '../../contract/custom-engines';
+import { chooseNinferBuild } from '../engines/ninfer/choose';
 import { spilledRun, type Scenario, type TuneBudget } from '../../contract/results';
 import type { Clock } from '../deps';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
@@ -88,6 +90,8 @@ export interface BenchServiceDeps {
   recipes?: () => Promise<RecipeSources>;
   /** Whether a file exists (a recipe's draft model named by its path). */
   fileExists?: (path: string) => Promise<boolean>;
+  /** NInfer-all not saved yet: a working build in its usual folder (~/ninfer-all), saved as it is found. */
+  findNinferAll?: (kind: NinferKind) => Promise<CustomEngine | undefined>;
 }
 
 export type { ActiveRun };
@@ -126,6 +130,21 @@ interface Launched {
   warnings: ScenarioWarning[];
   /** The model's command recipe, when one applied. */
   recipe?: AppliedRecipe;
+  /** The model needs NInfer-all: what runs it (contract/ninfer.ts ninferBuildFor). */
+  ninferBuild?: NinferBuildChoice;
+}
+
+/** The NInfer build a model needs, as a request's engine (BenchService.ninferBuild). */
+interface NinferStep {
+  engine: EngineConfig;
+  ninferBuild?: NinferBuildChoice;
+  /** 'ninfer_all_chosen': the request named another NInfer build. */
+  ninferNotes?: ScenarioWarning[];
+}
+
+/** NInfer-all not built yet: the engine of the preview is still to come (the start flow builds it first). */
+function withNinferPending(launch: LaunchPlan, choice: NinferBuildChoice | undefined): LaunchPlan {
+  return choice && !choice.ready ? { ...launch, pending: ['engine'] } : launch;
 }
 
 interface Prepared extends Launched {
@@ -229,12 +248,58 @@ export class BenchService {
     return { engine, port, marker, launch };
   }
 
-  /** The model's command recipe applied to a request (none when there are no recipes). */
-  private async recipe(req: StartServerRequest, model: ModelTarget): Promise<WithRecipe> {
+  /**
+   * The model's command recipe applied to a request (none when there are no recipes), then the build of
+   * NInfer the model needs (NInfer-all for a GGUF-NInfer artifact: ninferBuild).
+   */
+  private async recipe(req: StartServerRequest, model: ModelTarget, preview: boolean): Promise<WithRecipe & NinferStep> {
     const sources = await this.deps.recipes?.().catch(() => undefined);
     // Only a llama.cpp draft/MTP file needs the build's options (which --spec-type it knows).
     const platform = sources ? (await this.deps.fingerprint().catch(() => undefined))?.os.platform : undefined;
-    return withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform, this.deps.fileExists);
+    const r = await withRecipe(req, model, sources, async (engine) => (isLlamaCpp(engine.kind) ? ((await this.deps.getAdapter(engine.kind).capabilities(engine)) as LlamaCaps) : undefined), platform, this.deps.fileExists);
+    return { ...r, ...(await this.ninferBuild(r.engine, model, sources?.customEngines ?? [], preview)) };
+  }
+
+  /**
+   * NInfer-all for a .ninfer model only it reads, whatever NInfer build the request named (core/engines/
+   * ninfer/choose.ts). Not built yet: a preview names where its guided build puts it (the plan says
+   * `ready` false and the engine is pending); a start fails with ENGINE_NOT_INSTALLED 'ninfer_all_missing'
+   * (the start flow builds it first). Switched to it: the plan and the run's notes say so.
+   */
+  private async ninferBuild(engine: EngineConfig, model: ModelTarget, customEngines: readonly CustomEngine[], preview: boolean): Promise<NinferStep> {
+    if (!isNinferKind(engine.kind) || model.identity.format !== 'ninfer') return { engine };
+    // Only when the file's own manifest cannot be read: what earlier runs could not read.
+    const unreadable = model.identity.facts?.layouts === undefined ? await this.unreadableOf(model) : undefined;
+    const target = { ...model.identity, unreadable };
+    let pick = chooseNinferBuild(engine, target, customEngines);
+    if (!pick.choice) return { engine };
+    // Not saved: built by hand in ~/ninfer-all (or before LLM Bench knew it)? Then it is that one.
+    if (!pick.choice.ready) {
+      const found = this.deps.findNinferAll ? await this.deps.findNinferAll(engine.kind as NinferKind).catch(() => undefined) : undefined;
+      if (found) pick = chooseNinferBuild(engine, target, [...customEngines, found]);
+    }
+    const chosen = pick.choice as NinferBuildChoice;
+    const status = chosen.ready ? await this.deps.getAdapter(pick.engine.kind).detect(pick.engine).catch(() => undefined) : undefined;
+    const choice: NinferBuildChoice = { ...chosen, ready: status?.installed === true };
+    if (!choice.ready && !preview) {
+      throw new AppError('ENGINE_NOT_INSTALLED', 'This model needs NInfer-all, which is not built yet', { params: { reason: 'ninfer_all_missing', engine: NINFER_ALL_NAME, layout: choice.layout } });
+    }
+    // Nothing saved yet: the preview names the program its guided build makes.
+    const used = chosen.ready ? pick.engine : { kind: engine.kind, ninferPath: `${NINFER_ALL_DIR}/${NINFER_SERVE_PATH}` };
+    const note: ScenarioWarning[] = pick.asked ? [] : [{ code: 'ninfer_all_chosen', params: { layout: choice.layout, why: choice.why } }];
+    return { engine: used, ninferBuild: choice, ninferNotes: note };
+  }
+
+  /** The layouts an engine could not read for this model in earlier runs here (RunSummary.unreadable). */
+  private async unreadableOf(model: ModelTarget): Promise<string[] | undefined> {
+    try {
+      const here = await this.here();
+      const id = model.identity;
+      const seen = (await this.triedHere(id, here)).flatMap((r) => (r.unreadable ? [r.unreadable] : []));
+      return seen.length ? seen : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async prepare(req: StartRunRequest, preview: boolean): Promise<Prepared> {
@@ -243,7 +308,7 @@ export class BenchService {
     if (scenario.profile === 'tune' && req.engine.kind === 'external') {
       throw new AppError('VALIDATION', 'An external endpoint cannot be relaunched with other settings', { params: { reason: 'tune_external' } });
     }
-    const r = await this.recipe(req, model);
+    const r = await this.recipe(req, model, preview);
     const run: StartRunRequest = { ...req, engine: r.engine, params: r.params };
     const kind = run.engine.kind;
     // A command template only takes the context: there are no settings to search.
@@ -257,6 +322,7 @@ export class BenchService {
     const params = autoLaunchParams(kind, scenario, r.params, modelContext);
     const memWarning = await this.fitVllmMemory(kind, params);
     const c = await this.command(run, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
+    c.launch = withNinferPending(c.launch, r.ninferBuild);
     const kvUnified = c.launch.argv.includes('--kv-unified');
     // A tune run picks its contexts itself (the tuner): its sweep template stays as it is.
     const fitted = scenario.profile === 'tune' ? { scenario, warnings: [] } : fitScenario(scenario, limitsFor(kind, c.launch.params, modelContext, { kvUnified }));
@@ -264,8 +330,8 @@ export class BenchService {
     const beyond = beyondTrained(kind, yarnTarget !== undefined ? { ...c.launch.params, contextSize: yarnTarget, maxModelLen: yarnTarget } : c.launch.params, trained);
     // Beyond the trained context the sweep measures up to the launch, whatever the profile's time budget.
     const swept = beyond && scenario.profile !== 'tune' ? sweepWithoutBudget(fitted.scenario) : fitted.scenario;
-    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])];
-    return { request: run, model, adapter, params, ...c, scenario: swept, warnings, ...(r.applied ? { recipe: r.applied } : {}) };
+    const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : []), ...(r.ninferNotes ?? [])];
+    return { request: run, model, adapter, params, ...c, scenario: swept, warnings, ...(r.applied ? { recipe: r.applied } : {}), ...(r.ninferBuild ? { ninferBuild: r.ninferBuild } : {}) };
   }
 
   /**
@@ -277,7 +343,7 @@ export class BenchService {
   async prepareServer(req: StartServerRequest, opts: { preview: boolean; marker: string }): Promise<PreparedServer> {
     if (req.engine.kind === 'external') throw new AppError('VALIDATION', 'External endpoints are already running', { params: { reason: 'external' } });
     const model = await this.deps.resolveModel(req, { preview: opts.preview });
-    const r = await this.recipe(req, model);
+    const r = await this.recipe(req, model, opts.preview);
     const run = { ...req, engine: r.engine, params: r.params };
     const kind = run.engine.kind;
     const adapter = this.deps.getAdapter(kind);
@@ -289,6 +355,7 @@ export class BenchService {
     const contextSize = await this.fillServerContext(run, model, params);
     const apiName = serverApiName(kind, model);
     const c = await this.command(run, model, adapter, params, { preview: opts.preview, marker: () => opts.marker, apiName, port: req.port });
+    c.launch = withNinferPending(c.launch, r.ninferBuild);
     // "Rendi raggiungibile dalla rete locale": every card, LLM Bench's API key (the preview shows it redacted).
     if (req.network === 'lan') c.launch = exposeOnLan(c.launch, opts.preview ? API_KEY_PLACEHOLDER : this.serverApiKey());
     const past = opts.preview ? undefined : (await this.expectedLoad(model, kind)).expectedLoadMs;
@@ -302,8 +369,9 @@ export class BenchService {
       ...c,
       contextSize,
       apiName,
-      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...recipeWarnings(r.applied), ...(beyond ? [beyond] : [])],
+      warnings: [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...recipeWarnings(r.applied), ...(beyond ? [beyond] : []), ...(r.ninferNotes ?? [])],
       ...(r.applied ? { recipe: r.applied } : {}),
+      ...(r.ninferBuild ? { ninferBuild: r.ninferBuild } : {}),
       ...(tuned ? { tuned: tuned.tuned } : {}),
       ...(expectedLoadMs !== undefined ? { expectedLoadMs } : {}),
     };
@@ -393,12 +461,17 @@ export class BenchService {
     return this.hereCache;
   }
 
+  /** The earlier runs of this model (by its checksum when known, else by name and size), this PC's first. */
+  private triedHere(id: ModelTarget['identity'], here: HereIdentity) {
+    return this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here);
+  }
+
   /** Speeds from the latest completed run of this model on this PC that did not spill, to estimate durations. */
   private async expectations(model: ModelTarget): Promise<Partial<Expectations>> {
     try {
       const here = await this.here();
       const id = model.identity;
-      const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).find(
+      const past = (await this.triedHere(id, here)).find(
         (r) => r.status === 'completed' && r.hostId === here.hostId && !spilledRun(r),
       );
       if (!past) return {};
@@ -421,7 +494,7 @@ export class BenchService {
     try {
       const here = await this.here();
       const id = model.identity;
-      const past = (await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here)).filter(
+      const past = (await this.triedHere(id, here)).filter(
         (r) => r.status === 'completed' && r.hostId === here.hostId && r.engineKind === kind && !spilledRun(r),
       );
       const cold = past.find((r) => r.coldLoadMs !== undefined)?.coldLoadMs;
@@ -447,7 +520,7 @@ export class BenchService {
     try {
       const here = await this.here();
       const id = model.identity;
-      return normalDecode(await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here), here, kind);
+      return normalDecode(await this.triedHere(id, here), here, kind);
     } catch {
       return undefined;
     }
@@ -473,7 +546,7 @@ export class BenchService {
     const p = await this.prepare(req, true);
     const run = p.request;
     const preview = await this.preview(run, p);
-    const recipe = p.recipe ? { recipe: p.recipe } : {};
+    const recipe = { ...(p.recipe ? { recipe: p.recipe } : {}), ...(p.ninferBuild ? { ninferBuild: p.ninferBuild } : {}) };
     if (p.scenario.profile !== 'tune') return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)), ...recipe };
     const previousTune = await this.previousTune(run, p);
     const tuneSeconds = { fast: await this.tuneDuration(run, p, 'fast'), thorough: await this.tuneDuration(run, p, 'thorough') };
@@ -487,7 +560,7 @@ export class BenchService {
     try {
       const here = await this.here();
       const id = p.model.identity;
-      const list = await this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here);
+      const list = await this.triedHere(id, here);
       const last = latestTuneRun(list, here, req.engine.kind, tuneGoalOf(req));
       if (!last) return undefined;
       const current = engineBuildOf(p.launch.engine);
@@ -520,6 +593,7 @@ export class BenchService {
       network: req.network ?? 'local',
       ...(p.tuned ? { tuned: p.tuned } : {}),
       ...(p.recipe ? { recipe: p.recipe } : {}),
+      ...(p.ninferBuild ? { ninferBuild: p.ninferBuild } : {}),
     };
   }
 

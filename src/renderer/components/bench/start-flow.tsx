@@ -68,6 +68,12 @@ const DOWNLOAD_DONE = new Set<DownloadJob['state']>(['done', 'failed', 'cancelle
 /** "Il test non è partito" / "Il server non è partito", for a start that failed after its dialog went away. */
 const TEXT_STARTFAILED = { run: 'benchmark.startFailed', serve: 'servers.flow.startFailed' } as const;
 
+/** The model needs NInfer-all and it is not built: the plan says so, or the start failed for that reason. */
+export function needsNinferAll(plan: Pick<RunPlan, 'ninferBuild'> | undefined, error: AppErrorData | undefined): boolean {
+  if (plan?.ninferBuild?.ready === false) return true;
+  return error?.code === 'ENGINE_NOT_INSTALLED' && error.params?.reason === 'ninfer_all_missing';
+}
+
 /** Whether the user already accepted a GPU other programs are using. */
 const sharedOk = (job: Job): boolean => (job.mode === 'run' ? job.request.allowSharedGpu : job.sharedOk === true);
 
@@ -147,6 +153,11 @@ export function useStartFlow(): {
         // Docker went off or stopped answering: "Serve Docker", then a fresh plan and the start again.
         if (generation.current === gen && DOCKER_CODES.has(error.code)) {
           setFlow({ step: 'docker', job, opts, resume: () => beginRef.current!(job, baseOf(opts)) });
+          return;
+        }
+        // The model needs NInfer-all and it is not built (any more): its build, then the start again.
+        if (generation.current === gen && needsNinferAll(undefined, error)) {
+          setFlow({ step: 'ninfer', job, opts, resume: () => beginRef.current!(job, baseOf(opts)) });
           return;
         }
         // Sent to the background meanwhile: nobody is looking at the dialog any more.
@@ -293,7 +304,9 @@ export function useStartFlow(): {
     (job: Job, opts: FlowOpts) => {
       const needs = opts.plan ? needsFromPlan(job.request, opts.plan, opts.modelLabel) : opts.needs;
       const next: FlowOpts = { ...opts, needs };
-      if (job.mode === 'serve' && needs.length) void fetchNeeds(job, next);
+      // NInfer-all first ("Questo modello funziona solo con NInfer-all"), then a fresh plan and the rest as usual.
+      if (needsNinferAll(opts.plan, opts.planError)) setFlow({ step: 'ninfer', job, opts, resume: () => beginRef.current!(job, baseOf(opts)) });
+      else if (job.mode === 'serve' && needs.length) void fetchNeeds(job, next);
       else if (needs.length) setFlow({ step: 'confirm', job, opts: next });
       else proceed(job, next, { install: false, download: false });
     },

@@ -4,7 +4,7 @@ import { Boxes, Copy, Cpu, FlaskConical, GitBranch, Hammer, Pencil, Play, Plus, 
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { customUpdateTarget } from '../../../contract/engine-updates';
-import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
+import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, ninferAllEngineOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { NINFER_VARIANT_BUILD, ninferServeOf, type NinferKind } from '../../../contract/ninfer';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
@@ -51,7 +51,9 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
   const { t } = useI18n();
   const list = useCustomEngines();
   const [editing, setEditing] = useState<Editing | undefined>(template ? { kind: 'new', template, fromLink: true } : undefined);
-  const engines = list.data ?? [];
+  // NInfer-all is NInfer's second build, on NInfer's own card: not one of these.
+  const builtIn = ninferAllEngineOf((list.data ?? []).map((i) => i.engine));
+  const engines = (list.data ?? []).filter((i) => i.engine !== builtIn);
   // A NInfer variant being built (its dialog may be closed): its progress stays here.
   const building = activeEvent(useInstallEvent(NINFER_VARIANT_BUILD));
 
@@ -80,7 +82,7 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
             <p className="text-sm text-fg-2">{t('engines.custom.emptyBody')}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {CUSTOM_ENGINE_TEMPLATES.map((tpl) => (
+            {CUSTOM_ENGINE_TEMPLATES.filter((tpl) => !tpl.builtIn).map((tpl) => (
               <Button key={tpl.id} size="sm" onClick={() => setEditing({ kind: 'new', template: tpl })}>
                 <GitBranch aria-hidden />
                 {t(`engines.custom.templates.${tpl.id}.short` as MessageKey)}

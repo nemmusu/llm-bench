@@ -34,9 +34,11 @@ describe('the build of a variant', () => {
     expect(sameRepo('https://github.com/Neroued/ninfer.git', ALL.url)).toBe(false);
     expect(githubRepoOf(ALL.url)).toBe('iamwavecut/ninfer-all');
     expect(githubRepoOf('https://gitlab.com/me/ninfer-fork.git')).toBeUndefined();
-    expect(buildMinutes(16)).toBe(10);
-    expect(buildMinutes(undefined)).toBe(20);
-    expect(buildMinutes(128)).toBe(3);
+    // Measured: NInfer-all's 811 steps in about 25 minutes on 20 cores, a few CUDA objects alone taking minutes.
+    expect(buildMinutes(20)).toBe(25);
+    expect(buildMinutes(16)).toBe(29);
+    expect(buildMinutes(undefined)).toBe(51);
+    expect(buildMinutes(128)).toBe(11);
     // The cores and the checkout's origin, when the script says them.
     expect(parsePrereqs('##home /h\n##cpus 24\n##origin https://x/y.git\n')).toMatchObject({ cpus: 24, origin: 'https://x/y.git' });
     expect(parsePrereqs('##home /h\n##cpus \n##origin \n')).not.toHaveProperty('cpus');
@@ -44,11 +46,11 @@ describe('the build of a variant', () => {
   });
 
   it('what the clone downloads: asked once, never a reason not to build', async () => {
-    const lines = ['##home /home/user', '##git git version 2.43.0', '##cmake cmake version 3.28.3', '##ninja 1.11.1', '##compiler g++ 13.3.0', '##pkg-config 1.8.1', '##cuda Cuda compilation tools, release 13.1, V13.1.80', '##ffmpeg 1 2 3 4', '##curl 8.5.0', '##checkout '].join('\n');
+    const lines = ['##home /home/user', '##git git version 2.43.0', '##cmake cmake version 3.28.3', '##ninja 1.11.1', '##compiler g++ 13.3.0', '##pkg-config 1.8.1', '##nvcc /usr/local/cuda-13.1/bin/nvcc release 13.1', '##ffmpeg 1 2 3 4', '##curl 8.5.0', '##checkout '].join('\n');
     const proc = scriptedProc(() => ok(lines));
     const asked: string[] = [];
     const sized = new NinferBuilder({ kind: 'ninfer-native', proc, newMarker: () => 'm', repoBytes: async (repo) => (asked.push(repo), 1000) });
-    expect(await sized.plan({ kind: 'ninfer-native', source: ALL })).toMatchObject({ downloadBytes: 1000, minutes: 20, ready: true, dir: '/home/user/ninfer' });
+    expect(await sized.plan({ kind: 'ninfer-native', source: ALL })).toMatchObject({ downloadBytes: 1000, minutes: 51, ready: true, dir: '/home/user/ninfer' });
     expect(asked).toEqual(['iamwavecut/ninfer-all']);
     const failing = new NinferBuilder({ kind: 'ninfer-native', proc, newMarker: () => 'm', repoBytes: async () => Promise.reject(new Error('offline')) });
     expect(await failing.plan({ kind: 'ninfer-native', dir: '/opt/x' })).not.toHaveProperty('downloadBytes');

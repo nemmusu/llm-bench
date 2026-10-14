@@ -24,7 +24,7 @@ export interface InstallPlan {
 }
 
 export interface ProgressSink {
-  (p: { stage: string; bytesDone: number; bytesTotal?: number }): void;
+  (p: { stage: string; bytesDone: number; bytesTotal?: number; etaSec?: number }): void;
 }
 
 /** What a particular binary/image supports (probed from --help / version). */

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import type { EngineUpdateCheck } from '../../../../../src/contract/engine-updates';
+import { updateCancelPath, type EngineUpdateCheck } from '../../../../../src/contract/engine-updates';
 import { AppError } from '../../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../../src/contract/events';
 import type { CoreContext } from '../../../../../src/core/context';
@@ -27,7 +27,7 @@ function setup(o: { update?: (target: string, p: (p: UpdateProgress) => void, si
       update:
         o.update ??
         (async (_t, progress) => {
-          progress({ stage: 'build', bytesDone: 0, step: 3, steps: 10 });
+          progress({ stage: 'build', bytesDone: 0, step: 3, steps: 10, etaSec: 420 });
           await gate;
           return { version: '0.11.2' };
         }),
@@ -63,7 +63,7 @@ describe('engine update API', () => {
     await settle();
     expect(s.events).toEqual([
       { type: 'engine.install', kind: 'update:custom:prism', label: 'PrismML', stage: 'resolve', bytesDone: 0 },
-      { type: 'engine.install', kind: 'update:custom:prism', label: 'PrismML', stage: 'build', bytesDone: 0, step: 3, steps: 10 },
+      { type: 'engine.install', kind: 'update:custom:prism', label: 'PrismML', stage: 'build', bytesDone: 0, step: 3, steps: 10, etaSec: 420 },
       { type: 'engine.install', kind: 'update:custom:prism', label: 'PrismML', stage: 'done', bytesDone: 0, result: { version: '0.11.2' } },
     ]);
     // Finished: it can run again.
@@ -93,6 +93,26 @@ describe('engine update API', () => {
     expect(await res.json()).toMatchObject({ error: { code: 'ENGINE_UPDATE_FAILED', params: { reason: 'busy' } } });
     expect(busy.events).toEqual([]);
     expect((await setup({ busy: false }).req('POST', '/api/engines/vllm-docker/update')).status).toBe(200);
+  });
+
+  it('"Annulla" stops an update that is running (a built-in engine, a custom one); with none, nothing', async () => {
+    const s = setup({
+      update: (_t, _p, signal) =>
+        new Promise((_r, reject) => signal.addEventListener('abort', () => reject(new AppError('CANCELLED', 'stop')))),
+    });
+    expect(await (await s.req('POST', '/api/engines/ninfer-wsl/update/cancel')).json()).toEqual({ ok: true, cancelled: false });
+    await s.req('POST', '/api/engines/ninfer-wsl/update');
+    expect(await (await s.req('POST', '/api/engines/ninfer-wsl/update/cancel')).json()).toEqual({ ok: true, cancelled: true });
+    await settle();
+    expect(s.events.at(-1)).toMatchObject({ kind: 'update:ninfer-wsl', stage: 'error', error: { code: 'CANCELLED' } });
+    await s.req('POST', '/api/engines/custom/ninfer-all/update');
+    expect(await (await s.req('POST', '/api/engines/custom/ninfer-all/update/cancel')).json()).toEqual({ ok: true, cancelled: true });
+    await settle();
+    expect(s.events.at(-1)).toMatchObject({ kind: 'update:custom:ninfer-all', stage: 'error', error: { code: 'CANCELLED' } });
+    // Ended: nothing left to stop.
+    expect(await (await s.req('POST', '/api/engines/custom/ninfer-all/update/cancel')).json()).toEqual({ ok: true, cancelled: false });
+    expect(updateCancelPath('custom:a b')).toBe('/api/engines/custom/a%20b/update/cancel');
+    expect(updateCancelPath('ninfer-native')).toBe('/api/engines/ninfer-native/update/cancel');
   });
 
   it('the core shutting down cancels it', async () => {

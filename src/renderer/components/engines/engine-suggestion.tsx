@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { customEngineConfigOf, customEngineForModel, templateForModel, type CustomEngine, type MatchableModel } from '../../../contract/custom-engines';
+import { customEngineConfigOf, customEngineForModel, isNinferAllEngine, templateForModel, type CustomEngine, type MatchableModel } from '../../../contract/custom-engines';
 import type { EngineConfig } from '../../../contract/engines';
 import type { RunSummary } from '../../../contract/results';
 import { useI18n, type MessageKey } from '../../i18n';
@@ -27,7 +27,8 @@ export interface EngineSuggestionProps {
  * LLM Bench's suggestion for the chosen model, never a choice made for the user: a saved engine
  * whose rules match ("Per questo modello c'è PrismML fork · Usa"), or, when none does, the built-in
  * template the model needs ("Questo modello richiede il fork PrismML di llama.cpp · Indica dove si
- * trova · Scopri di più").
+ * trova · Scopri di più"). NInfer-all is not suggested here: it is a build of NInfer that runs the models
+ * needing it by itself (NinferBuildNote says so).
  */
 export function EngineSuggestion({ model, current, engines, onUse }: EngineSuggestionProps) {
   const { t } = useI18n();
@@ -36,7 +37,7 @@ export function EngineSuggestion({ model, current, engines, onUse }: EngineSugge
   if (!model) return null;
   const saved = customEngineForModel(engines, model);
   if (saved) {
-    if (current.customEngineId === saved.id) return null;
+    if (current.customEngineId === saved.id || isNinferAllEngine(saved)) return null;
     return (
       <Callout
         tone="info"
@@ -48,13 +49,11 @@ export function EngineSuggestion({ model, current, engines, onUse }: EngineSugge
     );
   }
   const template = templateForModel(model);
-  if (!template) return null;
-  // A NInfer variant is added (downloaded and built by LLM Bench); a fork is pointed at.
-  const variant = template.base === 'ninfer';
-  const name = variant ? template.label : t(`engines.custom.templates.${template.id}.inSentence` as MessageKey);
+  if (!template || template.builtIn) return null;
+  const name = t(`engines.custom.templates.${template.id}.inSentence` as MessageKey);
   return (
-    <Callout tone="warning" title={variant ? t('ninfer.variant.requiresTitle', { name }) : t('engines.custom.suggest.requiresTitle', { template: name })}>
-      <p>{variant ? t('ninfer.variant.requiresBody', { name }) : t('engines.custom.suggest.requiresBody')}</p>
+    <Callout tone="warning" title={t('engines.custom.suggest.requiresTitle', { template: name })}>
+      <p>{t('engines.custom.suggest.requiresBody')}</p>
       {more && <p className="mt-1">{t(`engines.custom.templates.${template.id}.explain` as MessageKey)}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         <Button
@@ -67,7 +66,7 @@ export function EngineSuggestion({ model, current, engines, onUse }: EngineSugge
             })
           }
         >
-          {variant ? t('ninfer.variant.add', { name }) : t('engines.custom.suggest.locate')}
+          {t('engines.custom.suggest.locate')}
         </Button>
         <Button size="sm" variant="ghost" aria-expanded={more} onClick={() => setMore((m) => !m)}>
           {more ? t('engines.custom.suggest.hide') : t('engines.custom.suggest.learnMore')}
