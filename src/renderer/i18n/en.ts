@@ -2426,6 +2426,7 @@ export const en: Messages = {
     tests: '{n} tests',
     testsOne: '1 test',
     lastTest: 'last {date}',
+    vramLine: 'Peak VRAM {size} GB',
     openTests: 'Show the {n} tests of {model}',
     openTestsOne: 'Show the test of {model}',
     sources: {

@@ -104,7 +104,7 @@ export function ServersPage() {
           {servers.isPending ? (
             <Skeleton className="h-48" />
           ) : list.length ? (
-            <div className="grid gap-4 2xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 @7xl/page:grid-cols-2">
               {list.map((s) => (
                 <ServerCard key={s.id} server={s} customs={customList} now={now} onStop={(x) => void actions.stop(x)} onRestart={(x) => void actions.restart(x)} onSave={setSaving} />
               ))}

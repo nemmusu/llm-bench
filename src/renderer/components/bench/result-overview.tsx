@@ -158,7 +158,7 @@ function KpiGrid({ k, totalMiB, sharedMiB, usersPrompt }: { k: Kpis; totalMiB: n
     .filter(Boolean)
     .join(' · ');
   return (
-    <section aria-label={t('result.kpis')} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section aria-label={t('result.kpis')} className="grid grid-cols-1 gap-4 @xl/page:grid-cols-2 @5xl/page:grid-cols-4">
       <StatTile
         label={t('metrics.decode.label')}
         help={t('metrics.decode.help')}
@@ -248,13 +248,13 @@ export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: O
     <div className="flex flex-col gap-section">
       {errorCard}
       {spill && <SpillWarning spill={spill} onFindSettings={onFindSettings} onRetry={onRetry} />}
-      <div className={hasWarnings ? 'grid gap-section lg:grid-cols-12' : 'grid gap-section'}>
-        <div className={hasWarnings ? 'flex flex-col gap-section lg:col-span-5' : 'grid gap-section lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'}>
+      <div className={hasWarnings ? 'grid grid-cols-1 gap-section @4xl/page:grid-cols-12' : 'grid gap-section'}>
+        <div className={hasWarnings ? 'flex flex-col gap-section @4xl/page:col-span-5' : 'grid grid-cols-1 gap-section @3xl/page:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'}>
           <ScoreCard k={k} />
           <RunSummaryCard run={run} />
         </div>
         {hasWarnings && (
-          <section aria-labelledby="validity-title" className="flex flex-col gap-3 lg:col-span-7">
+          <section aria-labelledby="validity-title" className="flex flex-col gap-3 @4xl/page:col-span-7">
             <h2 id="validity-title" className="text-md font-semibold tracking-[-0.01em]">
               {t('result.validityTitle')}
             </h2>
@@ -277,7 +277,7 @@ export function Overview({ run, onRerun, errorCard, onFindSettings, onRetry }: O
       <KpiGrid k={k} totalMiB={gpu?.memoryTotalMiB} sharedMiB={spill?.sharedPeakMiB} usersPrompt={usersStep?.kind === 'concurrency' ? usersStep.promptTokens : undefined} />
       <LongConversations run={run} />
       {(run.metrics.latency.length > 0 || run.metrics.concurrency.length > 0) && (
-        <div className="grid gap-section lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-section @4xl/page:grid-cols-2">
           {run.metrics.latency.length > 0 && <PromptChart points={run.metrics.latency} calibrated={promptsCalibrated(run)} />}
           {run.metrics.concurrency.length > 0 && <ConcurrencyChart run={run} />}
         </div>

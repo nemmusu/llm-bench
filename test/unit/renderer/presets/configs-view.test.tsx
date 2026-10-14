@@ -67,11 +67,14 @@ describe('Risultati → Configurazioni', () => {
     expect(rowModels().at(-1)).toContain('Gemma 4 31B');
     // In plain words, only what differs from the defaults; the context in its own column.
     const qwen = rowOf(/Qwen3 8B/);
-    expect(within(qwen).getByText('flash attention')).toBeTruthy();
+    // In its column, and under the model on a narrow page (with the peak VRAM), where that column is not shown.
+    const [narrow, column] = within(qwen).getAllByText('flash attention');
+    expect(narrow!.className).toContain('@5xl/page:hidden');
+    expect(within(qwen).getByText(/^VRAM picco \d+,\d GB$/).className).toContain('@5xl/page:hidden');
     expect(within(qwen).getByText('8.192')).toBeTruthy();
-    expect(within(rowOf(/Mistral/)).getByText('Impostazioni predefinite')).toBeTruthy();
+    expect(within(rowOf(/Mistral/)).getAllByText('Impostazioni predefinite')).toHaveLength(2);
     // A short setting never breaks in two at the end of a line; a long one may wrap.
-    expect(within(qwen).getByText('flash attention').className).toBe('whitespace-nowrap');
+    expect(column!.className).toBe('whitespace-nowrap');
     const gpt = rowOf(/gpt-oss/);
     expect(within(gpt).getByText('4 slot paralleli').className).toBe('whitespace-nowrap');
     expect(within(gpt).getByText('contesto condiviso fra gli utenti').className).toBe('');

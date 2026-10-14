@@ -4,6 +4,8 @@
 //   node scripts/mockups.mjs --no-build   reuse the current out/ folder
 //   node scripts/mockups.mjs --only=result,run
 //   node scripts/mockups.mjs --only=readme     the README's and the guide's screenshots, into docs/screenshots/en and /it
+//   node scripts/mockups.mjs --only=layout     every page at 1024/1366/1920 px: lists what is cut or scrolls sideways
+//   node scripts/mockups.mjs --only=layout --pages=results-configs --widths=1024   some of them
 //
 // How it works: the core starts in browser mode (`node out/core/index.cjs`) with a throw-away
 // GPUBENCH_DATA_DIR inside the same fake world the E2E tests use (fake nvidia-smi RTX 5090, fake
@@ -1750,6 +1752,90 @@ const README_TEXT = {
 };
 const README_LANGS = ['en', 'it'];
 
+/** --only=layout: the pages it checks (route, and settings for that page). */
+const LAYOUT_PAGES = [
+  { name: 'benchmark', route: '/' },
+  { name: 'benchmark-expert', route: '/', settings: { expertMode: true } },
+  { name: 'results', route: '/results' },
+  { name: 'results-configs', route: '/results?view=configs' },
+  { name: 'result', route: `/results/${RESULT_ID}` },
+  { name: 'result-failed', route: `/results/${FAILED_ID}` },
+  { name: 'result-long', route: `/results/${TEAM_NOW}` },
+  { name: 'compare', route: `/compare?ids=${COMPARE_A},${RESULT_ID}` },
+  { name: 'compare-4', route: `/compare?ids=${GPTOSS_ID},${MOE_ID},${GEMMA_ID},${RESULT_ID}` },
+  { name: 'compare-start', route: '/compare?view=runs' },
+  { name: 'compare-models', route: '/compare?view=models' },
+  { name: 'models', route: '/models' },
+  { name: 'catalog', route: '/models?tab=download' },
+  { name: 'model', route: REFERENCE_PAGE },
+  { name: 'engines', route: '/engines', settings: { customEngines: CUSTOM_ENGINES } },
+  { name: 'servers', route: '/servers' },
+  { name: 'server-new', route: '/servers/new' },
+  { name: 'monitor', route: '/monitor' },
+  { name: 'settings', route: '/settings' },
+];
+
+/**
+ * --only=layout: every page of LAYOUT_PAGES at 1024, 1366 and 1920 px, light and dark, Italian and
+ * English. It prints what reaches past the right edge of the page or scrolls sideways (a table that
+ * scrolls inside its card counts too) and keeps a picture of each in .qa/mockups/layout.
+ */
+async function layoutScenes(browser, info, written) {
+  if (!only?.includes('layout')) return;
+  const pages = [...args].find((a) => a.startsWith('--pages='))?.slice(8).split(',');
+  const widths = [...args].find((a) => a.startsWith('--widths='))?.slice(9).split(',').map(Number) ?? [1024, 1366, 1920];
+  const dir = path.join(outDir, 'layout');
+  mkdirSync(dir, { recursive: true });
+  const problems = [];
+  for (const lang of ['it', 'en']) {
+    for (const theme of ['light', 'dark']) {
+      for (const w of widths) {
+        const context = await browser.newContext({ viewport: { width: w, height: w === 1024 ? 700 : w === 1366 ? 768 : 1080 }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: lang === 'it' ? 'it-IT' : 'en-US' });
+        const page = await context.newPage();
+        for (const p of LAYOUT_PAGES) {
+          if (pages && !pages.includes(p.name)) continue;
+          await putSettings(info, { theme, language: lang, density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [], customEngines: [], ...p.settings });
+          await page.goto(`${info.url}#${p.route}`);
+          // Nothing picked for a comparison: its tray would cover the page.
+          await page.evaluate(() => localStorage.removeItem('gpubench.compare'));
+          await page.reload();
+          await page.locator('h1').first().waitFor({ timeout: 30000 });
+          await page.evaluate(() => document.fonts.ready);
+          await page.waitForTimeout(1500);
+          const found = await page.evaluate(() => {
+            const main = document.getElementById('main');
+            const edge = main.getBoundingClientRect();
+            const name = (el) => `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''} "${(el.textContent ?? '').trim().slice(0, 40)}"`;
+            const out = [];
+            if (main.scrollWidth > main.clientWidth + 1) out.push(`the page scrolls sideways by ${main.scrollWidth - main.clientWidth} px`);
+            for (const el of main.querySelectorAll('*')) {
+              const s = getComputedStyle(el);
+              if (['auto', 'scroll'].includes(s.overflowX) && el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) out.push(`${name(el)} scrolls sideways by ${el.scrollWidth - el.clientWidth} px`);
+            }
+            for (const el of main.querySelectorAll('*')) {
+              const r = el.getBoundingClientRect();
+              if (!r.width || !r.height || r.right <= edge.right + 1) continue;
+              // Inside a box that clips or scrolls: reported above, or meant to be cut ("…").
+              let clipped = false;
+              for (let a = el.parentElement; a && a !== main; a = a.parentElement) {
+                if (getComputedStyle(a).overflowX !== 'visible') clipped = true;
+              }
+              if (!clipped) out.push(`${name(el)} reaches ${Math.round(r.right - edge.right)} px past the right edge`);
+            }
+            return [...new Set(out)].slice(0, 8);
+          });
+          const file = path.join(dir, `${p.name}-${w}-${lang}-${theme}.png`);
+          await page.screenshot({ path: file });
+          written.push(file);
+          for (const f of found) problems.push(`${p.name} ${w} ${lang} ${theme}: ${f}`);
+        }
+        await context.close();
+      }
+    }
+  }
+  console.log(problems.length ? `Layout:\n${problems.join('\n')}` : 'Layout: nothing cut or scrolling sideways.');
+}
+
 /**
  * README: "Find the best settings" on Qwen3 8B Q4_K_M at about an RTX 5090's speeds (the memory of
  * TUNE_PROFILE: q4_0 holds the whole 40K, f16 runs out early), so the result reads like a real card's.
@@ -2055,6 +2141,7 @@ async function main() {
       docker: () => dockerScenes(browser, info, world, written),
       tray: () => trayScene(browser, written),
       readme: () => readmeScenes(browser, info, world, written),
+      layout: () => layoutScenes(browser, info, written),
     };
     // One group that no longer matches the app is reported at the end; the next groups still render.
     for (const [name, run] of Object.entries(groups)) {

@@ -54,10 +54,10 @@ function SpeedContext({ run, kind, tokens }: { run: RunSummary; kind: SpeedKind;
 }
 
 /**
- * A speed's second line that wraps below a large screen (1024–1440 px: the sidebar and nine columns):
+ * A speed's second line that wraps while the page is under 72rem (a window up to about 1440 px with the sidebar open, nine columns):
  * "a 512 token" over "di contesto", so the whole table fits without scrolling sideways.
  */
-const WRAP = 'max-w-20 whitespace-normal 2xl:max-w-none 2xl:whitespace-nowrap';
+const WRAP = 'max-w-20 whitespace-normal @6xl/page:max-w-none @6xl/page:whitespace-nowrap';
 
 /** History of every saved run: filters, sorting, "Confronta" on every row, import/export and delete. */
 export function ResultsPage() {
@@ -119,8 +119,8 @@ export function ResultsPage() {
       }),
       col.accessor('createdAt', {
         header: t('results.columns.date'),
-        // On a small window (1024 px) the date and the profile go under the model, so the model's name has room.
-        meta: { className: 'hidden xl:table-cell' },
+        // On a narrow page (under 64rem: a window of 1024–1320 px with the sidebar open) the date and the profile go under the model, so the model's name has room.
+        meta: { className: 'hidden @5xl/page:table-cell' },
         cell: (c) => {
           const when = whenOf(c.row.original);
           return (
@@ -139,10 +139,10 @@ export function ResultsPage() {
         header: () => (
           <>
             {t('results.columns.model')}
-            <span className="xl:hidden"> · {t('results.columns.date')}</span>
+            <span className="@5xl/page:hidden"> · {t('results.columns.date')}</span>
           </>
         ),
-        meta: { fill: true, className: 'min-w-36 py-1.5 xl:min-w-40 2xl:min-w-48' },
+        meta: { fill: true, className: 'min-w-36 py-1.5 @5xl/page:min-w-40 @6xl/page:min-w-48' },
         cell: (c) => {
           const r = c.row.original;
           const quant = r.quant && !c.getValue().includes(r.quant) ? r.quant : undefined;
@@ -180,8 +180,8 @@ export function ResultsPage() {
                   </Badge>
                 )}
               </span>
-              {/* The date column's words, here on a small window. */}
-              <span className="text-xs whitespace-normal text-fg-3 tabular-nums xl:hidden" title={whenOf(r).title}>
+              {/* The date column's words, here on a narrow page. */}
+              <span className="text-xs whitespace-normal text-fg-3 tabular-nums @5xl/page:hidden" title={whenOf(r).title}>
                 {dateTime(r.createdAt)} · {whenOf(r).text}
               </span>
             </span>
@@ -201,7 +201,7 @@ export function ResultsPage() {
           return (
             <span className="inline-flex items-center justify-end gap-3">
               {history.length > 1 && (
-                <span className="hidden 2xl:inline-flex">
+                <span className="hidden @6xl/page:inline-flex">
                   <Sparkline values={history} width={44} height={18} endDot={false} />
                 </span>
               )}
@@ -266,7 +266,7 @@ export function ResultsPage() {
           ].filter((s): s is string => s !== undefined);
           return (
             <span
-              className="flex min-w-24 flex-col items-end text-right leading-5 whitespace-normal xl:whitespace-nowrap"
+              className="flex min-w-24 flex-col items-end text-right leading-5 whitespace-normal @5xl/page:whitespace-nowrap"
               title={speeds.length ? t('results.usersTip', { users: usersWords(v, prompt, f), speeds: speeds.join(', ') }) : undefined}
             >
               <span>
@@ -293,11 +293,11 @@ export function ResultsPage() {
       col.display({
         id: 'compare',
         meta: { stickyEnd: true },
-        // On a small window the button's icon stands for the word (the same icon as on every row).
+        // On a narrow page the button's icon stands for the word (the same icon as on every row).
         header: () => (
           <span title={t('results.columns.compare')} className="inline-flex">
-            <GitCompareArrows aria-hidden className="size-4 xl:hidden" />
-            <span className="sr-only xl:not-sr-only">{t('results.columns.compare')}</span>
+            <GitCompareArrows aria-hidden className="size-4 @5xl/page:hidden" />
+            <span className="sr-only @5xl/page:not-sr-only">{t('results.columns.compare')}</span>
           </span>
         ),
         cell: (c) => (c.row.original.status === 'failed' ? null : <CompareToggle compact entry={entryOfSummary(c.row.original, f)} />),

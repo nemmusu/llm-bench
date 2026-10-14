@@ -191,7 +191,7 @@ function CustomTab(p: SettingsStepProps) {
       )}
       {/* A program with an OpenAI API: only the settings its commands take. */}
       {p.command && <CommandSettingsFields run={p.command} form={p.form} invalid={p.invalid} onForm={p.onForm} />}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 @3xl/page:grid-cols-2">
         <Field label={t('servers.flow.custom.extraArgs')} hint={t('servers.flow.custom.extraArgsHint')}>
           {({ id, describedBy }) => (
             <Textarea id={id} aria-describedby={describedBy} value={p.form.extraArgs} placeholder="--metrics" onChange={(e) => p.onForm({ extraArgs: e.target.value })} className="font-mono text-xs" spellCheck={false} />

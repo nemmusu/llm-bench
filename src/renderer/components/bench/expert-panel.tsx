@@ -102,7 +102,7 @@ function RecipeExtras({ recipe, params }: { recipe: { name: string; patch: Recip
   if (!groups.length && !env.length) return null;
   const struck = (on: boolean) => (on ? 'text-fg-3 line-through' : 'text-fg');
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent-soft/40 px-3 py-2.5 text-xs lg:col-span-2" aria-label={t('recipes.expert.fromRecipe', { name: recipe.name })}>
+    <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent-soft/40 px-3 py-2.5 text-xs @3xl/page:col-span-2" aria-label={t('recipes.expert.fromRecipe', { name: recipe.name })}>
       {groups.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-fg-2">{t('recipes.expert.recipeArgs', { name: recipe.name })}</span>
@@ -171,7 +171,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
         <p className="text-sm text-fg-2">{t('benchmark.expert.description')}</p>
       </div>
       {/* Side by side only when there is a custom plan to fill; otherwise the settings take the whole width. */}
-      <div className={cn('grid gap-x-8 gap-y-6 p-card', p.custom && '2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
+      <div className={cn('grid grid-cols-1 gap-x-8 gap-y-6 p-card', p.custom && '@7xl/page:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
         {p.command ? (
           <CommandExpertSection {...p.command} params={p.params} invalid={p.paramsInvalid} onParams={p.onParams} />
         ) : base === 'external' ? (
@@ -292,7 +292,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
         </Section>
 
         {base !== 'external' && (
-          <div className={cn('grid gap-x-8 gap-y-6 lg:grid-cols-2', p.custom && '2xl:col-span-2')}>
+          <div className={cn('grid grid-cols-1 gap-x-8 gap-y-6 @3xl/page:grid-cols-2', p.custom && '@7xl/page:col-span-2')}>
             {recipe && <RecipeExtras recipe={recipe} params={p.params} />}
             <Field label={t('benchmark.expert.extraArgs')} hint={t('benchmark.expert.extraArgsHint')}>
               {({ id, describedBy }) => (

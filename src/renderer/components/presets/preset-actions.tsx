@@ -21,10 +21,12 @@ export interface PresetActionsProps {
   at?: number;
   /** "compact" (table rows): the server action as an icon, the notes shortened. */
   layout?: 'full' | 'compact';
+  /** A table of many columns: on a page under 80rem "Usa questo preset" is its icon too (its name stays for screen readers and on hover). */
+  iconOnNarrow?: boolean;
   className?: string;
 }
 
-export function PresetActions({ run, combo, at, layout = 'full', className }: PresetActionsProps) {
+export function PresetActions({ run, combo, at, layout = 'full', iconOnNarrow = false, className }: PresetActionsProps) {
   const { t, bytes } = useI18n();
   const navigate = useNavigate();
   const p = usePreset(run, { combo, at });
@@ -36,9 +38,9 @@ export function PresetActions({ run, combo, at, layout = 'full', className }: Pr
   if (preset?.model === 'missing') {
     return (
       <div role="group" aria-label={t('presets.group', { model })} className={cn('flex flex-wrap items-center gap-2', className)}>
-        <Button size="sm" onClick={() => void navigate({ to: '/models', search: { tab: 'download' } })}>
+        <Button size="sm" onClick={() => void navigate({ to: '/models', search: { tab: 'download' } })} title={iconOnNarrow ? t('presets.findModel') : undefined}>
           <Search aria-hidden />
-          {t('presets.findModel')}
+          <span className={iconOnNarrow ? 'sr-only @7xl/page:not-sr-only' : undefined}>{t('presets.findModel')}</span>
         </Button>
         {compact ? (
           <HelpTip term={t('presets.findModel')}>{t('presets.missingNote')}</HelpTip>
@@ -61,9 +63,9 @@ export function PresetActions({ run, combo, at, layout = 'full', className }: Pr
   return (
     <div role="group" aria-label={t('presets.group', { model })} className={cn('flex gap-x-2 gap-y-1', compact ? 'flex-col items-start' : 'flex-wrap items-center', className)}>
       <span className="flex items-center gap-2">
-        <Button variant="primary" size="sm" disabled={!preset} onClick={p.apply}>
-          {!compact && <SlidersHorizontal aria-hidden />}
-          {t('presets.use')}
+        <Button variant="primary" size="sm" disabled={!preset} onClick={p.apply} title={iconOnNarrow ? t('presets.use') : undefined}>
+          {(!compact || iconOnNarrow) && <SlidersHorizontal aria-hidden className={compact ? '@7xl/page:hidden' : undefined} />}
+          <span className={iconOnNarrow ? 'sr-only @7xl/page:not-sr-only' : undefined}>{t('presets.use')}</span>
         </Button>
         {run.engine.kind !== 'external' &&
           (compact ? (

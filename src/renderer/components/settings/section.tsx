@@ -3,7 +3,7 @@ import { Card } from '../ui/card';
 
 export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <Card className="grid gap-6 p-card md:grid-cols-[240px_1fr]">
+    <Card className="grid grid-cols-1 gap-6 p-card @2xl/page:grid-cols-[240px_1fr]">
       <div className="flex flex-col gap-1">
         <h2 className="text-md font-semibold">{title}</h2>
         {hint && <p className="text-sm text-fg-3">{hint}</p>}

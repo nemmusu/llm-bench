@@ -2431,6 +2431,7 @@ export const it = {
     tests: '{n} test',
     testsOne: '1 test',
     lastTest: 'ultimo {date}',
+    vramLine: 'VRAM picco {size} GB',
     openTests: 'Mostra i {n} test di {model}',
     openTestsOne: 'Mostra il test di {model}',
     sources: {

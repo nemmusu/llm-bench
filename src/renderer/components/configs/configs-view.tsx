@@ -66,7 +66,7 @@ function RowPreset({ entry, depth }: { entry: ConfigEntry; depth: number | undef
       </Button>
     );
   }
-  return <PresetActions run={run.data} combo={source.combo} at={depth} layout="compact" />;
+  return <PresetActions run={run.data} combo={source.combo} at={depth} layout="compact" iconOnNarrow />;
 }
 
 export function ConfigsView() {
@@ -102,6 +102,8 @@ export function ConfigsView() {
       if (at === AT_MAX) return notMeasuredAt(e.contextSize ?? depthFor(e, at)!, f);
       return e.contextSize !== undefined && e.contextSize < (at as number) ? t('configs.reachesOnly', { ctx: tokensK(e.contextSize, f) }) : notMeasuredAt(at as number, f);
     };
+    /** What differs from the engine's defaults (the context has its own column). */
+    const configText = (e: ConfigEntry): string => configLabelOf(e.engineKind, e.params, f, { context: false, kv: 'custom', capitalize: false, tags: e.tags }).text || t('configs.defaults');
     /** A number at the compared depth; the column only when some configuration has it. */
     const atDepth = (id: string, label: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<Row>[] =>
       rows.some((r) => r.point !== undefined && pick(r.point) !== undefined)
@@ -110,7 +112,7 @@ export function ConfigsView() {
               (r) => r.point && pick(r.point),
               {
                 id,
-                header: () => <UnitHeader text={header(t(label))} />,
+                header: () => <UnitHeader text={header(t(label))} name={t(label)} />,
                 meta: NUMERIC,
                 sortUndefined: 'last',
                 cell: (c) => {
@@ -122,26 +124,38 @@ export function ConfigsView() {
           ]
         : [];
     return [
-      // The model and, under it, the engine (as in the Test list).
+      // The model and, under it, the engine (as in the Test list). On a narrow page (under 64rem: a window
+      // of 1024–1320 px with the sidebar open) the configuration and the peak VRAM go under them too, so
+      // the numbers fit without scrolling sideways.
       col.accessor(({ entry: e }) => summaryModelLabel({ modelName: e.model.name, quant: e.model.quant }), {
         id: 'model',
-        meta: { className: 'min-w-40 max-w-60 whitespace-normal py-2' },
-        header: t('configs.columns.model'),
-        cell: (c) => (
-          <span className="flex flex-col items-start leading-5">
-            <span className="font-medium break-words text-fg">{c.getValue()}</span>
-            {/* A long engine name ("NInfer-all e408e428ae86 (Ubuntu-24.04)") wraps under the model, never over the next column. */}
-            <span className="text-xs text-fg-3">{configEngineLabel(c.row.original.entry)}</span>
-            {/* Its tests spilled to shared memory: these numbers are not the card's. */}
-            {c.row.original.entry.spill && <SpillBadge className="mt-1" />}
+        meta: { className: 'min-w-40 max-w-52 whitespace-normal py-2 @5xl/page:max-w-60' },
+        header: () => (
+          <span className="whitespace-normal">
+            {t('configs.columns.model')}
+            <span className="@5xl/page:hidden"> · {t('configs.columns.config')}</span>
           </span>
         ),
+        cell: (c) => {
+          const e = c.row.original.entry;
+          return (
+            <span className="flex flex-col items-start leading-5">
+              <span className="font-medium break-words text-fg">{c.getValue()}</span>
+              {/* A long engine name ("NInfer-all e408e428ae86 (Ubuntu-24.04)") wraps under the model, never over the next column. */}
+              <span className="text-xs text-fg-3">{configEngineLabel(e)}</span>
+              <span className="text-xs text-fg-2 @5xl/page:hidden">{configText(e)}</span>
+              {e.vramPeakMiB !== undefined && <span className="text-xs text-fg-3 @5xl/page:hidden">{t('configs.vramLine', { size: number(e.vramPeakMiB / MIB_PER_GB, 1) })}</span>}
+              {/* Its tests spilled to shared memory: these numbers are not the card's. */}
+              {e.spill && <SpillBadge className="mt-1" />}
+            </span>
+          );
+        },
       }),
       // Only what differs from the engine's defaults; the context has its own column.
-      col.accessor(({ entry: e }) => configLabelOf(e.engineKind, e.params, f, { context: false, kv: 'custom', capitalize: false, tags: e.tags }).text || t('configs.defaults'), {
+      col.accessor(({ entry: e }) => configText(e), {
         id: 'config',
         enableSorting: false,
-        meta: { className: 'min-w-32 max-w-48 whitespace-normal py-2 leading-5' },
+        meta: { className: 'hidden min-w-32 max-w-48 whitespace-normal py-2 leading-5 @5xl/page:table-cell' },
         header: () => (
           <span className="inline-flex items-center gap-1">
             {t('configs.columns.config')}
@@ -178,7 +192,7 @@ export function ConfigsView() {
         : []),
       col.accessor((r) => r.point?.decodeTps, {
         id: 'decode',
-        header: () => <UnitHeader text={header(t('configs.columns.decode'))} />,
+        header: () => <UnitHeader text={header(t('configs.columns.decode'))} name={t('configs.columns.decode')} />,
         meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
@@ -204,7 +218,8 @@ export function ConfigsView() {
             col.accessor((r) => r.entry.vramPeakMiB, {
               id: 'vram',
               header: () => <UnitHeader text={t('configs.columns.vram')} />,
-              meta: NUMERIC,
+              // On a narrow page: under the model.
+              meta: { ...NUMERIC, className: 'hidden px-2 @5xl/page:table-cell' },
               sortUndefined: 'last',
               cell: (c) => {
                 const v = c.getValue();
@@ -225,7 +240,7 @@ export function ConfigsView() {
               <Button size="sm" variant="link" onClick={() => setOpen(e)} aria-label={t(countKey(n, 'configs.openTestsOne', 'configs.openTests'), { n, model: e.model.name })}>
                 {t(countKey(n, 'configs.testsOne', 'configs.tests'), { n })}
               </Button>
-              <span className="text-xs text-fg-3 tabular-nums" title={date(c.getValue())}>
+              <span className="text-xs whitespace-normal text-fg-3 tabular-nums" title={date(c.getValue())}>
                 {t('configs.lastTest', { date: shortDate(c.getValue(), f.locale) })}
               </span>
             </span>

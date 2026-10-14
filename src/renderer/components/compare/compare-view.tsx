@@ -476,7 +476,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
           <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-sm">
             <caption className="sr-only">{t('compare.table')}</caption>
             <colgroup>
-              <col className="w-36 xl:w-[220px]" />
+              <col className="w-36 @4xl/page:w-[220px]" />
               {items.map((_, i) => (
                 <col key={i} />
               ))}
@@ -502,7 +502,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
 
       {/* Where each one writes and reads faster: one line per item, each up to its own largest context (side by side on a large screen, where the legend fits). */}
       {items.some((it) => it.points.length > 0) && (
-        <div className="grid gap-section 2xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-section @7xl/page:grid-cols-2">
           <SpeedChart items={items} names={short} depth={depth} metric="decode" />
           <SpeedChart items={items} names={short} depth={depth} metric="prefill" />
         </div>

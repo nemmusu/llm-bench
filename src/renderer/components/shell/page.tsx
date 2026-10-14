@@ -73,12 +73,13 @@ export interface PageSplitProps {
 export function PageSplit({ children, aside, asideWidth = 320, className }: PageSplitProps) {
   return (
     <div
-      className={cn('grid items-start gap-section @5xl/page:grid-cols-[minmax(0,1fr)_var(--page-aside)]', className)}
+      className={cn('grid grid-cols-1 items-start gap-section @5xl/page:grid-cols-[minmax(0,1fr)_var(--page-aside)]', className)}
       style={{ '--page-aside': `${asideWidth}px` } as CSSProperties}
     >
       <div className="flex min-w-0 flex-col gap-section">{children}</div>
-      {/* Not an <aside>: a complementary landmark inside <main> is an axe violation. */}
-      <div className="flex min-w-0 flex-col gap-section">{aside}</div>
+      {/* Not an <aside>: a complementary landmark inside <main> is an axe violation. As tall as the main
+          column, so a side card can follow the scroll (sticky). */}
+      <div className="flex min-w-0 flex-col gap-section self-stretch">{aside}</div>
     </div>
   );
 }

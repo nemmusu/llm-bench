@@ -42,7 +42,7 @@ import { isNinferKind, ninferPresetsFor } from '../../contract/ninfer';
 import { PresetBanner } from '../components/presets/preset-banner';
 import { usePresetDraft } from '../components/presets/use-preset-draft';
 import { DEFAULT_TUNE, TuneOptions, tuneRequestOf, type TuneRequest } from '../components/tune/tune-options';
-import { Page } from '../components/shell/page';
+import { Page, PageSplit } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -439,259 +439,262 @@ function BenchmarkScreen() {
 
   return (
     <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="full">
-      <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-[auto_1fr]">
-        <div className="order-1 flex min-w-0 flex-col gap-section xl:order-none xl:col-start-1 xl:row-span-2 xl:row-start-1">
-          <PresetBanner preset={preset} />
-          {/* Hero: the one obvious thing to do. */}
-          <Card className="hero-wash relative overflow-hidden">
-            <svg aria-hidden viewBox="0 0 200 200" className="pointer-events-none absolute -top-16 -right-10 size-80 opacity-[0.07] dark:opacity-[0.1]">
-              <path d="M30 140a70 70 0 1 1 140 0" fill="none" stroke="var(--accent)" strokeWidth="14" strokeLinecap="round" />
-              <path d="M100 136 L142 70" stroke="var(--accent)" strokeWidth="10" strokeLinecap="round" />
-              <circle cx="100" cy="138" r="14" fill="var(--accent)" />
-            </svg>
-            <div className="relative flex flex-col gap-6 p-7 compact:p-5">
-              <div className="flex min-w-0 flex-col gap-2">
-                {system.data ? (
-                  <h2 className="text-3xl font-semibold tracking-[-0.025em] text-balance">
-                    {gpu ? t('benchmark.heroTitle', { gpu: gpuShort }) : t('benchmark.heroNoGpu')}
-                  </h2>
-                ) : (
-                  <Skeleton className="h-9 w-80" />
-                )}
-                <p className="text-md text-fg-2">
-                  {t('benchmark.heroSummary', { engine: engineLabel, model: modelLabel, duration: `${t(`benchmark.profiles.${effProfile}`)} (${profileTime})` })}
-                </p>
-                {system.data && !gpu && (
-                  // No NVIDIA card (or no driver): say so first, with the way to fix it.
-                  <div className="mt-1 flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
-                    <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning-text" />
-                    <span className="min-w-0 flex-1 text-fg">{t('benchmark.noGpuBody')}</span>
-                    <Button size="sm" onClick={() => void navigate({ to: '/welcome' })}>
-                      {t('benchmark.noGpuAction')}
-                    </Button>
-                  </div>
-                )}
-                {needs.length > 0 && (
-                  <p className="mt-1 inline-flex items-center gap-2 text-sm text-fg-2">
-                    <Download aria-hidden className="size-4 text-accent-text" />
-                    {needs.every((n) => n.bytes !== undefined)
-                      ? t('benchmark.willDownload', { items: list.format(needs.map((n) => n.label)), size: bytes(needs.reduce((a, n) => a + n.bytes!, 0)) })
-                      : t('benchmark.willDownloadNoSize', { items: list.format(needs.map((n) => n.label)) })}
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                <Button variant="primary" size="xl" onClick={start} disabled={!valid} className="min-w-64">
-                  <Play aria-hidden className="fill-current" />
-                  {t('benchmark.start')}
-                </Button>
-                {/* The other thing people want: the model running for their own programs, no test. */}
-                {!external && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Button size="lg" onClick={serve} disabled={!valid}>
-                      <Server aria-hidden />
-                      {t('benchmark.serve')}
-                    </Button>
-                    <HelpTip term={t('benchmark.serve')}>{t('benchmark.serveHelp')}</HelpTip>
-                  </span>
-                )}
-                <span className="flex flex-col text-sm text-fg-3">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-fg-2">
-                    <Timer aria-hidden className="size-4" />
-                    {profileTime}
-                  </span>
-                  {valid ? t('benchmark.startHint') : t('benchmark.startBlocked')}
-                </span>
-              </div>
-            </div>
-          </Card>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <ChoiceCard
-              step={1}
-              title={t('benchmark.choice.engine')}
-              help={t('benchmark.choice.engineHelp')}
-              badge={effEngine === 'llamacpp-native' ? <Badge tone="accent" size="sm">{t('common.recommended')}</Badge> : undefined}
-              footer={engineFooter}
-            >
-              <Select<string>
-                aria-label={t('benchmark.changeEngine')}
-                value={effCustom ? `custom:${effCustom.id}` : effEngine}
-                onValueChange={(v) => {
-                  const chosen = v.startsWith('custom:') ? settings.customEngines.find((e) => `custom:${e.id}` === v) : undefined;
-                  setCustomId(chosen?.id);
-                  setEngine(chosen ? customEngineKindOf(chosen) : (v as EngineKind));
-                  setPicked(undefined);
-                }}
-                className="h-11 text-md font-semibold"
-                // Custom engines right under the engine they are built on ("llama.cpp · PrismML fork"); programs of the user's own last.
-                // NInfer is listed only as the kind this system runs (Linux natively, Windows in WSL).
-                options={[...ENGINE_ORDER.filter((k) => (expert || k !== 'external') && !(isNinferKind(k) && statusOf(k)?.supported === false)), 'command' as const].flatMap((k) => [
-                  ...(k === 'command' ? [] : [{ value: k as string, label: t(`benchmark.engines.${k}`), description: t(`benchmark.engineDesc.${k}`), disabled: statusOf(k)?.supported === false }]),
-                  ...settings.customEngines
-                    .filter((e) => customEngineKindOf(e) === k)
-                    .map((e) => ({ value: `custom:${e.id}`, label: customEngineLabel(t, e), description: t(`engines.custom.bases.${e.base}`), disabled: statusOf(k)?.supported === false })),
-                ])}
-              />
-              <p className="text-sm text-fg-2">
-                {effCustom ? (
-                  <>
-                    {t(`engines.custom.bases.${effCustom.base}`)} · <span className="font-mono text-xs break-all">{customEngineWhere(effCustom)}</span>
-                  </>
-                ) : (
-                  t(`benchmark.engineDesc.${effEngine}`)
-                )}
-              </p>
-            </ChoiceCard>
-
-            <ChoiceCard step={2} title={t('benchmark.choice.model')} help={t('benchmark.choice.modelHelp')} footer={modelFooter}>
-              {external ? (
-                <p className="text-sm text-fg-2">{engineForm.modelName.trim() ? t('benchmark.externalModel', { name: engineForm.modelName.trim() }) : t('benchmark.externalModelDefault')}</p>
-              ) : modelsLoading ? (
-                <Skeleton className="h-16 w-full" />
-              ) : option ? (
-                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={runParams} planFit={currentPlan?.fit} />
+      <PageSplit
+        asideWidth={360}
+        aside={
+          <>
+            {/* Right under the settings on a narrow page; beside them on a wide one, below the GPU, following the scroll. */}
+            <PlanCard
+              plan={planData}
+              loading={planJson !== '' && plan.isFetching}
+              error={planError}
+              needs={needs}
+              expert={expert}
+              onFix={applyFix}
+              className="min-w-0 @5xl/page:sticky @5xl/page:top-6 @5xl/page:order-last @5xl/page:max-h-[calc(100vh-6rem)] @5xl/page:overflow-y-auto"
+            />
+            <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
+              <GpuCard />
+              <RecentRuns />
+            </section>
+          </>
+        }
+      >
+        <PresetBanner preset={preset} />
+        {/* Hero: the one obvious thing to do. */}
+        <Card className="hero-wash relative overflow-hidden">
+          <svg aria-hidden viewBox="0 0 200 200" className="pointer-events-none absolute -top-16 -right-10 size-80 opacity-[0.07] dark:opacity-[0.1]">
+            <path d="M30 140a70 70 0 1 1 140 0" fill="none" stroke="var(--accent)" strokeWidth="14" strokeLinecap="round" />
+            <path d="M100 136 L142 70" stroke="var(--accent)" strokeWidth="10" strokeLinecap="round" />
+            <circle cx="100" cy="138" r="14" fill="var(--accent)" />
+          </svg>
+          <div className="relative flex flex-col gap-6 p-7 compact:p-5">
+            <div className="flex min-w-0 flex-col gap-2">
+              {system.data ? (
+                <h2 className="text-3xl font-semibold tracking-[-0.025em] text-balance">
+                  {gpu ? t('benchmark.heroTitle', { gpu: gpuShort }) : t('benchmark.heroNoGpu')}
+                </h2>
               ) : (
-                <div className="flex flex-col items-start gap-2">
-                  <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
-                  <Button size="sm" onClick={() => void navigate({ to: '/models' })}>
-                    {t('benchmark.openModels')}
+                <Skeleton className="h-9 w-80" />
+              )}
+              <p className="text-md text-fg-2">
+                {t('benchmark.heroSummary', { engine: engineLabel, model: modelLabel, duration: `${t(`benchmark.profiles.${effProfile}`)} (${profileTime})` })}
+              </p>
+              {system.data && !gpu && (
+                // No NVIDIA card (or no driver): say so first, with the way to fix it.
+                <div className="mt-1 flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
+                  <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning-text" />
+                  <span className="min-w-0 flex-1 text-fg">{t('benchmark.noGpuBody')}</span>
+                  <Button size="sm" onClick={() => void navigate({ to: '/welcome' })}>
+                    {t('benchmark.noGpuAction')}
                   </Button>
                 </div>
               )}
-            </ChoiceCard>
-
-            <ChoiceCard step={3} title={t('benchmark.choice.duration')} help={t('benchmark.choice.durationHelp')}>
-              <SegmentedControl<Profile>
-                label={t('benchmark.choice.duration')}
-                value={effProfile}
-                onValueChange={setProfile}
-                layout="list"
-                // A program of the user's own has no settings to search.
-                // A program of the user's own without {ctx} has no context to search.
-                options={[...PROFILES.filter((p) => p !== 'tune' || !noTune), ...(expert ? (['custom'] as const) : [])].map((p) => ({
-                  value: p,
-                  label: t(`benchmark.profiles.${p}`),
-                  // The chosen one with the estimate for this model and card, the same as in the summary above
-                  // ("Trova le impostazioni migliori" says it under "Quanto cercare": its long name leaves no room).
-                  sublabel: p === effProfile && p !== 'tune' ? profileTime : t(`benchmark.profileTime.${p}`),
-                }))}
-              />
-              <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
-              {noTune && <p className="text-xs text-fg-3">{t('engines.custom.tuneNotAvailable', { name: effCustom!.name, ctx: '{ctx}' })}</p>}
-              {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
-            </ChoiceCard>
-          </div>
-
-          {/* "Comandi per questo modello": what the model's own commands do, with the switch to start without them. */}
-          {recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
-
-          <EngineSuggestion
-            model={
-              option && !external
-                ? option.source === 'local'
-                  ? {
-                      displayName: option.local.identity.displayName,
-                      repo: option.local.identity.repo,
-                      file: option.local.identity.file,
-                      quant: option.local.identity.quant,
-                      format: option.local.identity.format,
-                      weakKey: option.local.identity.weakKey,
-                      // What an engine could not read for it before ("gguf_blocks_v1"): the variant that reads it is proposed.
-                      unreadable: unreadableFor(runs.data, option.local.identity.weakKey),
-                    }
-                  : { displayName: option.name, repo: option.curated.repo, file: option.curated.file, quant: option.quant, format: option.curated.engine === 'vllm' ? 'safetensors' : 'gguf' }
-                : undefined
-            }
-            current={config}
-            engines={settings.customEngines}
-            onUse={(c) => {
-              setCustomId(c.customEngineId);
-              setEngine(c.kind);
-              setPicked(undefined);
-            }}
-          />
-          {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
-          {tunePresets && (
-            <Card className="p-card">
-              <TunePresetList presets={tunePresets} currentBuild={status?.version} onUse={applyTunePreset} />
-            </Card>
-          )}
-          {ninferPresets.length > 0 && (
-            <NinferPresetPicker
-              presets={ninferPresets}
-              run={draftNinfer}
-              value={ninferChoice}
-              auto={currentPlan?.ninferAuto}
-              custom={ninferParamsText(runParams?.ninfer)}
-              onChange={(v) => {
-                setNinferChoice(v);
-                // A pick replaces every NInfer setting: the fields empty again, showing the pick's values.
-                setParamsForm(clearNinferFields);
-              }}
-            />
-          )}
-          {/* The model's switches (images, reasoning) and expert mode, on one line. */}
-          <div className="flex flex-wrap items-start gap-x-8 gap-y-3 px-1 py-1">
-            <div className="flex items-center gap-3">
-              <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
-              <div className="flex flex-col">
-                <label htmlFor="expert-switch" className="cursor-pointer text-sm font-semibold text-fg">
-                  {t('benchmark.expert.label')}
-                </label>
-                <span id="expert-hint" className="text-xs text-fg-3">
-                  {t('benchmark.expert.hint')}
-                </span>
-              </div>
+              {needs.length > 0 && (
+                <p className="mt-1 inline-flex items-center gap-2 text-sm text-fg-2">
+                  <Download aria-hidden className="size-4 text-accent-text" />
+                  {needs.every((n) => n.bytes !== undefined)
+                    ? t('benchmark.willDownload', { items: list.format(needs.map((n) => n.label)), size: bytes(needs.reduce((a, n) => a + n.bytes!, 0)) })
+                    : t('benchmark.willDownloadNoSize', { items: list.format(needs.map((n) => n.label)) })}
+                </p>
+              )}
             </div>
-            {option && !external && <ModelSwitches base={engineBase} form={paramsForm} onForm={(p) => setParamsForm((cur) => ({ ...cur, ...p }))} abilities={abilities} preset={ninferOverlay?.ninfer} />}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <Button variant="primary" size="xl" onClick={start} disabled={!valid} className="min-w-64">
+                <Play aria-hidden className="fill-current" />
+                {t('benchmark.start')}
+              </Button>
+              {/* The other thing people want: the model running for their own programs, no test. */}
+              {!external && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Button size="lg" onClick={serve} disabled={!valid}>
+                    <Server aria-hidden />
+                    {t('benchmark.serve')}
+                  </Button>
+                  <HelpTip term={t('benchmark.serve')}>{t('benchmark.serveHelp')}</HelpTip>
+                </span>
+              )}
+              <span className="flex flex-col text-sm text-fg-3">
+                <span className="inline-flex items-center gap-1.5 font-medium text-fg-2">
+                  <Timer aria-hidden className="size-4" />
+                  {profileTime}
+                </span>
+                {valid ? t('benchmark.startHint') : t('benchmark.startBlocked')}
+              </span>
+            </div>
           </div>
+        </Card>
 
-          {expert && (
-            <ExpertPanel
-              engine={effEngine}
-              engineForm={engineForm}
-              engineInvalid={engineInvalid}
-              onEngine={(p) => setEngineForm((cur) => ({ ...cur, ...p }))}
-              params={paramsForm}
-              paramsInvalid={parsedParams.invalid}
-              onParams={(p) => setParamsForm((cur) => ({ ...cur, ...p }))}
-              custom={custom}
-              scenario={scenarioForm}
-              scenarioInvalid={parsedScenario.invalid}
-              onScenario={(p) => setScenarioForm((cur) => ({ ...cur, ...p }))}
-              defaultImage={status?.location}
-              trainedContext={trainedContext}
-              {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
-              customEngine={effCustom?.name}
-              command={commandRun ? { name: effCustom!.name, run: commandRun } : undefined}
-              kvCacheTypes={customKvCacheTypes(customInfo.data, effCustom)}
-              missing={customCheck?.missing}
-              ninfer={ninferSupport}
-              ninferPreset={(() => {
-                const picked = ninferPresets.find((p) => p.id === ninferChosen);
-                if (picked) return { name: t(`ninfer.presets.short.${picked.id}`), params: picked.params };
-                return ninferRun ? { name: t('ninfer.presets.runShort'), params: ninferRun } : undefined;
-              })()}
+        <div className="grid grid-cols-1 gap-4 @2xl/page:grid-cols-3">
+          <ChoiceCard
+            step={1}
+            title={t('benchmark.choice.engine')}
+            help={t('benchmark.choice.engineHelp')}
+            badge={effEngine === 'llamacpp-native' ? <Badge tone="accent" size="sm">{t('common.recommended')}</Badge> : undefined}
+            footer={engineFooter}
+          >
+            <Select<string>
+              aria-label={t('benchmark.changeEngine')}
+              value={effCustom ? `custom:${effCustom.id}` : effEngine}
+              onValueChange={(v) => {
+                const chosen = v.startsWith('custom:') ? settings.customEngines.find((e) => `custom:${e.id}` === v) : undefined;
+                setCustomId(chosen?.id);
+                setEngine(chosen ? customEngineKindOf(chosen) : (v as EngineKind));
+                setPicked(undefined);
+              }}
+              className="h-11 text-md font-semibold"
+              // Custom engines right under the engine they are built on ("llama.cpp · PrismML fork"); programs of the user's own last.
+              // NInfer is listed only as the kind this system runs (Linux natively, Windows in WSL).
+              options={[...ENGINE_ORDER.filter((k) => (expert || k !== 'external') && !(isNinferKind(k) && statusOf(k)?.supported === false)), 'command' as const].flatMap((k) => [
+                ...(k === 'command' ? [] : [{ value: k as string, label: t(`benchmark.engines.${k}`), description: t(`benchmark.engineDesc.${k}`), disabled: statusOf(k)?.supported === false }]),
+                ...settings.customEngines
+                  .filter((e) => customEngineKindOf(e) === k)
+                  .map((e) => ({ value: `custom:${e.id}`, label: customEngineLabel(t, e), description: t(`engines.custom.bases.${e.base}`), disabled: statusOf(k)?.supported === false })),
+              ])}
             />
-          )}
+            <p className="text-sm text-fg-2">
+              {effCustom ? (
+                <>
+                  {t(`engines.custom.bases.${effCustom.base}`)} · <span className="font-mono text-xs break-all">{customEngineWhere(effCustom)}</span>
+                </>
+              ) : (
+                t(`benchmark.engineDesc.${effEngine}`)
+              )}
+            </p>
+          </ChoiceCard>
+
+          <ChoiceCard step={2} title={t('benchmark.choice.model')} help={t('benchmark.choice.modelHelp')} footer={modelFooter}>
+            {external ? (
+              <p className="text-sm text-fg-2">{engineForm.modelName.trim() ? t('benchmark.externalModel', { name: engineForm.modelName.trim() }) : t('benchmark.externalModelDefault')}</p>
+            ) : modelsLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : option ? (
+              <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={runParams} planFit={currentPlan?.fit} />
+            ) : (
+              <div className="flex flex-col items-start gap-2">
+                <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
+                <Button size="sm" onClick={() => void navigate({ to: '/models' })}>
+                  {t('benchmark.openModels')}
+                </Button>
+              </div>
+            )}
+          </ChoiceCard>
+
+          <ChoiceCard step={3} title={t('benchmark.choice.duration')} help={t('benchmark.choice.durationHelp')}>
+            <SegmentedControl<Profile>
+              label={t('benchmark.choice.duration')}
+              value={effProfile}
+              onValueChange={setProfile}
+              layout="list"
+              // A program of the user's own has no settings to search.
+              // A program of the user's own without {ctx} has no context to search.
+              options={[...PROFILES.filter((p) => p !== 'tune' || !noTune), ...(expert ? (['custom'] as const) : [])].map((p) => ({
+                value: p,
+                label: t(`benchmark.profiles.${p}`),
+                // The chosen one with the estimate for this model and card, the same as in the summary above
+                // ("Trova le impostazioni migliori" says it under "Quanto cercare": its long name leaves no room).
+                sublabel: p === effProfile && p !== 'tune' ? profileTime : t(`benchmark.profileTime.${p}`),
+              }))}
+            />
+            <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
+            {noTune && <p className="text-xs text-fg-3">{t('engines.custom.tuneNotAvailable', { name: effCustom!.name, ctx: '{ctx}' })}</p>}
+            {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
+          </ChoiceCard>
         </div>
 
-        <section className="order-3 flex flex-col gap-section xl:order-none xl:col-start-2 xl:row-start-1" aria-label={t('benchmark.gpu.title')}>
-          <GpuCard />
-          <RecentRuns />
-        </section>
-        {/* Beside the settings on a wide window (it follows the scroll), under them otherwise. */}
-        <PlanCard
-          plan={planData}
-          loading={planJson !== '' && plan.isFetching}
-          error={planError}
-          needs={needs}
-          expert={expert}
-          onFix={applyFix}
-          className="order-2 min-w-0 xl:sticky xl:top-6 xl:order-none xl:col-start-2 xl:row-start-2 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto"
+        {/* "Comandi per questo modello": what the model's own commands do, with the switch to start without them. */}
+        {recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
+
+        <EngineSuggestion
+          model={
+            option && !external
+              ? option.source === 'local'
+                ? {
+                    displayName: option.local.identity.displayName,
+                    repo: option.local.identity.repo,
+                    file: option.local.identity.file,
+                    quant: option.local.identity.quant,
+                    format: option.local.identity.format,
+                    weakKey: option.local.identity.weakKey,
+                    // What an engine could not read for it before ("gguf_blocks_v1"): the variant that reads it is proposed.
+                    unreadable: unreadableFor(runs.data, option.local.identity.weakKey),
+                  }
+                : { displayName: option.name, repo: option.curated.repo, file: option.curated.file, quant: option.quant, format: option.curated.engine === 'vllm' ? 'safetensors' : 'gguf' }
+              : undefined
+          }
+          current={config}
+          engines={settings.customEngines}
+          onUse={(c) => {
+            setCustomId(c.customEngineId);
+            setEngine(c.kind);
+            setPicked(undefined);
+          }}
         />
-      </div>
+        {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
+        {tunePresets && (
+          <Card className="p-card">
+            <TunePresetList presets={tunePresets} currentBuild={status?.version} onUse={applyTunePreset} />
+          </Card>
+        )}
+        {ninferPresets.length > 0 && (
+          <NinferPresetPicker
+            presets={ninferPresets}
+            run={draftNinfer}
+            value={ninferChoice}
+            auto={currentPlan?.ninferAuto}
+            custom={ninferParamsText(runParams?.ninfer)}
+            onChange={(v) => {
+              setNinferChoice(v);
+              // A pick replaces every NInfer setting: the fields empty again, showing the pick's values.
+              setParamsForm(clearNinferFields);
+            }}
+          />
+        )}
+        {/* The model's switches (images, reasoning) and expert mode, on one line. */}
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-3 px-1 py-1">
+          <div className="flex items-center gap-3">
+            <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
+            <div className="flex flex-col">
+              <label htmlFor="expert-switch" className="cursor-pointer text-sm font-semibold text-fg">
+                {t('benchmark.expert.label')}
+              </label>
+              <span id="expert-hint" className="text-xs text-fg-3">
+                {t('benchmark.expert.hint')}
+              </span>
+            </div>
+          </div>
+          {option && !external && <ModelSwitches base={engineBase} form={paramsForm} onForm={(p) => setParamsForm((cur) => ({ ...cur, ...p }))} abilities={abilities} preset={ninferOverlay?.ninfer} />}
+        </div>
+
+        {expert && (
+          <ExpertPanel
+            engine={effEngine}
+            engineForm={engineForm}
+            engineInvalid={engineInvalid}
+            onEngine={(p) => setEngineForm((cur) => ({ ...cur, ...p }))}
+            params={paramsForm}
+            paramsInvalid={parsedParams.invalid}
+            onParams={(p) => setParamsForm((cur) => ({ ...cur, ...p }))}
+            custom={custom}
+            scenario={scenarioForm}
+            scenarioInvalid={parsedScenario.invalid}
+            onScenario={(p) => setScenarioForm((cur) => ({ ...cur, ...p }))}
+            defaultImage={status?.location}
+            trainedContext={trainedContext}
+            {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
+            customEngine={effCustom?.name}
+            command={commandRun ? { name: effCustom!.name, run: commandRun } : undefined}
+            kvCacheTypes={customKvCacheTypes(customInfo.data, effCustom)}
+            missing={customCheck?.missing}
+            ninfer={ninferSupport}
+            ninferPreset={(() => {
+              const picked = ninferPresets.find((p) => p.id === ninferChosen);
+              if (picked) return { name: t(`ninfer.presets.short.${picked.id}`), params: picked.params };
+              return ninferRun ? { name: t('ninfer.presets.runShort'), params: ninferRun } : undefined;
+            })()}
+          />
+        )}
+      </PageSplit>
 
       <BenchModelPicker
         open={pickerOpen}

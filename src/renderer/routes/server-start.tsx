@@ -54,7 +54,7 @@ import { ModelStep } from '../components/servers/start/model-step';
 import { NetworkStep } from '../components/servers/start/network-step';
 import { SettingsStep, type SettingsTab } from '../components/servers/start/settings-step';
 import { Summary } from '../components/servers/start/summary';
-import { Page } from '../components/shell/page';
+import { Page, PageSplit } from '../components/shell/page';
 import { Card } from '../components/ui/card';
 import { HelpTip } from '../components/ui/help-tip';
 import { useI18n } from '../i18n';
@@ -312,114 +312,117 @@ export function ServerStartPage() {
       subtitle={t('servers.flow.subtitle')}
       width="full"
     >
-      <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_460px]">
-        <div className="flex min-w-0 flex-col gap-section">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <StepCard step={1} title={t('servers.flow.step.model')} help={t('servers.flow.step.modelHelp')}>
-              <ModelStep options={options} value={option} onChange={setModelKey} onOpenModels={() => void navigate({ to: '/models' })} />
-            </StepCard>
-            <StepCard step={2} title={t('servers.flow.step.engine')} help={t('servers.flow.step.engineHelp')}>
-              <EngineStep choices={choices} value={engineChoice} onChange={setEngineKey} customs={customList} />
-              {ninferAll.needed && <p className="text-sm text-fg-2">{ninferAll.ready ? t('ninfer.allNote.ready') : t('ninfer.allNote.toBuildServer')}</p>}
-            </StepCard>
+      <PageSplit
+        asideWidth={460}
+        aside={
+          // Beside the steps on a wide page, following the scroll; under them otherwise.
+          <div className="@5xl/page:sticky @5xl/page:top-6">
+            <Summary
+              plan={plan}
+              planning={planQ.isFetching || (request !== undefined && requestKey !== planKey)}
+              error={planQ.isError ? apiErrorData(planQ.error) : undefined}
+              needs={needs}
+              engineKind={engineChoice?.kind}
+              engineName={summaryEngine}
+              own={own}
+              canStart={current !== undefined && !portProblem}
+              canSave={current !== undefined}
+              editing={editing !== undefined}
+              onStart={start}
+              onSave={save}
+            />
           </div>
-          {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
-          <StepCard step={3} title={t('servers.flow.step.settings')} help={t('servers.flow.step.settingsHelp')}>
-            <SettingsStep
-              engineKind={engineChoice?.kind ?? 'llamacpp-native'}
-              tab={tab}
-              onTab={onTab}
-              best={best}
-              onBest={setBest}
-              autoTuned={autoPlan.data?.tuned}
-              provenance={draft?.provenance}
-              configs={tested}
-              loadingConfig={configId !== undefined && configParams === undefined}
-              presets={modelPresets}
-              builtins={
-                ninferPresets.length > 0 ? (
-                  <NinferPresetPicker
-                    presets={ninferPresets}
-                    run={draftNinfer}
-                    use="server"
-                    // Nothing checked here while one of the user's presets is chosen.
-                    value={pickedPreset ? ('' as NinferChoice) : ninferChoice}
-                    onChange={(v) => {
-                      setNinferChoice(v);
-                      setPresetId(undefined);
-                    }}
-                  />
-                ) : undefined
-              }
-              fromTune={
-                tunePresets ? (
-                  <TunePresetList
-                    presets={tunePresets}
-                    currentBuild={engines.data?.find((e) => e.kind === engineChoice?.kind)?.version}
-                    onUse={(p) => {
-                      // Into "Comandi personalizzati", exactly: the plan and the command follow.
-                      setForm(formFromParams(serverNinfer(p)));
-                      setFormTouched(true);
-                      setTab('custom');
-                    }}
-                  />
-                ) : undefined
-              }
-              preset={presetId}
-              onPreset={onPreset}
-              othersCount={(presets.data?.length ?? 0) - modelPresets.length}
-              kvCacheTypes={customKvCacheTypes(customList, chosenCustom)}
-              form={form}
-              invalid={parsed.invalid}
-              onForm={(patch) => {
-                setFormTouched(true);
-                setForm((cur) => ({ ...cur, ...patch }));
-              }}
-              missing={engineChoice?.missing}
-              ninfer={ninferSupport}
-              trainedContext={trainedContext}
-              switches={
-                option && (abilities.vision === true || abilities.reasoning !== false) ? (
-                  <ModelSwitches base={engineBase} form={switches} onForm={(patch) => setSwitches((cur) => ({ ...cur, ...patch }))} abilities={abilities} preset={sourceNinfer} />
-                ) : undefined
-              }
-              unsupported={unsupportedWarning ? { engine: String(unsupportedWarning.params?.engine), flags: String(unsupportedWarning.params?.flags) } : undefined}
-              // "Comandi per questo modello": nothing when the model has no recipe, or when its only command is the engine (preselected above).
-              recipeSlot={recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
-              command={commandRun}
-            />
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 @3xl/page:grid-cols-2">
+          <StepCard step={1} title={t('servers.flow.step.model')} help={t('servers.flow.step.modelHelp')}>
+            <ModelStep options={options} value={option} onChange={setModelKey} onOpenModels={() => void navigate({ to: '/models' })} />
           </StepCard>
-          <StepCard step={4} title={t('servers.flow.step.port')} help={t('servers.flow.step.portHelp')}>
-            <NetworkStep
-              portText={portText}
-              onPort={setPortText}
-              portInvalid={port.invalid}
-              suggested={plan?.port}
-              warnings={current?.warnings ?? []}
-              lan={effNetwork === 'lan'}
-              onLan={(on) => setNetwork(on ? 'lan' : 'local')}
-              lanUrls={plan?.lanUrls ?? []}
-              lanUnsupported={lanUnsupported}
-            />
+          <StepCard step={2} title={t('servers.flow.step.engine')} help={t('servers.flow.step.engineHelp')}>
+            <EngineStep choices={choices} value={engineChoice} onChange={setEngineKey} customs={customList} />
+            {ninferAll.needed && <p className="text-sm text-fg-2">{ninferAll.ready ? t('ninfer.allNote.ready') : t('ninfer.allNote.toBuildServer')}</p>}
           </StepCard>
         </div>
-        <div className="xl:sticky xl:top-6 xl:self-start">
-          <Summary
-            plan={plan}
-            planning={planQ.isFetching || (request !== undefined && requestKey !== planKey)}
-            error={planQ.isError ? apiErrorData(planQ.error) : undefined}
-            needs={needs}
-            engineKind={engineChoice?.kind}
-            engineName={summaryEngine}
-            own={own}
-            canStart={current !== undefined && !portProblem}
-            canSave={current !== undefined}
-            editing={editing !== undefined}
-            onStart={start}
-            onSave={save}
+        {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
+        <StepCard step={3} title={t('servers.flow.step.settings')} help={t('servers.flow.step.settingsHelp')}>
+          <SettingsStep
+            engineKind={engineChoice?.kind ?? 'llamacpp-native'}
+            tab={tab}
+            onTab={onTab}
+            best={best}
+            onBest={setBest}
+            autoTuned={autoPlan.data?.tuned}
+            provenance={draft?.provenance}
+            configs={tested}
+            loadingConfig={configId !== undefined && configParams === undefined}
+            presets={modelPresets}
+            builtins={
+              ninferPresets.length > 0 ? (
+                <NinferPresetPicker
+                  presets={ninferPresets}
+                  run={draftNinfer}
+                  use="server"
+                  // Nothing checked here while one of the user's presets is chosen.
+                  value={pickedPreset ? ('' as NinferChoice) : ninferChoice}
+                  onChange={(v) => {
+                    setNinferChoice(v);
+                    setPresetId(undefined);
+                  }}
+                />
+              ) : undefined
+            }
+            fromTune={
+              tunePresets ? (
+                <TunePresetList
+                  presets={tunePresets}
+                  currentBuild={engines.data?.find((e) => e.kind === engineChoice?.kind)?.version}
+                  onUse={(p) => {
+                    // Into "Comandi personalizzati", exactly: the plan and the command follow.
+                    setForm(formFromParams(serverNinfer(p)));
+                    setFormTouched(true);
+                    setTab('custom');
+                  }}
+                />
+              ) : undefined
+            }
+            preset={presetId}
+            onPreset={onPreset}
+            othersCount={(presets.data?.length ?? 0) - modelPresets.length}
+            kvCacheTypes={customKvCacheTypes(customList, chosenCustom)}
+            form={form}
+            invalid={parsed.invalid}
+            onForm={(patch) => {
+              setFormTouched(true);
+              setForm((cur) => ({ ...cur, ...patch }));
+            }}
+            missing={engineChoice?.missing}
+            ninfer={ninferSupport}
+            trainedContext={trainedContext}
+            switches={
+              option && (abilities.vision === true || abilities.reasoning !== false) ? (
+                <ModelSwitches base={engineBase} form={switches} onForm={(patch) => setSwitches((cur) => ({ ...cur, ...patch }))} abilities={abilities} preset={sourceNinfer} />
+              ) : undefined
+            }
+            unsupported={unsupportedWarning ? { engine: String(unsupportedWarning.params?.engine), flags: String(unsupportedWarning.params?.flags) } : undefined}
+            // "Comandi per questo modello": nothing when the model has no recipe, or when its only command is the engine (preselected above).
+            recipeSlot={recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
+            command={commandRun}
           />
-        </div>
-      </div>
+        </StepCard>
+        <StepCard step={4} title={t('servers.flow.step.port')} help={t('servers.flow.step.portHelp')}>
+          <NetworkStep
+            portText={portText}
+            onPort={setPortText}
+            portInvalid={port.invalid}
+            suggested={plan?.port}
+            warnings={current?.warnings ?? []}
+            lan={effNetwork === 'lan'}
+            onLan={(on) => setNetwork(on ? 'lan' : 'local')}
+            lanUrls={plan?.lanUrls ?? []}
+            lanUnsupported={lanUnsupported}
+          />
+        </StepCard>
+      </PageSplit>
       {flow.ui}
       {saving && current && <SavePresetDialog port={request!.port ?? current.port} defaultName={option!.name} onClose={() => setSaving(false)} onSave={onSaveNew} />}
     </Page>

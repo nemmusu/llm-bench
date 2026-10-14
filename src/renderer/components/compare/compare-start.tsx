@@ -130,7 +130,7 @@ function ModelsPicker() {
   return (
     <div className="flex flex-col gap-4">
       <p className="max-w-3xl text-sm text-fg-2">{t('compare.start.modelsIntro', { gpu: gpu ? shortGpuName(gpu.name) : '–' })}</p>
-      <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label={t('compare.start.modelsList')}>
+      <ul className="grid grid-cols-1 gap-3 @2xl/page:grid-cols-2 @5xl/page:grid-cols-3" aria-label={t('compare.start.modelsList')}>
         {models.map((m) => {
           const pick = pickOf(m, sel.items);
           const line = bestLine(m, f);

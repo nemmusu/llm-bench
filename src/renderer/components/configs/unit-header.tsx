@@ -6,18 +6,20 @@ export const NUMERIC: DataTableColumnMeta = { numeric: true, className: 'px-2' }
 /**
  * "Generazione (tok/s)" as a table header: the name, and its unit quieter on a second line (narrow
  * numeric columns). What follows the unit stays with it: "Generazione (tok/s) a 32K" reads
- * "Generazione" over "(tok/s) a 32K".
+ * "Generazione" over "(tok/s) a 32K". A header without a unit ("Primo token al contesto massimo")
+ * puts what follows `name` on its own line the same way.
  */
-export function UnitHeader({ text }: { text: string }) {
+export function UnitHeader({ text, name }: { text: string; name?: string }) {
   const m = /^(.*\S)\s+\(([^()]+)\)(.*)$/.exec(text);
-  if (!m) return <>{text}</>;
+  const rest = !m && name !== undefined && text.startsWith(name) ? text.slice(name.length).trim() : '';
+  if (!m && !rest) return <>{text}</>;
   // The name may wrap ("Lettura / prompt", "VRAM / picco"): many columns share the width of a laptop screen.
   return (
     <span className="inline-flex flex-col leading-4">
-      <span className="whitespace-normal">{m[1]}</span>
-      <span className="text-[11px] font-normal text-fg-3">({m[2]})</span>
-      {/* Where the numbers were measured ("al contesto massimo", "a 32K") on a line of its own, over a column of short numbers. */}
-      {m[3] && <span className="text-[11px] font-normal text-fg-3">{m[3]}</span>}
+      <span className="whitespace-normal">{m ? m[1] : name}</span>
+      {m && <span className="text-[11px] font-normal text-fg-3">({m[2]})</span>}
+      {/* Where the numbers were measured ("al contesto massimo", "a 32K") on a line of its own, over a column of short numbers: it may wrap too. */}
+      {(m ? m[3] : rest) && <span className="text-[11px] font-normal whitespace-normal text-fg-3">{m ? m[3] : ` ${rest}`}</span>}
     </span>
   );
 }

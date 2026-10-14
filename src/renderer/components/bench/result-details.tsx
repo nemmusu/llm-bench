@@ -129,7 +129,7 @@ export function Details({ run }: { run: RunResult }) {
           <p className="px-card pb-card text-sm text-fg-3">{t('result.details.none')}</p>
         )}
       </Section>
-      <div className="grid gap-section lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-section @4xl/page:grid-cols-2">
         <Section title={t('result.details.load')}>
           <SimpleTable
             caption={t('result.details.load')}
@@ -183,7 +183,7 @@ export function Details({ run }: { run: RunResult }) {
           <UsersTable caption={t('result.details.concurrency')} points={[...m.concurrency].sort((a, b) => a.level - b.level)} />
         </Section>
       )}
-      <div className="grid gap-section lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-section @4xl/page:grid-cols-2">
         {m.llamaBench.length > 0 && (
           <Section title={t('result.details.llamaBench')}>
             <SimpleTable
