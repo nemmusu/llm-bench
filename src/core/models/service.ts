@@ -26,6 +26,8 @@ import {
   type FitParams,
   type QuantChoice,
 } from './fit';
+import { ninferWithReasoningVision } from '../engines/ninfer/args';
+import { projectorOf } from '../engines/shared/reasoning-vision';
 import { readLocalGgufFacts } from './gguf';
 import { HashCache, HashQueue, weakKey } from './hash';
 import { HubClient, type HubPage, type HubRepoInfo, type RemoteGgufFacts, type SearchOptions } from './hub';
@@ -322,10 +324,16 @@ export class ModelsService {
       // A .ninfer artifact: NInfer's own estimate, with what its manifest said (the scanner keeps it in the facts).
       if (m.identity.format === 'ninfer') {
         const manifest = { ...(facts.name ? { name: facts.name } : {}), ...(facts.components ? { components: facts.components } : {}) };
-        return ninferFit({ artifactBytes: m.identity.sizeBytes as number, manifest, label: m.identity.displayName, params: req.params, gpu });
+        // Vision and reasoning as the launch passes them (vision on where the artifact packs it, unless switched off).
+        const params = req.params ? { ...req.params, ninfer: ninferWithReasoningVision(req.params, facts.components?.includes('vision') === true) } : undefined;
+        return ninferFit({ artifactBytes: m.identity.sizeBytes as number, manifest, label: m.identity.displayName, params, gpu });
       }
       const id = { weakKey: m.identity.weakKey, sha256: m.identity.sha256 };
-      const extras = runsSafetensors(req.engine) ? undefined : await launchExtras(req.params?.extraArgs ?? [], m);
+      // llama.cpp loads the model's image projector unless vision is switched off (engines/shared/reasoning-vision.ts).
+      const args = req.params?.extraArgs ?? [];
+      const projector = req.params?.vision === false ? undefined : projectorOf({ local: m });
+      const named = args.some((a) => (MMPROJ_FLAGS as readonly string[]).includes(a.split('=')[0] as string));
+      const extras = runsSafetensors(req.engine) ? undefined : await launchExtras(projector && !named ? ['--mmproj', projector, ...args] : args, m);
       return withFixes({ facts, fileBytes: m.identity.sizeBytes, gpu, engine: req.engine, ...(extras ? { extras } : {}), ...(await calibrated(id, facts)) });
     }
     if (req.repo && req.file) {

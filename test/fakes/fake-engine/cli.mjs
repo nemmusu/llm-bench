@@ -257,6 +257,11 @@ async function main() {
     if (reuse !== undefined) o.cacheReuse = Number(reuse);
     const key = get('--api-key');
     if (key !== undefined) o.apiKey = key;
+    // Echoed in the log as llama-server says them: the projector loaded, thinking on or off.
+    const mmproj = get('-mm', '--mmproj');
+    if (mmproj !== undefined) o.mmproj = mmproj;
+    const off = get('-rea', '--reasoning') === 'off' || get('--reasoning-budget') === '0' || /"enable_thinking"\s*:\s*false/.test(get('--chat-template-kwargs') ?? '');
+    o.thinking = !off;
     o.requireModelFile = env.FAKE_ENGINE_ALLOW_MISSING_MODEL !== '1';
   } else {
     const rest = argv[0] === 'serve' ? argv.slice(1) : argv;

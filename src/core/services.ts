@@ -271,7 +271,7 @@ export function clientFactory(deps: Pick<CoreContext['deps'], 'fetch' | 'clock'>
       flavor,
       baseUrl,
       { fetch: deps.fetch, clock: deps.clock },
-      { ...(o?.apiKey ? { apiKey: o.apiKey } : {}), ...(o?.model ? { model: o.model } : {}) },
+      { ...(o?.apiKey ? { apiKey: o.apiKey } : {}), ...(o?.model ? { model: o.model } : {}), ...(o?.chatTemplateKwargs ? { chatTemplateKwargs: o.chatTemplateKwargs } : {}) },
     );
 }
 

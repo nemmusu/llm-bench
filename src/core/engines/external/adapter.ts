@@ -2,6 +2,7 @@ import type { ApiFlavor, EngineConfig, EngineStatus, LaunchParams } from '../../
 import { AppError, toAppErrorData } from '../../../contract/errors';
 import type { EngineIdentity } from '../../../contract/results';
 import type { Clock, ExitInfo, LogLine } from '../../deps';
+import { chatKwargsOf } from '../shared/reasoning-vision';
 import type { ClientFactory } from '../instance';
 import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget } from '../types';
 import { ignore, timeoutSignal } from '../util';
@@ -169,7 +170,8 @@ export class ExternalAdapter implements EngineAdapter {
         }
         return { tReady: this.o.clock.now(), phases: [] };
       },
-      client: this.o.createClient(ep.flavor, ep.baseUrl, ep.apiKey ? { apiKey: ep.apiKey } : {}),
+      // Reasoning switched off: its chat requests ask the template not to think (nothing to relaunch).
+      client: this.o.createClient(ep.flavor, ep.baseUrl, { ...(ep.apiKey ? { apiKey: ep.apiKey } : {}), ...chatKwargsOf(ep.flavor, plan.params) }),
       stop: async () => {
         const e = { code: null, signal: null };
         stopped(e);

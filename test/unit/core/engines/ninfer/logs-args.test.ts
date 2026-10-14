@@ -40,10 +40,21 @@ describe('ninfer-serve arguments', () => {
     expect(ninferServeArgs(launchParamsSchema.parse({}), opts)).toEqual(['/models/q.ninfer', '--host', '127.0.0.1', '--port', '18090', '--model-id', 'gpubench-1']);
   });
 
-  it('benchmarks read every prompt and answer without thinking, unless the user said otherwise', () => {
-    expect(ninferBenchParams(undefined, { conversations: false })).toEqual({ prefixReuse: false, thinking: false });
-    expect(ninferBenchParams({ kvDtype: 'fp8' }, { conversations: true })).toEqual({ kvDtype: 'fp8', prefixReuse: true, thinking: false });
-    expect(ninferBenchParams({ prefixReuse: true, thinking: true }, { conversations: false })).toEqual({ prefixReuse: true, thinking: true });
+  it('benchmarks read every prompt in full unless they measure conversations; reasoning as the launch says', () => {
+    expect(ninferBenchParams(undefined, { conversations: false })).toEqual({ prefixReuse: false });
+    expect(ninferBenchParams({ kvDtype: 'fp8' }, { conversations: true })).toEqual({ kvDtype: 'fp8', prefixReuse: true });
+    expect(ninferBenchParams({ prefixReuse: true, thinking: false }, { conversations: false })).toEqual({ prefixReuse: true, thinking: false });
+  });
+
+  it('reasoning and vision, shared by every engine: --no-thinking when off, --vision where the artifact packs it', () => {
+    const args = (p: object, hasVision = false) => ninferServeArgs(launchParamsSchema.parse(p), { ...opts, hasVision }).slice(7);
+    expect(args({})).toEqual([]);
+    expect(args({}, true)).toEqual(['--vision']);
+    expect(args({ vision: false, reasoning: false }, true)).toEqual(['--no-thinking']);
+    expect(args({ reasoning: true, ninfer: { thinking: false } })).toEqual([]);
+    // NInfer's own older settings hold when the shared ones are not set.
+    expect(args({ ninfer: { thinking: false, vision: true } })).toEqual(['--vision', '--no-thinking']);
+    expect(args({ vision: true })).toEqual([]);
   });
 });
 

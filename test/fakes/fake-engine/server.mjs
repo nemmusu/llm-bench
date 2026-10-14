@@ -307,7 +307,7 @@ export async function startFakeEngine(o = {}) {
     const extra = m.spillShared ? (generating ? m.spillShared.requestMiB : m.spillShared.loadMiB) : mem.needMiB - m.totalMiB;
     return Math.round(natural + extra);
   };
-  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816 };
+  const c = { model, host, port: o.port ?? 8080, ctx, np, nLayers: p.nLayers ?? 33, vramMiB: mem ? mem.vramMiB : vramMiB, flashAttn: o.flashAttn ?? 'auto', kvType: o.kvType ?? 'f16', kvCapacity: mem?.capacity, kvTokens: o.kvTokens ?? mem?.capacity ?? 164_816, mmproj: o.mmproj, thinking: o.thinking !== false };
   /** vLLM without a CUDA graph for this many requests at once runs eagerly. */
   const eagerAt = (busy) => openai && (o.eager === true || (o.graphSizes !== undefined && busy > Math.max(...o.graphSizes)));
   const rates = (depth, busy = 1) =>

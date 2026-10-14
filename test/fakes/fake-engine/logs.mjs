@@ -13,6 +13,8 @@ import path from 'node:path';
  * @property {number} nLayers
  * @property {number} vramMiB
  * @property {string} flashAttn
+ * @property {string} [mmproj]
+ * @property {boolean} [thinking]
  */
 
 /** @param {LlamaLogCtx} c */
@@ -135,8 +137,11 @@ export function llamaWarmup() {
 export function llamaReady(c) {
   const lines = [`srv          init: initializing slots, n_slots = ${c.np}`];
   for (let i = 0; i < c.np; i++) lines.push(`slot         init: id  ${i} | task -1 | new slot, n_ctx = ${c.ctx}`);
+  // What the launch asked (echoed for the tests): the image projector, thinking on or off.
+  if (c.mmproj) lines.unshift(`srv    load_model: loaded multimodal model, '${c.mmproj}'`);
   lines.push(
     'srv          init: prompt cache is enabled, size limit: 8192 MiB',
+    `srv          init: thinking = ${c.thinking === false ? 0 : 1}`,
     'main: model loaded',
     'main: chat template, chat_template: llama3, example_format: \'<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|>\'',
     `main: server is listening on http://${c.host}:${c.port} - starting the main loop`,

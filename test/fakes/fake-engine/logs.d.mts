@@ -7,6 +7,9 @@ export interface LlamaLogCtx {
   nLayers: number;
   vramMiB: number;
   flashAttn: string;
+  /** Echoed in the ready lines: the image projector loaded, thinking on (default) or off. */
+  mmproj?: string | undefined;
+  thinking?: boolean;
   kvType?: string;
   kvCapacity?: number;
 }

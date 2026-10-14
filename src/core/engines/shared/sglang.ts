@@ -19,6 +19,7 @@ import { AppError, type ErrorCode } from '../../../contract/errors';
 import type { KvCapacity } from '../../../contract/results';
 import type { ExitInfo } from '../../deps';
 import type { LoadProgress } from '../../../contract/events';
+import { sglangReasoningVision } from './reasoning-vision';
 import { FlagGate } from './standard-flags';
 import { ropeScalingConfig } from './vllm-args';
 
@@ -74,6 +75,7 @@ export function sglangServeArgs(params: LaunchParams, o: SglangServeOptions, gat
   if (params.dtype !== undefined) gate.push(args, '--dtype', params.dtype);
   if (params.quantization !== undefined) gate.push(args, '--quantization', params.quantization);
   if (params.ropeScaling) gate.push(args, '--json-model-override-args', JSON.stringify({ rope_scaling: ropeScalingConfig(params.ropeScaling) }));
+  sglangReasoningVision(params, gate);
   args.push(...params.extraArgs);
   return args;
 }

@@ -174,6 +174,14 @@ export class FlagGate {
     if (this.known && !this.has(flag)) this.record(flag, specOf(this.base, flag));
   }
 
+  /**
+   * A choice of the launch (`setting`: reasoning, vision) the build has no option for: recorded when its
+   * options are known and do not list `flag`, or always (`always`: the engine never has one).
+   */
+  unsupported(flag: string, setting: string, always = false): void {
+    if (always || (this.known && !this.known.has(flag))) this.record(flag, { spellings: [flag], setting });
+  }
+
   private record(flag: string, spec: StandardFlag | undefined): void {
     if (!this.missing.some((m) => m.flag === flag)) this.missing.push({ flag, setting: spec?.setting ?? flag, effect: 'default' });
   }

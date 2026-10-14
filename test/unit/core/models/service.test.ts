@@ -209,8 +209,13 @@ describe('ModelsService', () => {
     writeFileSync(path.join(t.dir, 'drafts', 'broken.gguf'), Buffer.alloc(1024 ** 2));
     const svc = service();
     const m = (await svc.list()).find((x) => x.identity.displayName === 'eye-Q4_K_M') as LocalModel;
-    const fit = (extraArgs: string[], engine: EngineKind = 'llamacpp-native') => svc.fit({ localId: m.id, engine, params: { contextSize: 4096, extraArgs, env: {} } });
-    const plain = await fit([]);
+    const fit = (extraArgs: string[], engine: EngineKind = 'llamacpp-native', vision?: boolean) =>
+      svc.fit({ localId: m.id, engine, params: { contextSize: 4096, extraArgs, env: {}, ...(vision !== undefined ? { vision } : {}) } });
+    // Vision switched off: no projector.
+    const plain = await fit([], 'llamacpp-native', false);
+    expect(plain).not.toHaveProperty('mmprojMiB');
+    // Vision on (the default): the projector the library grouped with the model is loaded, and counted.
+    expect(await fit([])).toMatchObject({ mmprojMiB: 2, needMiB: plain.needMiB + 2 });
     expect(plain).not.toHaveProperty('draftMiB');
     // The projector named by its path in a container (/models/…): the model's own file of that name.
     const both = await fit(['-md', draft, '--mmproj', '/models/o/eye/mmproj-eye-F16.gguf']);

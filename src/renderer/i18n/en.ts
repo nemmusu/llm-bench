@@ -1480,6 +1480,8 @@ export const en: Messages = {
       dtype: 'Data type',
       quantization: 'Quantization',
       ropeScaling: 'Context extension (RoPE)',
+      reasoning: 'Reasoning',
+      vision: 'Vision (images)',
       ninfer: 'NInfer settings',
       trtllm: 'TensorRT-LLM settings',
       promptLengths: 'Prompt lengths',

@@ -204,6 +204,24 @@ export const launchParamsSchema = z.object({
   quantization: z.string().optional(),
   /** Context extension beyond the model's trained context (YaRN / linear RoPE scaling). */
   ropeScaling: ropeScalingSchema.optional(),
+  /**
+   * Reasoning ("thinking"): absent or true = on when the model supports it (the engine's own default),
+   * false = off. llama.cpp --reasoning off (older builds --reasoning-budget 0, else
+   * --chat-template-kwargs {"enable_thinking":false}); vLLM --default-chat-template-kwargs
+   * {"enable_thinking":false}; NInfer --no-thinking; chat requests of an external or command engine
+   * chat_template_kwargs {"enable_thinking":false}. Engines without a way to switch it off keep their
+   * default and the plan says so ('flag_unsupported'). Benchmarks that send raw prompts (llama.cpp
+   * /completion, /v1/completions) apply no chat template: there it changes nothing measured.
+   * core/engines/shared/reasoning-vision.ts.
+   */
+  reasoning: z.boolean().optional(),
+  /**
+   * Image (and video) input: absent or true = on when the model has it (llama.cpp: the image projector
+   * the library groups with the model, --mmproj; NInfer --vision when the artifact packs vision; vLLM
+   * and SGLang their default), false = off (no projector; vLLM a multimodal model with
+   * --limit-mm-per-prompt {"image":0,"video":0}). It costs video memory and start time.
+   */
+  vision: z.boolean().optional(),
   /** NInfer's own settings (ninfer-native / ninfer-wsl). */
   ninfer: ninferParamsSchema.optional(),
   /**

@@ -9,6 +9,12 @@ export interface ClientOptions {
   model?: string;
   /** Sent as `Authorization: Bearer …` (llama-server --api-key, vLLM --api-key, external servers). */
   apiKey?: string;
+  /**
+   * Chat requests only (flavor 'openai-chat'): chat_template_kwargs sent with every request, e.g.
+   * {"enable_thinking": false} when reasoning is switched off (engines/shared/reasoning-vision.ts).
+   * Absent = the field is not sent (strict servers reject unknown fields).
+   */
+  chatTemplateKwargs?: Record<string, unknown>;
 }
 
 const tokenizeSchema = z.object({ tokens: z.array(z.number()) });

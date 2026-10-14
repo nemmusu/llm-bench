@@ -12,6 +12,7 @@ import { createProcessInstance } from '../instance';
 import type { EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, PlanOptions, ProgressSink } from '../types';
 import type { ModelClientFactory } from '../shared/client';
 import { modelReadyProbe } from '../shared/probes';
+import { multimodalArchitecture } from '../shared/reasoning-vision';
 import { FlagGate, trustedFlags } from '../shared/standard-flags';
 import { vllmModelSource, vllmServeArgs } from '../shared/vllm-args';
 import { probeVllmHelp, type VllmHelp } from '../shared/vllm-help';
@@ -144,8 +145,8 @@ export class VllmNativeAdapter implements EngineAdapter {
     const modelRef = src.kind === 'local' ? path.join(src.hostDir, src.inner) : src.repo;
     const env: Record<string, string> = { ...params.env };
     if (this.o.hfToken?.()) env.HF_TOKEN = HF_PLACEHOLDER;
-    // A fork's options (its check), or this vLLM's own when the RoPE flag must be chosen.
-    const known = opts.knownFlags ?? (params.ropeScaling ? (await this.capabilities(cfg)).flags : undefined);
+    // A fork's options (its check), or this vLLM's own when the RoPE, reasoning or vision flag must be chosen.
+    const known = opts.knownFlags ?? (params.ropeScaling || params.reasoning === false || params.vision === false ? (await this.capabilities(cfg)).flags : undefined);
     const gate = new FlagGate('vllm', trustedFlags('vllm', known));
     const args = vllmServeArgs(params, {
       model: modelRef,
@@ -155,6 +156,7 @@ export class VllmNativeAdapter implements EngineAdapter {
       servedName: opts.marker,
       apiName: opts.apiName,
       ...(src.kind === 'repo' && src.revision !== undefined ? { revision: src.revision } : {}),
+      multimodal: multimodalArchitecture(model.identity.facts?.architecture),
     }, gate);
     const engine: EngineIdentity = { kind: this.kind, name: 'vLLM', executable: exe };
     if (v.version !== undefined) engine.version = v.version;

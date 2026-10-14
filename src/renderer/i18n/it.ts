@@ -1485,6 +1485,8 @@ export const it = {
       dtype: 'Tipo di dati',
       quantization: 'Quantizzazione',
       ropeScaling: 'Estensione del contesto (RoPE)',
+      reasoning: 'Ragionamento',
+      vision: 'Visione (immagini)',
       ninfer: 'Impostazioni NInfer',
       trtllm: 'Impostazioni TensorRT-LLM',
       promptLengths: 'Lunghezze dei prompt',

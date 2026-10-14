@@ -3,6 +3,7 @@ import type { LaunchParams, RopeScaling } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
 import type { ModelTarget } from '../types';
 import { vllmKvDtype } from './kv-flags';
+import { vllmReasoningVisionArgs } from './reasoning-vision';
 import { FlagGate } from './standard-flags';
 
 export const VLLM_DEFAULT_MAX_MODEL_LEN = 4096;
@@ -64,6 +65,8 @@ export interface VllmServeOptions {
   /** Servers for other programs: listed first, so responses carry the model's own name. */
   apiName?: string | undefined;
   revision?: string;
+  /** The model reads images (its architecture says so): vision can be switched off (reasoning-vision.ts). */
+  multimodal?: boolean;
 }
 
 /** The rope_scaling entry of a model config (vLLM --hf-overrides, SGLang --json-model-override-args). */
@@ -99,6 +102,7 @@ export function vllmServeArgs(params: LaunchParams, o: VllmServeOptions, gate = 
     else if (gate.lists('--rope-scaling')) args.push('--rope-scaling', JSON.stringify(rope));
     else gate.note('--hf-overrides');
   }
+  args.push(...vllmReasoningVisionArgs(params, o.multimodal === true, gate));
   args.push(...params.extraArgs);
   return args;
 }

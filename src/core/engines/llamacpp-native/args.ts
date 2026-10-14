@@ -5,6 +5,7 @@
  */
 import type { LaunchParams, RopeScaling } from '../../../contract/engines';
 import { llamaFlashAttention, llamaKvLayoutArgs, llamaKvType } from '../shared/kv-flags';
+import { llamaReasoningArgs } from '../shared/reasoning-vision';
 import type { FlagGate } from '../shared/standard-flags';
 import { aliasArg, type LlamaCaps } from './caps';
 
@@ -52,6 +53,8 @@ export function llamaArgs(params: LaunchParams, caps: LlamaCaps, o: LlamaArgsOpt
   // behaviour no longer depends on the build's default.
   args.push(...llamaKvLayoutArgs(params, caps.flags));
   llamaRopeArgs(params.ropeScaling, gate, args);
+  // Reasoning switched off (on = the chat template's own default).
+  args.push(...llamaReasoningArgs(params, gate));
   // Auto-fit would silently change ctx/ngl to fit memory: the measured config must be the requested one.
   if (caps.fitFlag) args.push('--fit', 'off');
   if (caps.flags.has('--no-webui')) args.push('--no-webui');

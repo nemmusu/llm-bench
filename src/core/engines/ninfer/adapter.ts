@@ -370,7 +370,7 @@ export class NinferAdapter implements EngineAdapter {
     // otherwise); NInfer uses it by itself when the artifact stores one, so it is only left out.
     const noHead = params.ninfer?.lmHeadDraft === true && (await this.embeddedOf(file))?.proposalHead === false;
     const launch = noHead ? { ...params, ninfer: { ...params.ninfer, lmHeadDraft: false } } : params;
-    const args = ninferServeArgs(launch, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker });
+    const args = ninferServeArgs(launch, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker, hasVision: model.identity.facts?.components?.includes('vision') === true });
     // probe() never rejects: a build that does not answer is a probe that says so.
     const probe = where ? await this.probe(where) : undefined;
     const commit = probe?.commit?.slice(0, 12);

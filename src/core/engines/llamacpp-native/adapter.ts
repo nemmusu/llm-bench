@@ -36,6 +36,7 @@ import {
 } from './install';
 import { diagnoseExit, llamaPhaseOf } from './logs';
 import { LlamaReleasesClient, selectAssets, type AssetSelection } from './releases';
+import { withLlamaVision } from '../shared/reasoning-vision';
 import { FlagGate, trustedFlags } from '../shared/standard-flags';
 import { ignore, timeoutSignal } from '../util';
 
@@ -181,7 +182,9 @@ export class LlamaNativeAdapter implements EngineAdapter {
 
     // A build whose --help lists our flags (forks too) gets only the ones it knows; the rest is reported.
     const gate = new FlagGate('llamacpp', exe.planned ? undefined : trustedFlags('llamacpp', caps.flags));
-    const args = llamaArgs(params, caps, { modelPath: main, host: LOOPBACK, port: opts.port, marker: opts.marker, apiName: opts.apiName }, gate);
+    // The model's image projector unless vision is switched off: part of the launch's arguments (and its record).
+    const launched = withLlamaVision(params, model, gate);
+    const args = llamaArgs(launched, caps, { modelPath: main, host: LOOPBACK, port: opts.port, marker: opts.marker, apiName: opts.apiName }, gate);
 
     const engine: EngineIdentity = { kind: this.kind, name: 'llama.cpp', variant: exe.variant, executable: exe.path };
     if (caps.version !== undefined) engine.version = caps.version;

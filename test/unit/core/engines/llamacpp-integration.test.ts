@@ -109,6 +109,29 @@ describe('llama.cpp adapter × fake llama-server (real processes)', () => {
     expect(inst.logTail().length).toBeGreaterThan(20);
   });
 
+  it.each([
+    ['on (not switched off): the projector loaded, thinking on', {}, true],
+    ['switched off: no projector, --reasoning off', { reasoning: false, vision: false }, false],
+  ] as const)('reasoning and vision %s', async (_label, over, on) => {
+    const { adapter, gguf } = setup();
+    const projector = path.join(path.dirname(gguf), 'mmproj-tiny-F16.gguf');
+    writeFileSync(projector, Buffer.alloc(512, 1));
+    const t = target(gguf);
+    t.local!.auxiliary.push({ kind: 'mmproj', path: projector });
+    const plan = await adapter.plan(cfg, t, params({ loadMsWarm: 100 }, over), { port: await pickFreePort(), marker: marker() });
+    expect(plan.argv.includes('--mmproj')).toBe(on);
+    expect(plan.argv.includes('--reasoning')).toBe(!on);
+    // The record keeps what was asked, not the projector's path.
+    expect(plan.params.extraArgs).toEqual([]);
+    const inst = await adapter.start(plan, new AbortController().signal);
+    const logs = collect(inst.logs);
+    await inst.waitReady();
+    await inst.stop();
+    const lines = await logs;
+    expect(lines.some((l) => l.includes(`loaded multimodal model, '${projector}'`))).toBe(on);
+    expect(lines).toContain(`srv          init: thinking = ${on ? 1 : 0}`);
+  });
+
   it('cold load (marker file present) is slower than warm, and the marker is consumed', async () => {
     const { adapter, gguf, root } = setup();
     const coldMarker = path.join(root, 'cold');

@@ -8,7 +8,9 @@ const P = (over: object = {}) => launchParamsSchema.parse(over);
 describe('NInfer launch settings for a scenario', () => {
   it('one lane per user (at most 8), the longest request as --max-context, a pool for everyone at once', () => {
     const p = autoLaunchParams('ninfer-wsl', buildScenario('standard'), P(), 262_144);
-    expect(p).toMatchObject({ parallel: 4, contextSize: 5120, ninfer: { prefixReuse: false, thinking: false } });
+    // Reasoning is the launch's own choice (LaunchParams.reasoning: on unless switched off), not forced off.
+    expect(p).toMatchObject({ parallel: 4, contextSize: 5120, ninfer: { prefixReuse: false } });
+    expect(p.ninfer?.thinking).toBeUndefined();
     expect(p.ninfer?.kvCapacity).toBeUndefined();
     // 12 users at once of 4K each: 8 lanes, a pool for 8 × 4K.
     const crowd: Scenario = { profile: 'custom', seed: 1, steps: [{ kind: 'concurrency', levels: [12], promptTokens: 4000, outputTokens: 64 }] } as Scenario;
@@ -16,12 +18,12 @@ describe('NInfer launch settings for a scenario', () => {
     // Long conversations: prefix reuse on (that is what they measure), the pool for the sessions.
     const team: Scenario = { profile: 'custom', seed: 1, steps: [{ kind: 'sessions', depth: 8000, levels: [1, 2], turns: 2, followupTokens: 64, outputTokens: 16 }] } as Scenario;
     const s = autoLaunchParams('ninfer-wsl', team, P({ ninfer: { kvDtype: 'int8' } }), 262_144);
-    expect(s).toMatchObject({ parallel: 2, ninfer: { kvDtype: 'int8', prefixReuse: true, thinking: false } });
+    expect(s).toMatchObject({ parallel: 2, ninfer: { kvDtype: 'int8', prefixReuse: true } });
     expect(s.ninfer?.kvCapacity).toBeGreaterThan(s.contextSize as number);
     // The user's own settings stay; a scenario of loads only keeps NInfer's default context.
     expect(autoLaunchParams('ninfer-wsl', buildScenario('standard'), P({ contextSize: 16_384, parallel: 1, ninfer: { kvCapacity: 'auto' } }))).toMatchObject({ contextSize: 16_384, parallel: 1, ninfer: { kvCapacity: 'auto' } });
     const loads: Scenario = { profile: 'custom', seed: 1, steps: [{ kind: 'load', cache: 'warm', reps: 1 }] } as Scenario;
-    expect(autoLaunchParams('ninfer-wsl', loads, P())).toEqual({ ...P(), ninfer: { prefixReuse: false, thinking: false } });
+    expect(autoLaunchParams('ninfer-wsl', loads, P())).toEqual({ ...P(), ninfer: { prefixReuse: false } });
   });
 
   it('limits a scenario to what the launch holds: per request, and everyone in the pool', () => {

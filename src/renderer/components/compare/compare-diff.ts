@@ -33,6 +33,8 @@ const PARAM_LABELS: Record<keyof LaunchParams, MessageKey> = {
   dtype: 'benchmark.expert.dtype',
   quantization: 'benchmark.expert.quantization',
   ropeScaling: 'benchmark.expert.ropeScaling',
+  reasoning: 'benchmark.expert.reasoning',
+  vision: 'benchmark.expert.vision',
   ninfer: 'benchmark.expert.ninfer',
   trtllm: 'benchmark.expert.trtllm',
   extraArgs: 'benchmark.expert.extraArgs',

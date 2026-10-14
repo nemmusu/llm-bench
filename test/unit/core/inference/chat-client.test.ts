@@ -75,6 +75,9 @@ describe('ChatClient', () => {
       stream_options: { include_usage: true },
     });
     expect(c.requestBody({ promptText: 't', outputTokens: 1, seed: 1, model: 'other' })).toMatchObject({ model: 'other' });
+    // Reasoning switched off: the template is asked not to think (only then: strict servers reject unknown fields).
+    const off = new ChatClient('http://x', deps(), { chatTemplateKwargs: { enable_thinking: false } });
+    expect(off.requestBody({ promptText: 't', outputTokens: 1, seed: 1 })).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
     const bare = new ChatClient('http://x', deps()).requestBody({ outputTokens: 1, seed: 1 });
     expect(bare).not.toHaveProperty('model');
     expect(bare.messages).toEqual([{ role: 'user', content: CONTINUE_INSTRUCTION }]);

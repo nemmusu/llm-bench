@@ -96,6 +96,8 @@ export class ChatClient implements InferenceClient {
       seed: req.seed,
       stream: true,
       stream_options: { include_usage: true },
+      // Only when asked (reasoning switched off): strict servers reject fields they do not know.
+      ...(this.opts.chatTemplateKwargs ? { chat_template_kwargs: this.opts.chatTemplateKwargs } : {}),
     };
   }
 

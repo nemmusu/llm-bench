@@ -38,6 +38,7 @@ import type { CoreDeps, ExitInfo, ManagedProcess, Platform } from '../../deps';
 import type { InferenceClient } from '../../inference/types';
 import type { OwnedRecord, OwnershipRegistry } from '../../process/ownership';
 import { LOOPBACK } from '../../process/ports';
+import { chatKwargsOf } from '../shared/reasoning-vision';
 import { createProcessInstance, type ClientFactory } from '../instance';
 import { listsModel } from '../shared/probes';
 import type { CoreEngineConfig, EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
@@ -256,7 +257,9 @@ export class CommandAdapter implements EngineAdapter {
     // The name it serves: ours when the template passes {alias}, else whatever it lists first.
     const named = plan.argv.some((a) => a.includes(plan.marker)) ? plan.marker : undefined;
     const flavor = plan.engine.variant === 'openai-chat' ? 'openai-chat' : 'openai';
-    let client: InferenceClient = this.o.createClient(flavor, baseUrl, named ? { model: named } : {});
+    // Reasoning switched off: its chat requests ask the template not to think (engines/shared/reasoning-vision.ts).
+    const kwargs = chatKwargsOf(flavor, plan.params);
+    let client: InferenceClient = this.o.createClient(flavor, baseUrl, { ...(named ? { model: named } : {}), ...kwargs });
     const inst = createProcessInstance({
       mp,
       baseUrl,
@@ -284,7 +287,7 @@ export class CommandAdapter implements EngineAdapter {
         const ready = await inst.waitReady(s);
         if (named === undefined) {
           const ids = await client.models(s).catch(() => []);
-          if (ids[0] !== undefined) client = this.o.createClient(flavor, baseUrl, { model: ids[0] });
+          if (ids[0] !== undefined) client = this.o.createClient(flavor, baseUrl, { model: ids[0], ...kwargs });
         }
         return ready;
       },
