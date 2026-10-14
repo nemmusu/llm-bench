@@ -13,6 +13,7 @@ import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import { Callout } from '../ui/callout';
 import { ConfirmDialog, Dialog, DialogContent } from '../ui/dialog';
+import { PathText } from '../ui/path-text';
 import { Skeleton } from '../ui/skeleton';
 import { EngineCard } from './engine-card';
 
@@ -182,7 +183,9 @@ export function LlamaCard({ installBytes }: { installBytes?: number | undefined 
       {custom && (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3">
           <p className="text-xs font-medium text-fg-3">{t('engines.llama.customInUse')}</p>
-          <p className="font-mono text-xs break-all text-fg">{custom}</p>
+          <p className="font-mono text-xs text-fg">
+            <PathText path={custom} />
+          </p>
           {status?.available ? (
             <p className="text-sm text-success-text">{t('engines.llama.customOk', { version: status.version ?? '–' })}</p>
           ) : (

@@ -28,6 +28,7 @@ import { repoText } from './ninfer-build-dialog';
 import { BuildFailure, BuildProgress, Checking, PlanCommands, PlanNeeds, useGuidedBuild } from './ninfer-guided';
 import { NinferProblem } from './ninfer-problem';
 import { NinferRemove } from './ninfer-remove';
+import { PathText } from '../ui/path-text';
 
 const TONES: Record<NinferBuildState, StatusDotProps['tone']> = { ready: 'success', stale: 'warning', 'not-built': 'warning', broken: 'danger', missing: 'neutral' };
 
@@ -137,7 +138,9 @@ export function NinferBuildRow({ info, kind, distro, highlight, forModel }: Ninf
         <dt className="text-fg-3">{t('ninfer.builds.from')}</dt>
         <dd className="break-all text-fg">{info.source.branch ? t('ninfer.builds.sourceBranch', { repo: repoText(info.source.url), branch: info.source.branch }) : repoText(info.source.url)}</dd>
         <dt className="text-fg-3">{t('ninfer.builds.folder')}</dt>
-        <dd className="font-mono text-xs break-all text-fg">{info.state === 'missing' ? t('ninfer.builds.folderNew', { dir: info.dir, where }) : `${info.dir}${info.distro ? ` · ${info.distro}` : ''}`}</dd>
+        <dd className="font-mono text-xs text-fg [overflow-wrap:anywhere]">
+          {info.state === 'missing' ? t('ninfer.builds.folderNew', { dir: info.dir, where }) : <PathText path={`${info.dir}${info.distro ? ` · ${info.distro}` : ''}`} />}
+        </dd>
         {info.release && (
           <>
             <dt className="text-fg-3">{t('ninfer.builds.release')}</dt>

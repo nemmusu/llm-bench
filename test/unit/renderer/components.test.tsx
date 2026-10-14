@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../src/renderer/
 import { Toaster } from '../../../src/renderer/components/ui/toaster';
 import { Tooltip } from '../../../src/renderer/components/ui/tooltip';
 import { TriedBadge, TriedHereBadge } from '../../../src/renderer/components/ui/tried-badge';
+import { PathText } from '../../../src/renderer/components/ui/path-text';
 import { renderUi } from './helpers';
 
 afterEach(() => {
@@ -119,6 +120,16 @@ describe('Card, Badge, Kbd, Skeleton, StatusDot', () => {
     expect(screen.getByText('K').tagName).toBe('KBD');
     expect(container.querySelectorAll('.animate-ping-soft')).toHaveLength(1);
     expect(screen.getByText('Piede')).toBeTruthy();
+  });
+});
+
+describe('PathText', () => {
+  it('wraps after a path\'s separators only, its text unchanged', () => {
+    const { container } = renderUi(<PathText path="C:\Users\me\models" />);
+    expect(container.textContent).toBe('C:\\Users\\me\\models');
+    expect(container.querySelectorAll('wbr')).toHaveLength(3);
+    const one = renderUi(<PathText path="/opt/x/" />);
+    expect(one.container.querySelectorAll('wbr')).toHaveLength(2);
   });
 });
 

@@ -6,6 +6,7 @@ import { useSettings } from '../../lib/settings';
 import { useAddModelFolder } from '../library/add-folder';
 import { ErrorCallout } from '../library/error-callout';
 import { Button, IconButton } from '../ui/button';
+import { PathText } from '../ui/path-text';
 import { Switch } from '../ui/switch';
 import { Row, Section } from './section';
 
@@ -35,7 +36,9 @@ export function FoldersSection() {
         label={t('settings.resultsDir')}
         hint={
           <>
-            <span className="block font-mono break-all">{settings.resultsDir || system.data?.paths.resultsDir || t('settings.defaultFolder')}</span>
+            <span className="block font-mono">
+              <PathText path={settings.resultsDir || system.data?.paths.resultsDir || t('settings.defaultFolder')} />
+            </span>
             <span className="mt-1 block">{t('settings.resultsDirHint')}</span>
           </>
         }
@@ -50,7 +53,9 @@ export function FoldersSection() {
         label={t('settings.modelsDir')}
         hint={
           <>
-            <span className="block font-mono break-all">{settings.modelsDir || system.data?.paths.modelsDir || t('settings.defaultFolder')}</span>
+            <span className="block font-mono">
+              <PathText path={settings.modelsDir || system.data?.paths.modelsDir || t('settings.defaultFolder')} />
+            </span>
             <span className="mt-1 block">{t('settings.folders.modelsHint')}</span>
           </>
         }
