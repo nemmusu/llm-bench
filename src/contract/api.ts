@@ -4,6 +4,7 @@ import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsS
 import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
+import { ninferBuildChoiceSchema } from './ninfer';
 import { appliedRecipeSchema, MAX_RECIPE_CONTEXT, recipeChoiceSchema } from './recipes';
 import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuningSchema } from './results';
 import { serverNetworkSchema, serverPortSchema } from './servers';
@@ -182,6 +183,12 @@ export const runPlanSchema = z.object({
     .optional(),
   /** The model's command recipe this run uses: what it set, what the user's settings replaced, what did not apply. */
   recipe: appliedRecipeSchema.optional(),
+  /**
+   * A .ninfer model only NInfer-all reads (contract/ninfer.ts ninferBuildFor): NInfer-all runs it, whatever
+   * NInfer build was chosen. `ready` false: it is not built yet (the start flow builds it first; POST
+   * /api/runs fails with ENGINE_NOT_INSTALLED, reason 'ninfer_all_missing').
+   */
+  ninferBuild: ninferBuildChoiceSchema.optional(),
 });
 export type RunPlan = z.infer<typeof runPlanSchema>;
 
@@ -321,6 +328,8 @@ export const serverPlanSchema = z.object({
   warnings: runPlanSchema.shape.warnings,
   /** The model's command recipe this server uses (as in RunPlan.recipe). */
   recipe: appliedRecipeSchema.optional(),
+  /** NInfer-all runs this .ninfer model (as in RunPlan.ninferBuild). */
+  ninferBuild: ninferBuildChoiceSchema.optional(),
   /** The port it will listen on: the request's, else the first free one from 8080. */
   port: z.number().int(),
   network: serverNetworkSchema,

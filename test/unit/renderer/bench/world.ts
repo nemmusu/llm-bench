@@ -10,6 +10,7 @@ import type { ServerApiKeyInfo, ServerNotice, ServerPreset } from '../../../../s
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
 import type { FitEstimate, LocalModel } from '../../../../src/contract/models';
+import type { NinferBuildPlan, NinferBuilds } from '../../../../src/contract/ninfer';
 import type { RunResult } from '../../../../src/contract/results';
 import { configsQuerySchema } from '../../../../src/contract/configs';
 import { mergeSources, queryConfigs, sourcesOf } from '../../../../src/core/store/configs-index';
@@ -199,6 +200,30 @@ export interface World {
   recovery: DockerRecovery;
   /** GET /api/docker/diagnosis. */
   diagnosis: DockerDiagnosis;
+  /** GET /api/engines/ninfer/builds (default: neither set up), and the plan of a guided build (default: ready). */
+  ninferBuilds: NinferBuilds;
+  ninferPlan: NinferBuildPlan;
+}
+
+/** NInfer-all's guided build in this world, ready to run (an existing checkout, nothing missing). */
+export function ninferPlanFor(over: Partial<NinferBuildPlan> = {}): NinferBuildPlan {
+  return {
+    kind: 'ninfer-wsl',
+    distro: 'Ubuntu-24.04',
+    dir: '/home/u/ninfer-all',
+    servePath: '/home/u/ninfer-all/build/apps/ninfer-serve',
+    existing: false,
+    source: { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' },
+    commands: ['git clone --progress --branch master https://github.com/iamwavecut/ninfer-all.git /home/u/ninfer-all'],
+    prereqs: [{ id: 'git', found: true, version: '2.43.0', packages: ['git'] }],
+    cudaFromNvidia: false,
+    cuda: { need: '13.1', have: '13.3', nvcc: '/usr/local/cuda-13.3/bin/nvcc', allNeeds: true },
+    downloadBytes: 39_367 * 1024,
+    cpus: 16,
+    minutes: 10,
+    ready: true,
+    ...over,
+  };
 }
 
 export interface BenchApi extends FakeApi {
@@ -227,6 +252,8 @@ export function defaultWorld(): World {
     docker: { state: 'running', version: '29.8.0', platform: 'Docker Desktop 4.47.0 (210443)' },
     recovery: { servers: [], restoring: false },
     diagnosis: { cause: 'unknown', evidence: [], resourceSaver: { enabled: true, timeoutSeconds: 300 } },
+    ninferBuilds: { kind: 'ninfer-wsl', builds: [] },
+    ninferPlan: ninferPlanFor(),
   };
 }
 
@@ -293,6 +320,8 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
     const log = /^\/api\/servers\/([^/]+)\/log$/.exec(bare);
     if (log) return { lines: world.logs[decodeURIComponent(log[1]!)] ?? [] };
     if (bare === '/api/engines/custom') return world.custom;
+    if (bare === '/api/engines/ninfer/builds') return world.ninferBuilds;
+    if (bare === '/api/engines/ninfer/distros') return { wsl: true, distros: [{ name: 'Ubuntu-24.04', default: true, version: 2, running: true }] };
     if (bare === '/api/docker/status') return world.docker;
     if (bare === '/api/docker/recovery') return world.recovery;
     if (bare === '/api/docker/diagnosis') return world.diagnosis;
@@ -338,6 +367,8 @@ function handle(world: World, method: string, path: string, body: unknown): unkn
       return info;
     }
     if (bare === '/api/models/fit') return world.fit;
+    if (bare === '/api/engines/ninfer/build-plan') return world.ninferPlan;
+    if (bare === '/api/engines/ninfer/build' || bare === '/api/engines/ninfer/build/cancel') return { ok: true };
     if (bare === '/api/runs') {
       world.active = activeRun('01M48PNN41KKD0ABVXTGK97Y6P');
       return { runId: world.active.runId };

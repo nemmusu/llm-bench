@@ -22,6 +22,7 @@ import { useStartFlow } from '../components/bench/start-flow';
 import { sourceFor } from '../components/configs/depths';
 import { serverNinfer, withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
 import { NinferPresetPicker } from '../components/engines/ninfer-presets';
+import { NinferAllCallout, useNinferAllNeed, withNinferAll } from '../components/engines/ninfer-all-note';
 import { engineNameOf } from '../components/servers/engine-name';
 import { RecipeChip } from '../components/recipes/recipe-chip';
 import { targetOfOption } from '../components/recipes/recipe-model';
@@ -152,15 +153,18 @@ export function ServerStartPage() {
   const configRun = useRun(configSource?.runId);
   const configParams =
     configRun.data && local.data ? presetOf(configRun.data, local.data, system.data?.paths.enginesDir, { combo: configSource?.combo }).params : undefined;
-  // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), a test's own NInfer settings, or LLM Bench's choice.
+  // A .ninfer model only NInfer-all reads: NInfer-all runs it (the page says so).
+  const chosenCustom = customList.find((c) => c.engine.id === engineChoice?.config.customEngineId)?.engine;
+  const ninferAll = useNinferAllNeed(engineChoice?.kind ?? 'llamacpp-native', chosenCustom, identity);
+  // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), those the build that runs it has, a test's own NInfer settings, or LLM Bench's choice.
   const ninferPresets =
     option?.source === 'local' && format === 'ninfer'
-      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name, repo: option.local.identity.repo, file: option.local.identity.file })
+      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name, repo: option.local.identity.repo, file: option.local.identity.file }, ninferAll.kvDtypes)
       : [];
   // Handed-over NInfer settings are the preset they match, else offered as they are ('run').
   const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(undefined);
-  // A variant of NInfer starts with its model card's settings (they may need its own KV type); NInfer with its recommended ones.
-  const firstChoice: NinferChoice = engineChoice?.base === 'ninfer' && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended';
+  // A variant of NInfer (NInfer-all among them) starts with its model card's settings (they may need its own KV type); NInfer with its recommended ones.
+  const firstChoice: NinferChoice = (engineChoice?.base === 'ninfer' || ninferAll.needed) && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended';
   const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (ninferPresetOf(draft!.params!, ninferPresets) ?? 'run') : firstChoice);
   const ninferParams = ninferChoice === 'run' ? draft!.params : withNinferPreset(undefined, ninferPresets.find((p) => p.id === ninferChoice)?.params);
   const modelPresets = option ? presetsForModel(presets.data ?? [], optionModel(option)) : [];
@@ -207,7 +211,7 @@ export function ServerStartPage() {
   const own = !(tab === 'best' && best === 'auto');
   // The recipe may run the model on its own engine (a fork): the summary names the one that will run.
   const applied = current?.recipe?.engine;
-  const summaryEngine = applied ? engineNameOf({ kind: applied.kind ?? engine!.kind, ...(applied.customEngineId !== undefined ? { customEngineId: applied.customEngineId } : {}) }, customList, f) : engineName;
+  const summaryEngine = withNinferAll(applied ? engineNameOf({ kind: applied.kind ?? engine!.kind, ...(applied.customEngineId !== undefined ? { customEngineId: applied.customEngineId } : {}) }, customList, f) : engineName, ninferAll, t);
 
   const [saving, setSaving] = useState(false);
 
@@ -290,8 +294,10 @@ export function ServerStartPage() {
             </StepCard>
             <StepCard step={2} title={t('servers.flow.step.engine')} help={t('servers.flow.step.engineHelp')}>
               <EngineStep choices={choices} value={engineChoice} onChange={setEngineKey} customs={customList} />
+              {ninferAll.needed && <p className="text-sm text-fg-2">{ninferAll.ready ? t('ninfer.allNote.ready') : t('ninfer.allNote.toBuildServer')}</p>}
             </StepCard>
           </div>
+          {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
           <StepCard step={3} title={t('servers.flow.step.settings')} help={t('servers.flow.step.settingsHelp')}>
             <SettingsStep
               engineKind={engineChoice?.kind ?? 'llamacpp-native'}

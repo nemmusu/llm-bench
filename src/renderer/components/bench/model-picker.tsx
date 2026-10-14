@@ -78,7 +78,7 @@ function Row({ o, engine, runs, gpuName }: { o: ModelOption; engine: EngineKind;
         <span className="flex flex-wrap items-center gap-1.5">
           <RowFit option={o} engine={engine} />
           {tried && <TriedHereBadge tried={triedHere(tried)} short size="sm" />}
-          {o.source === 'local' && o.local.identity.format === 'gguf' && <ForkBadge model={o.local.identity} weakKey={o.local.identity.weakKey} label={o.name} />}
+          {o.source === 'local' && o.local.identity.format !== 'safetensors' && <ForkBadge model={o.local.identity} weakKey={o.local.identity.weakKey} label={o.name} />}
           {recipe && (
             <Badge tone="accent" size="sm">
               {t('recipes.badge', { name: recipe.name })}

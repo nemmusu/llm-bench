@@ -82,6 +82,17 @@ describe('ninfer-serve logs', () => {
     expect(ninferMemoryReport(['2026-09-28 12:33:02.716  INFO  capacity | KV 65,536 tokens, fp8, auto'])).toEqual({ kvTokens: 65_536, kvDtype: 'fp8', kvMode: 'auto' });
   });
 
+  it("NInfer-all's start on the user's RTX 5090 (GGUF-NInfer Q6_K from /mnt/c, rk8v4): its stages, its load's progress, its memory", () => {
+    const all = lines('serve-all-gguf-q6k.log');
+    const stages = all.map(ninferProgress).filter((u) => u !== undefined);
+    expect(stages.map((u) => u.stage)).toEqual(['starting', 'weights', 'weights', 'weights', 'kv-cache', 'kv-cache', 'cuda-graphs', 'warmup', 'warmup', 'api-server']);
+    // "loading weights 13.4% | 2.87 GiB/21.5 GiB | 302.1 MiB/s | ETA 1m 3.1s"
+    expect(stages[2]?.fraction).toBeCloseTo(0.134, 3);
+    expect(stages[3]).toMatchObject({ fraction: 1 });
+    expect(ninferKvCapacity(all)).toEqual({ tokens: 65_536 });
+    expect(ninferMemoryReport(all)).toEqual({ weightsMiB: 22_016, kvTokens: 65_536, kvDtype: 'rk8v4', kvMode: 'explicit', runtimeMiB: 3061.76, freeMiB: 5457.92 });
+  });
+
   it('reads the periodic throughput lines', () => {
     const t = SERVE.map(parseNinferThroughput).filter((x) => x !== undefined);
     expect(t[0]).toEqual({ intervalSec: 5, prefillTps: 16.8, decodeTps: 129.4, running: 1 });

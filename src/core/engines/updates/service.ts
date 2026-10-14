@@ -26,6 +26,8 @@ export interface UpdateProgress {
   bytesTotal?: number;
   step?: number;
   steps?: number;
+  /** A compile's time left, seconds (estimated from its pace). */
+  etaSec?: number;
 }
 
 export interface EngineUpdatesDeps {

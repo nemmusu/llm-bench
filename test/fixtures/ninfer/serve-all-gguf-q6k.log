@@ -1,0 +1,13 @@
+2026-10-14 09:12:03.104  INFO  build 0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669
+2026-10-14 09:12:03.105  INFO  starting engine
+2026-10-14 09:12:03.311  INFO  engine | device profile nvidia-geforce-rtx-5090-sm120: 61 routed keys (...)
+2026-10-14 09:12:03.402  INFO  loading weights | 21.5 GiB
+2026-10-14 09:12:13.977  INFO    loading weights 13.4% | 2.87 GiB/21.5 GiB | 302.1 MiB/s | ETA 1m 3.1s
+2026-10-14 09:13:52.902  INFO  weights ready | 21.5 GiB | 1m 49.5s | 200.9 MiB/s
+2026-10-14 09:13:52.903  INFO  pinning host state | 1.15 GiB
+2026-10-14 09:13:57.301  INFO  host KV pinned | 8.00 GiB | 4.4s
+2026-10-14 09:13:59.104  INFO  CUDA graphs ready | 1.8s
+2026-10-14 09:14:00.602  INFO  engine ready | qwen3.8-27b-coder390-q6k-mtp | total 1m 57.5s | weights 21.5 GiB | CUDA sync auto
+2026-10-14 09:14:00.603  INFO  capacity | KV 65,536 tokens, rk8v4, explicit | pages 1,024/1,024 | runtime 2.99 GiB | free 5.33 GiB
+2026-10-14 09:14:01.213  INFO  warmup complete | 610 ms
+2026-10-14 09:14:01.214  INFO  listening on http://127.0.0.1:18299 | model qwen38-test | auth disabled

@@ -1,33 +1,38 @@
 /**
- * NInfer's "Aggiorna" (contract/engine-updates.ts, targets 'ninfer-native' / 'ninfer-wsl'), on Linux
- * or inside the chosen WSL distro, and only inside NInfer's git checkout:
+ * NInfer's "Aggiorna" (contract/engine-updates.ts, targets 'ninfer-native' / 'ninfer-wsl', and a variant's
+ * `custom:<id>`, NInfer-all's among them), on Linux or inside the chosen WSL distro, and only inside
+ * NInfer's git checkout:
  *
  *   check   one script: where HEAD stands against its upstream branch (after `git fetch` when asked:
  *           only the checkout's remote-tracking branches change), the new commits with their titles,
- *           local changes, NInfer's artifact upgrade tools, git and cmake there at all
+ *           local changes, NInfer's artifact upgrade tools, git and cmake there at all, and whether the
+ *           program is older than the code (built from another commit, or before the last commit)
  *   update  cp -p <serve> <serve>.gpubench-previous       (the working program, kept aside)
- *           git -C <dir> pull --ff-only
+ *           git -C <dir> pull --ff-only                   (not when only a rebuild is due)
  *           cmake --build <dir>/build -j
+ *           git -C <dir> rev-parse HEAD > <dir>/build/.llmbench-built-commit
  *
  * The same shapes and reasons as the other engines' updates (core/engines/updates); what NInfer adds
  * is the way back: if the build fails or is cancelled, the kept program goes back in place and the
- * checkout returns to the commit it was on (it had no local changes), so NInfer keeps working. Each
- * step runs as NInfer's guided build runs its steps (WSL: in its own session, marked as ours, so a
- * cancel stops the compile inside the distro). Library artifacts in an older container version than
- * this build reads are listed with NInfer's own upgrade command.
+ * checkout returns to the commit it was on (it had no local changes: a checkout with local changes is
+ * never pulled, and never reset), so NInfer keeps working. Each step runs as NInfer's guided build runs
+ * its steps (WSL: in its own session, marked as ours, so a cancel stops the compile inside the distro).
+ * Library artifacts in an older container version than this build reads are listed with NInfer's own
+ * upgrade command.
  */
 import path from 'node:path';
 import type { EngineUpdateCheck } from '../../../contract/engine-updates';
 import { AppError, isAppError } from '../../../contract/errors';
 import { NINFER_CONTAINER_VERSION } from '../../../contract/formats';
 import type { LocalModel } from '../../../contract/models';
-import { NINFER_SERVE_PATH, type NinferArtifactUpgrade, type NinferKind } from '../../../contract/ninfer';
+import { NINFER_BUILT_COMMIT_FILE, NINFER_SERVE_PATH, type NinferArtifactUpgrade, type NinferKind } from '../../../contract/ninfer';
+import type { ProgressSink } from '../types';
 import type { UpdateProgress } from '../updates/service';
 import { ninferArtifactInfo, type NinferWhere } from './adapter';
-import { shellLine, shellQuote, type NinferBuilder } from './build';
+import { shellLine, shellQuote, type BuildLog, type NinferBuilder } from './build';
 import { wslPathOf } from './wsl';
 
-/** The check, in one script: "##key value" lines (git's own output never starts with "##"). `$2` = 1: fetch first. */
+/** The check, in one script: "##key value" lines (git's own output never starts with "##"). `$2` = 1: fetch first; `$3`: the program. */
 export const UPDATE_SCRIPT = [
   'start="$1"; [ "${start#\\~}" != "$start" ] && start="$HOME${start#\\~}"',
   'command -v git >/dev/null 2>&1 || { echo "##nogit"; exit 0; }',
@@ -45,6 +50,10 @@ export const UPDATE_SCRIPT = [
   'git -C "$d" status --porcelain --untracked-files=no 2>/dev/null | head -n 20 | sed "s/^/##dirty /"',
   'for t in "$d"/tools/upgrade_ninfer_v*_to_v*.py; do [ -f "$t" ] && echo "##tool ${t#"$d"/}"; done',
   'echo "##cmake $(command -v cmake)"',
+  // What the program was built from, against the code: the build's own record, else the two times.
+  `echo "##built $(head -n 1 "$d/${NINFER_BUILT_COMMIT_FILE}" 2>/dev/null)"`,
+  'echo "##headtime $(git -C "$d" log -1 --format=%ct HEAD 2>/dev/null)"',
+  '[ -n "$3" ] && echo "##servetime $(stat -c %Y "$3" 2>/dev/null)"',
   'exit 0',
 ].join('\n');
 
@@ -52,8 +61,8 @@ export const UPDATE_SCRIPT = [
 export const KEPT_SUFFIX = '.gpubench-previous';
 export const KEEP_SCRIPT = `cp -p "$1" "$1${KEPT_SUFFIX}" && echo "##gpubench-kept"`;
 export const DROP_SCRIPT = `rm -f "$1${KEPT_SUFFIX}" && echo "##gpubench-dropped"`;
-/** After a failed build: the kept program back, the checkout back on the commit it was on. */
-export const RESTORE_SCRIPT = `mv -f "$1${KEPT_SUFFIX}" "$1" && git -C "$2" reset --hard -q "$3" && echo "##gpubench-restored"`;
+/** After a failed build: the kept program back, the checkout back on the commit it was on (`$3`; none after a rebuild only). */
+export const RESTORE_SCRIPT = `mv -f "$1${KEPT_SUFFIX}" "$1" && { [ -z "$3" ] || git -C "$2" reset --hard -q "$3"; } && echo "##gpubench-restored"`;
 
 export interface UpdateReport {
   /** git is there at all. */
@@ -74,6 +83,11 @@ export interface UpdateReport {
   /** NInfer's artifact upgrade tools ("tools/upgrade_ninfer_v2_to_v3.py": from 2 to 3). */
   tools: { path: string; from: number; to: number }[];
   cmake: boolean;
+  /** The commit the program was built from (LLM Bench's record). */
+  built?: string;
+  /** When the last commit was made and when the program was written (seconds since 1970). */
+  headTime?: number;
+  serveTime?: number;
 }
 
 const SHA = /^[0-9a-f]{7,40}$/;
@@ -110,21 +124,33 @@ export function parseUpdate(stdout: string): UpdateReport {
       const t = /upgrade_ninfer_v(\d+)_to_v(\d+)\.py$/.exec(value);
       if (t) report.tools.push({ path: value, from: Number(t[1]), to: Number(t[2]) });
     } else if (key === 'cmake') report.cmake = value !== '';
+    else if (key === 'built' && SHA.test(value)) report.built = value;
+    else if ((key === 'headtime' || key === 'servetime') && Number(value) > 0) report[key === 'headtime' ? 'headTime' : 'serveTime'] = Number(value);
   }
   if (fetchError.length) report.fetchError = fetchError.join('\n');
   return report;
 }
 
-/** The update's steps, and the commands shown before it (with the restore that follows a failed build). */
-export function updateSteps(dir: string, serve: string, from: string | undefined): { steps: { stage: 'git-pull' | 'build'; argv: string[] }[]; commands: string[][]; restore: string[][] } {
-  const steps = [
-    { stage: 'git-pull' as const, argv: ['git', '-C', dir, 'pull', '--ff-only'] },
-    { stage: 'build' as const, argv: ['cmake', '--build', `${dir}/build`, '-j'] },
-  ];
+/** The program is older than the code: built from another commit, or (no record) before the last commit was made. */
+export function reportStale(r: Pick<UpdateReport, 'head' | 'built' | 'headTime' | 'serveTime'>): boolean {
+  if (r.built !== undefined) return r.head !== undefined && r.built !== r.head;
+  return r.headTime !== undefined && r.serveTime !== undefined && r.headTime > r.serveTime;
+}
+
+type UpdateStep = { stage: 'git-pull' | 'build'; argv: string[] };
+
+/**
+ * The update's steps, and the commands shown before it (with the restore that follows a failed build).
+ * `rebuild`: the code is already the newest, only the program is older: no pull, no reset.
+ */
+export function updateSteps(dir: string, serve: string, from: string | undefined, rebuild = false): { steps: UpdateStep[]; commands: string[][]; restore: string[][] } {
+  const pull: UpdateStep = { stage: 'git-pull', argv: ['git', '-C', dir, 'pull', '--ff-only'] };
+  const build: UpdateStep = { stage: 'build', argv: ['cmake', '--build', `${dir}/build`, '-j'] };
+  const steps = rebuild ? [build] : [pull, build];
   return {
     steps,
-    commands: [['cp', '-p', serve, `${serve}${KEPT_SUFFIX}`], ...steps.map((s) => s.argv)],
-    restore: [['mv', '-f', `${serve}${KEPT_SUFFIX}`, serve], ...(from ? [['git', '-C', dir, 'reset', '--hard', from]] : [])],
+    commands: [['cp', '-p', serve, `${serve}${KEPT_SUFFIX}`], ...steps.map((s) => s.argv), ['git', '-C', dir, 'rev-parse', 'HEAD', '>', `${dir}/${NINFER_BUILT_COMMIT_FILE}`]],
+    restore: [['mv', '-f', `${serve}${KEPT_SUFFIX}`, serve], ...(from && !rebuild ? [['git', '-C', dir, 'reset', '--hard', from]] : [])],
   };
 }
 
@@ -132,7 +158,7 @@ export interface NinferUpdaterOptions {
   kind: NinferKind;
   /** The update target it answers for (default its kind; a variant: "custom:<id>"). */
   target?: string;
-  builder: Pick<NinferBuilder, 'runner' | 'step'>;
+  builder: Pick<NinferBuilder, 'runner' | 'step' | 'record' | 'withLog'>;
   /** The saved build (adapter.where()). */
   where(): Promise<NinferWhere | undefined>;
   /** The library, for the artifacts this build cannot read. */
@@ -167,7 +193,7 @@ export class NinferUpdater {
     if (!where) return { check: { ...base, reason: 'not-installed' } };
     const run = this.o.builder.runner(where.distro);
     const start = where.repo ?? path.posix.dirname(where.serve);
-    const out = await run('/bin/sh', ['-c', UPDATE_SCRIPT, 'sh', start, opts.fetch ? '1' : '0'], { timeoutMs: 120_000 });
+    const out = await run('/bin/sh', ['-c', UPDATE_SCRIPT, 'sh', start, opts.fetch ? '1' : '0', where.serve], { timeoutMs: 120_000 });
     const r = parseUpdate(out.stdout);
     if (!r.git) return { check: { ...base, reason: 'git-missing' } };
     // What this build reads: the newest container its own upgrade tools write (else the one LLM Bench knows).
@@ -176,6 +202,7 @@ export class NinferUpdater {
     const dir = r.dir;
     // Built somewhere else than <checkout>/build/apps/ninfer-serve: updated with its own tools.
     if (dir === undefined || where.serve !== `${dir}/${NINFER_SERVE_PATH}`) return { check: { ...base, method: 'none', state: 'none', reason: 'tools', ninfer } };
+    const stale = reportStale(r);
     const lines = updateSteps(dir, where.serve, r.head);
     const at: EngineUpdateCheck = {
       ...base,
@@ -186,6 +213,8 @@ export class NinferUpdater {
       ...(r.branch ? { branch: r.branch } : {}),
       ...(r.head ? { current: short(r.head) } : {}),
       ...(r.latest ? { latest: short(r.latest) } : {}),
+      ...(r.built ? { built: short(r.built) } : {}),
+      ...(stale ? { stale: true } : {}),
       ninfer,
     };
     if (this.o.building?.()) return { check: { ...at, reason: 'busy' } };
@@ -193,13 +222,21 @@ export class NinferUpdater {
     if (!r.upstream) return { check: { ...at, reason: 'no-upstream' } };
     if (r.fetched === false) return { check: { ...at, reason: 'fetch-failed', ...(r.fetchError ? { detail: r.fetchError } : {}) } };
     if (r.dirty.length) return { check: { ...at, reason: 'dirty', changed: r.dirty.length, commits: r.behind } };
-    if (r.behind === 0) return { check: { ...at, state: 'current' } };
-    if (r.ahead > 0) return { check: { ...at, reason: 'diverged', commits: r.behind } };
+    if (r.behind === 0 && !stale) return { check: { ...at, state: 'current' } };
+    if (r.behind > 0 && r.ahead > 0) return { check: { ...at, reason: 'diverged', commits: r.behind } };
     if (!r.cmake) return { check: { ...at, reason: 'cmake-missing', commits: r.behind } };
+    if (r.behind === 0) {
+      // The newest code, but an older program (pulled by hand, a build that stopped): the update is a rebuild.
+      const rebuild = updateSteps(dir, where.serve, r.head, true);
+      return {
+        check: { ...at, state: 'available', commits: 0, commands: rebuild.commands, restore: rebuild.restore },
+        run: (progress, signal) => this.run(where, dir, r, true, progress, signal),
+      };
+    }
     const log = r.commits.map((c) => ({ sha: c.sha.slice(0, 7), title: c.title }));
     return {
       check: { ...at, state: 'available', commits: r.behind, log },
-      run: (progress, signal) => this.run(where, dir, r, progress, signal),
+      run: (progress, signal) => this.run(where, dir, r, false, progress, signal),
     };
   }
 
@@ -228,37 +265,44 @@ export class NinferUpdater {
     return { version: await run(progress, signal) };
   }
 
-  private async run(where: NinferWhere, dir: string, r: UpdateReport, progress: (p: UpdateProgress) => void, signal: AbortSignal): Promise<string> {
+  private async run(where: NinferWhere, dir: string, r: UpdateReport, rebuild: boolean, progress: (p: UpdateProgress) => void, signal: AbortSignal): Promise<string> {
     const from = r.head as string;
     const exec = this.o.builder.runner(where.distro);
     const kept = await exec('/bin/sh', ['-c', KEEP_SCRIPT, 'sh', where.serve], { timeoutMs: 120_000 });
     if (!kept.stdout.includes('##gpubench-kept')) throw failed('ninfer_keep', 'Cannot keep the current build aside', { path: where.serve }, kept.stderr.slice(0, 2000));
-    const [pull, build] = updateSteps(dir, where.serve, from).steps as [{ stage: 'git-pull'; argv: string[] }, { stage: 'build'; argv: string[] }];
+    const steps = updateSteps(dir, where.serve, from, rebuild).steps;
+    const build = steps.at(-1) as UpdateStep;
+    const pull = rebuild ? undefined : (steps[0] as UpdateStep);
     // The guided build's steps report steps as bytes: here they are steps.
-    const sink = (p: { stage: string; bytesDone: number; bytesTotal?: number }) => progress({ stage: p.stage, bytesDone: 0, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}) });
+    const sink: ProgressSink = (p) => progress({ stage: p.stage, bytesDone: 0, ...(p.bytesTotal !== undefined ? { step: p.bytesDone, steps: p.bytesTotal } : {}), etaSec: p.etaSec });
     const drop = () => exec('/bin/sh', ['-c', DROP_SCRIPT, 'sh', where.serve], { timeoutMs: 60_000 }).catch(() => undefined);
-    const asUpdate = (e: unknown, reason: string, extra: Record<string, string | number | boolean> = {}) => {
-      const err = isAppError(e) ? e : new AppError('ENGINE_UPDATE_FAILED', String(e));
+    const log: BuildLog = [];
+    const asUpdate = async (e: unknown, reason: string, extra: Record<string, string | number | boolean> = {}) => {
+      const logged = await this.o.builder.withLog(e, log, 'update');
+      const err = isAppError(logged) ? logged : new AppError('ENGINE_UPDATE_FAILED', String(e));
       const code = err.code === 'CANCELLED' ? 'CANCELLED' : 'ENGINE_UPDATE_FAILED';
       return new AppError(code, err.message, { params: { ...err.params, reason, ...extra }, ...(err.detail ? { detail: err.detail } : {}), cause: e });
     };
-    try {
-      await this.o.builder.step(pull.stage, pull.argv, where.distro, sink, signal);
-    } catch (e) {
-      // Nothing changed but the copy: it goes.
-      await drop();
-      throw asUpdate(e, 'git');
+    if (pull) {
+      try {
+        await this.o.builder.step(pull.stage, pull.argv, where.distro, sink, signal, log);
+      } catch (e) {
+        // Nothing changed but the copy: it goes. A pull git refused (local changes) changed nothing either.
+        await drop();
+        throw await asUpdate(e, 'git');
+      }
     }
     try {
-      await this.o.builder.step(build.stage, build.argv, where.distro, sink, signal);
+      await this.o.builder.step(build.stage, build.argv, where.distro, sink, signal, log);
     } catch (e) {
-      const back = await exec('/bin/sh', ['-c', RESTORE_SCRIPT, 'sh', where.serve, dir, from], { timeoutMs: 120_000 }).catch(() => undefined);
-      throw asUpdate(e, 'cmake', { restored: back?.stdout.includes('##gpubench-restored') === true, commit: from.slice(0, 7) });
+      const back = await exec('/bin/sh', ['-c', RESTORE_SCRIPT, 'sh', where.serve, dir, rebuild ? '' : from], { timeoutMs: 120_000 }).catch(() => undefined);
+      throw await asUpdate(e, 'cmake', { restored: back?.stdout.includes('##gpubench-restored') === true, commit: from.slice(0, 7) });
     }
     await drop();
+    await this.o.builder.record(dir, where.distro);
     progress({ stage: 'verify', bytesDone: 0 });
     // The new build must answer like the old one did (its help, through the engine's own check).
     if (!(await this.o.verify())) throw failed('verify', 'The rebuilt NInfer does not start');
-    return short(r.latest) as string;
+    return short(rebuild ? from : r.latest) as string;
   }
 }

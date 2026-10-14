@@ -10,6 +10,7 @@ import type { AppErrorData } from '../../../contract/errors';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useServers } from '../../lib/queries-runs';
 import { useDockerGate } from '../docker/docker-gate';
+import { NinferGateContent } from '../engines/ninfer-all-gate';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { Progress } from '../ui/progress';
@@ -68,6 +69,8 @@ export type Flow =
   | { step: 'starting'; job: Job; opts: FlowOpts; planning?: boolean }
   /** A Docker engine and Docker is off or does not answer: "Avvia Docker" / "Riavvia Docker", then `resume`. */
   | { step: 'docker'; job: Job; opts: FlowOpts; resume: () => void }
+  /** A .ninfer model only NInfer-all reads, and NInfer-all is not built yet: its guided build, then `resume`. */
+  | { step: 'ninfer'; job: Job; opts: FlowOpts; resume: () => void }
   | { step: 'error'; job: Job; opts: FlowOpts; error: AppErrorData };
 
 /** The same job, acknowledged to run on a GPU other programs are using. */
@@ -228,6 +231,8 @@ export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServe
   const open = flow.step !== 'idle';
   let content: ReactNode = null;
   if (flow.step === 'docker') content = <DockerStep flow={flow} onClose={onClose} />;
+  // "Questo modello funziona solo con NInfer-all": its build, then the start carries on by itself.
+  else if (flow.step === 'ninfer') content = <NinferGateContent onReady={flow.resume} onClose={onClose} />;
   else if (flow.step === 'confirm') {
     const total = flow.opts.needs.reduce((a, n) => a + (n.bytes ?? 0), 0);
     content = (
@@ -334,7 +339,7 @@ export function StartDialogs({ flow, onClose, onConfirm, onContinue, onStopServe
           extra={
             <>
               {/* An engine that did not load (the log is in the technical details) can still be tried again. */}
-              {fixFor(flow.error.code) !== 'retry' && (
+              {fixFor(flow.error.code) !== 'retry' && flow.error.params?.template !== 'ninfer-all' && (
                 <Button size="sm" variant="ghost" onClick={again}>
                   {t('common.retry')}
                 </Button>

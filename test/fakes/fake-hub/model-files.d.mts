@@ -64,4 +64,14 @@ export declare function tensorDataBytes(shape: number[], type: number): number;
 export declare function seededBytes(seed: number, length: number): Uint8Array;
 export declare function buildGguf(spec?: GgufSpec): Uint8Array;
 export declare function buildSafetensors(spec?: SafetensorsSpec): Uint8Array;
+
+export interface NinferSpec {
+  name?: string;
+  components?: string[];
+  layouts?: string[];
+  version?: number;
+  totalSize?: number;
+  seed?: number;
+}
+export declare function buildNinfer(spec?: NinferSpec): Uint8Array;
 export declare function llamaLikeGguf(opts?: LlamaLikeOptions): { metadata: Record<string, GgufValue>; tensors: GgufTensorSpec[] };

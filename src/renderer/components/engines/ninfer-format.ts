@@ -38,10 +38,12 @@ export function specText(n: Pick<NinferParams, 'spec' | 'draftTokens'>, t: Forma
 /** "Consigliata da NInfer: contesto 240K, KV fp8, 2 utenti, MTP 3". */
 export function presetTitle(p: NinferPreset, t: Formatters['t']): string {
   const n = p.params.ninfer;
-  const pool = typeof n.kvCapacity === 'number' ? n.kvCapacity : (p.params.contextSize as number);
+  const pool = kTokens(typeof n.kvCapacity === 'number' ? n.kvCapacity : (p.params.contextSize as number));
   return t(`ninfer.presets.${p.id}`, {
     ctx: kTokens(p.params.contextSize as number),
-    pool: kTokens(pool),
+    pool,
+    // "condivisa da 400K", or as much as fits ('auto': NInfer sizes it at start-up).
+    shared: n.kvCapacity === 'auto' ? t('ninfer.presets.sharedAuto') : t('ninfer.presets.shared', { pool }),
     kv: n.kvDtype ?? 'bf16',
     users: p.params.parallel ?? 1,
     spec: specText(n, t),

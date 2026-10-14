@@ -14,6 +14,7 @@ import type { AppErrorData } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { GpuSample } from '../../../../src/contract/hardware';
 import type { DownloadJob, FitEstimate, HubFile, HubModel, LocalFileState, LocalModel, ModelUpdates } from '../../../../src/contract/models';
+import type { NinferBuildInfo, NinferBuilds } from '../../../../src/contract/ninfer';
 import type { RunSummary } from '../../../../src/contract/results';
 import { defaultSettings, type Settings } from '../../../../src/contract/settings';
 import type { CheckItem, CuratedResponse, DockerStatusDetail, HubFitResult, InstalledBuild, SystemCheckReport } from '../../../../src/contract/views';
@@ -300,6 +301,22 @@ export interface World {
   modelUpdates: ModelUpdates;
   /** Bodies of POST /api/models/updates/check. */
   checks: unknown[];
+  /** GET /api/engines/ninfer/builds: NInfer's two builds (default: neither set up, in WSL). */
+  ninferBuilds: NinferBuilds;
+}
+
+/** One of NInfer's builds as the card lists it (default: the official one, not set up, in WSL). */
+export function ninferBuild(over: Partial<NinferBuildInfo> = {}): NinferBuildInfo {
+  const all = over.build === 'all';
+  return {
+    build: 'official',
+    kind: 'ninfer-wsl',
+    state: 'missing',
+    source: all ? { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' } : { url: 'https://github.com/Neroued/ninfer.git' },
+    dir: all ? '~/ninfer-all' : '~/ninfer',
+    distro: 'Ubuntu-24.04',
+    ...over,
+  };
 }
 
 export function world(over: Partial<World> = {}): World {
@@ -328,6 +345,7 @@ export function world(over: Partial<World> = {}): World {
     cold: { method: 'windows-standby', automatic: false, windowsTaskInstalled: false },
     modelUpdates: { checking: false, models: [] },
     checks: [],
+    ninferBuilds: { kind: 'ninfer-wsl', builds: [ninferBuild(), ninferBuild({ build: 'all' })] },
     ...over,
   };
 }
@@ -486,6 +504,11 @@ export function libApi(w: World = world()): LibApi {
       { name: 'v0.5.21', recommended: true, sizeBytes: 15e9 },
       ...Array.from({ length: 6 }, (_, i) => ({ name: `v0.5.${i}` })),
     ],
+    'GET /api/engines/ninfer/builds': () => w.ninferBuilds,
+    'PUT /api/engines/ninfer/builds/*': (b) => ({ saved: true, status: { kind: 'ninfer-wsl', available: true, installed: true, location: (b as { path: string }).path, problems: [], supported: true } }),
+    'POST /api/engines/ninfer/build/cancel': () => ({ ok: true, cancelled: true }),
+    'POST /api/engines/custom/*/update/cancel': () => ({ ok: true, cancelled: true }),
+    'POST /api/engines/*/update/cancel': () => ({ ok: true, cancelled: true }),
     'GET /api/engines/custom': () => w.custom,
     'GET /api/engines/custom/*/update': (_b, q, p) => updateOf(w, `custom:${decodeURIComponent(p.split('/').at(-2) as string)}`, q),
     'POST /api/engines/custom/*/update': () => ({ ok: true }),

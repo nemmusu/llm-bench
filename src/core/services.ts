@@ -580,6 +580,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
       return { recipes: s.modelRecipes, customEngines: s.customEngines };
     },
     fileExists,
+    // A GGUF-NInfer model and NInfer-all already built in ~/ninfer-all: taken as it is.
+    findNinferAll: (kind) => ninfer.findAll(kind),
   });
 
   const dockerControl = new DockerControl({

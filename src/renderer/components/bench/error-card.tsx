@@ -1,9 +1,12 @@
 import { useNavigate } from '@tanstack/react-router';
 import { CircleAlert } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { NINFER_ALL_TEMPLATE } from '../../../contract/custom-engines';
 import type { AppErrorData, ErrorCode } from '../../../contract/errors';
 import { errorText, useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { useNinferBuild } from '../../lib/queries-ninfer';
+import { NinferAllGateDialog } from '../engines/ninfer-all-gate';
 import { Button } from '../ui/button';
 import { noteText } from './notes';
 
@@ -60,17 +63,46 @@ export interface ErrorCardProps {
   model?: { weakKey?: string | undefined; name: string } | undefined;
 }
 
+/**
+ * "Scarica e compila NInfer-all e riprova" (one click: its build, then the same test or server again), or
+ * "Riprova con NInfer-all" once it is built: the official NInfer never reads these layouts, updated or not.
+ */
+function NinferAllFix({ retry }: { retry?: (() => void) | undefined }) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const all = useNinferBuild('all');
+  const [gate, setGate] = useState(false);
+  const built = all?.state === 'ready' || all?.state === 'stale';
+  if (built) {
+    return (
+      <Button size="sm" variant="primary" onClick={retry ?? (() => void navigate({ to: '/engines', search: { ninfer: 'all' } }))}>
+        {retry ? t('fixes.ninferAll.retry') : t('fixes.ninferAll.open')}
+      </Button>
+    );
+  }
+  return (
+    <>
+      <Button size="sm" variant="primary" onClick={() => setGate(true)}>
+        {retry ? t('fixes.ninferAll.buildRetry') : t('fixes.ninferAll.build')}
+      </Button>
+      <NinferAllGateDialog open={gate} onOpenChange={setGate} onReady={retry} />
+    </>
+  );
+}
+
 /** A failure explained: what happened, what to do, one button that does it, technical details folded. */
 export function ErrorCard({ error, handlers = {}, extra, className, headingLevel = 2, model }: ErrorCardProps) {
   const f = useI18n();
   const { t } = f;
   const navigate = useNavigate();
+  // A GGUF-NInfer model on the official NInfer: NInfer-all reads it, an update of NInfer never will.
+  const ninferAll = error.code === 'ENGINE_MODEL_UNSUPPORTED' && error.params?.template === NINFER_ALL_TEMPLATE;
   const kind = fixFor(error.code);
   // A busy GPU says who holds it (and how much is free) in the user's language: the core's English message
   // is for the log only.
   const busy = error.code === 'VRAM_BUSY' && error.params?.names !== undefined ? noteText({ code: error.code, params: error.params }, f) : undefined;
   // A model this build cannot read, and a built-in variant that reads it: adding that variant is the first thing to do.
-  const template = error.code === 'ENGINE_MODEL_UNSUPPORTED' && typeof error.params?.template === 'string' ? error.params.template : undefined;
+  const template = error.code === 'ENGINE_MODEL_UNSUPPORTED' && typeof error.params?.template === 'string' && !ninferAll ? error.params.template : undefined;
   const addVariant = () =>
     void navigate({ to: '/engines', search: { customTemplate: template as string, ...(model?.weakKey ? { model: model.weakKey } : {}), ...(model ? { modelName: model.name } : {}) } });
   const routes: Partial<Record<FixKind, () => void>> = {
@@ -83,7 +115,8 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
     results: () => void navigate({ to: '/results' }),
     ...(typeof error.params?.runId === 'string' ? { activeRun: () => void navigate({ to: '/run/$runId', params: { runId: String(error.params!.runId) } }) } : {}),
   };
-  const onFix = handlers[kind] ?? routes[kind];
+  // NInfer-all's own button replaces "Aggiorna NInfer".
+  const onFix = ninferAll ? undefined : (handlers[kind] ?? routes[kind]);
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
   return (
     <section role="alert" className={cn('rounded-xl border border-danger/30 bg-danger-soft p-5', className)}>
@@ -95,8 +128,9 @@ export function ErrorCard({ error, handlers = {}, extra, className, headingLevel
           <p className="text-sm text-fg-2">
             <span className="font-medium text-fg">{t('fixes.whatToDo')}</span> {errorText(f, error.code, error.params).what}
           </p>
-          {(onFix || extra) && (
+          {(onFix || extra || ninferAll) && (
             <div className="flex flex-wrap gap-2 pt-1">
+              {ninferAll && <NinferAllFix retry={handlers.retry} />}
               {template && (
                 <Button size="sm" variant="primary" onClick={addVariant}>
                   {t('fixes.addVariant', error.params)}

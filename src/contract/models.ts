@@ -46,10 +46,19 @@ export const modelFactsSchema = z.object({
   /** NInfer artifacts: the parts packed in it, from its manifest ("text", "vision", "mtp", "dflash2"), else what its file name says (noManifest). */
   components: z.array(z.string()).optional(),
   /**
-   * NInfer artifacts: no manifest next to the file ("senza manifest"): its facts come from its name and
-   * size only (the family, the parameters, an "MTP" in the name), and NInfer itself says the rest.
+   * NInfer artifacts: no manifest next to the file ("senza manifest") and none readable at its start:
+   * its facts come from its name and size only (the family, the parameters, an "MTP" in the name), and
+   * NInfer itself says the rest.
    */
   noManifest: z.boolean().optional(),
+  /**
+   * NInfer artifacts: the tensor layouts the manifest at the start of the .ninfer file lists
+   * ("contiguous_le_v1", "row_split_k128_v1", "gguf_blocks_v1"…): which build of NInfer can read it
+   * (contract/ninfer.ts ninferBuildFor). Absent = that manifest could not be read.
+   */
+  layouts: z.array(z.string()).optional(),
+  /** NInfer artifacts: the container version at the start of the .ninfer file (3 for NInfer's current one). */
+  containerVersion: z.number().int().optional(),
 });
 export type ModelFacts = z.infer<typeof modelFactsSchema>;
 

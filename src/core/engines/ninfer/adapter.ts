@@ -16,7 +16,8 @@ import { promises as fs } from 'node:fs';
 import type { EngineConfig, EngineStatus, LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
 import { NINFER_FILE, NINFER_MANIFEST, ninferManifestFromName, parseNinferManifest, type NinferManifest } from '../../../contract/formats';
-import { ninferGpuSupported, ninferMemory, NINFER_SERVE_PATH, ninferServeOf, type NinferKind, type NinferSettings } from '../../../contract/ninfer';
+import { NINFER_BUILT_COMMIT_FILE, ninferGpuSupported, ninferMemory, NINFER_SERVE_PATH, ninferServeOf, type NinferKind, type NinferSettings } from '../../../contract/ninfer';
+import { readNinferHeader } from '../../models/ninfer-header';
 import type { EngineIdentity } from '../../../contract/results';
 import type { EvictResult } from '../../cache/evictor';
 import { createLinuxEvictor } from '../../cache/evictor';
@@ -31,7 +32,7 @@ import { trustedFlags } from '../shared/standard-flags';
 import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
 import { ninferServeArgs } from './args';
 import { diagnoseNinfer, ninferMessage, PID_LINE } from './logs';
-import { distroRunner, wslLaunchArgv, wslPathOf, type DistroRun, type WslProcesses } from './wsl';
+import { distroRunner, hostArgv, wslLaunchArgv, wslPathOf, type DistroRun, type WslProcesses } from './wsl';
 
 export type NinferDeps = Pick<CoreDeps, 'clock' | 'proc' | 'fetch' | 'platform' | 'log'>;
 
@@ -54,7 +55,7 @@ export interface NinferAdapterOptions {
   ownership?: Pick<OwnershipRegistry, 'add' | 'remove'>;
   /** WSL: wsl.exe (an argv prefix: tests use a fake) and the record of our processes in the distros. */
   wsl?: { argv: readonly string[]; processes: WslProcesses };
-  /** Native, tests only: argv placed before ninfer-serve (the fake engine through node). */
+  /** Native, tests only: argv placed before ninfer-serve and the checks of a build (a fake Linux host through node). */
   launcherPrefix?: string[];
   readyTimeoutMs?: number;
   pollMs?: number;
@@ -76,12 +77,31 @@ export interface NinferWhere {
 export interface NinferProbe {
   ok: boolean;
   flags: Set<string>;
+  /** The program's full path ("~/" expanded to the home there). */
+  at?: string;
+  /** Its build string (`ninfer-serve --version`, when its help lists it: NInfer-all "0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669"). */
+  release?: string;
   /** The --kv-dtype values its help lists (official: bf16 int8 fp8 nvfp4 k8v4; NInfer-all adds rk8v4…); absent = not said. */
   kvDtypes?: string[];
   /** Full commit hash of the checkout, when known. */
   commit?: string;
+  /** The commit its program was built from (build/.llmbench-built-commit, written by LLM Bench's builds). */
+  built?: string;
+  /** When the checkout's last commit was made, and when its program was written (seconds since 1970). */
+  headTime?: number;
+  serveTime?: number;
   /** Why it cannot be used (ENGINE_NOT_INSTALLED with a reason). */
   error?: AppError;
+}
+
+/**
+ * The program is older than its checkout's code ("Da ricompilare"): built from another commit than the
+ * one checked out, or (built by hand: no record) written before the last commit was made.
+ */
+export function probeStale(p: Pick<NinferProbe, 'ok' | 'commit' | 'built' | 'headTime' | 'serveTime'>): boolean {
+  if (!p.ok || p.commit === undefined) return false;
+  if (p.built !== undefined) return p.built !== p.commit;
+  return p.headTime !== undefined && p.serveTime !== undefined && p.headTime > p.serveTime;
 }
 
 /**
@@ -106,15 +126,28 @@ export interface NinferLaunchPlan extends LaunchPlan {
   slowSharedFilesystem?: boolean;
 }
 
-/** Probe script: the help (its exit code after it), then the checkout's commit. */
+/**
+ * Probe script: the help (its exit code after it), the checkout's commit, the commit its program was
+ * built from (LLM Bench's record), when the last commit was made and when the program was written.
+ */
 export const PROBE_SCRIPT = [
   'serve="$1"; repo="$2"',
-  '"$serve" --help 2>&1',
-  'echo "##gpubench-help $?"',
+  // "~/…" (NInfer-all's usual folder before it is saved) is the user's home there.
+  'case "$serve" in "~/"*) serve="$HOME/${serve#"~/"}";; esac',
+  'case "$repo" in "~/"*) repo="$HOME/${repo#"~/"}";; esac',
+  'h=$("$serve" --help 2>&1); rc=$?',
+  'printf "%s\\n" "$h"',
+  'echo "##gpubench-help $rc"',
+  'echo "##gpubench-at $serve"',
+  // Its build string ("0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669"), from a build whose help lists --version (NInfer-all).
+  'case "$h" in *--version*) echo "##gpubench-release $("$serve" --version 2>&1 | head -n 1)";; esac',
   'if [ -n "$repo" ]; then',
   '  c=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || c=$(cat "$repo/ninfer-commit.txt" "$repo/../ninfer-commit.txt" 2>/dev/null | head -n 1)',
   '  echo "##gpubench-commit $c"',
+  `  echo "##gpubench-built $(head -n 1 "$repo/${NINFER_BUILT_COMMIT_FILE}" 2>/dev/null)"`,
+  '  echo "##gpubench-headtime $(git -C "$repo" log -1 --format=%ct HEAD 2>/dev/null)"',
   'fi',
+  'echo "##gpubench-servetime $(stat -c %Y "$serve" 2>/dev/null)"',
 ].join('\n');
 
 const notInstalled = (reason: string, params: Record<string, string> = {}) =>
@@ -132,9 +165,34 @@ export function parseProbe(out: RunOutput, where: NinferWhere): NinferProbe {
   const helpText = text.slice(0, help.index);
   const flags = new Set(helpText.match(/--[a-z][a-z0-9-]*/g) ?? []);
   const commit = /##gpubench-commit ([0-9a-f]{7,40})/.exec(text)?.[1];
+  const built = /##gpubench-built ([0-9a-f]{7,40})/.exec(text)?.[1];
+  const time = (key: string) => Number(new RegExp(`##gpubench-${key} (\\d+)`).exec(text)?.[1]) || undefined;
+  const headTime = time('headtime');
+  const serveTime = time('servetime');
+  const at = /##gpubench-at (\/[^\r\n]*)/.exec(text)?.[1];
+  // "ninfer-serve 0.12.0-rtx3090+v0.6.0-…" → the version itself.
+  const release = /##gpubench-release[^\d\r\n]*(\d+\.\d+[\w.+-]*)/.exec(text)?.[1];
   const ours = help[1] === '0' && trustedFlags('ninfer', flags) !== undefined && flags.has('--kv-dtype');
   const kvDtypes = ours ? kvDtypesOfHelp(helpText) : undefined;
-  return { ok: ours, flags, ...(kvDtypes ? { kvDtypes } : {}), ...(commit ? { commit } : {}), ...(ours ? {} : { error: notInstalled('ninfer_not_found', { path: where.serve }) }) };
+  return {
+    ok: ours,
+    flags,
+    ...(at ? { at } : {}),
+    ...(release ? { release } : {}),
+    ...(kvDtypes ? { kvDtypes } : {}),
+    ...(commit ? { commit } : {}),
+    ...(built ? { built } : {}),
+    ...(headTime ? { headTime } : {}),
+    ...(serveTime ? { serveTime } : {}),
+    ...(ours ? {} : { error: notInstalled('ninfer_not_found', { path: where.serve }) }),
+  };
+}
+
+/** A build's identity: its commit (what "the same build" compares) and its version in words (its --version, else the commit). */
+export function buildIdOf(probe: Pick<NinferProbe, 'commit' | 'release'> | undefined): { version?: string; build?: string } {
+  const commit = probe?.commit?.slice(0, 12);
+  const version = probe?.release ?? commit;
+  return { ...(version ? { version } : {}), ...(commit ? { build: commit } : {}) };
 }
 
 /** ninfer-serve of a path: the program itself, or a checkout / build folder holding it (contract/ninfer.ts, the card reads it too). */
@@ -151,14 +209,21 @@ export function artifactOf(model: ModelTarget): { file: string; manifest?: strin
   return { file, ...(manifest ? { manifest } : {}) };
 }
 
+/** The manifest a .ninfer file carries at its start, as the sidecar manifest's fields (name, parts, container version). */
+export async function embeddedManifest(file: string): Promise<NinferManifest | undefined> {
+  const h = await readNinferHeader(file);
+  return h ? { ...(h.name ? { name: h.name } : {}), components: h.components, containerVersion: h.containerVersion } : undefined;
+}
+
 /**
- * The artifact's size and manifest: what the VRAM estimate and the tuner's choices are made from.
- * Without a manifest ("senza manifest"), what the file name says (an "MTP" in it: the MTP head).
+ * The artifact's size and manifest: what the VRAM estimate and the tuner's choices are made from. The
+ * manifest next to the file, else the one at its start; without either ("senza manifest"), what the
+ * file name says (an "MTP" in it: the MTP head).
  */
 export async function ninferArtifactInfo(model: ModelTarget): Promise<{ bytes: number; manifest: NinferManifest; label: string; noManifest?: true }> {
   const { file, manifest } = artifactOf(model);
   const bytes = await fs.stat(file).then((s) => s.size, () => model.identity.sizeBytes ?? 0);
-  const parsed = manifest ? await readJsonFile(manifest).then(parseNinferManifest, () => undefined) : undefined;
+  const parsed = (manifest ? await readJsonFile(manifest).then(parseNinferManifest, () => undefined) : undefined) ?? (await embeddedManifest(file));
   return { bytes, label: model.identity.displayName, ...(parsed ? { manifest: parsed } : { manifest: ninferManifestFromName(file), noManifest: true as const }) };
 }
 
@@ -192,7 +257,8 @@ export class NinferAdapter implements EngineAdapter {
   /** Runs a program where NInfer runs: the distro (WSL) or this system. */
   private runner(where: Pick<NinferWhere, 'distro'>): DistroRun {
     if (this.wsl) return distroRunner(this.o.deps.proc, (this.o.wsl as NonNullable<NinferAdapterOptions['wsl']>).argv, where.distro as string);
-    return (cmd, args, opts) => this.o.deps.proc.run(cmd, args, opts);
+    const prefix = this.o.launcherPrefix ?? [];
+    return (cmd, args, opts) => this.o.deps.proc.run(...hostArgv(prefix, [cmd, ...args]), opts);
   }
 
   /** Every build is asked again at its next probe (after an update: its commit changed). */
@@ -251,7 +317,7 @@ export class NinferAdapter implements EngineAdapter {
     const where = await this.where(cfg);
     const probe = where ? await this.probe(where) : undefined;
     return {
-      ...(probe?.commit ? { version: probe.commit.slice(0, 12), build: probe.commit.slice(0, 12) } : {}),
+      ...buildIdOf(probe),
       flags: probe?.flags ?? new Set(),
       // The KV types this build takes: the tuner's ladder and the check of a launch's --kv-dtype.
       ...(probe?.kvDtypes ? { choices: { '--kv-dtype': probe.kvDtypes } } : {}),
@@ -266,10 +332,19 @@ export class NinferAdapter implements EngineAdapter {
   /** The artifact's manifest (name, components), read once per file. */
   manifestOf(file: string | undefined): Promise<NinferManifest | undefined> {
     if (!file) return Promise.resolve(undefined);
-    let p = this.manifests.get(file);
+    return this.once(`json:${file}`, () => readJsonFile(file).then(parseNinferManifest, () => undefined));
+  }
+
+  /** The manifest at the start of the .ninfer file itself, read once per file. */
+  embeddedOf(file: string): Promise<NinferManifest | undefined> {
+    return this.once(`ninfer:${file}`, () => embeddedManifest(file));
+  }
+
+  private once(key: string, read: () => Promise<NinferManifest | undefined>): Promise<NinferManifest | undefined> {
+    let p = this.manifests.get(key);
     if (!p) {
-      p = readJsonFile(file).then(parseNinferManifest, () => undefined);
-      this.manifests.set(file, p);
+      p = read();
+      this.manifests.set(key, p);
     }
     return p;
   }
@@ -300,13 +375,14 @@ export class NinferAdapter implements EngineAdapter {
     if (kvDtype !== undefined && probe?.kvDtypes && !probe.kvDtypes.includes(kvDtype)) {
       throw new AppError('ENGINE_BAD_FLAG', `This NInfer build does not take --kv-dtype ${kvDtype}`, { params: { flag: '--kv-dtype', value: kvDtype, values: probe.kvDtypes.join(', '), reason: 'kv_dtype_unsupported' } });
     }
-    const engine: EngineIdentity = { kind: this.kind, name: 'NInfer', executable: serve, ...(commit ? { version: commit, build: commit } : {}), ...(distro ? { variant: distro } : {}) };
+    const engine: EngineIdentity = { kind: this.kind, name: 'NInfer', executable: serve, ...buildIdOf(probe), ...(distro ? { variant: distro } : {}) };
     const env = { ...params.env };
     const argv = this.wsl
       ? wslLaunchArgv((this.o.wsl as NonNullable<NinferAdapterOptions['wsl']>).argv, { distro: distro ?? '<distro>', serve, args, env, marker: opts.marker })
       : [...(this.o.launcherPrefix ?? []), serve, ...args];
     const size = await fs.stat(file).then((s) => s.size, () => 0);
-    const mem = ninferMemory({ artifactBytes: size, manifest: (await this.manifestOf(manifest)) ?? ninferManifestFromName(file), label: model.identity.displayName, params });
+    const parts = (await this.manifestOf(manifest)) ?? (await this.embeddedOf(file)) ?? ninferManifestFromName(file);
+    const mem = ninferMemory({ artifactBytes: size, manifest: parts, label: model.identity.displayName, params });
     const capacity = params.ninfer?.kvCapacity;
     const kvTokens = typeof capacity === 'number' ? capacity : capacity === undefined ? params.contextSize : undefined;
     return {

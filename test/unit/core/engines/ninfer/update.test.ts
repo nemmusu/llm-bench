@@ -5,7 +5,7 @@ import path from 'node:path';
 import { AppError } from '../../../../../src/contract/errors';
 import type { LocalModel } from '../../../../../src/contract/models';
 import type { RunOutput } from '../../../../../src/core/deps';
-import { NinferUpdater, parseUpdate } from '../../../../../src/core/engines/ninfer/update';
+import { NinferUpdater, parseUpdate, reportStale } from '../../../../../src/core/engines/ninfer/update';
 import { ok, tempDir } from '../../docker/helpers';
 import { ninferModel } from './helpers';
 
@@ -19,12 +19,22 @@ const NEXT = '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49';
 
 describe('the update check output', () => {
   it('reads what is there and skips what is not', () => {
-    const lines = ['noise', '##dir ', '##head nothex', '##branch ', '##latest also-not', '##counts ', '##commit zz title', '##dirty ', '##tool tools/other.py', '##upstream ', '##fetcherr ', '##cmake '];
+    const lines = ['noise', '##dir ', '##head nothex', '##branch ', '##latest also-not', '##counts ', '##commit zz title', '##dirty ', '##tool tools/other.py', '##upstream ', '##fetcherr ', '##cmake ', '##built nothex', '##headtime ', '##servetime 0'];
     expect(parseUpdate(lines.join('\n'))).toEqual({ git: true, ahead: 0, behind: 0, commits: [], dirty: [], tools: [], cmake: false });
     expect(parseUpdate(`##dir /n\n##counts 2\n##fetched no\n##fetcherr fatal: no\n##fetcherr network\n##cmake /usr/bin/cmake\n`)).toMatchObject({ dir: '/n', ahead: 2, behind: 0, fetched: false, fetchError: 'fatal: no\nnetwork', cmake: true });
-    expect(parseUpdate(`##dir /n\n##fetched yes\n`)).toMatchObject({ fetched: true });
+    expect(parseUpdate(`##dir /n\n##fetched yes\n##built ${HEAD}\n##headtime 1760000000\n##servetime 1760000100\n`)).toMatchObject({ fetched: true, built: HEAD, headTime: 1_760_000_000, serveTime: 1_760_000_100 });
     expect(parseUpdate(`##dir /n\n##commit ${NEXT}\n##nocheckout\n`)).toEqual({ git: true, ahead: 0, behind: 0, commits: [], dirty: [], tools: [], cmake: false });
     expect(parseUpdate('##nogit\n').git).toBe(false);
+  });
+
+  it('a program older than its code: built from another commit, or (no record) before the last commit', () => {
+    expect(reportStale({ head: HEAD, built: HEAD })).toBe(false);
+    expect(reportStale({ head: NEXT, built: HEAD })).toBe(true);
+    expect(reportStale({ built: HEAD })).toBe(false);
+    expect(reportStale({ head: HEAD, headTime: 20, serveTime: 10 })).toBe(true);
+    expect(reportStale({ head: HEAD, headTime: 10, serveTime: 20 })).toBe(false);
+    expect(reportStale({ head: HEAD, headTime: 20 })).toBe(false);
+    expect(reportStale({ head: HEAD, serveTime: 20 })).toBe(false);
   });
 });
 
@@ -47,6 +57,12 @@ function updater(
       progress({ stage, bytesDone: 0 });
       await o.step?.(stage, argv);
     },
+    record: async () => {
+      ran.push('record');
+      return true;
+    },
+    // A failure's log (the real one writes a file): its path in the error.
+    withLog: async (e: unknown) => (e instanceof AppError && e.code !== 'CANCELLED' ? new AppError(e.code, e.message, { params: { ...e.params, log: '/logs/x.log' }, ...(e.detail ? { detail: e.detail } : {}) }) : e),
   } as unknown as ConstructorParameters<typeof NinferUpdater>[0]['builder'];
   const u = new NinferUpdater({
     kind: o.distro ? 'ninfer-wsl' : 'ninfer-native',
@@ -96,10 +112,10 @@ describe('updates of a native build', () => {
     expect((await updater({ out: '##nocheckout\n', repo: '' }).u.plan()).check).toMatchObject({ target: 'ninfer-native', method: 'none', state: 'none', reason: 'tools' });
   });
 
-  it('runs the steps with their progress as steps, and checks the rebuilt program', async () => {
+  it('runs the steps with their progress as steps, records the commit built, and checks the rebuilt program', async () => {
     const r = updater({ out: behind });
     expect(await r.run()).toEqual({ version: '4f2a9c1' });
-    expect(r.ran).toEqual(['keep', 'git-pull', 'build', 'drop']);
+    expect(r.ran).toEqual(['keep', 'git-pull', 'build', 'drop', 'record']);
     expect(r.events).toEqual([
       { stage: 'git-pull', bytesDone: 0, step: 1, steps: 4 },
       { stage: 'git-pull', bytesDone: 0 },
@@ -120,6 +136,14 @@ describe('updates of a native build', () => {
     });
     await expect(pull.run()).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', message: 'Error: network', params: { reason: 'git' } });
     expect(pull.ran).toEqual(['keep', 'git-pull', 'drop']);
+    // A step's own failure keeps its params, and gets the path of its log.
+    const refused = updater({
+      out: behind,
+      step: async (stage) => {
+        if (stage === 'git-pull') throw new AppError('ENGINE_INSTALL_FAILED', 'NInfer git-pull failed', { params: { stage: 'git-pull', reading: 'local-changes' }, detail: 'Please commit your changes' });
+      },
+    });
+    await expect(refused.run()).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', detail: 'Please commit your changes', params: { reason: 'git', stage: 'git-pull', reading: 'local-changes', log: '/logs/x.log' } });
     const cancelled = updater({
       out: behind,
       step: async (stage) => {
@@ -137,5 +161,33 @@ describe('updates of a native build', () => {
     await expect(r.run()).rejects.toMatchObject({ code: 'ENGINE_UPDATE_FAILED', params: { reason: 'cmake', restored: false, commit: HEAD.slice(0, 7) } });
     const gone = updater({ out: behind, script: (s) => (s.includes('restored') ? Promise.reject(new Error('wsl')) : ok('##gpubench-kept\n')), step: failBuild });
     await expect(gone.run()).rejects.toMatchObject({ params: { restored: false } });
+  });
+
+  it('the newest code but an older program: a rebuild, without a pull and without any reset', async () => {
+    const stale = `##dir /n\n##head ${HEAD}\n##branch master\n##upstream origin/master\n##latest ${HEAD}\n##counts 0\t0\n##cmake /usr/bin/cmake\n##built ${NEXT}\n`;
+    const r = updater({ out: stale });
+    const { check } = await r.u.plan();
+    expect(check).toMatchObject({ state: 'available', stale: true, built: NEXT.slice(0, 7), commits: 0 });
+    expect(check.commands.map((c) => c[0])).toEqual(['cp', 'cmake', 'git']);
+    expect(check.restore).toEqual([['mv', '-f', '/n/build/apps/ninfer-serve.gpubench-previous', '/n/build/apps/ninfer-serve']]);
+    expect(await r.run()).toEqual({ version: HEAD.slice(0, 7) });
+    expect(r.ran).toEqual(['keep', 'build', 'drop', 'record']);
+    // A failed rebuild puts the program back and leaves the checkout alone (no commit to go back to).
+    const scripts: string[][] = [];
+    const failed = updater({
+      out: stale,
+      script: (s, args) => {
+        scripts.push(args);
+        return ok(s.includes('restored') ? '##gpubench-restored\n' : '##gpubench-kept\n');
+      },
+      step: async () => {
+        throw new AppError('ENGINE_INSTALL_FAILED', 'NInfer build failed');
+      },
+    });
+    await expect(failed.run()).rejects.toMatchObject({ params: { reason: 'cmake', restored: true } });
+    expect(scripts.at(-1)?.slice(-3)).toEqual(['/n/build/apps/ninfer-serve', '/n', '']);
+    // Older by its time (built by hand, no record); without cmake it says so.
+    const byTime = `##dir /n\n##head ${HEAD}\n##branch master\n##upstream origin/master\n##counts 0\t0\n##headtime 20\n##servetime 10\n`;
+    expect((await updater({ out: byTime }).u.plan()).check).toMatchObject({ state: 'blocked', reason: 'cmake-missing', stale: true, commits: 0 });
   });
 });

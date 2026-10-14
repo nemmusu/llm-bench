@@ -324,7 +324,19 @@ export interface CustomEngineTemplate {
   /** NInfer variants: the repository LLM Bench clones for the guided build, and the folder it suggests. */
   source?: GitSource;
   dir?: string;
+  /**
+   * A build of a built-in engine LLM Bench manages on that engine's own card (NInfer-all, on NInfer's):
+   * never offered in "Aggiungi motore", and its saved engine is not listed among "Motori personalizzati".
+   */
+  builtIn?: boolean;
 }
+
+/** NInfer-all's template id: its saved engine is NInfer's second build (contract/ninfer.ts NINFER_BUILDS). */
+export const NINFER_ALL_TEMPLATE = 'ninfer-all';
+/** Where NInfer-all comes from: github.com/iamwavecut/ninfer-all, branch master. */
+export const NINFER_ALL_SOURCE: GitSource = { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' };
+/** Where its guided build puts the checkout when the user does not say. */
+export const NINFER_ALL_DIR = '~/ninfer-all';
 
 /**
  * Ready-made engines the user only has to point at (or let LLM Bench build). Explanations are localized
@@ -333,19 +345,49 @@ export interface CustomEngineTemplate {
  *    PQ2_0 / PTQ1_0, which only that fork reads.
  *  - "NInfer-all (modelli GGUF-NInfer)": NInfer artifacts converted from GGUF keep the GGUF quantization
  *    blocks (tensor layout gguf_blocks_v1), which only NInfer-all reads (github.com/iamwavecut/ninfer-all,
- *    branch master; its --kv-dtype adds rk8v4, rk4v4…).
+ *    branch master; its --kv-dtype adds rk8v4, rk4v4…). A build of NInfer managed on NInfer's own card.
  */
 export const CUSTOM_ENGINE_TEMPLATES: readonly CustomEngineTemplate[] = [
   { id: 'prismml-bonsai', base: 'llamacpp', label: 'PrismML', match: { names: ['bonsai'], quants: ['PQ2_0', 'PTQ1_0'], layouts: [] } },
   {
-    id: 'ninfer-all',
+    id: NINFER_ALL_TEMPLATE,
     base: 'ninfer',
     label: 'NInfer-all',
     match: { names: ['GGUF-NInfer'], quants: [], layouts: ['gguf_blocks_v1'] },
-    source: { url: 'https://github.com/iamwavecut/ninfer-all.git', branch: 'master' },
-    dir: '~/ninfer-all',
+    source: NINFER_ALL_SOURCE,
+    dir: NINFER_ALL_DIR,
+    builtIn: true,
   },
 ];
+
+/** Two repository URLs name the same repository (case, a ".git" and a trailing slash aside). */
+export function sameGitRepo(a: string, b: string): boolean {
+  const norm = (u: string) =>
+    u
+      .trim()
+      .toLowerCase()
+      .replace(/\/+$/, '')
+      .replace(/\.git$/, '');
+  return norm(a) === norm(b);
+}
+
+/**
+ * A saved engine that is NInfer-all: made from its template, or a NInfer variant cloned from its
+ * repository (one the user added by hand before NInfer-all was built in).
+ */
+export function isNinferAllEngine(e: Pick<CustomEngine, 'base' | 'template' | 'run'>): boolean {
+  if (e.base !== 'ninfer') return false;
+  if (e.template === NINFER_ALL_TEMPLATE) return true;
+  return e.run.mode === 'ninfer' && e.run.source !== undefined && sameGitRepo(e.run.source.url, NINFER_ALL_SOURCE.url);
+}
+
+/**
+ * NInfer's built-in NInfer-all build among the saved engines: the first NInfer-all engine (of this
+ * kind when one is given: in WSL on Windows, native on Linux). Any other copy is listed as a custom engine.
+ */
+export function ninferAllEngineOf<E extends Pick<CustomEngine, 'base' | 'template' | 'run'>>(engines: readonly E[], kind?: EngineKind): E | undefined {
+  return engines.find((e) => isNinferAllEngine(e) && (kind === undefined || customEngineKindOf(e) === kind));
+}
 
 /** A template whose rules match the model (offered when no saved engine does). */
 export function templateForModel(model: MatchableModel): CustomEngineTemplate | undefined {

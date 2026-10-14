@@ -11,7 +11,18 @@ import { errorResponse } from '../../../../../src/core/server/http-error';
 import { ok, scriptedProc, silentLog, steppingClock, tempDir } from '../../docker/helpers';
 import { realClients } from './helpers';
 
-const PREREQS = ['##home /home/u', '##git git version 2.43.0', '##cmake cmake version 3.28.3', '##ninja 1.11.1', '##compiler g++ 13.3.0', '##pkg-config 1.8.1', '##nvcc /usr/bin/nvcc', '##cuda release 13.1, V13.1.80', '##ffmpeg 60 60 58 7', '##curl 8.5.0', '##checkout yes'].join('\n');
+const PREREQS = [
+  '##home /home/u',
+  '##git git version 2.43.0',
+  '##cmake cmake version 3.28.3',
+  '##ninja 1.11.1',
+  '##compiler g++ 13.3.0',
+  '##pkg-config 1.8.1',
+  '##nvcc /usr/local/cuda-13.1/bin/nvcc release 13.1',
+  '##ffmpeg 60 60 58 7',
+  '##curl 8.5.0',
+  '##checkout yes',
+].join('\n');
 
 type InstallEvent = Extract<ServerEvent, { type: 'engine.install' }>;
 
@@ -21,10 +32,14 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
   const deps: NinferRouteDeps = {
     distros: async () => ({ wsl: false, distros: [] }),
     check: async (kind) => ({ kind, available: false, installed: false, problems: [], supported: true }),
-    builder: () => ({ plan: async () => ({}) as never, build: async () => '/opt/ninfer/build/apps/ninfer-serve' }),
+    builder: () => ({ plan: async (req) => ({ dir: req.dir }) as never, build: async () => '/opt/ninfer/build/apps/ninfer-serve' }),
+    normalize: async (req) => req,
     saveBuild: async (kind, where) => {
       saved.push([kind, where]);
+      return undefined;
     },
+    builds: async (fresh) => ({ kind: 'ninfer-native', builds: fresh ? [] : [{ build: 'official', kind: 'ninfer-native', state: 'missing', source: { url: 'https://x/y.git' }, dir: '~/ninfer' }] }),
+    setBuildPath: async (build, body) => ({ saved: build === 'all', status: { kind: 'ninfer-native', available: true, installed: true, location: body.path, problems: [], supported: true } }),
     jobs: { building: false },
     publish: (e) => events.push(e as InstallEvent),
     ...over,
@@ -32,12 +47,14 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
   const app = new Hono();
   app.onError((e, c) => errorResponse(c, e));
   createNinferRoutes(deps)(app, {} as CoreContext);
-  const post = (route: string, body: unknown) => app.request(route, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+  const send = (method: string, route: string, body?: unknown) =>
+    app.request(route, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } } : {}) });
+  const post = (route: string, body?: unknown) => send('POST', route, body);
   const done = async () => {
     for (let i = 0; i < 100 && !events.some((e) => e.stage === 'done' || e.stage === 'error'); i++) await new Promise((r) => setTimeout(r, 5));
     return events.at(-1) as InstallEvent;
   };
-  return { post, events, saved, done };
+  return { post, send, events, saved, done, deps };
 }
 
 describe('NInfer routes (stub services)', () => {
@@ -46,6 +63,48 @@ describe('NInfer routes (stub services)', () => {
     await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', confirm: true });
     expect((await r.done()).result).toEqual({ ninferPath: '/opt/ninfer/build/apps/ninfer-serve' });
     expect(r.saved).toEqual([['ninfer-native', { path: '/opt/ninfer/build/apps/ninfer-serve' }]]);
+  });
+
+  it("NInfer-all's build: its own events, its name once its request is filled in", async () => {
+    const r = stub({ normalize: async (req) => ({ ...req, dir: '~/ninfer-all', variant: { template: 'ninfer-all', name: 'NInfer-all' } }) });
+    expect(await (await r.post('/api/engines/ninfer/build-plan', { kind: 'ninfer-native', build: 'all' })).json()).toEqual({ dir: '~/ninfer-all' });
+    await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', build: 'all', confirm: true });
+    await r.done();
+    expect(r.events.every((e) => e.kind === 'ninfer-all')).toBe(true);
+    expect(r.events[0]).not.toHaveProperty('label');
+    expect(r.events.at(-1)).toMatchObject({ stage: 'done', label: 'NInfer-all' });
+  });
+
+  it('a build running can be cancelled; with none, nothing is', async () => {
+    let release!: () => void;
+    const r = stub({
+      builder: () => ({
+        plan: async () => ({}) as never,
+        build: (_req, _progress, signal) =>
+          new Promise<string>((_resolve, reject) => {
+            release = () => reject(new Error('never'));
+            signal.addEventListener('abort', () => reject(Object.assign(new Error('Build cancelled'), { code: 'CANCELLED' })));
+          }),
+      }),
+    });
+    expect(await (await r.post('/api/engines/ninfer/build/cancel')).json()).toEqual({ ok: true, cancelled: false });
+    await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', confirm: true });
+    // One build at a time.
+    expect((await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', confirm: true })).status).toBe(400);
+    expect(await (await r.post('/api/engines/ninfer/build/cancel')).json()).toEqual({ ok: true, cancelled: true });
+    expect((await r.done()).stage).toBe('error');
+    expect(r.deps.jobs).toEqual({ building: false, cancel: undefined });
+    release();
+  });
+
+  it('the two builds, fresh when asked; a folder of the user\'s own for one of them', async () => {
+    const r = stub();
+    expect(await (await r.send('GET', '/api/engines/ninfer/builds')).json()).toMatchObject({ builds: [{ build: 'official', state: 'missing' }] });
+    expect(await (await r.send('GET', '/api/engines/ninfer/builds?fresh=1')).json()).toEqual({ kind: 'ninfer-native', builds: [] });
+    expect(await (await r.send('PUT', '/api/engines/ninfer/builds/all', { path: '/opt/all' })).json()).toMatchObject({ saved: true, status: { location: '/opt/all' } });
+    const bad = await r.send('PUT', '/api/engines/ninfer/builds/other', { path: '/opt/x' });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: { code: 'VALIDATION', params: { reason: 'ninfer_build_id', build: 'other' } } });
   });
 });
 

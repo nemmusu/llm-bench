@@ -113,6 +113,7 @@ export function buildDeps(b: BootEnv): CoreDeps {
       git: toolOverride(env.GPUBENCH_GIT),
       cmake: toolOverride(env.GPUBENCH_CMAKE),
       wsl: toolOverride(env.GPUBENCH_WSL),
+      ninferHost: toolOverride(env.GPUBENCH_NINFER_HOST),
     },
     platform,
     arch: b.arch,

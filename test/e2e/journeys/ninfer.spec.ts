@@ -1,15 +1,16 @@
 /**
- * NInfer like a person on Windows: point LLM Bench at the build inside WSL (a fake wsl.exe whose
- * distro runs the fake ninfer-serve), pick the "Consigliata da NInfer" settings for a .ninfer model,
- * run a Rapido benchmark, then start a server with the same settings and stop it.
+ * NInfer like a person, on Windows (inside WSL) or on Linux (on this PC): its card's official build
+ * pointed at the user's own folder, a Rapido benchmark with "Consigliata da NInfer", a server with the
+ * same settings stopped; "Aggiorna" in one click (pull and rebuild, with the models to upgrade); and
+ * "Scarica e compila" from nothing, ready with no other step.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Locator, Page } from '@playwright/test';
-import { expect, launchApp, ROOT, test } from '../fixtures';
+import { expect, launchApp, test } from '../fixtures';
 import { h1, scan, skipWelcome } from './bench-helpers';
 import { openPage } from './library-helpers';
+import { chooseNinfer, folderText, IN_COMMAND, ninferCard, ninferEnv, OFFICIAL_SAVED } from './ninfer-helpers';
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -28,56 +29,39 @@ function seedNinfer(modelsDir: string, containerVersion = 3): void {
   writeFileSync(path.join(dir, 'Qwen3.8-27B-nvfp4-NInfer.SHA256SUMS'), `${'74'.repeat(32)}  qwen3_8_27b_nvfp4.ninfer\n`);
 }
 
-/** Points the NInfer card at the build in the fake distro (Ubuntu-24.04, /home/user/ninfer). */
-async function useBuild(page: Page): Promise<Locator> {
-  await openPage(page, 'Motori');
-  const card = page.getByRole('region', { name: 'NInfer', exact: true });
-  await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04', { timeout: 20_000 });
-  await card.getByRole('button', { name: 'Ho già NInfer: indica la cartella' }).click();
-  await card.getByRole('textbox', { name: 'Dove si trova NInfer' }).fill('/home/user/ninfer');
-  await card.getByRole('button', { name: 'Controlla e usa' }).click();
-  await expect(card.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
-  return card;
-}
-
-test('NInfer through WSL: find the build, run a Rapido benchmark with its recommended settings, serve and stop', async () => {
+test('NInfer: the user\'s own build pointed at, a Rapido benchmark with its recommended settings, a server started and stopped', async () => {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-'));
   seedNinfer(path.join(userData, 'models', 'local'));
-  const gb = await launchApp({
-    userData,
-    env: {
-      GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
-      FAKE_WSL_STATE: path.join(userData, 'fake-wsl'),
-      FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, prefillTps: 20_000, decodeTps: 900, tokensPerChunk: 2 }),
-    },
-  });
+  const gb = await launchApp({ userData, env: { ...ninferEnv(userData), FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 300, prefillTps: 20_000, decodeTps: 900, tokensPerChunk: 2 }) } });
   try {
     const { page } = gb;
     await skipWelcome(page);
 
-    // Motori: NInfer is to be set up; its distro is read from WSL; the build is checked by running its help.
+    // Motori: NInfer and its two builds; none set up yet.
     await openPage(page, 'Motori');
-    const card = page.getByRole('region', { name: 'NInfer', exact: true });
+    const { card, official, all } = ninferCard(page);
     await expect(card.getByText('solo RTX 5090 · Linux / WSL')).toBeVisible();
     await expect(card.getByText('Da configurare')).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04');
-    // Not there yet: LLM Bench offers to download and build it; this build is the user's own.
-    await expect(card.getByRole('button', { name: 'Scarica e compila NInfer' })).toBeVisible();
-    await card.getByRole('button', { name: 'Ho già NInfer: indica la cartella' }).click();
-    await card.getByRole('textbox', { name: 'Dove si trova NInfer' }).fill('/home/user/nowhere');
-    await card.getByRole('button', { name: 'Controlla e usa' }).click();
-    await expect(card.getByText('ninfer-serve non è qui: /home/user/nowhere/build/apps/ninfer-serve')).toBeVisible({ timeout: 20_000 });
-    await card.getByRole('textbox', { name: 'Dove si trova NInfer' }).fill('/home/user/ninfer');
-    await card.getByRole('button', { name: 'Controlla e usa' }).click();
-    await expect(card.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('e31bc99b13f5')).toBeVisible();
-    await expect(card.getByText('/home/user/ninfer/build/apps/ninfer-serve')).toBeVisible();
+    await expect(official.getByText('Non installato')).toBeVisible();
+    await expect(all.getByText('Non installato')).toBeVisible();
+    await expect(all.getByText(/Ti serve solo per i modelli GGUF-NInfer/)).toBeVisible();
+    // The user's own build: a wrong folder is said, the right one is taken.
+    await official.getByRole('button', { name: 'Ce l’ho già: indica la cartella' }).click();
+    const where = official.getByRole('textbox', { name: 'Dove si trova NInfer' });
+    await where.fill('/home/user/nowhere');
+    await official.getByRole('button', { name: 'Controlla e usa' }).click();
+    await expect(official.getByText('ninfer-serve non è qui: /home/user/nowhere/build/apps/ninfer-serve')).toBeVisible({ timeout: 20_000 });
+    await where.fill('/home/user/ninfer');
+    await official.getByRole('button', { name: 'Controlla e usa' }).click();
+    await expect(official.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
+    await expect(official.getByText('e31bc99', { exact: true })).toBeVisible();
+    await expect(official.getByText(folderText('/home/user/ninfer'))).toBeVisible();
+    await expect(card.getByText('Pronto').first()).toBeVisible();
     await scan(page, 'NInfer card');
 
-    // Benchmark: NInfer (WSL), the .ninfer model, NInfer's own recommended settings.
+    // Benchmark: NInfer, the .ninfer model, NInfer's own recommended settings.
     await openPage(page, 'Benchmark');
-    await page.getByRole('combobox', { name: 'Cambia motore' }).click();
-    await page.getByRole('option', { name: /NInfer \(WSL\)/ }).click();
+    await chooseNinfer(page);
     await expect(page.getByRole('button', { name: /Cambia modello: qwen3.8-27b/ })).toBeVisible({ timeout: 20_000 });
     const settings = page.getByRole('radiogroup', { name: 'Impostazioni di NInfer' });
     await settings.getByRole('radio', { name: /Consigliata da NInfer: contesto 240K, KV fp8, 2 utenti, MTP 3/ }).click();
@@ -88,21 +72,20 @@ test('NInfer through WSL: find the build, run a Rapido benchmark with its recomm
     await expect(preview).toContainText('--kv-dtype fp8', { timeout: 20_000 });
     await expect(preview).toContainText('--spec mtp --draft-tokens 3');
     await expect(preview).toContainText('--no-prefix-reuse');
-    await expect(preview).toContainText('Ubuntu-24.04');
+    await expect(preview).toContainText(IN_COMMAND);
     await scan(page, 'benchmark with NInfer settings');
 
     await page.getByRole('button', { name: 'Avvia benchmark' }).click();
     await expect(h1(page, 'Test in corso')).toBeVisible({ timeout: 30_000 });
     await expect(h1(page, /qwen3_8_27b_nvfp4/)).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText('Completato', { exact: true })).toBeVisible();
-    const kpis = page.getByRole('region', { name: 'Numeri principali' });
-    await expect(kpis.getByText('Generazione')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Numeri principali' }).getByText('Generazione')).toBeVisible();
     await page.getByRole('tab', { name: 'Come è stato avviato' }).click();
     await page.getByRole('button', { name: 'Mostra comando' }).click();
     await expect(page.getByRole('region', { name: 'Comando' })).toContainText('ninfer-serve');
     await scan(page, 'NInfer result');
 
-    // A server with the same settings from the Benchmark page ("Avvia un server", on NInfer's own preset), then stopped.
+    // A server with the same settings from the Benchmark page, then stopped.
     await openPage(page, 'Benchmark');
     await page.getByRole('button', { name: 'Avvia solo il server', exact: true }).click();
     await expect(h1(page, 'Avvia un server')).toBeVisible();
@@ -125,84 +108,60 @@ test('NInfer through WSL: find the build, run a Rapido benchmark with its recomm
   }
 });
 
-test('NInfer "Aggiorna" like the other engines: new commits, the exact commands, then the new build; an older model to upgrade', async () => {
+test('NInfer "Aggiorna" in one click: the new commits, then pulled and rebuilt with its progress; an older model to upgrade', async () => {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-up-'));
   seedNinfer(path.join(userData, 'models', 'local'), 2);
   const gb = await launchApp({
     userData,
-    env: {
-      GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
-      FAKE_WSL_STATE: path.join(userData, 'fake-wsl'),
-      FAKE_WSL_CONFIG: JSON.stringify({
-        incoming: [
-          { sha: '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49', title: 'serve: faster MTP verification' },
-          { sha: '9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c', title: 'docs: KV capacity examples' },
-        ],
-      }),
-    },
+    settings: { ninfer: OFFICIAL_SAVED },
+    env: ninferEnv(userData, {
+      incoming: [
+        { sha: '4f2a9c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49', title: 'serve: faster MTP verification' },
+        { sha: '9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c', title: 'docs: KV capacity examples' },
+      ],
+    }),
   });
   try {
     const { page } = gb;
     await skipWelcome(page);
-    const card = await useBuild(page);
-    await expect(card.getByText('e31bc99b13f5')).toBeVisible();
-
-    // "Aggiorna", as on every engine card: two commits behind with their titles; the v2 model needs
-    // NInfer's upgrade tool.
-    await expect(card.getByText('2 commit nuovi: e31bc99 → 4f2a9c1')).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('serve: faster MTP verification')).toBeVisible();
-    await expect(card.getByText('Modelli da aggiornare')).toBeVisible();
-    await expect(card.getByRole('region', { name: 'Comando da copiare' })).toContainText('python3 tools/upgrade_ninfer_v2_to_v3.py');
+    await openPage(page, 'Motori');
+    const { official } = ninferCard(page);
+    await expect(official.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
+    // Two commits behind with their titles; the v2 model needs NInfer's upgrade tool.
+    await expect(official.getByText('2 commit nuovi: e31bc99 → 4f2a9c1')).toBeVisible({ timeout: 20_000 });
+    await expect(official.getByText('serve: faster MTP verification')).toBeVisible();
+    await expect(official.getByText('Modelli da aggiornare')).toBeVisible();
+    await expect(official.getByRole('region', { name: 'Comando da copiare' })).toContainText('python3 tools/upgrade_ninfer_v2_to_v3.py');
     await scan(page, 'NInfer update available');
-
-    // The exact commands and the way back, inside the distro; then the update with its progress.
-    await card.getByRole('button', { name: 'Aggiorna', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Aggiornare NInfer (WSL)?' });
-    await expect(dialog.getByText(/Tutto succede dentro Ubuntu-24.04/)).toBeVisible();
-    await expect(dialog.getByRole('region', { name: 'Comandi che eseguo' })).toContainText('git -C /home/user/ninfer pull --ff-only');
-    await expect(dialog.getByRole('region', { name: 'Per tornare com’era' })).toContainText('git -C /home/user/ninfer reset --hard e31bc99b13f517c8aae70b997b7c4a49b4dcdc5d');
-    await scan(page, 'NInfer update dialog');
-    await dialog.getByRole('button', { name: 'Aggiorna', exact: true }).click();
-    await expect(dialog).toBeHidden();
-    await expect(card.getByText('Aggiornato a 4f2a9c1')).toBeVisible({ timeout: 30_000 });
-    await expect(card.getByText('4f2a9c1d0e8b')).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('Hai l’ultima versione (4f2a9c1)')).toBeVisible({ timeout: 20_000 });
+    // One click: pulled and rebuilt in its folder, then the newest code.
+    await official.getByRole('button', { name: 'Aggiorna', exact: true }).click();
+    await expect(official.getByText('Hai l’ultima versione (4f2a9c1)')).toBeVisible({ timeout: 60_000 });
+    await expect(official.getByText('4f2a9c1', { exact: true })).toBeVisible({ timeout: 20_000 });
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
-test('NInfer not on the PC yet: "Scarica e compila NInfer" downloads and builds it inside WSL, then it is ready with no other step', async () => {
+test('NInfer not on the PC yet: "Scarica e compila" checks what it needs, downloads and builds it, and it is ready with no other step', async () => {
   const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-ninfer-dl-'));
-  const gb = await launchApp({
-    userData,
-    env: {
-      GPUBENCH_WSL: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fakes', 'fake-wsl', 'fake-wsl.mjs')]),
-      FAKE_WSL_STATE: path.join(userData, 'fake-wsl'),
-      // A distro without NInfer: nothing cloned, nothing built.
-      FAKE_WSL_CONFIG: JSON.stringify({ checkouts: [], builds: [] }),
-    },
-  });
+  // Nothing cloned, nothing built.
+  const gb = await launchApp({ userData, env: ninferEnv(userData, { checkouts: [], builds: [] }) });
   try {
     const { page } = gb;
     await skipWelcome(page);
     await openPage(page, 'Motori');
-    const card = page.getByRole('region', { name: 'NInfer', exact: true });
-    await expect(card.getByText(/NInfer non è ancora su questo PC/)).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByRole('combobox', { name: 'Distribuzione WSL' })).toContainText('Ubuntu-24.04');
-    await card.getByRole('button', { name: 'Scarica e compila NInfer' }).click();
-    // Checked at once: the exact commands, what it downloads and how long it takes.
-    const dialog = page.getByRole('dialog', { name: 'Scarica e compila NInfer' });
-    await expect(dialog.getByText('Da scaricare: circa 27,9 MB.')).toBeVisible({ timeout: 30_000 });
-    await expect(dialog.getByText('Compilazione: circa 10 minuti con 16 core.')).toBeVisible();
-    await expect(dialog.getByRole('region', { name: 'Comandi che eseguirò' })).toContainText('https://github.com/Neroued/ninfer.git /home/user/ninfer');
+    const { official } = ninferCard(page);
+    await expect(official.getByText('Non installato')).toBeVisible({ timeout: 20_000 });
+    // "Avanzate": the exact commands, before anything runs.
+    await official.getByText('Avanzate').click();
+    await official.getByRole('button', { name: 'Mostra i comandi' }).click();
+    await expect(official.getByRole('region', { name: 'Comandi che eseguirò' })).toContainText('https://github.com/Neroued/ninfer.git /home/user/ninfer', { timeout: 30_000 });
     await scan(page, 'download and build NInfer');
-    await dialog.getByRole('button', { name: 'Scarica e compila' }).click();
-    await expect(page.getByText('NInfer è pronto: /home/user/ninfer/build/apps/ninfer-serve')).toBeVisible({ timeout: 60_000 });
-    // Saved by itself: the card is ready, nothing else to do.
-    await expect(card.getByText('Pronto')).toBeVisible({ timeout: 30_000 });
-    await expect(card.getByText('/home/user/ninfer/build/apps/ninfer-serve')).toBeVisible();
+    await official.getByRole('button', { name: 'Scarica e compila' }).click();
+    await expect(page.getByText('NInfer (ufficiale) è pronto.')).toBeVisible({ timeout: 60_000 });
+    await expect(official.getByText('Pronto')).toBeVisible({ timeout: 30_000 });
+    await expect(official.getByText(folderText('/home/user/ninfer'))).toBeVisible();
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

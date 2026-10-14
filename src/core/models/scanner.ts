@@ -7,6 +7,7 @@ import type { Settings } from '../../contract/settings';
 import type { Logger, Platform } from '../deps';
 import { readJsonFile, writeFileAtomic } from '../store/atomic';
 import { readLocalGgufFacts } from './gguf';
+import { readNinferHeader } from './ninfer-header';
 import type { HashCache } from './hash';
 import { weakKey } from './hash';
 import { factsFromHfConfig, safetensorsParamCount } from './hf-config';
@@ -502,17 +503,23 @@ export class ModelScanner {
     const out: LocalModel[] = [];
     for (const f of artifacts) {
       const mine = manifest && (manifest.filename === undefined || manifest.filename === f.name) ? manifest : undefined;
+      // The manifest inside the file: its tensor layouts (which NInfer build reads it), and the rest when nothing is next to it.
+      const embedded = await this.ninferHeader(f, state);
       const known = await this.sha256Of(root, src, f);
       const fromManifest = mine?.sha256 && SHA_RE.test(mine.sha256) && mine.bytes === f.size ? mine.sha256 : undefined;
       const sha256 = known.sha ?? fromManifest ?? sums.get(f.name);
-      const paramsB = paramsFromLabel(mine?.name ?? f.name) ?? paramsFromLabel(src.repo ?? '');
-      // No manifest ("senza manifest"): the parts its name announces, and the model is said to be so.
-      const components = mine ? mine.components : ninferManifestFromName(f.name).components;
+      const name = mine?.name ?? embedded?.name;
+      const paramsB = paramsFromLabel(name ?? f.name) ?? paramsFromLabel(src.repo ?? '');
+      // No manifest at all ("senza manifest"): the parts its name announces, and the model is said to be so.
+      const components = mine ? mine.components : embedded?.components?.length ? embedded.components : ninferManifestFromName(f.name).components;
+      const containerVersion = mine?.containerVersion ?? embedded?.containerVersion;
       const facts: ModelFactsEx = {
         ...(mine?.architecture ? { architecture: mine.architecture } : {}),
-        ...(mine?.name ? { name: mine.name } : {}),
+        ...(name ? { name } : {}),
         ...(components.length ? { components } : {}),
-        ...(mine ? {} : { noManifest: true }),
+        ...(mine || embedded ? {} : { noManifest: true }),
+        ...(embedded?.layouts ? { layouts: embedded.layouts } : {}),
+        ...(containerVersion !== undefined ? { containerVersion } : {}),
         ...(paramsB ? { paramsB } : {}),
         // The manifest does not say the trained context: NInfer's models' own (contract/ninfer.ts), as the bench and tuner read it.
         contextLength: trainedContextOf({ format: 'ninfer' }),
@@ -546,6 +553,23 @@ export class ModelScanner {
       });
     }
     return out;
+  }
+
+  /**
+   * The manifest at the start of a .ninfer file (core/models/ninfer-header.ts), read once per file version
+   * (kept with the other facts); undefined when the file has none that can be read.
+   */
+  private async ninferHeader(f: FileInfo, state: ScanState): Promise<ModelFactsEx | undefined> {
+    const key = `ninfer:${fileKey(f.path, f.size, f.mtimeMs, this.opts.platform)}`;
+    let facts = state.facts[key];
+    if (!facts) {
+      const h = await readNinferHeader(f.path);
+      // `noManifest`: looked at, nothing readable (not asked again until the file changes).
+      facts = h ? { ...(h.name ? { name: h.name } : {}), components: h.components, layouts: h.layouts, containerVersion: h.containerVersion } : { noManifest: true };
+      state.factsChanged = true;
+    }
+    state.usedFacts[key] = facts;
+    return facts.noManifest ? undefined : facts;
   }
 
   /**

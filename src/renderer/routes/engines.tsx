@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Globe } from 'lucide-react';
 import { CUSTOM_ENGINE_TEMPLATES } from '../../contract/custom-engines';
+import type { NinferBuildId } from '../../contract/ninfer';
 import { CustomEnginesSection } from '../components/engines/custom-engines';
 import { DockerCard } from '../components/engines/docker-card';
 import { EngineCard } from '../components/engines/engine-card';
@@ -20,20 +21,25 @@ import { useSettings } from '../lib/settings';
 /**
  * /engines?customTemplate=<id>&model=<weakKey>&modelName=<label>: opens "Aggiungi motore" filled from
  * a built-in template (CUSTOM_ENGINE_TEMPLATES), saying which model asked for it. Unknown ids are dropped.
+ * /engines?ninfer=all (or the NInfer-all template, built in on NInfer's card): NInfer's card, its
+ * NInfer-all build drawn out for the model that asked.
  */
 export interface EnginesSearch {
   customTemplate?: string;
+  ninfer?: NinferBuildId;
   model?: string;
   modelName?: string;
 }
 
 export function validateEnginesSearch(s: Record<string, unknown>): EnginesSearch {
   const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
-  const template = pick(s.customTemplate);
+  const template = CUSTOM_ENGINE_TEMPLATES.find((x) => x.id === pick(s.customTemplate));
+  const ninfer = pick(s.ninfer) === 'all' || template?.builtIn ? ('all' as const) : undefined;
   const model = pick(s.model);
   const modelName = pick(s.modelName);
   return {
-    ...(template && CUSTOM_ENGINE_TEMPLATES.some((x) => x.id === template) ? { customTemplate: template } : {}),
+    ...(template && !template.builtIn ? { customTemplate: template.id } : {}),
+    ...(ninfer ? { ninfer } : {}),
     ...(model ? { model } : {}),
     ...(modelName ? { modelName } : {}),
   };
@@ -48,7 +54,8 @@ export function EnginesPage() {
   const check = useSystemCheck();
   const local = useBenchLocalModels();
   const llamaBytes = check.data?.items.find((i) => i.id === 'llamacpp')?.action?.bytes;
-  const template = CUSTOM_ENGINE_TEMPLATES.find((x) => x.id === search.customTemplate);
+  // A built-in build's template (NInfer-all) is never "Aggiungi motore": its card is (search.ninfer).
+  const template = CUSTOM_ENGINE_TEMPLATES.find((x) => x.id === search.customTemplate && !x.builtIn);
   // The model that asked for it: its name as given, else the library's name for its weak key.
   const asked = search.modelName ?? local.data?.find((m) => m.identity.weakKey === search.model)?.identity.displayName;
   return (
@@ -64,7 +71,7 @@ export function EnginesPage() {
           <VllmNativeCard />
           <SglangDockerCard />
           <SglangNativeCard />
-          <NinferCard />
+          <NinferCard focus={search.ninfer} forModel={search.ninfer ? asked : undefined} />
           <EngineCard
             icon={<Globe />}
             title={t('engines.kinds.external')}

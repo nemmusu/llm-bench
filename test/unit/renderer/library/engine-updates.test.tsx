@@ -27,6 +27,64 @@ const card = (name: string) => screen.findByRole('region', { name });
 const linux = system({ os: { platform: 'linux', release: '6', arch: 'x64', name: 'Ubuntu 24.04', isWsl: false } });
 const engine = (o: Partial<CustomEngine> & Pick<CustomEngine, 'id' | 'name' | 'base' | 'run'>): CustomEngine => customEngineSchema.parse(o);
 
+describe('Aggiorna of a NInfer fork of the user\'s (its own card, in a WSL distro)', () => {
+  it('7 new commits (5 shown), the commands and the way back inside its distro; a rebuild only when its program is older; a failed one says whether the old build is back', async () => {
+    bridge();
+    const fusion = engine({ id: 'fusion', name: 'Fusion', base: 'ninfer', run: { mode: 'ninfer', path: '/home/u/fusion', distro: 'Ubuntu-24.04', source: { url: 'https://github.com/someone/ninfer-fusion.git' } } });
+    const w = world({ settings: { ...world().settings, customEngines: [fusion] } });
+    w.custom = [customInfo(fusion, customCheck({ kind: 'ninfer-wsl', status: { kind: 'ninfer-wsl', available: true, installed: true, version: 'a1b2c3d4e5f6', problems: [], supported: true }, flagCount: 40, missing: [] }))];
+    const base = { target: 'custom:fusion', method: 'git' as const, repo: '/home/u/fusion', current: 'a1b2c3d', latest: 'e4f5a6b', distro: 'Ubuntu-24.04' };
+    const log = Array.from({ length: 7 }, (_, i) => ({ sha: `c${i}c${i}c${i}c`, title: `commit ${i + 1}` }));
+    w.updates['custom:fusion'] = upd({
+      ...base,
+      state: 'available',
+      commits: 7,
+      log,
+      commands: [
+        ['git', '-C', '/home/u/fusion', 'pull', '--ff-only'],
+        ['cmake', '--build', '/home/u/fusion/build', '-j'],
+      ],
+      restore: [['git', '-C', '/home/u/fusion', 'reset', '--hard', 'a1b2c3d']],
+    });
+    const api = libApi(w);
+    renderLib('/engines', api);
+    const c = await card('Fusion');
+    expect(await within(c).findByText('7 commit nuovi: a1b2c3d → e4f5a6b')).toBeTruthy();
+    expect(within(c).getByText('commit 5')).toBeTruthy();
+    expect(within(c).queryByText('commit 6')).toBeNull();
+    expect(within(c).getByText('e altri 2')).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Aggiorna' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aggiornare Fusion?' });
+    expect(within(dialog).getByText(/Tutto succede dentro Ubuntu-24\.04, solo in questa cartella\./)).toBeTruthy();
+    expect(within(dialog).getByRole('region', { name: 'Per tornare com’era' }).textContent).toContain('git -C /home/u/fusion reset --hard a1b2c3d');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+  });
+
+  it('pulled by hand, not rebuilt: only a rebuild, without downloading anything; a failed one says whether the old build is back', async () => {
+    bridge();
+    const fusion = engine({ id: 'fusion', name: 'Fusion', base: 'ninfer', run: { mode: 'ninfer', path: '/home/u/fusion', distro: 'Ubuntu-24.04' } });
+    const w = world({ settings: { ...world().settings, customEngines: [fusion] } });
+    w.custom = [customInfo(fusion, customCheck({ kind: 'ninfer-wsl', status: { kind: 'ninfer-wsl', available: true, installed: true, version: 'a1b2c3d4e5f6', problems: [], supported: true }, flagCount: 40, missing: [] }))];
+    w.updates['custom:fusion'] = upd({ target: 'custom:fusion', method: 'git', repo: '/home/u/fusion', current: 'a1b2c3d', latest: 'a1b2c3d', state: 'available', stale: true, commits: 0, log: [], commands: [['cmake', '--build', '/home/u/fusion/build', '-j']] });
+    const api = libApi(w);
+    renderLib('/engines', api);
+    const c = await card('Fusion');
+    expect(await within(c).findByText('Il codice è più nuovo della build: ricompila')).toBeTruthy();
+    await userEvent.click(within(c).getByRole('button', { name: 'Ricompila' }));
+    const rebuild = await screen.findByRole('dialog', { name: 'Aggiornare Fusion?' });
+    expect(within(rebuild).getByText(/Ricompilo il motore in \/home\/u\/fusion con il codice che c’è già/)).toBeTruthy();
+    await userEvent.click(within(rebuild).getByRole('button', { name: 'Ricompila' }));
+    await waitFor(() => expect(api.calls.some((x) => x.method === 'POST' && x.path === '/api/engines/custom/fusion/update')).toBe(true));
+    // It stops: the build of before is back (or not).
+    act(() => api.emit({ type: 'engine.install', kind: 'update:custom:fusion', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: true, commit: 'a1b2c3d' } } }));
+    expect(await within(c).findByText('La compilazione non è riuscita: ho rimesso la versione di prima (a1b2c3d), funziona come prima.')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'update:custom:fusion', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: true } } }));
+    expect(await within(c).findByText('La compilazione non è riuscita: ho rimesso la versione di prima (), funziona come prima.')).toBeTruthy();
+    act(() => api.emit({ type: 'engine.install', kind: 'update:custom:fusion', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_UPDATE_FAILED', message: 'x', params: { reason: 'cmake', restored: false } } }));
+    expect(await within(c).findByText('Non sono riuscito a rimettere la versione di prima: ricompila il motore.')).toBeTruthy();
+  });
+});
+
 describe('Aggiorna on the engine cards', () => {
   it('SGLang in Docker: a newer release with its size, the exact command, the update with its progress', async () => {
     bridge();
@@ -218,6 +276,11 @@ describe('update helpers', () => {
     renderUi(<InstallProgress event={{ type: 'engine.install', kind: 'update:x', stage: 'build', bytesDone: 0, step: 45, steps: 100 }} label="b" />);
     expect(screen.getByText('Compilazione')).toBeTruthy();
     expect(screen.getByText('45%')).toBeTruthy();
+    // A long compile (NInfer-all's 811 steps): how many, and the time left once its pace is known.
+    renderUi(<InstallProgress event={{ type: 'engine.install', kind: 'ninfer-all', stage: 'build', bytesDone: 412, step: 412, steps: 811, etaSec: 750 }} label="n" />);
+    expect(screen.getByText('412 di 811 file · 51% · circa 13 min rimasti')).toBeTruthy();
+    renderUi(<InstallProgress event={{ type: 'engine.install', kind: 'ninfer-all', stage: 'build', bytesDone: 805, step: 805, steps: 811, etaSec: 20 }} label="m" />);
+    expect(screen.getByText('805 di 811 file · 99% · quasi finito')).toBeTruthy();
     renderUi(<InstallProgress event={{ type: 'engine.install', kind: 'update:x', stage: 'git-pull', bytesDone: 0 }} label="g" />);
     expect(screen.getByText('Scarico le modifiche')).toBeTruthy();
   });

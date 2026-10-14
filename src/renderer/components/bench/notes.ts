@@ -29,6 +29,7 @@ export const NOTE_CODES = [
   'recipe_engine_missing',
   'recipe_file_missing',
   'text_prompts_calibrated',
+  'ninfer_all_chosen',
 ] as const;
 export type NoteCode = (typeof NOTE_CODES)[number];
 
@@ -56,6 +57,7 @@ const TONES: Record<NoteCode, NoteTone> = {
   recipe_engine_missing: 'warning',
   recipe_file_missing: 'info',
   text_prompts_calibrated: 'info',
+  ninfer_all_chosen: 'info',
 };
 
 export interface NoteText {
