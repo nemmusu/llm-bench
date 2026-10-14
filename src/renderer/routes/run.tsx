@@ -181,8 +181,8 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   // Under a speed: what it was measured on ("prompt da 4.096 token", "contesto riempito a 32.768 token").
   return (
     <Page
-      // A dashboard: the whole window (a big screen shows the tables and cards side by side).
-      width="full"
+      // A dashboard: all of a full-screen window; its columns follow the room the page has (@…/page).
+      width="wide"
       eyebrow={
         <span className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
           <StatusDot tone="accent" pulse />
@@ -204,8 +204,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
         </Button>
       }
     >
-      {/* Columns follow the room the page has (the sidebar takes part of the window), not the window. */}
-      <div className="@container flex flex-col gap-section">
+      <div className="flex flex-col gap-section">
         {/* The moment the engine spills, before everything else: the numbers below will be far too low. */}
         {live.spill && <LiveSpillBanner spill={live.spill} onCancel={() => setConfirmOpen(true)} cancelling={cancelling} />}
         <Card className="overflow-hidden">
@@ -247,7 +246,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
         </Card>
 
         <section aria-label={t('run.live')}>
-          <Card className="grid grid-cols-2 gap-y-6 px-card py-6 @xl:grid-cols-3 @4xl:grid-cols-5">
+          <Card className="grid grid-cols-2 gap-y-6 px-card py-6 @xl/page:grid-cols-3 @4xl/page:grid-cols-5">
             <RadialGauge
               size={156}
               value={live.decodeTps ?? 0}
@@ -306,7 +305,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
 
         {tune && <TuneLive tuning={live.tuning} current={live.tuneCurrent} engineKind={engineKind} />}
 
-        <div className="grid items-start gap-section @7xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+        <div className="grid items-start gap-section @7xl/page:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
           <LivePoints points={live.points} current={live.current} scenario={scenario} tune={tune} fullAt={fullAt} />
           <LiveConfig launch={live.launch} engineKind={engineKind} />
         </div>

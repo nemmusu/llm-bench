@@ -118,8 +118,8 @@ export function TuneLive({ tuning, current, engineKind }: TuneLiveProps) {
   ];
   const combos = tuning ? measuredCombinations(tuning).length : 0;
   return (
-    <div className="@container flex flex-col gap-section">
-      <div className="grid gap-section @6xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="flex flex-col gap-section">
+      <div className="grid gap-section @6xl/page:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="flex min-w-0 flex-col overflow-hidden">
           <div className="flex items-center gap-1.5 px-card pt-card pb-3">
             <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.live.attempts')}</h2>
@@ -172,7 +172,7 @@ function CapacityLive({ tuning, current }: { tuning: Tuning | undefined; current
       </div>
       {list.length ? (
         // Below the table (a narrower window): the caches side by side; beside it, one under the other.
-        <ul className="grid @3xl:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] @6xl:grid-cols-1">
+        <ul className="grid @3xl/page:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] @6xl/page:grid-cols-1">
           {list.map((c) => {
             const searching = current?.stage === 'capacity' && current.kvType === c.kvType;
             const status =
