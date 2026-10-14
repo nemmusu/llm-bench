@@ -128,7 +128,7 @@ test('language switch: setup and library screens speak English', async () => {
     await page.getByRole('tab', { name: 'Download' }).click();
     await expect(page.getByRole('heading', { name: 'Trending on Hugging Face' })).toBeVisible();
     await page.getByRole('radio', { name: /^Recommended/ }).click();
-    await expect(page.getByRole('heading', { name: 'Recommended for your GPU' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recommended for your graphics card' })).toBeVisible();
     await scan(page, 'models in English');
     await openPage(page, 'Engines');
     const check = page.getByRole('region', { name: 'System check' });
