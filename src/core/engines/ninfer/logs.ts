@@ -226,6 +226,10 @@ export function diagnoseNinfer(lines: readonly string[], exit: ExitInfo, o: Ninf
   if (/container[_ ]version|entry magic|unsupported artifact|invalid artifact|not a \.?ninfer/i.test(all)) {
     return new AppError('MODEL_INVALID', 'NInfer cannot read this artifact', { params: { reason: 'ninfer-artifact' }, detail: tail });
   }
+  // --lm-head-draft on an artifact without the optimized proposal head (GGUF-NInfer ones).
+  if (/selected proposal head is absent from artifact/i.test(all)) {
+    return new AppError('ENGINE_BAD_FLAG', 'This model has no proposal head for --lm-head-draft', { params: { flag: '--lm-head-draft', reason: 'proposal_head_missing' }, detail: tail });
+  }
   // A value the build does not take ("invalid kv-dtype: rk8v4": a variant's KV type on the official build).
   const value = /invalid (kv-dtype|spec|draft-tokens|kv-capacity)[:\s]+'?([\w.-]+)/i.exec(all);
   if (value) return new AppError('ENGINE_BAD_FLAG', `NInfer does not take --${value[1]} ${value[2]}`, { params: { flag: `--${(value[1] as string).toLowerCase()}`, value: value[2] as string }, detail: tail });

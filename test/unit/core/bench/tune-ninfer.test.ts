@@ -1,9 +1,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import { NINFER_EXPECT, NINFER_KV_LADDER, ninferBackends, ninferSpace, ninferTuneInput } from '../../../../src/core/bench/tune-ninfer';
 import type { TunerInput } from '../../../../src/core/bench/tuner';
 import { tempDir } from '../docker/helpers';
+import { buildNinfer } from '../../../fakes/fake-hub/model-files.mjs';
 import { ninferModel } from '../engines/ninfer/helpers';
 
 const cleanups: (() => void)[] = [];
@@ -63,6 +65,21 @@ describe('NInfer search space', () => {
 });
 
 describe('NInfer tuner input', () => {
+  it('a GGUF-NInfer artifact has no proposal head: never --lm-head-draft, not even in a thorough search', async () => {
+    const space = ninferSpace({ budget: 'thorough', params: P(), backends: ['mtp'], proposalHead: false });
+    expect(space.base('int8')).toMatchObject({ spec: 'mtp', draft: 3, lmhead: false });
+    expect(space.dimensions.map((d) => d.key)).not.toContain('lmhead');
+    expect(space.params(space.base('int8'), 65_536)).toMatchObject({ ninfer: { spec: 'mtp', draftTokens: 3, lmHeadDraft: false } });
+    // Read from the file itself.
+    const t = tempDir('gb-tune-gguf-');
+    cleanups.push(t.cleanup);
+    const model = ninferModel(path.join(t.dir, 'g'), { manifest: false });
+    writeFileSync(model.local.paths[0] as string, buildNinfer({ name: 'qwen3.8-27b-coder390-q6k-mtp', components: ['text', 'mtp', 'vision'], layouts: ['gguf_blocks_v1', 'contiguous_le_v1'] }));
+    const common = { predict: () => undefined, budget: 'thorough' } as unknown as Omit<TunerInput, 'space'>;
+    const input = await ninferTuneInput(common, { budget: 'thorough', params: P(), model });
+    expect(input.space.base('bf16')).toMatchObject({ spec: 'mtp', lmhead: false });
+  });
+
   it('uses the artifact for its space and its VRAM estimate, and NInfer\'s usual speeds until measured', async () => {
     const t = tempDir('gb-tune-ninfer-');
     cleanups.push(t.cleanup);

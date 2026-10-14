@@ -13,6 +13,7 @@ import type { RunOutput } from '../../../../../src/core/deps';
 import { systemClock } from '../../../../../src/core/node-deps';
 import { pickFreePort } from '../../../../../src/core/process/ports';
 import { fail, manualProcess, ok, recordingLog, scriptedProc, silentLog, steppingClock, tempDir } from '../../docker/helpers';
+import { buildNinfer } from '../../../../fakes/fake-hub/model-files.mjs';
 import { FAKE_NINFER, NINFER_FIXTURES, ninferModel, realClients, realProc } from './helpers';
 
 const cleanups: (() => void)[] = [];
@@ -201,6 +202,22 @@ describe('plan', () => {
     expect((await adapter.plan({ kind: 'ninfer-native' }, gone, P(), { port: 1, marker: 'gpubench-n-4' })).modelBytes).toBe(4096);
     const noSize = { identity: { ...gone.identity, sizeBytes: undefined }, local: { ...gone.local, identity: { ...gone.identity, sizeBytes: undefined } } };
     expect((await adapter.plan({ kind: 'ninfer-native' }, noSize, P(), { port: 1, marker: 'gpubench-n-5' })).modelBytes).toBe(0);
+  });
+
+  it('never asks for a proposal head the artifact lacks (GGUF-NInfer: "selected proposal head is absent")', async () => {
+    const { adapter } = native({ launcherPrefix: ['node'] });
+    const gguf = ninferModel(path.join(tmp(), 'g'), { manifest: false });
+    writeFileSync(gguf.local.paths[0] as string, buildNinfer({ name: 'qwen3.8-27b-coder390-q6k-mtp', components: ['text', 'mtp', 'vision'], layouts: ['gguf_blocks_v1', 'contiguous_le_v1'] }));
+    const params = P({ contextSize: 32_768, ninfer: { kvCapacity: 65_536, kvDtype: 'int8', spec: 'mtp', draftTokens: 3, lmHeadDraft: true } });
+    const plan = (await adapter.plan({ kind: 'ninfer-native' }, gguf, params, { port: 1, marker: 'gpubench-h-1' })) as NinferLaunchPlan;
+    expect(plan.argv).toEqual(expect.arrayContaining(['--spec', 'mtp', '--draft-tokens', '3']));
+    expect(plan.argv).not.toContain('--lm-head-draft');
+    // The run records what was really launched.
+    expect(plan.params.ninfer).toMatchObject({ spec: 'mtp', lmHeadDraft: false });
+    // NInfer's own artifact stores the head: kept as asked.
+    const official = ninferModel(path.join(tmp(), 'o'), { manifest: false });
+    writeFileSync(official.local.paths[0] as string, buildNinfer({ components: ['text', 'vision', 'mtp', 'dflash2'] }));
+    expect((await adapter.plan({ kind: 'ninfer-native' }, official, params, { port: 1, marker: 'gpubench-h-2' })).argv).toContain('--lm-head-draft');
   });
 
   it('previews before NInfer is set up, and refuses to start without it', async () => {

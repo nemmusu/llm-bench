@@ -856,6 +856,7 @@ export const en: Messages = {
       what: 'Remove the reported argument from the extra arguments or update the engine.',
       why: {
         kvDtype: 'This version of NInfer has no “{value}” KV cache (it has: {values}). Choose another setting, or use a variant of NInfer that offers it.',
+        proposalHead: 'This model has no “optimized proposal head”, which --lm-head-draft requires (GGUF-NInfer models do not have one). Remove --lm-head-draft from the extra arguments: MTP speculative decoding works without it.',
       },
     },
     ENGINE_PORT_IN_USE: { title: 'The network port is already in use', what: 'Try again: I will pick another free port.' },

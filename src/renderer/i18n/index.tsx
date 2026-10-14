@@ -142,6 +142,7 @@ function whyKey(code: ErrorCode, params?: Params): MessageKey | undefined {
     if (params?.variant !== undefined && (reason === 'layout' || reason === 'format')) return 'errors.ENGINE_MODEL_UNSUPPORTED.why.variant';
     if (reason === 'architecture' || reason === 'container') return `errors.ENGINE_MODEL_UNSUPPORTED.why.${reason}`;
   }
+  if (code === 'ENGINE_BAD_FLAG' && reason === 'proposal_head_missing') return 'errors.ENGINE_BAD_FLAG.why.proposalHead';
   return code === 'ENGINE_BAD_FLAG' && reason === 'kv_dtype_unsupported' ? 'errors.ENGINE_BAD_FLAG.why.kvDtype' : undefined;
 }
 

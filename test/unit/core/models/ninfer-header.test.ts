@@ -34,7 +34,11 @@ describe('the start of a .ninfer file', () => {
       components: ['text', 'mtp', 'vision'],
       layouts: ['contiguous_le_v1', 'gguf_blocks_v1'],
       formats: ['bf16', 'gguf_q6_k'],
+      // GGUF-NInfer artifacts carry no optimized proposal head (--lm-head-draft would stop the launch).
+      proposalHead: false,
     });
+    // NInfer's own artifacts store it in the text model.
+    expect(await readNinferHeader(file('official.ninfer', buildNinfer({ components: ['text', 'vision', 'mtp', 'dflash2'] })))).toMatchObject({ proposalHead: true });
   });
 
   it('not one, cut short, a manifest that is not JSON or says nothing: none', async () => {
@@ -52,6 +56,7 @@ describe('the start of a .ninfer file', () => {
       components: [],
       layouts: ['x'],
       formats: ['bf16'],
+      proposalHead: false,
     });
   });
 
@@ -63,6 +68,6 @@ describe('the start of a .ninfer file', () => {
     expect(parseNinferContainer(head('NINFER', [0, 3], BigInt(NINFER_MANIFEST_MAX + 1)))).toBeUndefined();
     expect(parseNinferContainer(new Uint8Array(10))).toBeUndefined();
     expect(parseNinferEmbeddedManifest('text')).toBeUndefined();
-    expect(parseNinferEmbeddedManifest({ objects: [], metadata: { name: '' } })).toEqual({ components: [], layouts: [], formats: [] });
+    expect(parseNinferEmbeddedManifest({ objects: [], metadata: { name: '' } })).toEqual({ components: [], layouts: [], formats: [], proposalHead: false });
   });
 });

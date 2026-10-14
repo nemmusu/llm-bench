@@ -50,6 +50,8 @@ describe('NInfer: a model this build cannot read', () => {
     expect(d('… FATAL server failed during startup | /m/a.ninfer: expected NInfer v3 entry magic')).toMatchObject({ code: 'MODEL_INVALID', params: { reason: 'ninfer-artifact' } });
     // A KV type the build does not have (a variant's rk8v4 on the official build).
     expect(d('ninfer-serve: invalid kv-dtype: rk8v4')).toMatchObject({ code: 'ENGINE_BAD_FLAG', params: { flag: '--kv-dtype', value: 'rk8v4' } });
+    // --lm-head-draft on a GGUF-NInfer artifact (seen on the RTX 5090, NInfer-all e408e428).
+    expect(d('2026-10-14 13:16:29.280  ERROR selected proposal head is absent from artifact')).toMatchObject({ code: 'ENGINE_BAD_FLAG', params: { flag: '--lm-head-draft', reason: 'proposal_head_missing' } });
     expect(d('… ERROR cannot bind 127.0.0.1:18080')).toMatchObject({ code: 'ENGINE_PORT_IN_USE' });
     // Anything else NInfer says: its words are the message.
     expect(d('2026-10-13 21:01:51.829  FATAL server failed during startup | cuBLAS handle creation failed')).toMatchObject({ code: 'ENGINE_EXITED', message: 'ninfer-serve exited with 1: cuBLAS handle creation failed' });

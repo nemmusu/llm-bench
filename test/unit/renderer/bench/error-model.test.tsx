@@ -114,6 +114,7 @@ describe('ErrorCard: a model the engine cannot read', () => {
       { code: 'ENGINE_MODEL_UNSUPPORTED', message: 'x', params: { engine: 'NInfer', reason: 'container', value: 'v2', needs: 'v3' } },
       { code: 'ENGINE_MODEL_UNSUPPORTED', message: 'x', params: { engine: 'NInfer', reason: 'format', value: 'q3_k_gguf' } },
       { code: 'ENGINE_BAD_FLAG', message: 'x', params: { flag: '--kv-dtype', value: 'rk8v4', values: 'bf16, int8, fp8, nvfp4, k8v4', reason: 'kv_dtype_unsupported' } },
+      { code: 'ENGINE_BAD_FLAG', message: 'x', params: { flag: '--lm-head-draft', reason: 'proposal_head_missing' } },
       { code: 'ENGINE_NOT_INSTALLED', message: 'x', params: { reason: 'ninfer_all_missing', engine: 'NInfer-all' } },
     ];
     const router = inRouter(
@@ -128,6 +129,7 @@ describe('ErrorCard: a model the engine cannot read', () => {
     expect(screen.getByText(/Questo file \.ninfer è nel formato v2, ma questa versione di NInfer legge solo il v3/)).toBeTruthy();
     expect(screen.getByText('Questo modello usa un formato (q3_k_gguf) che questa versione di NInfer non sa leggere. Aggiorna NInfer, oppure usa una sua variante che lo legga.')).toBeTruthy();
     expect(screen.getByText(/Questa versione di NInfer non ha la cache KV «rk8v4» \(ha: bf16, int8, fp8, nvfp4, k8v4\)/)).toBeTruthy();
+    expect(screen.getByText(/Questo modello non ha la «testa di bozza ottimizzata» che --lm-head-draft richiede/)).toBeTruthy();
     expect(screen.getByText(/Questo modello funziona solo con NInfer-all, che non è ancora compilato/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Aggiungi/ })).toBeNull();
     // "Aggiorna llama.cpp": its card, in Motori.

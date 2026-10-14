@@ -66,6 +66,8 @@ export interface NinferSpaceOptions {
   users?: number;
   /** Speculative backends the artifact carries (ninferBackends); none = never speculative. */
   backends: readonly Backend[];
+  /** The artifact stores the optimized proposal head (--lm-head-draft); false = never tried, undefined = not known. */
+  proposalHead?: boolean | undefined;
 }
 
 export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
@@ -75,11 +77,13 @@ export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
   const thorough = o.budget === 'thorough';
   const first = o.backends[0];
   const vision = own.vision === true;
+  const head = o.proposalHead !== false;
   const dims: Dimension[] = [];
   if (first) {
     dims.push({ key: 'spec', values: () => [...o.backends, 'off'] });
     dims.push({ key: 'draft', values: (v) => (v.spec === 'off' ? [] : NINFER_DRAFTS[v.spec as Backend]) });
-    if (thorough) dims.push({ key: 'lmhead', values: (v) => (v.spec === 'off' ? [] : [true, false]) });
+    // A GGUF-NInfer artifact has no proposal head: --lm-head-draft would stop every launch.
+    if (thorough && head) dims.push({ key: 'lmhead', values: (v) => (v.spec === 'off' ? [] : [true, false]) });
   }
   dims.push({ key: 'kv8', values: (v) => (v.kv === 'int8' ? ['int8', 'fp8'] : []) });
   if (thorough) dims.push({ key: 'vision', values: () => [vision, !vision] });
@@ -88,7 +92,7 @@ export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
     base: (kv) => ({
       kv,
       spec: first ?? 'off',
-      ...(first ? { draft: NINFER_DRAFTS[first][0] as number, lmhead: true } : {}),
+      ...(first ? { draft: NINFER_DRAFTS[first][0] as number, lmhead: head } : {}),
       ...(kv === 'int8' ? { kv8: 'int8' } : {}),
       vision,
       ...(users ? { np: users } : {}),
@@ -139,7 +143,14 @@ export async function ninferTuneInput(
 ): Promise<TunerInput> {
   const info = await ninferArtifactInfo(o.model).catch(() => undefined);
   const { predict: _generic, ...rest } = common;
-  const space = ninferSpace({ budget: o.budget, params: o.params, backends: ninferBackends(info?.manifest), kvDtypes: o.kvDtypes, ...(o.users !== undefined ? { users: o.users } : {}) });
+  const space = ninferSpace({
+    budget: o.budget,
+    params: o.params,
+    backends: ninferBackends(info?.manifest),
+    proposalHead: info?.manifest.proposalHead,
+    kvDtypes: o.kvDtypes,
+    ...(o.users !== undefined ? { users: o.users } : {}),
+  });
   const gpu = o.gpu;
   return {
     ...rest,

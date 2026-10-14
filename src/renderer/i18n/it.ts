@@ -858,6 +858,7 @@ export const it = {
       what: 'Rimuovi l’argomento indicato dagli argomenti extra o aggiorna il motore.',
       why: {
         kvDtype: 'Questa versione di NInfer non ha la cache KV «{value}» (ha: {values}). Scegli un’altra impostazione, oppure usa una variante di NInfer che la offra.',
+        proposalHead: 'Questo modello non ha la «testa di bozza ottimizzata» che --lm-head-draft richiede (i modelli GGUF-NInfer non la hanno). Togli --lm-head-draft dagli argomenti extra: la decodifica speculativa MTP funziona lo stesso.',
       },
     },
     ENGINE_PORT_IN_USE: { title: 'La porta di rete è già occupata', what: 'Riprova: sceglierò un’altra porta libera.' },

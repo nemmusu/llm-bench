@@ -212,7 +212,7 @@ export function artifactOf(model: ModelTarget): { file: string; manifest?: strin
 /** The manifest a .ninfer file carries at its start, as the sidecar manifest's fields (name, parts, container version). */
 export async function embeddedManifest(file: string): Promise<NinferManifest | undefined> {
   const h = await readNinferHeader(file);
-  return h ? { ...(h.name ? { name: h.name } : {}), components: h.components, containerVersion: h.containerVersion } : undefined;
+  return h ? { ...(h.name ? { name: h.name } : {}), components: h.components, containerVersion: h.containerVersion, proposalHead: h.proposalHead } : undefined;
 }
 
 /**
@@ -366,7 +366,11 @@ export class NinferAdapter implements EngineAdapter {
       modelPath = mapped.path;
       slow = mapped.slow;
     }
-    const args = ninferServeArgs(params, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker });
+    // --lm-head-draft requires the optimized proposal head ("selected proposal head is absent from artifact"
+    // otherwise); NInfer uses it by itself when the artifact stores one, so it is only left out.
+    const noHead = params.ninfer?.lmHeadDraft === true && (await this.embeddedOf(file))?.proposalHead === false;
+    const launch = noHead ? { ...params, ninfer: { ...params.ninfer, lmHeadDraft: false } } : params;
+    const args = ninferServeArgs(launch, { model: modelPath, host: LOOPBACK, port: opts.port, modelId: opts.apiName ?? opts.marker });
     // probe() never rejects: a build that does not answer is a probe that says so.
     const probe = where ? await this.probe(where) : undefined;
     const commit = probe?.commit?.slice(0, 12);
@@ -392,7 +396,8 @@ export class NinferAdapter implements EngineAdapter {
       env: this.wsl ? {} : env,
       host: LOOPBACK,
       port: opts.port,
-      params,
+      // What was really launched: a run says no proposal head when the artifact has none.
+      params: launch,
       engine,
       // Native: the page cache of this system; WSL: the distro's, evicted from inside it (evict()).
       modelFiles: [this.wsl ? modelPath : file],

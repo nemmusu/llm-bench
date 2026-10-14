@@ -186,9 +186,11 @@ export function buildSafetensors({ tensors = {}, metadata, totalSize, seed = 1 }
  * with spaces, as NInfer's converter does), then the weights (seeded). `layouts`: one tensor object per
  * layout (a GGUF-NInfer artifact: "gguf_blocks_v1" among them).
  */
-export function buildNinfer({ name = 'qwen3.8-27b', components = ['text', 'mtp'], layouts = ['contiguous_le_v1', 'row_split_k128_v1'], version = 3, totalSize, seed = 1 } = {}) {
+export function buildNinfer({ name = 'qwen3.8-27b', components = ['text', 'mtp'], layouts = ['contiguous_le_v1', 'row_split_k128_v1'], version = 3, totalSize, seed = 1, proposal } = {}) {
+  // As the real ones: NInfer's own artifacts store the optimized proposal head, GGUF-NInfer ones do not.
+  const head = proposal ?? !layouts.includes('gguf_blocks_v1');
   const manifest = {
-    components: Object.fromEntries(components.map((c) => [c, { config: {} }])),
+    components: Object.fromEntries(components.map((c) => [c, { config: {}, ...(c === 'text' && head ? { proposal: { head: 'proposal/head', token_ids: 'proposal/token_ids' } } : {}) }])),
     objects: [
       { id: 'resource/text/tokenizer.json', encoding: 'raw_bytes_v1', offset: 0, bytes: 16, kind: 'resource' },
       ...layouts.map((layout, i) => ({ id: `weight/${String(i).padStart(6, '0')}`, shape: [16, 16], format: layout === 'gguf_blocks_v1' ? 'gguf_q6_k' : 'bf16', layout, offset: 16 + i * 64, bytes: 64, kind: 'tensor' })),

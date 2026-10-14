@@ -72,6 +72,8 @@ export interface NinferSpec {
   version?: number;
   totalSize?: number;
   seed?: number;
+  /** The optimized proposal head in the text model (default: yes, unless a layout is gguf_blocks_v1). */
+  proposal?: boolean;
 }
 export declare function buildNinfer(spec?: NinferSpec): Uint8Array;
 export declare function llamaLikeGguf(opts?: LlamaLikeOptions): { metadata: Record<string, GgufValue>; tensors: GgufTensorSpec[] };

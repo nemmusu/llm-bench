@@ -255,6 +255,6 @@ describe('what the probe of a build says', () => {
     expect(await embeddedManifest(path.join(t.dir, 'missing.ninfer'))).toBeUndefined();
     // Bare: no name.
     writeFileSync(a.local.paths[0] as string, buildNinfer({ name: '', components: ['text'], layouts: [] }));
-    expect(await embeddedManifest(a.local.paths[0] as string)).toEqual({ components: ['text'], containerVersion: 3 });
+    expect(await embeddedManifest(a.local.paths[0] as string)).toEqual({ components: ['text'], containerVersion: 3, proposalHead: true });
   });
 });

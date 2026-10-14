@@ -149,6 +149,11 @@ export interface NinferManifest {
   name?: string;
   /** Parts packed in the artifact: "text", "vision", "mtp", "dflash2". */
   components: string[];
+  /**
+   * Whether the text model stores the optimized proposal head (`components.text.proposal`) that
+   * --lm-head-draft requires; undefined = not known (a manifest next to the file, a name only).
+   */
+  proposalHead?: boolean;
 }
 
 /** The manifest's `artifact` object, leniently: unknown or malformed fields are left out. */
@@ -201,6 +206,8 @@ export interface NinferEmbeddedManifest {
   layouts: string[];
   /** Tensor formats, sorted, without repeats ("bf16", "gguf_q6_k"…). */
   formats: string[];
+  /** The text model stores the optimized proposal head (official artifacts do; GGUF-NInfer ones do not). */
+  proposalHead: boolean;
 }
 
 /** The embedded manifest's JSON (its `components`, `objects[].layout|format`, `metadata.name`), leniently. */
@@ -219,6 +226,7 @@ export function parseNinferEmbeddedManifest(raw: unknown): NinferEmbeddedManifes
     components: Object.keys(obj(m.components) ?? {}),
     layouts: [...layouts].sort(),
     formats: [...formats].sort(),
+    proposalHead: obj(obj(obj(m.components)?.text)?.proposal) !== undefined,
   };
 }
 
