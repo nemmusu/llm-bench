@@ -6,17 +6,52 @@ LLM Bench measures how fast your NVIDIA graphics card runs AI language models (L
 
 You don't need to know anything technical: LLM Bench installs what is missing by itself and asks before downloading anything. This guide follows the app screen by screen.
 
-**Contents:** [Install](#install) · [First start](#first-start) · [Run a benchmark](#run-a-benchmark) · [Read a result](#read-a-result) · [Find the best settings](#find-the-best-settings) · [Results and Compare](#results-and-compare) · [Models](#models) · [Servers and the notification area](#servers-and-the-notification-area) · [Engines](#engines) · [Settings worth knowing](#settings-worth-knowing) · [Troubleshooting](#troubleshooting)
+**Contents:** [What you need](#what-you-need) · [Install](#install) · [First start](#first-start) · [Run a benchmark](#run-a-benchmark) · [Read a result](#read-a-result) · [Find the best settings](#find-the-best-settings) · [Results and Compare](#results-and-compare) · [Models](#models) · [Servers and the notification area](#servers-and-the-notification-area) · [Engines](#engines) · [Settings worth knowing](#settings-worth-knowing) · [Troubleshooting](#troubleshooting)
+
+## What you need
+
+- An **NVIDIA graphics card** with its **driver**. If the driver is missing or too old, LLM Bench tells you and opens NVIDIA's download page.
+- **Windows 10 or 11** (64-bit) or **Linux** (Ubuntu, Debian and derivatives; the AppImage also runs on other distributions).
+- Disk space for the models: a few GB for small ones, tens of GB for large ones.
+
+That is all for the default engine: LLM Bench downloads and sets up **llama.cpp** at the first test.
+
+Only for some engines:
+
+- **Docker** for vLLM and SGLang (and for llama.cpp in a container). On Windows this is Docker Desktop: if it is missing, LLM Bench installs it and starts it for you.
+- **WSL 2** with a Linux distribution (for example Ubuntu 24.04) to use NInfer on Windows.
 
 ## Install
 
-**Windows:** open `LLM-Bench-Setup-x.y.z.exe` and follow the steps. Windows asks once for administrator permission: LLM Bench installs into *Program Files* for every user of the PC, and uninstalls like any program from **Settings → Apps → Installed apps** (your results stay in `%APPDATA%\LLM Bench`). If you prefer not to install anything, use the *portable* version (`LLM-Bench-x.y.z-portable.exe`).
+Download the file for your system from the **[latest release](https://github.com/nemmusu/llm-bench/releases/latest)**.
 
-> The first time, Windows may show "Windows protected your PC": click **More info** → **Run anyway**. This happens with new programs that are not widely known yet.
+### Windows
 
-**Linux** (Ubuntu, Debian and derivatives): open `llm-bench-x.y.z-amd64.deb` with your package manager, or run `sudo apt install ./llm-bench-x.y.z-amd64.deb` in a terminal. On other distributions use the AppImage.
+1. Open **`LLM-Bench-Setup-x.y.z.exe`** (x.y.z is the version number).
+2. Pick the language, keep the proposed folder and press **Install**. Windows asks once for administrator permission: LLM Bench installs into *Program Files*, for every user of the PC.
+3. LLM Bench opens by itself at the end. You will find it on the desktop and in the Start menu.
 
-The only thing that must already be there is the **NVIDIA driver**. If it is missing or too old, LLM Bench tells you and takes you to the right download page.
+> If Windows shows "Windows protected your PC", click **More info** → **Run anyway**. This happens with new programs that are not widely known yet.
+
+Prefer not to install anything? Use the **portable** version, `LLM-Bench-x.y.z-portable.exe`: double-click it to run.
+
+**Uninstall** like any program: Windows Settings → **Apps** → **Installed apps** → **LLM Bench** → **Uninstall**. Your results and settings stay in `%APPDATA%\LLM Bench` and your models in the `LLM Bench\models` folder of your user folder: delete them yourself if you no longer need them.
+
+### Linux
+
+- **.deb package** (Ubuntu, Debian and derivatives; recommended): open it with your package manager, or from a terminal:
+
+  ```bash
+  sudo apt install ./llm-bench-x.y.z-amd64.deb
+  ```
+
+  LLM Bench appears among your applications. To remove it: `sudo apt remove llm-bench`.
+- **AppImage** (any distribution): make it executable and open it.
+
+  ```bash
+  chmod +x llm-bench-x.y.z-x86_64.AppImage
+  ./llm-bench-x.y.z-x86_64.AppImage
+  ```
 
 ### From GPU Bench to LLM Bench
 
