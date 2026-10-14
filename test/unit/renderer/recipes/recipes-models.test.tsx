@@ -100,6 +100,8 @@ describe('a library model’s commands', () => {
     expect(window.gpubench?.openExternal).toHaveBeenCalledWith('https://huggingface.co/x');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
     let editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
+    // Its arguments come after LLM Bench's own: the editor says the recipe's win.
+    expect(within(editor).getByText(/vale quello della ricetta/)).toBeTruthy();
     await userEvent.click(within(editor).getByRole('radio', { name: 'Un valore preciso' }));
     const ctx = within(editor).getByLabelText('Contesto (token)');
     await userEvent.type(ctx, '65536');

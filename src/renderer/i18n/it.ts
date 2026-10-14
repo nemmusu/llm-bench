@@ -2793,6 +2793,7 @@ export const it = {
       engineTemplate: '{name} (da indicare in Motori)',
       args: 'Argomenti in più',
       argsHint: 'Separati da spazi. Un valore con spazi va tra virgolette.',
+      argsOverride: 'Se un argomento della ricetta imposta un’opzione scelta anche nel Benchmark (la cache KV, per esempio), vale quello della ricetta.',
       argsInvalid: 'Una virgoletta non è chiusa.',
       suggest: {
         title: 'Aggiungi con un clic',

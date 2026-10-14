@@ -355,6 +355,8 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
                   ))}
                 </div>
               )}
+              {/* They come after LLM Bench's own flags: the same option set twice, the recipe's wins. */}
+              <p className="text-xs text-fg-2">{t('recipes.editor.argsOverride')}</p>
               <div className="grid gap-4 @2xl/form:grid-cols-[3fr_2fr]">
                 <Field label={`${t('recipes.editor.args')} · ${t(`recipes.targets.${tab}`)}`} hint={hintFor(bad(`args.${tab}`), t('recipes.editor.argsInvalid'), t('recipes.editor.argsHint'))}>
                   {({ id, describedBy }) => (

@@ -2788,6 +2788,7 @@ export const en: Messages = {
       engineTemplate: '{name} (to be set up in Engines)',
       args: 'Extra arguments',
       argsHint: 'Separated by spaces. Put a value with spaces in quotes.',
+      argsOverride: 'When a recipe argument sets an option also chosen in the Benchmark (the KV cache, for example), the recipe’s wins.',
       argsInvalid: 'A quote is not closed.',
       suggest: {
         title: 'Add with one click',
