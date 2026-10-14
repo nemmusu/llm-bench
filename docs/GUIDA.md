@@ -6,7 +6,7 @@ Non serve sapere nulla di tecnico: il programma installa da solo quello che manc
 
 ## 1. Installazione
 
-**Windows**: apri `LLM-Bench-Setup-x.y.z.exe` e segui la procedura. Non servono permessi da amministratore. Se preferisci non installare nulla, usa la versione *portable* (`LLM-Bench-x.y.z-portable.exe`).
+**Windows**: apri `LLM-Bench-Setup-x.y.z.exe` e segui la procedura. Windows chiede una volta il permesso di amministratore: LLM Bench si installa in *Programmi*, per tutti gli utenti del PC, e si disinstalla come ogni programma da **Impostazioni → App → App installate** (i tuoi risultati restano in `%APPDATA%\LLM Bench`). Se preferisci non installare nulla, usa la versione *portable* (`LLM-Bench-x.y.z-portable.exe`).
 
 > Al primo avvio Windows potrebbe mostrare "Windows ha protetto il PC": clicca **Ulteriori informazioni** → **Esegui comunque**. Succede con i programmi nuovi non ancora diffusi.
 
@@ -36,7 +36,7 @@ La prima schermata, **Benvenuto**, controlla il PC e mostra una lista a semafori
 | Motore llama.cpp | Il programma che fa girare i modelli. Se manca, un pulsante lo installa (circa 500 MB) |
 | Modelli | I modelli già presenti sul PC (anche quelli di LM Studio, Ollama e Hugging Face) |
 | Spazio su disco | Lo spazio libero nella cartella dei modelli |
-| Docker | Facoltativo: serve solo per usare vLLM o llama.cpp in un container |
+| Docker | Facoltativo: serve solo per vLLM e SGLang (e per llama.cpp in un contenitore) |
 
 Ogni voce in rosso o arancione ha **un solo pulsante** che la sistema.
 
@@ -53,7 +53,7 @@ Nella pagina **Benchmark** scegli tre cose:
    Se un modello ha l'etichetta **Provato su questa GPU**, l'hai già misurato: vedi subito quanto andava. Se l'unico test fatto usava la RAM condivisa (vedi sotto) l'etichetta dice **Provato: usava la RAM condivisa**, senza numeri: quelli non erano i veri della scheda.
 
    Il giudizio guarda la **memoria totale della scheda**, meno 1 GB che tengono sempre il driver e lo schermo: non cambia se hai altri programmi aperti. Se in quel momento altri programmi (una macchina virtuale, un gioco, un altro modello) occupano una parte importante della scheda, l'anteprima e la conferma del server lo dicono con calma ("Ora altri programmi usano 6,2 GB della scheda: per provarlo così com'è chiudili, oppure il test partirà con meno memoria"); se per questo il modello non ci sta, l'avviso dice quanto serve e quanto è libero adesso.
-3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti, è quello del punteggio), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (dipende dal modello: LLM Bench ti dice quanto prima di iniziare, vedi sotto).
+3. **Durata**: *Rapido* (circa 2 minuti), *Standard* (circa 6 minuti: sul modello di riferimento dà il Punteggio LLM Bench), *Completo* (15–30 minuti) o *Trova le impostazioni migliori* (dipende dal modello: LLM Bench ti dice quanto prima di iniziare, vedi sotto).
 
 Premi **Avvia benchmark**. Se serve scaricare qualcosa, LLM Bench ti mostra cosa e quanto pesa e aspetta la tua conferma.
 
@@ -145,6 +145,7 @@ Il profilo **Completo** misura anche il **contesto per gradi** con le impostazio
 | **VRAM di picco** | La memoria video usata dal modello nel momento di massimo |
 | **Efficienza (tok/J)** | Quanti token per ogni joule di energia: più è alto, meno consuma |
 | **Più utenti** | Quanto regge quando più persone lo usano insieme |
+| **Punteggio LLM Bench** | Un numero solo per confrontare le schede: 1.000 è una RTX 5090 con llama.cpp sul modello di riferimento (Qwen3 4B). Si calcola solo con il profilo Standard su quel modello |
 
 Gli avvisi gialli o azzurri ti dicono se un risultato potrebbe essere falsato, per esempio "altri programmi stavano usando la GPU", e cosa fare.
 
@@ -287,14 +288,14 @@ In **Impostazioni → Cartella dei risultati** puoi scegliere una cartella condi
 
 | Problema | Cosa fare |
 |---|---|
-| "Driver NVIDIA mancante o troppo vecchio" | Premi il pulsante per aprire la pagina NVIDIA, installa l'ultimo driver e premi **Ricontrolla** |
-| "La memoria video è occupata" | Chiudi gli altri programmi che usano la GPU (giochi, altri modelli, macchine virtuali) oppure premi **Continua comunque** |
-| "Memoria video esaurita" | Scegli un modello più piccolo o una versione più compressa; in modalità esperto riduci il contesto |
+| "Driver NVIDIA non installato" o "Driver NVIDIA troppo vecchio" | Premi il pulsante per aprire la pagina NVIDIA, installa l'ultimo driver e premi **Ricontrolla** |
+| "La memoria della scheda video è occupata" | Chiudi gli altri programmi che usano la GPU (giochi, altri modelli, macchine virtuali) oppure premi **Continua comunque** |
+| "Memoria della scheda video insufficiente" | Scegli un modello più piccolo o una versione più compressa; in modalità esperto riduci il contesto |
 | "Il motore non ha risposto in tempo" | Riprova; se succede ancora, il modello probabilmente non entra nella memoria video: usa la cache q4_0, meno contesto o **Trova le impostazioni migliori** |
 | "Questa versione del motore non sa leggere il modello" | Il modello usa un formato o un'architettura che il motore non conosce. Premi **Aggiorna** sulla scheda del motore, oppure usa la variante che il messaggio propone (per i modelli GGUF-NInfer: **Aggiungi NInfer-all**) |
 | "Docker non è avviato" | Premi **Avvia Docker** |
 | "Docker non risponde" | Premi **Riavvia Docker**; per evitarlo disattiva il Resource Saver di Docker Desktop (vedi «Quando Docker non risponde») |
-| "Serve accettare la licenza" | Apri la pagina del modello su Hugging Face, accetta e salva il tuo token in Impostazioni |
+| "Serve accettare la licenza del modello" | Apri la pagina del modello su Hugging Face, accetta e salva il tuo token in Impostazioni |
 
 ## 10. Modalità esperto
 
