@@ -15,11 +15,14 @@ import {
   learnedOrder,
   recheckInputOf,
   recheckSource,
+  SLOW_SHARE_BYTES_PER_SEC,
+  tuneExpectOf,
   tuneGoalOf,
   tunedServerParams,
   tuneRunsFor,
   type TunePrepared,
 } from '../../../../src/core/bench/tune-setup';
+import { NINFER_EXPECT } from '../../../../src/core/bench/tune-ninfer';
 import type { EngineAdapter } from '../../../../src/core/engines/types';
 import type { FitCalibration } from '../../../../src/core/models/fit';
 import { summaryOf } from '../../../../src/core/store/runs-repo';
@@ -148,26 +151,61 @@ describe('what a search expects before it measures (its forecast)', () => {
     expect(await expectFromRuns(repo([t]), here, 'llamacpp-native', model)).toEqual({ anchors: [{ depth: 1024, prefillTps: 1810, decodeTps: 55.9 }] });
   });
 
-  it('never a run that spilled, failed, measured nothing or cannot be read; never another engine, PC, card or model', async () => {
+  it('speeds never from a run that spilled, failed, measured nothing or cannot be read; nothing from another engine, PC, card or model', async () => {
     const good = at('G', { createdAt: '2026-10-01T10:00:00.000Z' });
     const spilled = at('S', { createdAt: '2026-10-06T10:00:00.000Z', validity: ['shared_memory_spill'] });
     const empty = at('E', { createdAt: '2026-10-05T10:00:00.000Z', metrics: { ...makeRun().metrics, latency: [] } });
     const gone = at('X', { createdAt: '2026-10-04T10:00:00.000Z' });
+    const failed = at('F', { status: 'failed' });
     const others = [
-      at('F', { status: 'failed' }),
       at('D', { engine: { kind: 'llamacpp-docker', name: 'llama.cpp' } }),
       at('H', { hardware: hardware({ hostId: 'elsewhere' }) }),
       at('K', { hardware: hardware({ gpus: [{ index: 0, uuid: 'GPU-zzzz', name: 'Other', vendor: 'nvidia', memoryTotalMiB: 1 }] }) }),
       makeRun({ id: 'M', model: modelIdentity({ weakKey: 'other', facts }) }),
     ];
-    const runs = [spilled, empty, gone, good, ...others];
+    const runs = [spilled, empty, gone, good, failed, ...others];
     const store = { ...repo(runs), get: async (id: string) => (id === 'X' ? Promise.reject(new Error('gone')) : runs.find((r) => r.id === id)) };
     const out = await expectFromRuns(store, here, 'llamacpp-native', model);
     expect(out?.anchors).toHaveLength(2);
-    expect(await expectFromRuns(repo([spilled, ...others]), here, 'llamacpp-native', model)).toBeUndefined();
+    // A run that spilled or failed still says how long a start takes here (the newest that measured one).
+    expect(out?.loadMs).toBe(1500);
+    expect(await expectFromRuns(repo([spilled, failed, ...others]), here, 'llamacpp-native', model)).toEqual({ loadMs: 1500 });
+    expect(await expectFromRuns(repo(others), here, 'llamacpp-native', model)).toBeUndefined();
     // The same file by its hash.
     const hashed = at('H2', { model: modelIdentity({ facts, sha256: 'abc', weakKey: 'renamed' }) });
     expect(await expectFromRuns(repo([hashed]), here, 'llamacpp-native', { sha256: 'abc', weakKey: 'x' })).toBeDefined();
+  });
+
+  it('the start time of a search that failed: its launches that loaded (NInfer reading a 21.5 GiB model from /mnt/c, RTX 5090)', async () => {
+    const attempt = (outcome: 'ok' | 'oom' | 'spill', loadMs: number) => ({ stage: 'capacity' as const, kvType: 'bf16' as const, contextSize: 4096, outcome, loadMs, params: P(), points: [], command: { argv: [], powershell: '', bash: '' } });
+    const failed = tuneRun({ id: 'NF', engine: { kind: 'ninfer-wsl', name: 'NInfer' } });
+    failed.model = model;
+    failed.status = 'failed';
+    failed.metrics = { ...failed.metrics, load: { phases: [] }, latency: [], contextSweep: [] };
+    // The real starts of that search: 93.9 s, 101.3 s, 97.4 s, 90.3 s; the ones that ran out of memory or spilled do not count.
+    failed.tuning!.attempts = [attempt('ok', 93_854), attempt('oom', 105_257), attempt('spill', 120_133), attempt('ok', 101_318), attempt('ok', 97_442), attempt('ok', 90_325)];
+    expect(await expectFromRuns(repo([failed]), here, 'ninfer-wsl', model)).toEqual({ loadMs: 97_442 });
+    // A completed run measured later gives the speeds, the failed one still the start time.
+    const done = at('ND', { createdAt: '2026-10-07T10:00:00.000Z', engine: { kind: 'ninfer-wsl', name: 'NInfer' }, metrics: { ...makeRun().metrics, load: { phases: [] }, latency: [latencyPoint(1024, 84.9, 3226)] } });
+    expect(await expectFromRuns(repo([done, failed]), here, 'ninfer-wsl', model)).toEqual({ anchors: [{ depth: 1024, prefillTps: 3226, decodeTps: 84.9 }], loadMs: 97_442 });
+    // Unreadable, or no launch that loaded: nothing.
+    expect(await expectFromRuns({ ...repo([failed]), get: () => Promise.reject(new Error('gone')) }, here, 'ninfer-wsl', model)).toBeUndefined();
+    failed.tuning!.attempts = [attempt('oom', 105_257)];
+    expect(await expectFromRuns(repo([failed]), here, 'ninfer-wsl', model)).toBeUndefined();
+  });
+
+  it('a model read through a slow shared filesystem never starts faster than it is read (~240 MiB/s)', () => {
+    const usual = expectFromSize(17.6e9);
+    const seen = { anchors: [{ depth: 1024, prefillTps: 3226, decodeTps: 84.9 }], loadMs: 20_000 };
+    // 21.5 GiB through WSL's /mnt/c: 91.7 s, where NInfer usually starts in 15 s.
+    expect(tuneExpectOf(undefined, NINFER_EXPECT, 21.5 * 1024 ** 3)).toEqual({ anchors: NINFER_EXPECT.anchors, loadMs: 91_733 });
+    expect(SLOW_SHARE_BYTES_PER_SEC).toBe(240 * 1024 * 1024);
+    // Earlier runs measured here win, and a longer start than the reading stays.
+    expect(tuneExpectOf(seen, usual, 21.5 * 1024 ** 3)).toEqual({ anchors: seen.anchors, loadMs: 91_733 });
+    expect(tuneExpectOf({ loadMs: 120_000 }, usual, 21.5 * 1024 ** 3)).toEqual({ anchors: usual.anchors, loadMs: 120_000 });
+    // A local disk: what was expected.
+    expect(tuneExpectOf(seen, usual)).toEqual(seen);
+    expect(tuneExpectOf({ anchors: seen.anchors }, usual)).toEqual({ anchors: seen.anchors, loadMs: usual.loadMs });
   });
 
   it('else what the model’s size suggests: a 17.6 GB model reads ~2 000 tok/s and generates ~58', () => {
@@ -219,6 +257,14 @@ describe('buildTuneSetup, phase 3', () => {
     const failing = await buildTuneSetup({ ...deps(), runs: repo([]), here: () => Promise.reject(new Error('x')), calibration: () => Promise.reject(new Error('y')) }, { engine: { kind: 'llamacpp-native' } }, prepared('llamacpp-native', llamaCaps));
     expect(failing).not.toHaveProperty('learned');
     expect(failing.predict!(P({ contextSize: 4096 }))).not.toHaveProperty('calibration');
+  });
+
+  it('a Docker Desktop bind mount (Windows, macOS) reads the model slowly: no start faster than ~240 MiB/s', async () => {
+    const llama = (slowSharedFilesystem: boolean): TunePrepared => ({ ...prepared('llamacpp-native', llamaCaps), engine: { kind: 'llamacpp-docker' }, launch: { modelBytes: 2_000_000_000, slowSharedFilesystem } });
+    const req = { engine: { kind: 'llamacpp-docker' as const }, tune: { budget: 'fast' as const, fidelity: false } };
+    // 2 GB: ~3.1 s from what its size suggests, 7.9 s to read it through the share.
+    expect((await buildTuneSetup(deps(), req, llama(false))).expect?.loadMs).toBe(3118);
+    expect((await buildTuneSetup(deps(), req, llama(true))).expect?.loadMs).toBe(7947);
   });
 
   it('vLLM: the batched tokens that won here come first; the help unreadable: the defaults; past runs unreadable: no order', async () => {

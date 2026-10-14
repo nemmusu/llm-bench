@@ -82,6 +82,28 @@ describe('"Trova le impostazioni migliori" with NInfer', () => {
     expect(official.space.kvLadder).toEqual(['bf16', 'int8', 'nvfp4']);
   });
 
+  it('a model read from /mnt/c starts as slowly as it is read: the search and the plan\'s duration expect it', async () => {
+    const t = tempDir('gb-tune-setup-ninfer-slow-');
+    cleanups.push(t.cleanup);
+    const model = ninferModel(path.join(t.dir, 'm'));
+    const deps = { telemetry: { snapshot: async () => [] }, fingerprint: async () => hardware() };
+    // The real one: 21.5 GiB through 9p at ~240 MiB/s ("weights ready | 21.5 GiB | 1m 31.3s | 241.1 MiB/s").
+    const prepared = (slowSharedFilesystem: boolean) => ({
+      model,
+      adapter: caps(),
+      engine: { kind: 'ninfer-wsl' as const },
+      params: P(),
+      launch: { modelBytes: 21.5 * 1024 ** 3, slowSharedFilesystem },
+      scenario: buildScenario('tune'),
+    });
+    const req = { engine: { kind: 'ninfer-wsl' as const }, tune: { budget: 'fast' } as never };
+    const slow = await buildTuneSetup(deps as never, req, prepared(true));
+    expect(slow.expect).toEqual({ anchors: [{ depth: 1024, prefillTps: 8000, decodeTps: 120 }], loadMs: 91_733 });
+    expect((await buildTuneSetup(deps as never, req, prepared(true), undefined, { forecast: true })).expect?.loadMs).toBe(91_733);
+    // From a Linux disk: NInfer's usual start.
+    expect((await buildTuneSetup(deps as never, req, prepared(false))).expect?.loadMs).toBe(15_000);
+  });
+
   it('a server from the search keeps NInfer\'s own prefix reuse and thinking', async () => {
     const params: LaunchParams = P({ contextSize: 131_072, parallel: 1, ninfer: { kvCapacity: 131_072, kvDtype: 'int8', spec: 'mtp', draftTokens: 3, prefixReuse: false, thinking: false } });
     const tuning: Tuning = {

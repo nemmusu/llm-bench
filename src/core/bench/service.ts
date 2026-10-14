@@ -667,7 +667,8 @@ export class BenchService {
         ...(d.calibration ? { calibration: d.calibration } : {}),
       },
       req,
-      p,
+      // A model read through a slow share starts slowly: the search expects it (and so does the plan's duration).
+      { ...p, launch: { modelBytes: p.launch.modelBytes, slowSharedFilesystem: d.slowSharedFilesystem?.(p.launch, p.model) === true } },
       recheck,
       { forecast },
     );

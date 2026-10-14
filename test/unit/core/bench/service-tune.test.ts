@@ -40,6 +40,19 @@ describe('BenchService — tune runs', () => {
     expect((await svc.plan(request({ profile: 'tune' }))).estimatedSeconds).toBeGreaterThan(fast.estimatedSeconds);
   });
 
+  it('a model read through a slow share (WSL /mnt/c, a Docker Desktop bind mount): every start takes longer, the plan and the run say so', async () => {
+    const local = serviceSetup(tmp, { adapter: { modelBytes: 17.6e9 }, deps: { resolveModel: async () => small() } });
+    const shared = serviceSetup(tmp, { adapter: { modelBytes: 17.6e9 }, deps: { resolveModel: async () => small(), slowSharedFilesystem: () => true } });
+    const near = (await new BenchService(local.deps).plan(request({ profile: 'tune' }))).estimatedSeconds;
+    const svc = new BenchService(shared.deps);
+    const far = (await svc.plan(request({ profile: 'tune' }))).estimatedSeconds;
+    // 17.6 GB read at ~240 MiB/s: ~70 s per start instead of ~12 s.
+    expect(far).toBeGreaterThan(near + 120);
+    const { runId } = await svc.start(request({ profile: 'tune' }));
+    expect(svc.active()).toMatchObject({ runId, estimatedSeconds: far });
+    await svc.whenIdle();
+  });
+
   it('an external endpoint cannot be tuned (nothing to relaunch)', async () => {
     const s = serviceSetup(tmp);
     const svc = new BenchService(s.deps);

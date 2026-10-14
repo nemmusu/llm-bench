@@ -89,9 +89,9 @@ describe('NInfer tuner input', () => {
     expect(input.space.base('bf16')).toMatchObject({ spec: 'mtp', np: 2 });
     expect(input.expect).toBe(NINFER_EXPECT);
     expect(input.predict?.(P({ contextSize: 8192 }))).toMatchObject({ level: 'perfect', basis: 'file-size' });
-    // No GPU facts: no estimate; measured speeds win; an artifact that cannot be read: no speculation.
+    // No GPU facts: no estimate; what the search expects here wins (buildTuneSetup); an artifact that cannot be read: no speculation.
     const seen = { anchors: [{ depth: 1024, prefillTps: 5000, decodeTps: 90 }], loadMs: 9000 };
-    const bare = await ninferTuneInput(common, { budget: 'fast', params: P(), model: { identity: model.identity }, seen });
+    const bare = await ninferTuneInput({ ...common, expect: seen }, { budget: 'fast', params: P(), model: { identity: model.identity } });
     expect(bare.predict).toBeUndefined();
     expect(bare.expect).toBe(seen);
     expect(bare.space.base('bf16')).toMatchObject({ spec: 'off' });

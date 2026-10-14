@@ -21,7 +21,7 @@ import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
 import { llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
-import { ninferTuneInput } from './tune-ninfer';
+import { NINFER_EXPECT, ninferTuneInput } from './tune-ninfer';
 import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput, type TuneSpace } from './tuner';
 
 /** VRAM kept free when vLLM's memory share is fitted to the free VRAM, and the highest share used. */
@@ -31,6 +31,13 @@ export const VLLM_TUNE_MAX_UTILIZATION = 0.95;
 const DEFAULT_SWEEP = { outputTokens: 128, reps: 2 };
 /** Earlier tune runs read for the values to try first. */
 export const LEARNED_RUNS = 8;
+/**
+ * How fast an engine reads a model through a slow shared filesystem (WSL's /mnt/<drive>, a Docker
+ * Desktop bind mount on Windows or macOS: 9p), bytes per second. Measured on an RTX 5090 PC: NInfer in
+ * WSL read a 21.5 GiB model from /mnt/c in 1 min 31 s ("weights ready | 21.5 GiB | 1m 31.3s |
+ * 241.1 MiB/s"), and every start of that search took 80–120 s where ~15 s were expected.
+ */
+export const SLOW_SHARE_BYTES_PER_SEC = 240 * 1024 ** 2;
 
 export interface TuneSetupDeps {
   telemetry: Pick<TelemetrySampler, 'snapshot'>;
@@ -47,7 +54,8 @@ export interface TunePrepared {
   adapter: EngineAdapter;
   engine: EngineConfig;
   params: LaunchParams;
-  launch: Pick<LaunchPlan, 'modelBytes'>;
+  /** `slowSharedFilesystem`: the launch reads the model through a slow share (BenchServiceDeps.slowSharedFilesystem). */
+  launch: Pick<LaunchPlan, 'modelBytes'> & { slowSharedFilesystem?: boolean };
   scenario: Scenario;
 }
 
@@ -144,37 +152,64 @@ const hasDraft = (args: readonly string[]): boolean => args.some((a) => a === '-
  * and generation inversely proportional to the file size (an RTX 5090 read ~2 000 tok/s and generated
  * ~54 tok/s with a 17.6 GB Q4 model, loaded in ~10 s).
  */
-export function expectFromSize(bytes: number | undefined): TuneExpect {
+export function expectFromSize(bytes: number | undefined): Required<TuneExpect> {
   if (!bytes) return { anchors: [DEFAULT_SPEED], loadMs: DEFAULT_LOAD_MS };
   const gb = bytes / 1024 ** 3;
   return { anchors: [{ depth: 1024, prefillTps: Math.round(clamp(35_000 / gb, 300, 20_000)), decodeTps: Math.round(clamp(950 / gb, 5, 300)) }], loadMs: Math.round(2000 + 600 * gb) };
 }
 
+/** A tune run has no load step: the median start of its launches that loaded. */
+function tuneStartMs(run: RunResult): number | undefined {
+  const loads = (run.tuning?.attempts ?? []).flatMap((a) => (a.outcome === 'ok' && a.loadMs !== undefined ? [a.loadMs] : [])).sort((a, b) => a - b);
+  return loads[Math.floor(loads.length / 2)];
+}
+
 /**
- * What this model did with this engine kind on this PC and card, from the newest completed run that
- * did not spill and measured something: its points (speeds at known depths) and its load time.
+ * What this model did with this engine kind on this PC and card: the points (speeds at known depths)
+ * of the newest completed run that did not spill and measured something, and the load time of the
+ * newest run that measured one (its warm or cold load, or its tune launches), whether it completed or
+ * not: a search that failed or was cancelled still says how long a start takes here. Undefined when
+ * neither is known.
  */
-export async function expectFromRuns(runs: Pick<RunsRepo, 'list' | 'get'>, here: HereIdentity, kind: EngineKind, model: Pick<ModelTarget['identity'], 'sha256' | 'weakKey'>): Promise<TuneExpect | undefined> {
-  const past = (await runs.list()).filter(
-    (r) =>
-      r.status === 'completed' &&
-      !spilledRun(r) &&
-      r.engineKind === kind &&
-      r.hostId === here.hostId &&
-      sameGpu(r, here) &&
-      ((model.sha256 !== undefined && r.modelSha256 === model.sha256) || r.modelWeakKey === model.weakKey),
+export async function expectFromRuns(
+  runs: Pick<RunsRepo, 'list' | 'get'>,
+  here: HereIdentity,
+  kind: EngineKind,
+  model: Pick<ModelTarget['identity'], 'sha256' | 'weakKey'>,
+): Promise<Partial<TuneExpect> | undefined> {
+  const mine = (await runs.list()).filter(
+    (r) => r.engineKind === kind && r.hostId === here.hostId && sameGpu(r, here) && ((model.sha256 !== undefined && r.modelSha256 === model.sha256) || r.modelWeakKey === model.weakKey),
   );
-  for (const r of past) {
+  let anchors: TuneExpect['anchors'] | undefined;
+  let loadMs: number | undefined;
+  for (const r of mine) {
+    const speeds = anchors === undefined && r.status === 'completed' && !spilledRun(r);
+    const loaded = r.warmLoadMs ?? r.coldLoadMs;
+    // The file is read only for what is still unknown: the speeds, or the starts of its tune launches.
+    if (!speeds && (loadMs !== undefined || loaded !== undefined)) {
+      loadMs ??= loaded;
+      continue;
+    }
     const run = await runs.get(r.id).catch(() => undefined);
     if (!run) continue;
     const points = [...run.metrics.latency, ...run.metrics.contextSweep].filter((p) => p.decodeTps.n > 0);
-    if (!points.length) continue;
-    // A tune run has no load step: its launches say how long a start takes.
-    const loads = (run.tuning?.attempts ?? []).flatMap((a) => (a.outcome === 'ok' && a.loadMs !== undefined ? [a.loadMs] : [])).sort((a, b) => a - b);
-    const loadMs = r.warmLoadMs ?? r.coldLoadMs ?? loads[Math.floor(loads.length / 2)];
-    return { anchors: points.map(anchorOf), ...(loadMs !== undefined ? { loadMs } : {}) };
+    if (speeds && points.length) anchors = points.map(anchorOf);
+    loadMs ??= loaded ?? tuneStartMs(run);
   }
-  return undefined;
+  if (anchors === undefined && loadMs === undefined) return undefined;
+  return { ...(anchors ? { anchors } : {}), ...(loadMs !== undefined ? { loadMs } : {}) };
+}
+
+/**
+ * What a search expects here: the speeds and the start time earlier runs of this model measured
+ * (expectFromRuns), else the usual ones (`usual`: the model's size, NInfer's own figures). A model read
+ * through a slow shared filesystem (`slowBytes`: its size) never starts faster than
+ * SLOW_SHARE_BYTES_PER_SEC lets it be read, whatever was expected.
+ */
+export function tuneExpectOf(seen: Partial<TuneExpect> | undefined, usual: Required<TuneExpect>, slowBytes?: number): Required<TuneExpect> {
+  const loadMs = seen?.loadMs ?? usual.loadMs;
+  const readMs = slowBytes ? Math.round((slowBytes / SLOW_SHARE_BYTES_PER_SEC) * 1000) : 0;
+  return { anchors: seen?.anchors ?? usual.anchors, loadMs: Math.max(loadMs, readMs) };
 }
 
 /** Everything the tuner needs for this request, measured now (free VRAM, platform, the build's flags, past runs). */
@@ -206,6 +241,10 @@ export async function buildTuneSetup(
   // Ordering only: a forecast (the plan's duration) does not need it.
   const past = budget !== 'recheck' && !opts.forecast && deps.runs && here ? await learnedOrder(deps.runs, here, kind).catch(() => undefined) : undefined;
   const seen = deps.runs && here ? await expectFromRuns(deps.runs, here, kind, p.model.identity).catch(() => undefined) : undefined;
+  const ninfer = engineBaseOf(kind) === 'ninfer';
+  // How fast it reads and writes here and how long a start takes (earlier runs of it), else what NInfer
+  // or the model's size suggests; never a start faster than a slow shared filesystem reads the model.
+  const expect = tuneExpectOf(seen, ninfer ? NINFER_EXPECT : expectFromSize(fileBytes), p.launch.slowSharedFilesystem ? fileBytes : undefined);
   const common = {
     budget,
     sweep: step ? { outputTokens: step.outputTokens, reps: step.reps } : DEFAULT_SWEEP,
@@ -216,16 +255,16 @@ export async function buildTuneSetup(
       : {}),
     // A model that does not fit spills to shared memory under WDDM (Windows, and WSL which uses it).
     spillPossible: spillPossible(os),
-    // How fast it reads and writes here (an earlier run of it), else what its size suggests: the forecast and the time limit.
-    expect: seen ?? expectFromSize(fileBytes),
+    // The forecast and the time limit.
+    expect,
     fidelity: req.tune?.fidelity ?? false,
     ...(users !== undefined ? { goal: 'multi' as const, multi: { users, perUserContext: goal.perUserContext as number, turns: MULTI_TURNS } } : {}),
     ...(past ? { learned: past.learned } : {}),
     ...(recheck ? { recheck } : {}),
   };
   const caps = await p.adapter.capabilities(p.engine).catch(() => undefined);
-  if (engineBaseOf(kind) === 'ninfer') {
-    return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, seen, kvDtypes: caps?.choices?.['--kv-dtype'], ...(users !== undefined ? { users } : {}) });
+  if (ninfer) {
+    return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, kvDtypes: caps?.choices?.['--kv-dtype'], ...(users !== undefined ? { users } : {}) });
   }
   const prefer = past?.prefer;
   if (!isLlamaCpp(kind)) {

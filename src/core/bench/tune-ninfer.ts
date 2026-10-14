@@ -38,8 +38,11 @@ export const NINFER_KV_LADDER: Record<TuneBudget, readonly TuneKvType[]> = {
 /** Draft tokens tried per backend, NInfer's recommendation first. */
 export const NINFER_DRAFTS: Record<Backend, readonly number[]> = { mtp: [3, 2, 4], dflash: [7, 5, 9], dflash2: [7, 5, 9] };
 
-/** What NInfer usually does on an RTX 5090 before anything is measured here (README tables, startup logs). */
-export const NINFER_EXPECT: TuneExpect = { anchors: [{ depth: 1024, prefillTps: 8000, decodeTps: 120 }], loadMs: 15_000 };
+/**
+ * What NInfer usually does on an RTX 5090 before anything is measured here (README tables, startup
+ * logs): a start from a Linux disk. One from /mnt/<drive> is slower (tune-setup.ts tuneExpectOf).
+ */
+export const NINFER_EXPECT: Required<TuneExpect> = { anchors: [{ depth: 1024, prefillTps: 8000, decodeTps: 120 }], loadMs: 15_000 };
 
 /** The speculative backends an artifact carries, the family's own first (35B-A3B: DFlash; 27B: MTP, then DFlash2). */
 export function ninferBackends(manifest: Pick<NinferManifest, 'components' | 'name'> | undefined): Backend[] {
@@ -126,7 +129,8 @@ export function ninferSpace(o: NinferSpaceOptions): TuneSpace {
 /**
  * The tuner's input for NInfer: its own search space, its own VRAM estimate (contract/ninfer.ts
  * ninferFit: the artifact, the KV pool by precision, the runtime) on the memory free before the
- * search, and its usual speeds until this model was measured here.
+ * search, and what `common` expects (buildTuneSetup: this model measured here, else NInfer's usual
+ * speeds), NINFER_EXPECT when it says nothing.
  */
 export async function ninferTuneInput(
   common: Omit<TunerInput, 'space'>,
@@ -135,7 +139,6 @@ export async function ninferTuneInput(
     params: LaunchParams;
     model: ModelTarget;
     gpu?: { totalMiB: number; freeMiB: number } | undefined;
-    seen?: TuneExpect | undefined;
     users?: number;
     /** The build's --kv-dtype values (a variant's own among them). */
     kvDtypes?: readonly string[] | undefined;
@@ -155,7 +158,7 @@ export async function ninferTuneInput(
   return {
     ...rest,
     space,
-    expect: o.seen ?? NINFER_EXPECT,
+    expect: common.expect ?? NINFER_EXPECT,
     ...(gpu && info ? { predict: (params: LaunchParams) => ninferFit({ artifactBytes: info.bytes, manifest: info.manifest, label: info.label, params, gpu }) } : {}),
   };
 }
