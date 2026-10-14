@@ -58,7 +58,7 @@ export type ModelFormat = 'gguf' | 'safetensors' | 'ninfer';
 /** Built-in engines of a format; NInfer runs natively on Linux and through WSL on Windows. */
 function builtinKinds(format: ModelFormat, platform: string): EngineKind[] {
   if (format === 'gguf') return ['llamacpp-native', 'llamacpp-docker'];
-  if (format === 'safetensors') return ['vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native'];
+  if (format === 'safetensors') return ['vllm-docker', 'vllm-native', 'sglang-docker', 'sglang-native', 'trtllm-docker', 'trtllm-native'];
   const ninfer = ninferKindFor(platform);
   return ninfer ? [ninfer] : [];
 }

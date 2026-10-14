@@ -13,6 +13,9 @@
  *   NInfer     --max-context --max-concurrency --kv-capacity --kv-dtype --spec --draft-tokens
  *              --lm-head-draft --vision, prefix reuse (--no-prefix-reuse, else the cache slots),
  *              --no-thinking --preserve-thinking. No YaRN: NInfer has no RoPE scaling flag.
+ *   TensorRT-LLM --max_seq_len --kv_cache_dtype --kv_cache_free_gpu_memory_fraction --max_batch_size
+ *              --max_num_tokens --tp_size --trust_remote_code (core/engines/shared/trtllm.ts trtllmServeArgs). No YaRN, no
+ *              dtype or quantization: trtllm-serve reads them from the checkpoint.
  *   every one  image input and reasoning (vision / reasoning; NInfer: --vision, --no-thinking): two switches.
  */
 import { COMMAND_SETTINGS, commandSettings } from '../../../contract/custom-engines';
@@ -40,14 +43,6 @@ const f = (field: ParamsField, flag: string, setting: string = field): LaunchFie
 const SWITCHES: readonly LaunchField[] = [f('vision', ''), f('reasoning', '')];
 
 export const LAUNCH_FIELDS: Record<LaunchBase, readonly LaunchField[]> = {
-  // TensorRT-LLM (core/engines/shared/trtllm.ts trtllmServeArgs): its shared fields; its own (LaunchParams.trtllm) are the UI's to add.
-  trtllm: [
-    f('maxModelLen', '--max_seq_len', 'contextSize'),
-    f('parallel', '--max_batch_size'),
-    f('kvCacheType', '--kv_cache_dtype'),
-    f('batchSize', '--max_num_tokens'),
-    ...SWITCHES,
-  ],
   llamacpp: [
     f('contextSize', '-c'),
     f('gpuLayers', '-ngl'),
@@ -97,6 +92,16 @@ export const LAUNCH_FIELDS: Record<LaunchBase, readonly LaunchField[]> = {
     f('ninferHostKvMib', '--host-kv-mib', 'ninfer.hostKvMib'),
     f('ninferThinking', '--no-thinking', 'ninfer.thinking'),
     f('ninferPreserveThinking', '--preserve-thinking', 'ninfer.preserveThinking'),
+  ],
+  trtllm: [
+    f('maxModelLen', '--max_seq_len', 'contextSize'),
+    f('kvCacheType', '--kv_cache_dtype'),
+    f('trtllmKvMemory', '--kv_cache_free_gpu_memory_fraction', 'trtllm.kvCacheFreeMemoryFraction'),
+    f('parallel', '--max_batch_size'),
+    f('batchSize', '--max_num_tokens'),
+    f('trtllmTp', '--tp_size', 'trtllm.tensorParallel'),
+    f('trtllmTrustRemoteCode', '--trust_remote_code', 'trtllm.trustRemoteCode'),
+    ...SWITCHES,
   ],
 };
 

@@ -8,6 +8,7 @@ import { EngineCard } from '../components/engines/engine-card';
 import { LlamaCard } from '../components/engines/llama-card';
 import { NinferCard } from '../components/engines/ninfer-card';
 import { SglangDockerCard, SglangNativeCard } from '../components/engines/sglang-card';
+import { TrtllmCard } from '../components/engines/trtllm-card';
 import { VllmDockerCard, VllmNativeCard } from '../components/engines/vllm-card';
 import { SystemCheckPanel } from '../components/setup/system-check';
 import { Page } from '../components/shell/page';
@@ -71,6 +72,7 @@ export function EnginesPage() {
           <VllmNativeCard />
           <SglangDockerCard />
           <SglangNativeCard />
+          <TrtllmCard />
           <NinferCard focus={search.ninfer} forModel={search.ninfer ? asked : undefined} />
           <EngineCard
             icon={<Globe />}

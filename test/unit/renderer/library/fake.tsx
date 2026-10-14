@@ -22,6 +22,7 @@ import { defaultSettings, type Settings } from '../../../../src/contract/setting
 import type { CheckItem, CuratedResponse, DockerStatusDetail, HubFitResult, InstalledBuild, SystemCheckReport } from '../../../../src/contract/views';
 import { App } from '../../../../src/renderer/app';
 import { ApiError, type ApiClient } from '../../../../src/renderer/lib/api';
+import type { TrtllmTag } from '../../../../src/renderer/lib/queries-trtllm';
 import { createAppRouter } from '../../../../src/renderer/routes/router';
 import { newQueryClient } from '../helpers';
 
@@ -311,6 +312,8 @@ export interface World {
   images: Record<string, LocalImage[]>;
   /** GET /api/engines/:kind/environment (absent: not installed; supported on Linux); DELETE sets installed false. */
   nativeEnvs?: Partial<Record<NativeEnvKind, NativeEnvPlan>>;
+  /** GET /api/engines/trtllm/tags: TensorRT-LLM's releases on NGC, newest first. */
+  trtllmTags: TrtllmTag[];
 }
 
 /** One of NInfer's builds as the card lists it (default: the official one, not set up, in WSL). */
@@ -358,6 +361,11 @@ export function world(over: Partial<World> = {}): World {
     ninferBuilds: { kind: 'ninfer-wsl', builds: [ninferBuild(), ninferBuild({ build: 'all' })] },
     // v0.31.0 as the containerd image store lists it (its id is the tag's index digest, no tag of its own).
     images: { 'vllm/vllm-openai': [{ id: 'sha256:idx031', tags: [], digests: [], sizeBytes: 32.3e9, running: false }] },
+    trtllmTags: [
+      { name: '1.3.0rc2', recommended: false, prerelease: true, sizeBytes: 23e9 },
+      { name: '1.2.0', recommended: true, prerelease: false, sizeBytes: 22e9, digest: 'sha256:120' },
+      { name: '1.1.0', recommended: false, prerelease: false },
+    ],
     ...over,
   };
 }
@@ -549,6 +557,7 @@ export function libApi(w: World = world()): LibApi {
       w.nativeEnvs = { ...w.nativeEnvs, [kind]: { ...nativeEnvOf(w, kind), installed: false, sizeBytes: 0, files: 0 } };
       return { ok: true };
     },
+    'GET /api/engines/trtllm/tags': () => w.trtllmTags,
     'PUT /api/engines/ninfer/builds/*': (b) => ({ saved: true, status: { kind: 'ninfer-wsl', available: true, installed: true, location: (b as { path: string }).path, problems: [], supported: true } }),
     'POST /api/engines/ninfer/build/cancel': () => ({ ok: true, cancelled: true }),
     'POST /api/engines/custom/*/update/cancel': () => ({ ok: true, cancelled: true }),

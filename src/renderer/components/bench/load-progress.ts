@@ -50,6 +50,7 @@ export function finishedStages(track: LoadTrack): { stage: LoadStage; ms: number
 export function engineName(kind: EngineKind): string | undefined {
   if (kind === 'vllm-docker' || kind === 'vllm-native') return 'vLLM';
   if (kind === 'sglang-docker' || kind === 'sglang-native') return 'SGLang';
+  if (kind === 'trtllm-docker' || kind === 'trtllm-native') return 'TensorRT-LLM';
   if (isNinferKind(kind)) return 'NInfer';
   if (kind === 'external' || kind === 'command') return undefined;
   return 'llama.cpp';

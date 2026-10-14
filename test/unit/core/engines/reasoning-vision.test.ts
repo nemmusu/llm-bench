@@ -12,11 +12,13 @@ import {
   multimodalArchitecture,
   projectorOf,
   sglangReasoningVision,
+  trtllmReasoningVision,
   vllmReasoningVisionArgs,
   withLlamaVision,
 } from '../../../../src/core/engines/shared/reasoning-vision';
 import { sglangServeArgs } from '../../../../src/core/engines/shared/sglang';
 import { FlagGate } from '../../../../src/core/engines/shared/standard-flags';
+import { trtllmServeArgs } from '../../../../src/core/engines/shared/trtllm';
 import { vllmServeArgs } from '../../../../src/core/engines/shared/vllm-args';
 
 const P = (over: object = {}) => launchParamsSchema.parse(over);
@@ -92,6 +94,22 @@ describe('vLLM and SGLang', () => {
     const args = sglangServeArgs(P({ reasoning: false, vision: false }), { model: 'm', host: 'h', port: 1, servedName: 's' }, g2);
     expect(args).not.toContain('--reasoning');
     expect(g2.missing.map((m) => m.setting)).toEqual(['reasoning']);
+  });
+});
+
+describe('TensorRT-LLM', () => {
+  it('no server option for reasoning or image input off: said always, nothing added; on: nothing to say', () => {
+    const g = new FlagGate('trtllm', undefined);
+    trtllmReasoningVision(P({ reasoning: true, vision: true }), g);
+    expect(g.missing).toEqual([]);
+    const g2 = new FlagGate('trtllm', undefined);
+    const args = trtllmServeArgs(P({ reasoning: false, vision: false }), { model: 'm', host: 'h', port: 1, servedName: 's' }, g2);
+    expect(args).not.toContain('--reasoning');
+    expect(args).not.toContain('--vision');
+    expect(g2.missing).toEqual([
+      { flag: '--reasoning', setting: 'reasoning', effect: 'default' },
+      { flag: '--vision', setting: 'vision', effect: 'default' },
+    ]);
   });
 });
 

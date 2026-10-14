@@ -10,6 +10,8 @@
  *   vLLM        reasoning off: --default-chat-template-kwargs {"enable_thinking":false}; vision off
  *               (a multimodal model): --limit-mm-per-prompt {"image":0,"video":0}.
  *   SGLang      no server option for either: its default (reasoning off is said, a chat request can ask).
+ *   TensorRT-LLM the same: trtllm-serve has no option for either (a chat request can ask with
+ *               chat_template_kwargs); reasoning or image input switched off is said in the plan.
  *   NInfer      reasoning: --no-thinking when off; vision: --vision when the artifact packs it.
  *   external,   their chat requests carry chat_template_kwargs {"enable_thinking":false} when reasoning
  *   command     is off (and nothing otherwise: strict servers reject unknown fields).
@@ -82,6 +84,16 @@ export function vllmReasoningVisionArgs(params: Pick<LaunchParams, 'reasoning' |
 /** SGLang: no server option switches reasoning off; said when it was asked (the engine's default applies). */
 export function sglangReasoningVision(params: Pick<LaunchParams, 'reasoning'>, gate: FlagGate): void {
   if (params.reasoning === false) gate.unsupported('--reasoning', 'reasoning', true);
+}
+
+/**
+ * TensorRT-LLM: trtllm-serve has no server option to switch reasoning or a multimodal model's image input
+ * off; asked for, it is said (the engine's own behaviour applies). Its benchmarks send raw prompts
+ * (/v1/completions): no chat template, so reasoning changes nothing they measure.
+ */
+export function trtllmReasoningVision(params: Pick<LaunchParams, 'reasoning' | 'vision'>, gate: FlagGate): void {
+  if (params.reasoning === false) gate.unsupported('--reasoning', 'reasoning', true);
+  if (params.vision === false) gate.unsupported('--vision', 'vision', true);
 }
 
 /**

@@ -3,14 +3,17 @@
  * Benchmark's "Parametri avanzati" and "Avvia un server" → "Comandi personalizzati" (one component, so
  * both pages offer the same fields). Which fields an engine has is launch-fields.ts; an empty field
  * says what happens then ("Vuoto: …"): the engine's default, what the test needs, or the value of the
- * NInfer preset chosen above. A field a fork's --help lacks is disabled with the reason.
+ * NInfer preset chosen above. A field a fork's --help lacks is disabled with the reason. TensorRT-LLM's
+ * cards used together (tensor parallel) show only on a PC with more than one graphics card.
  */
 import type { ReactNode } from 'react';
 import type { MissingFlag } from '../../../contract/custom-engines';
-import { type LaunchParams, type NinferParams, type NinferSpec } from '../../../contract/engines';
+import { TRTLLM_DEFAULT_KV_FRACTION, type LaunchParams, type NinferParams, type NinferSpec } from '../../../contract/engines';
 import { NINFER_DEFAULT_DRAFT_TOKENS, NINFER_DEFAULTS } from '../../../contract/ninfer';
 import { useI18n, type MessageKey } from '../../i18n';
+import { useSystemInfo } from '../../lib/queries-library';
 import { YarnChoice } from '../recipes/yarn-choice';
+import { HelpTip } from '../ui/help-tip';
 import { Field, Input } from '../ui/input';
 import { Select, type SelectOption } from '../ui/select';
 import { kvCacheOptions } from './kv-cache-options';
@@ -18,8 +21,22 @@ import { formFromParams, parseInteger, type ParamsField, type ParamsForm, type T
 import { LAUNCH_FIELDS, type LaunchBase } from './launch-fields';
 import type { NinferSupport } from './ninfer-support';
 
-/** vLLM's and SGLang's own defaults for the share of GPU memory (core/engines/shared: vllm-args.ts, sglang.ts). */
-export const MEMORY_DEFAULTS = { vllm: 0.9, sglang: 0.85 } as const;
+/** vLLM's and SGLang's own defaults for the share of GPU memory (core/engines/shared: vllm-args.ts, sglang.ts); TensorRT-LLM's of the free memory for its KV cache. */
+export const MEMORY_DEFAULTS = { vllm: 0.9, sglang: 0.85, trtllm: TRTLLM_DEFAULT_KV_FRACTION } as const;
+
+/** The most graphics cards TensorRT-LLM's tensor parallel is offered with (LaunchParams.trtllm.tensorParallel ≤ 8). */
+const MAX_TP = 8;
+
+/** Words a beginner may not know: a "?" beside the field (the glossary's own explanation); tensor parallel has its own. */
+const TIPS: Partial<Record<ParamsField, [MessageKey, MessageKey]>> = {
+  trtllmKvMemory: ['tune.help.kvShareTerm', 'tune.help.kvShare'],
+};
+
+/** The graphics cards of this PC (TensorRT-LLM's tensor parallel): asked only where that field is. */
+function WithGpus({ children }: { children: (gpus: number) => ReactNode }) {
+  const system = useSystemInfo();
+  return <>{children(system.data?.gpus.length ?? 1)}</>;
+}
 
 export interface LaunchFieldsProps {
   base: LaunchBase;
@@ -98,13 +115,15 @@ function specsOf(base: LaunchBase, memory: string): Partial<Record<ParamsField, 
         ninferHostKvMib: fx('hostKv'),
         ninferPreserveThinking: fx('preserveThinking'),
       };
-    // TensorRT-LLM: its shared fields in vLLM's words until its own panel (the UI's work) words them.
     case 'trtllm':
       return {
         maxModelLen: fx('ctxRequest', CONTEXT),
+        kvCacheType: fx('kvTrtllm'),
+        trtllmKvMemory: fx('memTrtllm', { test: g('autoValue'), server: g('autoValue'), values: { value: memory } }),
         parallel: fx('requests', USERS),
-        kvCacheType: fx('kvVllm'),
-        batchSize: fx('batchVllm'),
+        batchSize: fx('batchTrtllm'),
+        trtllmTp: fx('tp'),
+        trtllmTrustRemoteCode: fx('trustCode'),
       };
   }
 }
@@ -119,17 +138,21 @@ const NINFER_GROUPS: readonly { title: MessageKey; fields: readonly ParamsField[
   { title: 'benchmark.expert.f.groupChat', fields: ['ninferPrefixReuse', 'ninferDeviceStateSlots', 'ninferHostStateSlots', 'ninferHostKvMib', 'ninferPreserveThinking'] },
 ];
 
-/** The select's value for the KV cache as the engine reads it (llama.cpp takes fp8 as q8_0; vLLM / SGLang any 8/4-bit as fp8). */
+/**
+ * The select's value for the KV cache as the engine reads it (llama.cpp takes fp8 as q8_0; vLLM / SGLang any
+ * 8/4-bit as fp8; TensorRT-LLM the same, and nvfp4 as it is).
+ */
 export function kvShown(base: LaunchBase, kv: string): string {
   if (kv === 'default' || kv === 'auto') return 'default';
   if (base === 'llamacpp') return kv === 'fp8' ? 'q8_0' : kv;
+  if (base === 'trtllm' && kv === 'nvfp4') return kv;
   return kv === 'q8_0' || kv === 'q4_0' || kv === 'fp8' ? 'fp8' : 'default';
 }
 
 export function LaunchFields(p: LaunchFieldsProps) {
   const f = useI18n();
   const { t, integer, number } = f;
-  const specs = specsOf(p.base, p.base === 'vllm' || p.base === 'sglang' ? number(MEMORY_DEFAULTS[p.base], 2) : '');
+  const specs = specsOf(p.base, p.base === 'vllm' || p.base === 'sglang' || p.base === 'trtllm' ? number(MEMORY_DEFAULTS[p.base], 2) : '');
   const flags = LAUNCH_FIELDS[p.base];
   const bad = (field: ParamsField) => p.invalid.includes(field);
   const yarnOn = p.form.yarnTarget.trim() !== '';
@@ -168,7 +191,8 @@ export function LaunchFields(p: LaunchFieldsProps) {
     );
   };
 
-  const control = (field: ParamsField): ReactNode => {
+  /** `gpus`: the cards of this PC (only TensorRT-LLM's tensor parallel reads it). */
+  const control = (field: ParamsField, gpus = 1): ReactNode => {
     // Every field of the grid has its words and its flag (launch-fields.ts).
     const spec = specs[field]!;
     const flag = flags.find((x) => x.field === field)!;
@@ -184,6 +208,8 @@ export function LaunchFields(p: LaunchFieldsProps) {
     const preset = fromPreset(field);
     const autoLabel = preset !== undefined ? t('benchmark.expert.f.presetOption', { value: valueText(field, preset) }) : t('common.auto');
 
+    const tip = TIPS[field];
+    const aside = tip ? <HelpTip term={t(tip[0])}>{t(tip[1])}</HelpTip> : undefined;
     const select = <V extends string>(value: V, options: readonly SelectOption<V>[]) => (
       <Field key={field} label={label} hint={hint}>
         {({ id, describedBy }) => (
@@ -215,8 +241,29 @@ export function LaunchFields(p: LaunchFieldsProps) {
             : [
                 { value: 'default', label: t('common.auto') },
                 { value: 'fp8', label: p.base === 'sglang' ? 'fp8 (e5m2)' : 'fp8' },
+                ...(p.base === 'trtllm' ? [{ value: 'nvfp4', label: t('benchmark.expert.f.kvTrtllm.nvfp4') }] : []),
               ],
         );
+      case 'trtllmTp': {
+        const value = p.form.trtllmTp.trim() === '' || p.form.trtllmTp.trim() === '1' ? 'default' : p.form.trtllmTp.trim();
+        const counts = Array.from({ length: Math.min(gpus, MAX_TP) - 1 }, (_, i) => String(i + 2));
+        // A value from a saved test this PC cannot offer stays visible (the plan says it is refused) rather than vanishing.
+        if (value !== 'default' && !counts.includes(value)) counts.push(value);
+        return (
+          <Field key={field} label={label} hint={hint} aside={<HelpTip term={t('tune.help.tpTerm')}>{t('tune.help.tp')}</HelpTip>}>
+            {({ id, describedBy }) => (
+              <Select<string>
+                id={id}
+                aria-describedby={describedBy!}
+                value={value}
+                disabled={disabled}
+                onValueChange={(v) => p.onForm({ trtllmTp: v === 'default' ? '' : v })}
+                options={[{ value: 'default', label: t('benchmark.expert.f.tp.one') }, ...counts.map((n) => ({ value: n, label: t('benchmark.expert.f.tp.option', { n }) }))]}
+              />
+            )}
+          </Field>
+        );
+      }
       case 'ninferKvDtype': {
         const types = p.ninfer?.kvDtypes ?? [];
         const current = p.form.ninferKvDtype;
@@ -237,6 +284,7 @@ export function LaunchFields(p: LaunchFieldsProps) {
       case 'ninferLmHeadDraft':
       case 'ninferPrefixReuse':
       case 'ninferPreserveThinking':
+      case 'trtllmTrustRemoteCode':
         return select<Tri>(p.form[field], [
           { value: 'default', label: autoLabel },
           { value: 'on', label: t('common.yes') },
@@ -253,14 +301,14 @@ export function LaunchFields(p: LaunchFieldsProps) {
                 ? valueText(field, preset)
                 : field === 'gpuLayers'
                   ? t('benchmark.expert.nglAll')
-                  : field === 'gpuMemoryUtilization'
-                    ? number(MEMORY_DEFAULTS[p.base as 'vllm' | 'sglang'], 2)
+                  : field === 'gpuMemoryUtilization' || field === 'trtllmKvMemory'
+                    ? number(MEMORY_DEFAULTS[p.base as 'vllm' | 'sglang' | 'trtllm'], 2)
                     : field === 'ninferDraftTokens'
                       ? String(effSpec === 'off' || effSpec === 'auto' ? NINFER_DEFAULT_DRAFT_TOKENS.mtp : NINFER_DEFAULT_DRAFT_TOKENS[effSpec as Exclude<NinferSpec, 'off'>])
                       : (spec.placeholder ?? t('common.auto'));
         const mono = field === 'dtype' || field === 'quantization';
         return (
-          <Field key={field} label={label} hint={hint}>
+          <Field key={field} label={label} hint={hint} {...(aside ? { aside } : {})}>
             {({ id, describedBy }) => (
               <Input
                 id={id}
@@ -270,7 +318,7 @@ export function LaunchFields(p: LaunchFieldsProps) {
                 placeholder={placeholder}
                 onChange={(e) => p.onForm({ [field]: e.target.value })}
                 className={mono ? 'font-mono text-xs' : 'tabular-nums'}
-                inputMode={field === 'gpuMemoryUtilization' ? 'decimal' : mono || field === 'ninferKvCapacity' ? 'text' : 'numeric'}
+                inputMode={field === 'gpuMemoryUtilization' || field === 'trtllmKvMemory' ? 'decimal' : mono || field === 'ninferKvCapacity' ? 'text' : 'numeric'}
                 disabled={disabled}
                 autoComplete="off"
                 spellCheck={false}
@@ -296,7 +344,16 @@ export function LaunchFields(p: LaunchFieldsProps) {
           </div>
         ))
       ) : (
-        <div className={grid}>{flags.map((x) => (SWITCH_FIELDS.has(x.field) ? null : control(x.field)))}</div>
+        <div className={grid}>
+          {flags.map((x) =>
+            SWITCH_FIELDS.has(x.field) ? null : x.field === 'trtllmTp' ? (
+              // Tensor parallel only where there is more than one card to split the model on (or a saved value says it).
+              <WithGpus key={x.field}>{(gpus) => (gpus < 2 && p.form.trtllmTp.trim() === '' ? null : control(x.field, gpus))}</WithGpus>
+            ) : (
+              control(x.field)
+            ),
+          )}
+        </div>
       )}
       {hasYarn &&
         (yarnLacking ? (

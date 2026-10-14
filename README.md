@@ -13,7 +13,7 @@ Benchmark local LLMs on your own PC, find the best settings, and get the answer 
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white" alt="Windows 10 and 11">
   <img src="https://img.shields.io/badge/Linux-.deb%20%7C%20AppImage-FCC624?logo=linux&logoColor=black" alt="Linux: .deb and AppImage">
   <img src="https://img.shields.io/badge/NVIDIA-GPU-76B900?logo=nvidia&logoColor=white" alt="NVIDIA graphics cards">
-  <img src="https://img.shields.io/badge/engines-llama.cpp%20%7C%20vLLM%20%7C%20SGLang%20%7C%20NInfer-555" alt="Engines: llama.cpp, vLLM, SGLang, NInfer">
+  <img src="https://img.shields.io/badge/engines-llama.cpp%20%7C%20vLLM%20%7C%20SGLang%20%7C%20TensorRT--LLM%20%7C%20NInfer-555" alt="Engines: llama.cpp, vLLM, SGLang, TensorRT-LLM, NInfer">
   <img src="https://img.shields.io/badge/language-English%20%7C%20Italiano-555" alt="English and Italian">
 </p>
 
@@ -71,7 +71,7 @@ Benchmark local LLMs on your own PC, find the best settings, and get the answer 
   </tr>
 </table>
 
-Works with **llama.cpp**, **vLLM**, **SGLang**, **NInfer** and their forks: LLM Bench installs and updates them with a button, and always asks before downloading anything.
+Works with **llama.cpp**, **vLLM**, **SGLang**, **TensorRT-LLM**, **NInfer** and their forks: LLM Bench installs and updates them with a button, and always asks before downloading anything.
 
 ## Download
 

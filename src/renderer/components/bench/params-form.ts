@@ -42,6 +42,14 @@ export interface ParamsForm {
   /** Image input and reasoning of the model (LaunchParams.vision / reasoning; NInfer: its own two fields). */
   vision: Tri;
   reasoning: Tri;
+  /**
+   * TensorRT-LLM's own settings (LaunchParams.trtllm): the KV cache's share of the free memory
+   * (--kv_cache_free_gpu_memory_fraction), the cards that split the model (--tp_size, '' = one), and the
+   * model repository's own Python code (--trust_remote_code, 'default' = no).
+   */
+  trtllmKvMemory: string;
+  trtllmTp: string;
+  trtllmTrustRemoteCode: Tri;
 }
 
 export type ParamsField = keyof ParamsForm;

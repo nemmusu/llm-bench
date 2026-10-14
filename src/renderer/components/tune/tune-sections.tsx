@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
 import { configParamsOf, configTagsOf } from '../../../contract/configs';
-import type { EngineKind } from '../../../contract/engines';
+import { engineBaseOf, type EngineKind } from '../../../contract/engines';
 import { fullContextPoint, nominalDepth, type TuneCombination, type Tuning, type ValidityFlag } from '../../../contract/results';
 import { useI18n, type Formatters } from '../../i18n';
 import { cn } from '../../lib/cn';
@@ -261,7 +261,7 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
 }
 
 /** A word of the glossary: its term and its explanation are tune.help.{key}Term and tune.help.{key}. */
-export type GlossaryTerm = 'kv' | 'context' | 'fa' | 'batch' | 'batchTokens' | 'eager' | 'speculative' | 'offload' | 'shared';
+export type GlossaryTerm = 'kv' | 'context' | 'fa' | 'batch' | 'batchTokens' | 'kvShare' | 'tp' | 'eager' | 'speculative' | 'offload' | 'shared';
 
 /** Without a run to read them from: the words of a llama.cpp search. */
 const LLAMA_TERMS: readonly GlossaryTerm[] = ['kv', 'context', 'fa', 'batch', 'shared'];
@@ -281,6 +281,9 @@ export function glossaryTerms(engineKind: EngineKind, tuning: Pick<Tuning, 'comb
     fa: any(({ p }) => p.flashAttention !== undefined),
     batch: any(({ p }) => p.ubatchSize !== undefined || p.batchSize !== undefined),
     batchTokens: any(({ p }) => p.maxNumBatchedTokens !== undefined),
+    // TensorRT-LLM: its memory share is the KV cache's; the cards that split the model.
+    kvShare: engineBaseOf(engineKind) === 'trtllm' && any(({ p }) => p.gpuMemoryUtilization !== undefined),
+    tp: any(({ p }) => p.tensorParallel !== undefined),
     eager: any(({ p, tags }) => p.enforceEager === true || tags.includes('eager')),
     speculative: any(({ p, tags }) => configTagsOf(p).includes('draft') || p.draftMax !== undefined || tags.includes('draft')),
     offload: any(({ p, tags }) => configTagsOf(p).includes('cpu-offload') || tags.includes('cpu-offload')),

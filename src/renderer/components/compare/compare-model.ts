@@ -346,10 +346,10 @@ export function engineBase(run: Pick<RunResult, 'engine'>): string {
   return run.engine.customEngine?.base ?? run.engine.kind.split('-')[0]!;
 }
 
-/** vLLM and SGLang reserve a share of the card's memory when they start (gpu-memory-utilization / mem-fraction). */
+/** vLLM, SGLang and TensorRT-LLM reserve a share of the card's memory when they start (gpu-memory-utilization / mem-fraction / kv_cache_free_gpu_memory_fraction). */
 export function reservesMemory(run: Pick<RunResult, 'engine'>): boolean {
   const base = engineBase(run);
-  return base === 'vllm' || base === 'sglang';
+  return base === 'vllm' || base === 'sglang' || base === 'trtllm';
 }
 
 /**

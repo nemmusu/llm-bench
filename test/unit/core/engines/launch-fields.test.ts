@@ -63,6 +63,9 @@ const VALUE: Partial<Record<ParamsField, string>> = {
   ninferHostKvMib: '4096',
   ninferThinking: 'off',
   ninferPreserveThinking: 'on',
+  trtllmKvMemory: '0,8',
+  trtllmTp: '2',
+  trtllmTrustRemoteCode: 'on',
 };
 
 /** Fields whose flag comes with another field (draft tokens need a prediction; the cache slots need reuse on). */

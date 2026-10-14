@@ -3,12 +3,12 @@
  * avviato"), the configuration labels (config-label.ts) and the Configurazioni table.
  */
 import { CONFIG_DEFAULTS, configParamsOf, configTagsOf, engineFamilyOf, type ConfigParams, type ConfigTag } from '../../../contract/configs';
-import type { EngineKind, LaunchParams } from '../../../contract/engines';
+import { engineBaseOf, type EngineKind, type LaunchParams } from '../../../contract/engines';
 import type { RunResult, Scenario } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import { engineLabelOf, modelLabelOf } from './format';
 
-const DOCKER: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker', 'sglang-docker']);
+const DOCKER: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-docker', 'vllm-docker', 'sglang-docker', 'trtllm-docker']);
 
 export interface ConfigPartsOptions {
   /** Say the context even when it is the engine's default ("contesto predefinito"); otherwise only a known one. */
@@ -71,13 +71,15 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   if (p.ubatchSize !== undefined) parts.push(t('result.launch.ubatch', { n: p.ubatchSize }));
   if (p.batchSize !== undefined) parts.push(t('result.launch.batch', { n: p.batchSize }));
   if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: p.maxNumBatchedTokens }));
+  if (p.tensorParallel !== undefined) parts.push(t('result.launch.tensorParallel', { n: p.tensorParallel }));
   if (p.parallel !== undefined && p.parallel > 1) parts.push(t('result.launch.parallel', { n: p.parallel }));
   if (p.kvLayout !== undefined) parts.push(t(p.kvLayout === 'unified' ? 'result.launch.kvShared' : 'result.launch.kvPerUser'));
   if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: p.cacheReuse }));
   if (p.blockSize !== undefined) parts.push(t('result.launch.blockSize', { n: p.blockSize }));
   if (p.cudaGraphSizes?.length) parts.push(t('result.launch.cudaGraphs', { sizes: p.cudaGraphSizes.join('·') }));
   if (p.threads !== undefined) parts.push(t('result.launch.threads', { n: p.threads }));
-  if (p.gpuMemoryUtilization !== undefined) parts.push(t('result.launch.gpuMemory', { pct: f.percent(p.gpuMemoryUtilization, 0) }));
+  // TensorRT-LLM's share is of the memory the model leaves free, for the KV cache.
+  if (p.gpuMemoryUtilization !== undefined) parts.push(t(engineBaseOf(kind) === 'trtllm' ? 'result.launch.kvMemory' : 'result.launch.gpuMemory', { pct: f.percent(p.gpuMemoryUtilization, 0) }));
   if (p.enforceEager) parts.push(t('result.launch.eager'));
   if (p.reasoningOff) parts.push(t('result.launch.reasoningOff'));
   if (p.visionOff) parts.push(t('result.launch.visionOff'));

@@ -7,7 +7,7 @@ import type { RunPlan, StartServerRequest } from '../../../contract/api';
 import type { EngineConfig, EngineStatus } from '../../../contract/engines';
 import type { ModelOption } from './model-options';
 
-export type DockerEngineKind = 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker';
+export type DockerEngineKind = 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker' | 'trtllm-docker';
 
 /**
  * Something to fetch first. A model with `file` is one GGUF; without it the whole repo is fetched
@@ -18,7 +18,7 @@ export type Need =
   | { kind: 'image'; engine: DockerEngineKind; label: string; bytes?: number }
   | { kind: 'model'; label: string; bytes?: number; repo: string; revision: string; file?: string };
 
-const isDocker = (kind: string): kind is DockerEngineKind => kind === 'llamacpp-docker' || kind === 'vllm-docker' || kind === 'sglang-docker';
+const isDocker = (kind: string): kind is DockerEngineKind => kind === 'llamacpp-docker' || kind === 'vllm-docker' || kind === 'sglang-docker' || kind === 'trtllm-docker';
 const sized = (bytes: number | undefined) => (bytes === undefined ? {} : { bytes });
 /** The engine first: if it cannot be installed, nobody waited for a model download in vain. */
 const ORDER: Record<Need['kind'], number> = { engine: 0, image: 1, model: 2 };

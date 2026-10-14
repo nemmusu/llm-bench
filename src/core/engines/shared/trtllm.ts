@@ -21,6 +21,7 @@
  *   INFO:     Application startup complete.
  *   INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
  */
+import { trtllmReasoningVision } from './reasoning-vision';
 import type { MissingFlag } from '../../../contract/custom-engines';
 import { TRTLLM_DEFAULT_KV_FRACTION, type LaunchParams, type TrtllmKvDtype } from '../../../contract/engines';
 import { AppError, type ErrorCode } from '../../../contract/errors';
@@ -95,6 +96,7 @@ export function trtllmServeArgs(params: LaunchParams, o: TrtllmServeOptions, gat
   // A prompt longer than --max_num_tokens is refused without it (the context sweep sends long ones).
   if (t.chunkedPrefill !== false) gate.push(args, '--enable_chunked_prefill');
   if (t.trustRemoteCode === true) gate.push(args, '--trust_remote_code');
+  trtllmReasoningVision(params, gate);
   args.push(...params.extraArgs);
   return args;
 }

@@ -1,6 +1,6 @@
 /** The models offered for an engine: what is on the PC first, then curated downloads. */
 import type { StartRunRequest } from '../../../contract/api';
-import type { EngineKind } from '../../../contract/engines';
+import { engineBaseOf, type EngineKind } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import { engineRunsFormat } from '../../../contract/ninfer';
 import { spilledRun, type RunSummary } from '../../../contract/results';
@@ -30,9 +30,10 @@ export type ModelOption =
       preset?: true;
     };
 
-/** What the picker's note says about the formats an engine reads ("llama.cpp usa i modelli GGUF…"). */
-export function formatNoteOf(kind: EngineKind): 'llamacpp' | 'vllm' | 'ninfer' | undefined {
+/** What the picker's note says about the formats an engine reads ("llama.cpp usa i modelli GGUF…"; TensorRT-LLM: at its best with FP8 / NVFP4). */
+export function formatNoteOf(kind: EngineKind): 'llamacpp' | 'vllm' | 'ninfer' | 'trtllm' | undefined {
   if (engineRunsFormat(kind, 'ninfer')) return 'ninfer';
+  if (engineBaseOf(kind) === 'trtllm') return 'trtllm';
   if (engineRunsFormat(kind, 'gguf') && !engineRunsFormat(kind, 'safetensors')) return 'llamacpp';
   return engineRunsFormat(kind, 'safetensors') && !engineRunsFormat(kind, 'gguf') ? 'vllm' : undefined;
 }

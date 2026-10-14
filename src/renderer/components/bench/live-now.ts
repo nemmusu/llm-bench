@@ -73,5 +73,6 @@ export function nowText(c: CurrentStep, f: F, contextSize?: number): string {
 
 /** The engine family of a run label ("vLLM v0.12.0" / "llama.cpp b11438"), when the start request is not known. */
 export function engineKindOfLabel(label: string): EngineKind {
+  if (/tensorrt|trtllm/i.test(label)) return 'trtllm-docker';
   return /sglang/i.test(label) ? 'sglang-docker' : /vllm/i.test(label) ? 'vllm-docker' : 'llamacpp-native';
 }

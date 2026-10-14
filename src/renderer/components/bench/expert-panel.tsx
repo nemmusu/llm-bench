@@ -144,7 +144,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
   const base = engineBaseOf(p.engine);
   const bad = (f: ParamsField) => p.paramsInvalid.includes(f);
   // The context field: the recipe's value as its placeholder, and a line when the user's replaces it.
-  const ctxText = base === 'vllm' || base === 'sglang' ? p.params.maxModelLen : p.params.contextSize;
+  const ctxText = base === 'vllm' || base === 'sglang' || base === 'trtllm' ? p.params.maxModelLen : p.params.contextSize;
   const typedCtx = parseInteger(ctxText);
   const context =
     recipe !== undefined && recipeCtx !== undefined && !yarnOn

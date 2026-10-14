@@ -11,7 +11,7 @@
  *   GET /api/configs?gpu=&model=&engine=&minContext= -> ConfigsResponse
  */
 import { z } from 'zod';
-import { engineKindSchema, type EngineKind, type LaunchParams } from './engines';
+import { engineBaseOf, engineKindSchema, type EngineKind, type LaunchParams } from './engines';
 import { ninferFlags } from './ninfer';
 import { fillsContext, nominalDepth, profileSchema } from './results';
 
@@ -20,8 +20,9 @@ import { fillsContext, nominalDepth, profileSchema } from './results';
 export type EngineFamily = 'llamacpp' | 'vllm' | 'external';
 
 /**
- * SGLang reads its settings like vLLM (context, KV dtype, memory share, users, batched tokens): its
- * own flag spellings are parsed into the same fields, and the engine kind in the key keeps the two apart.
+ * SGLang and TensorRT-LLM read their settings like vLLM (context, KV dtype, memory share, users, batched
+ * tokens): their own flag spellings are parsed into the same fields, and the engine kind in the key keeps
+ * them apart. TensorRT-LLM's memory share is of the memory the model leaves free (its default, 0.9, as vLLM's).
  */
 export function engineFamilyOf(kind: EngineKind): EngineFamily {
   if (kind === 'llamacpp-native' || kind === 'llamacpp-docker') return 'llamacpp';
@@ -85,8 +86,10 @@ export const configParamsSchema = z.object({
   draftMin: z.number().int().optional(),
   /** vLLM --speculative-config (keys sorted, model as a bare name). */
   speculative: z.string().optional(),
-  /** vLLM. */
+  /** vLLM (TensorRT-LLM --max_num_tokens). */
   maxNumBatchedTokens: z.number().int().positive().optional(),
+  /** TensorRT-LLM --tp_size: graphics cards that split the model (1, the default, is dropped). */
+  tensorParallel: z.number().int().positive().optional(),
   gpuMemoryUtilization: z.number().optional(),
   enforceEager: z.boolean().optional(),
   /**
@@ -183,8 +186,9 @@ const VALUE_FLAGS = new Map<string, Setter>();
 const add = (flags: string[], set: Setter) => {
   for (const f of flags) VALUE_FLAGS.set(f, set);
 };
-// NInfer: --max-context per request, --kv-dtype, --max-concurrency.
-add(['-c', '--ctx-size', '--max-model-len', '--context-length', '--max-context'], (r, v) => {
+// NInfer: --max-context per request, --kv-dtype, --max-concurrency. TensorRT-LLM (trtllm-serve): its flags
+// with underscores (and the dashed spellings of newer releases), --max_seq_len --max_batch_size --max_num_tokens.
+add(['-c', '--ctx-size', '--max-model-len', '--context-length', '--max-context', '--max_seq_len', '--max-seq-len'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.contextSize = n;
 });
@@ -194,7 +198,7 @@ add(['-ctk', '--cache-type-k'], (r, v) => {
 add(['-ctv', '--cache-type-v'], (r, v) => {
   if (v[0]) r.cacheTypeV = v[0].toLowerCase();
 });
-add(['--kv-cache-dtype', '--kv-dtype'], (r, v) => {
+add(['--kv-cache-dtype', '--kv-dtype', '--kv_cache_dtype'], (r, v) => {
   if (v[0]) r.cacheTypeK = r.cacheTypeV = v[0].toLowerCase();
 });
 add(['-b', '--batch-size'], (r, v) => {
@@ -203,7 +207,7 @@ add(['-b', '--batch-size'], (r, v) => {
 add(['-ub', '--ubatch-size'], (r, v) => {
   r.ubatchSize = positive(v[0]) ?? r.ubatchSize;
 });
-add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests', '--max-concurrency'], (r, v) => {
+add(['-np', '--parallel', '--max-num-seqs', '--max-running-requests', '--max-concurrency', '--max_batch_size', '--max-batch-size'], (r, v) => {
   r.parallel = positive(v[0]) ?? r.parallel;
 });
 add(['-ngl', '--gpu-layers', '--n-gpu-layers'], (r, v) => {
@@ -236,10 +240,10 @@ add(['--speculative-model'], (r, v) => {
 add(['--num-speculative-tokens'], (r, v) => {
   r.speculativeTokens = int(v[0]) ?? r.speculativeTokens;
 });
-add(['--max-num-batched-tokens', '--chunked-prefill-size'], (r, v) => {
+add(['--max-num-batched-tokens', '--chunked-prefill-size', '--max_num_tokens', '--max-num-tokens'], (r, v) => {
   r.maxNumBatchedTokens = positive(v[0]) ?? r.maxNumBatchedTokens;
 });
-add(['--gpu-memory-utilization', '--mem-fraction-static'], (r, v) => {
+add(['--gpu-memory-utilization', '--mem-fraction-static', '--kv_cache_free_gpu_memory_fraction', '--kv-cache-free-gpu-memory-fraction', '--free_gpu_memory_fraction'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
 // Reasoning and image input switched off (engines/shared/reasoning-vision.ts writes these).
@@ -258,6 +262,13 @@ add(['--chat-template-kwargs', '--default-chat-template-kwargs'], (r, v, flag) =
 add(['--limit-mm-per-prompt'], (r, v, flag) => {
   if (/"image"\s*:\s*0\b/.test(v.join(' '))) r.visionOff = true;
   else r.other.add([flag, canonicalJson(v.join(' '))].join(' '));
+});
+add(['--tp_size', '--tp-size', '--tensor_parallel_size'], (r, v) => {
+  r.tensorParallel = positive(v[0]) ?? r.tensorParallel;
+});
+// TensorRT-LLM: the PyTorch backend is its default; another one (tensorrt, _autodeploy) is a configuration of its own.
+add(['--backend'], (r, v) => {
+  if (v[0] && v[0].toLowerCase() !== 'pytorch') r.other.add(`--backend ${v[0]}`);
 });
 add(['--cache-reuse'], (r, v) => {
   const n = int(v[0]);
@@ -400,6 +411,11 @@ const IGNORED_VALUE = new Set([
   '--model-id',
   '--log-stats-interval-ms',
   '--request-log-jsonl',
+  // TensorRT-LLM: the served name (LLM Bench's marker), a settings file of its own, its logs.
+  '--served_model_name',
+  '--extra_llm_api_options',
+  '--extra-llm-api-options',
+  '--log_level',
 ]);
 const IGNORED_SWITCH = new Set([
   '--no-webui',
@@ -423,6 +439,10 @@ const IGNORED_SWITCH = new Set([
   // different configuration (--no-thinking is: reasoning off, see reasoningOff).
   '--no-prefix-reuse',
   '--preserve-thinking',
+  // TensorRT-LLM: the model's own code allowed, nothing runs differently; long prompts read in steps
+  // (LLM Bench always passes it: without it a longer prompt is refused, not run differently).
+  '--trust_remote_code',
+  '--enable_chunked_prefill',
 ]);
 /** `docker run` flags, for a Docker command whose image cannot be found in the argv. */
 const DOCKER_VALUE = new Set(['--name', '--label', '--gpus', '-p', '-v', '-e', '--ipc', '--pull', '--entrypoint', '--network', '--shm-size', '--runtime']);
@@ -462,8 +482,9 @@ export function stableStringify(v: unknown): string {
 
 /** The engine's own arguments: after the image for Docker, after the executable (and subcommand, model) otherwise. */
 function engineArgs(argv: readonly string[], image: string | undefined): { args: readonly string[]; docker: boolean } {
-  // NInfer: its own arguments follow ninfer-serve (in WSL, after wsl.exe, env and the launcher script).
-  const serve = argv.findIndex((a) => /(^|[\\/])ninfer-serve$/.test(a));
+  // NInfer and TensorRT-LLM: their own arguments follow ninfer-serve / trtllm-serve (in WSL, after wsl.exe,
+  // env and the launcher script; in Docker, after the image).
+  const serve = argv.findIndex((a) => /(^|[\\/])(ninfer|trtllm)-serve$/.test(a));
   if (serve >= 0) return { args: argv.slice(serve + 1), docker: false };
   if (image) {
     const at = argv.indexOf(image);
@@ -543,6 +564,15 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw, kind?: Engi
     if (p.gpuMemoryUtilization !== undefined) raw.gpuMemoryUtilization = p.gpuMemoryUtilization;
     if (p.dtype !== undefined) raw.dtype = p.dtype;
     if (p.quantization !== undefined) raw.quantization = p.quantization;
+    // TensorRT-LLM: the tokens per step (--max_num_tokens), and its own settings: the KV cache's share of
+    // the free memory, its type (wins over kvCacheType), the cards that split the model (--tp_size).
+    if (kind !== undefined && engineBaseOf(kind) === 'trtllm') {
+      if (p.batchSize !== undefined) raw.maxNumBatchedTokens = p.batchSize;
+      const t = p.trtllm;
+      if (t?.kvCacheFreeMemoryFraction !== undefined) raw.gpuMemoryUtilization = t.kvCacheFreeMemoryFraction;
+      if (t?.kvCacheDtype !== undefined) raw.cacheTypeK = raw.cacheTypeV = t.kvCacheDtype;
+      if (t?.tensorParallel !== undefined) raw.tensorParallel = t.tensorParallel;
+    }
   } else {
     if (p.contextSize !== undefined) raw.contextSize = p.contextSize;
     if (p.kvCacheType !== undefined && p.kvCacheType !== 'auto') raw.cacheTypeK = raw.cacheTypeV = p.kvCacheType;
@@ -619,6 +649,7 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   const speculative = raw.speculative ?? ninferSpec ?? (raw.specMethod === undefined && legacySpec ? stableStringify({ model: raw.speculativeModel, num_speculative_tokens: raw.speculativeTokens }) : undefined);
   if (speculative !== undefined) out.speculative = speculative;
   if (raw.maxNumBatchedTokens !== undefined) out.maxNumBatchedTokens = raw.maxNumBatchedTokens;
+  if (raw.tensorParallel !== undefined && raw.tensorParallel > 1) out.tensorParallel = raw.tensorParallel;
   if (raw.gpuMemoryUtilization !== undefined && raw.gpuMemoryUtilization !== VLLM_DEFAULTS.gpuMemoryUtilization) out.gpuMemoryUtilization = raw.gpuMemoryUtilization;
   if (raw.enforceEager === true) out.enforceEager = true;
   if (raw.reasoningOff === true) out.reasoningOff = true;

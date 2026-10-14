@@ -18,8 +18,8 @@ Per il motore predefinito non serve altro: **llama.cpp** lo scarica e lo prepara
 
 Solo per alcuni motori:
 
-- **Docker** per vLLM e SGLang (e per llama.cpp in un contenitore). Su Windows è Docker Desktop: se manca, LLM Bench lo installa e lo accende per te.
-- **WSL 2** con una distribuzione Linux (per esempio Ubuntu 24.04) per usare NInfer su Windows.
+- **Docker** per vLLM, SGLang e TensorRT-LLM (e per llama.cpp in un contenitore). Su Windows è Docker Desktop: se manca, LLM Bench lo installa e lo accende per te.
+- **WSL 2** con una distribuzione Linux (per esempio Ubuntu 24.04) per usare NInfer, o TensorRT-LLM senza Docker, su Windows.
 
 ## Installazione
 
@@ -79,7 +79,7 @@ La schermata **Benvenuto** controlla il PC e mostra una lista a semafori:
 | Motore llama.cpp | Il programma che fa girare i modelli. Se manca, un pulsante lo installa (circa 500 MB) |
 | Modelli | I modelli già presenti sul PC (anche quelli di LM Studio, Ollama e Hugging Face) |
 | Spazio su disco | Lo spazio libero nella cartella dei modelli |
-| Docker | Facoltativo: serve solo per vLLM e SGLang (e per llama.cpp in un contenitore) |
+| Docker | Facoltativo: serve solo per vLLM, SGLang e TensorRT-LLM (e per llama.cpp in un contenitore) |
 
 Ogni voce in rosso o arancione ha **un solo pulsante** che la sistema. Poi LLM Bench ti propone una configurazione per la tua scheda: il motore llama.cpp, un modello che entra e un test *Rapido*.
 
@@ -241,7 +241,7 @@ Ogni modello mostra i suoi **formati**, ognuno con il motore che lo usa: **GGUF 
 Vuoi usare un modello in una chat, un editor o un assistente, senza test? Apri **Server** nella barra laterale e premi **Avvia un server** (ci arrivi anche da **Avvia solo il server** nella pagina Benchmark e da **Avvia il server così** in un risultato). In quattro passi:
 
 1. **Modello**: quelli sul tuo PC partono subito, i consigliati vengono scaricati prima.
-2. **Motore**: llama.cpp, vLLM, SGLang, NInfer o un motore personalizzato.
+2. **Motore**: llama.cpp, vLLM, SGLang, TensorRT-LLM, NInfer o un motore personalizzato.
 3. **Impostazioni**: le migliori dai tuoi test, uno dei tuoi preset o le tue (contesto, cache, argomenti in più).
 4. **Porta e rete**: sempre la stessa porta, così i tuoi programmi la ritrovano.
 
@@ -279,6 +279,7 @@ Quello che LLM Bench installa si toglie dalla stessa scheda, dopo una conferma c
 
 - **llama.cpp**: il predefinito. LLM Bench lo scarica al primo test; legge i modelli GGUF.
 - **Docker, vLLM e SGLang**: vLLM e SGLang servono molti utenti insieme e leggono le cartelle Hugging Face (safetensors), non i file GGUF. Su Windows funzionano in Docker Desktop: se Docker manca, la pagina Motori lo installa; se è spento, **Avvia Docker** lo accende. Su Linux funzionano in Docker o installati sul PC, in un ambiente Python che LLM Bench prepara. Su Windows, **Copia nello spazio Docker** copia un modello una volta nello spazio di Docker, così si carica molto più in fretta.
+- **TensorRT-LLM (NVIDIA)**: il motore di NVIDIA, spesso il più veloce con i modelli già in **FP8** o **NVFP4** (cartelle Hugging Face, safetensors; di solito lo dice il nome, per esempio `nvidia/…-FP8`). La sua scheda ha due modi, ognuno con il suo stato: **Docker** (l'immagine ufficiale di NVIDIA da nvcr.io, qualche decina di GB: **Scarica** una volta la versione consigliata) e **Sul PC** (**In WSL** su Windows: LLM Bench lo installa in un ambiente Python tutto suo, qualche GB). Ogni versione dice **Sul PC** con la sua dimensione e **In uso**; **Usa questa** ne sceglie un'altra, il cestino ne rimuove una dopo averlo chiesto (mai mentre un test o un server la usa), **Aggiorna** propone una versione più nuova. Su Windows il modo Docker gira in Docker Desktop (usa la scheda video tramite WSL 2); il modo WSL vuole WSL 2 e una distribuzione Linux: se manca qualcosa, la scheda mostra il comando da copiare (`wsl --install`, oppure `wsl --install -d Ubuntu-24.04`) e **Ricontrolla**. Nella modalità esperto del Benchmark e in **Avvia un server** → *Comandi personalizzati*, TensorRT-LLM ha i suoi campi: contesto per richiesta (`--max_seq_len`), tipo di cache KV (`--kv_cache_dtype`: fp8, oppure nvfp4 sulle RTX 50, sperimentale), memoria per la cache KV (`--kv_cache_free_gpu_memory_fraction`, una quota della memoria che il modello lascia libera, 0,90 se vuoto), richieste insieme (`--max_batch_size`), token per passo (`--max_num_tokens`), il codice del modello (`--trust_remote_code`, solo per le architetture nuove che lo chiedono) e, con più di una scheda video, le schede usate insieme (`--tp_size`). Su una GeForce RTX 50 è **sperimentale**: NVIDIA non elenca ancora queste schede tra quelle supportate da TensorRT-LLM (lo sono le Blackwell per data center, Hopper, Ada e Ampere), e la scheda lo dice. Sul PC gira solo su Linux: su Windows usa Docker Desktop o WSL.
 - **Quando Docker non risponde**: di solito il *Resource Saver* di Docker Desktop si è bloccato mentre lo spegneva. **Riavvia Docker** lo riavvia; immagini, modelli e contenitori restano, e i server di LLM Bench ripartono con le stesse impostazioni. Per evitarlo, disattiva Resource Saver in Docker Desktop → Impostazioni → Resources → Advanced. LLM Bench non cambia mai da solo le impostazioni di Docker.
 - **Motori personalizzati**: sotto **Motori personalizzati** premi **Aggiungi motore**: un fork di llama.cpp, vLLM o SGLang, una **Variante di NInfer** o un **Programma con API OpenAI**. Dici a LLM Bench dove si trova e lui lo prova (`--version`, `--help`) prima di usarlo.
 - **Fork con cache KV proprie**: un fork di llama.cpp che aggiunge tipi di cache KV (per esempio `turbo4`, `turbo3`, `turbo2` di TurboQuant) viene riconosciuto da solo dal suo `--help`. La scelta della cache KV nel Benchmark e in *Avvia solo il server* li elenca con la loro dimensione, la stima della memoria li conta (un tipo che LLM Bench non conosce è calcolato come f16: "stima non disponibile") e *Trova le impostazioni migliori* li prova dopo q4_0: *Veloce* i due più compatti, *Accurata* tutti.

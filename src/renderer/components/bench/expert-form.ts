@@ -2,7 +2,7 @@
  * Expert mode form ⇄ LaunchParams / Scenario. Fields are kept as text while the user types;
  * an empty field means "let LLM Bench decide" (undefined), an invalid one is reported and stops the start until fixed.
  */
-import type { EngineBase, LaunchParams, NinferParams, NinferSpec } from '../../../contract/engines';
+import type { EngineBase, LaunchParams, NinferParams, NinferSpec, TrtllmParams } from '../../../contract/engines';
 import { NINFER_MAX_CONCURRENCY } from '../../../contract/ninfer';
 import { yarnScaling } from '../../../contract/recipes';
 import type { Scenario, Step } from '../../../contract/results';
@@ -42,6 +42,9 @@ export const EMPTY_PARAMS_FORM: ParamsForm = {
   ninferPreserveThinking: 'default',
   vision: 'default',
   reasoning: 'default',
+  trtllmKvMemory: '',
+  trtllmTp: '',
+  trtllmTrustRemoteCode: 'default',
 };
 
 /** The fields of NInfer's own settings (LaunchParams.ninfer). */
@@ -176,7 +179,28 @@ export function paramsFromForm(
   if (form.reasoning !== 'default' && takes('reasoning')) params.reasoning = form.reasoning === 'on';
   const ninfer = ninferFromForm(form, takes, invalid);
   if (ninfer) params.ninfer = ninfer;
+  const trtllm = trtllmFromForm(form, takes, invalid);
+  if (trtllm) params.trtllm = trtllm;
   return { params, invalid };
+}
+
+/** TensorRT-LLM's own fields (those `takes` lets through); undefined when none is set. One card sends nothing. */
+function trtllmFromForm(form: ParamsForm, takes: (f: ParamsField) => boolean, invalid: ParamsField[]): TrtllmParams | undefined {
+  const t: TrtllmParams = {};
+  const memory = form.trtllmKvMemory.trim();
+  if (memory && takes('trtllmKvMemory')) {
+    const r = parseRatio(memory);
+    if (r === null) invalid.push('trtllmKvMemory');
+    else t.kvCacheFreeMemoryFraction = r;
+  }
+  const tp = form.trtllmTp.trim();
+  if (tp && takes('trtllmTp')) {
+    const n = parseInteger(tp);
+    if (n === null || n > 8) invalid.push('trtllmTp');
+    else if (n > 1) t.tensorParallel = n;
+  }
+  if (form.trtllmTrustRemoteCode !== 'default' && takes('trtllmTrustRemoteCode')) t.trustRemoteCode = form.trtllmTrustRemoteCode === 'on';
+  return Object.keys(t).length > 0 ? t : undefined;
 }
 
 /** NInfer's own fields (those `takes` lets through); undefined when none is set. */
@@ -249,6 +273,9 @@ export function formFromParams(p: LaunchParams | undefined): ParamsForm {
     ...ninferForm(p.ninfer),
     vision: triOf(p.vision),
     reasoning: triOf(p.reasoning),
+    trtllmKvMemory: s(p.trtllm?.kvCacheFreeMemoryFraction),
+    trtllmTp: s(p.trtllm?.tensorParallel),
+    trtllmTrustRemoteCode: triOf(p.trtllm?.trustRemoteCode),
   };
 }
 
@@ -281,9 +308,9 @@ export function switchesOnly(form: ParamsForm): ParamsForm {
 /** True when the parameters say anything beyond the defaults (expert mode is needed to show them). */
 export function hasCustomParams(p: LaunchParams | undefined): boolean {
   if (!p) return false;
-  // An empty environment or NInfer object says nothing.
+  // An empty environment, NInfer or TensorRT-LLM object says nothing.
   const said = (k: string, v: unknown) =>
-    k === 'extraArgs' ? (v as string[]).length > 0 : k === 'env' || k === 'ninfer' ? v !== undefined && Object.values(v as object).some((x) => x !== undefined) : v !== undefined;
+    k === 'extraArgs' ? (v as string[]).length > 0 : k === 'env' || k === 'ninfer' || k === 'trtllm' ? v !== undefined && Object.values(v as object).some((x) => x !== undefined) : v !== undefined;
   return Object.entries(p).some(([k, v]) => said(k, v));
 }
 
