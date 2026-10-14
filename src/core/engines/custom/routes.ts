@@ -17,7 +17,9 @@ import {
   commandPlaceholders,
   type CustomEngine,
   type CustomEngineCheck,
+  type CustomEngineFiles,
   type CustomEngineInfo,
+  type CustomEngineRemovePlan,
 } from '../../../contract/custom-engines';
 import { engineBaseOf } from '../../../contract/engines';
 import { AppError } from '../../../contract/errors';
@@ -32,6 +34,13 @@ import { CustomEngineAdapter, expandCustom } from './adapter';
 export interface CustomEnginesDeps {
   settings: { get(): Promise<Pick<Settings, 'customEngines'>>; update(patch: Partial<Settings>): Promise<Pick<Settings, 'customEngines'>> };
   registry: EngineRegistry;
+  /** What LLM Bench added for an engine (custom/files.ts): absent, every engine is only forgotten. */
+  files?: {
+    plan(engine: CustomEngine, all: readonly CustomEngine[]): Promise<CustomEngineFiles | undefined>;
+    remove(engine: CustomEngine, files: CustomEngineFiles): Promise<void>;
+  };
+  /** A test or a server runs: no files are removed under it. */
+  busy?: () => boolean;
 }
 
 /** The base adapter of a kind (a registry entry may be wrapped for custom engines). */
@@ -72,7 +81,8 @@ const duplicateSchema = z.object({ name: z.string().trim().min(1).max(60).option
  *   POST   /api/engines/custom/check          (CustomEngineDraft) -> CustomEngineCheck
  *   PUT    /api/engines/custom/:id            (CustomEngineDraft) -> CustomEngine
  *   POST   /api/engines/custom/:id/duplicate  ({ name? }) -> CustomEngine
- *   DELETE /api/engines/custom/:id            -> { ok: true }
+ *   GET    /api/engines/custom/:id/remove     -> CustomEngineRemovePlan
+ *   DELETE /api/engines/custom/:id            -> { ok: true } (?files=1: its files too; ENGINE_IN_USE while a test or a server runs)
  */
 export function createCustomEngineRoutes(d: CustomEnginesDeps): RouteModule {
   const list = async (): Promise<CustomEngine[]> => [...(await d.settings.get()).customEngines];
@@ -114,15 +124,18 @@ export function createCustomEngineRoutes(d: CustomEnginesDeps): RouteModule {
       const id = c.req.param('id');
       const draft = await parseBody(c, customEngineDraftSchema);
       const engines = await list();
-      find(engines, id);
-      const engine = customEngineSchema.parse({ ...draft, id });
+      const old = find(engines, id);
+      // The image LLM Bench pulled stays its own while the engine still runs it.
+      const pulled = old.pulledImage !== undefined && draft.run.mode === 'docker' && draft.run.image === old.pulledImage ? { pulledImage: old.pulledImage } : {};
+      const engine = customEngineSchema.parse({ ...draft, id, ...pulled });
       await save(engines.map((e) => (e.id === id ? engine : e)));
       return c.json(engine);
     });
 
     app.post('/api/engines/custom/:id/duplicate', async (c) => {
       const engines = await list();
-      const source = find(engines, c.req.param('id'));
+      // A copy runs the same files, but they were not added for it: deleting the copy only forgets it.
+      const { pulledImage: _pulled, ...source } = find(engines, c.req.param('id'));
       const { name } = await parseBody(c, duplicateSchema);
       const copyName = name ?? `${source.name} (2)`.slice(0, 60);
       const engine = customEngineSchema.parse({ ...source, name: copyName, id: customEngineIdFor(copyName, engines.map((e) => e.id)) });
@@ -130,11 +143,27 @@ export function createCustomEngineRoutes(d: CustomEnginesDeps): RouteModule {
       return c.json(engine);
     });
 
+    app.get('/api/engines/custom/:id/remove', async (c) => {
+      const id = c.req.param('id');
+      const engines = await list();
+      const engine = find(engines, id);
+      const files = await d.files?.plan(engine, engines);
+      const plan: CustomEngineRemovePlan = { id, ...(files ? { files } : {}) };
+      return c.json(plan);
+    });
+
     app.delete('/api/engines/custom/:id', async (c) => {
       const id = c.req.param('id');
       const engines = await list();
-      find(engines, id);
-      await save(engines.filter((e) => e.id !== id));
+      const engine = find(engines, id);
+      if (c.req.query('files') === '1') {
+        const files = await d.files?.plan(engine, engines);
+        if (!files) throw new AppError('VALIDATION', `No files of ${engine.name} for LLM Bench to remove`, { params: { reason: 'no-files', id } });
+        if (d.busy?.()) throw new AppError('ENGINE_IN_USE', `${engine.name} is in use`, { params: { engine: engine.name } });
+        await d.files!.remove(engine, files);
+      }
+      // Read again: removing the files took time, the list may have changed meanwhile.
+      await save((await list()).filter((e) => e.id !== id));
       return c.json({ ok: true as const });
     });
   };

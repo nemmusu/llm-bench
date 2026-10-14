@@ -136,7 +136,9 @@ describe('Motori personalizzati', () => {
     await waitFor(() => expect(api.calls.find((c) => c.path === '/api/engines/custom/prismml/duplicate')?.body).toEqual({ name: 'PrismML 2 (copia)' }));
 
     await userEvent.click(within(await card('Vecchio')).getByRole('button', { name: 'Elimina' }));
-    const confirm = await screen.findByRole('alertdialog', { name: 'Eliminare Vecchio?' });
+    // Nothing LLM Bench added for it: only forgotten, its files stay.
+    const confirm = await screen.findByRole('dialog', { name: 'Eliminare Vecchio?' });
+    expect(await within(confirm).findByText(/i suoi file restano dove sono/)).toBeTruthy();
     await userEvent.click(within(confirm).getByRole('button', { name: 'Elimina' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Vecchio' })).toBeNull());
 
@@ -374,8 +376,13 @@ describe('Motori personalizzati: the check in words, the dialog on Linux, errors
     await userEvent.click(within(p).getByRole('button', { name: 'Duplica' }));
     expect(await within(p).findByText('Alcuni valori non sono validi')).toBeTruthy();
     await userEvent.click(within(p).getByRole('button', { name: 'Elimina' }));
-    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Elimina' }));
-    expect(await within(p).findByText('Connessione a internet non disponibile')).toBeTruthy();
+    const forget = await screen.findByRole('dialog', { name: 'Eliminare PrismML?' });
+    await within(forget).findByText(/i suoi file restano dove sono/);
+    await userEvent.click(within(forget).getByRole('button', { name: 'Elimina' }));
+    expect(await within(forget).findByText('Connessione a internet non disponibile')).toBeTruthy();
+    // It stays open on the error: closed by hand.
+    await userEvent.click(within(forget).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     // No engine yet: the built-in template opens the dialog filled in.
     document.body.innerHTML = '';
@@ -408,7 +415,7 @@ describe('Motori personalizzati: the check in words, the dialog on Linux, errors
       </ApiProvider>
     );
     const { result } = renderHook(() => useDeleteCustomEngine(), { wrapper });
-    await act(() => result.current.mutateAsync('prismml'));
+    await act(() => result.current.mutateAsync({ id: 'prismml' }));
     expect(qc.getQueryData(SETTINGS_QUERY_KEY)).toBeUndefined();
   });
 });

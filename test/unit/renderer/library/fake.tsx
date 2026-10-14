@@ -8,7 +8,7 @@ import { MotionGlobalConfig } from 'motion/react';
 import { vi } from 'vitest';
 import type { DownloadRequest, SystemResponse } from '../../../../src/contract/api';
 import type { LocalImage } from '../../../../src/contract/docker';
-import { customEngineIdFor, customEngineKindOf, customEngineSchema, type CustomEngine, type CustomEngineCheck, type CustomEngineDraft, type CustomEngineInfo } from '../../../../src/contract/custom-engines';
+import { customEngineIdFor, customEngineKindOf, customEngineSchema, type CustomEngine, type CustomEngineCheck, type CustomEngineDraft, type CustomEngineFiles, type CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { AppErrorData } from '../../../../src/contract/errors';
@@ -293,6 +293,8 @@ export interface World {
   customCheck: (draft: CustomEngineDraft) => CustomEngineCheck;
   /** GET …/update by target ('sglang-docker', 'custom:<id>'); absent = up to date. `fetch=1` reads `<target>?fetch`. */
   updates: Record<string, EngineUpdateCheck>;
+  /** GET /api/engines/custom/:id/remove: the files LLM Bench added for an engine, by id (absent: only forgotten). */
+  customFiles: Record<string, CustomEngineFiles>;
   cold: { method: 'linux-fadvise' | 'windows-standby' | 'none'; automatic: boolean; windowsTaskInstalled?: boolean };
   /**
    * POST /api/downloads/plan: what the PC has of each file (missing: 'get'). Unset, the route fails and
@@ -349,6 +351,7 @@ export function world(over: Partial<World> = {}): World {
     custom: [],
     customCheck: () => customCheck(),
     updates: {},
+    customFiles: {},
     cold: { method: 'windows-standby', automatic: false, windowsTaskInstalled: false },
     modelUpdates: { checking: false, models: [] },
     checks: [],
@@ -551,6 +554,10 @@ export function libApi(w: World = world()): LibApi {
     'POST /api/engines/custom/*/update/cancel': () => ({ ok: true, cancelled: true }),
     'POST /api/engines/*/update/cancel': () => ({ ok: true, cancelled: true }),
     'GET /api/engines/custom': () => w.custom,
+    'GET /api/engines/custom/*/remove': (_b, _q, p) => {
+      const id = decodeURIComponent(p.split('/').at(-2) as string);
+      return { id, ...(w.customFiles[id] ? { files: w.customFiles[id] } : {}) };
+    },
     'GET /api/engines/custom/*/update': (_b, q, p) => updateOf(w, `custom:${decodeURIComponent(p.split('/').at(-2) as string)}`, q),
     'POST /api/engines/custom/*/update': () => ({ ok: true }),
     'GET /api/engines/*/update': (_b, q, p) => updateOf(w, p.split('/').at(-2) as string, q),

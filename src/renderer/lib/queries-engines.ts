@@ -3,7 +3,7 @@
  * an engine changes settings.customEngines: the settings query is refreshed with the list.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CustomEngine, CustomEngineCheck, CustomEngineDraft, CustomEngineInfo } from '../../contract/custom-engines';
+import type { CustomEngine, CustomEngineCheck, CustomEngineDraft, CustomEngineInfo, CustomEngineRemovePlan } from '../../contract/custom-engines';
 import type { EngineUpdateCheck } from '../../contract/engine-updates';
 import type { Settings } from '../../contract/settings';
 import { useApi } from './api-context';
@@ -64,12 +64,26 @@ export function useDuplicateCustomEngine() {
   });
 }
 
+/** What deleting an engine can remove besides forgetting it (the files LLM Bench added for it), asked when its dialog opens. */
+export function useCustomEngineRemovePlan(id: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['engines', 'custom-remove', id],
+    queryFn: () => api.get<CustomEngineRemovePlan>(`/api/engines/custom/${encodeURIComponent(id)}/remove`),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+}
+
+/** Forgets an engine; with `files`, removes the files LLM Bench added for it first. */
 export function useDeleteCustomEngine() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<{ ok: true }>(`/api/engines/custom/${encodeURIComponent(id)}`),
-    onSuccess: (_ok, id) => refresh(qc, (list) => list.filter((e) => e.id !== id)),
+    mutationFn: ({ id, files }: { id: string; files?: boolean }) => api.del<{ ok: true }>(`/api/engines/custom/${encodeURIComponent(id)}${files ? '?files=1' : ''}`),
+    onSuccess: (_ok, { id }) => refresh(qc, (list) => list.filter((e) => e.id !== id)),
   });
 }
 

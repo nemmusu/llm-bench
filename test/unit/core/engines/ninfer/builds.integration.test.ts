@@ -223,11 +223,34 @@ describe("NInfer's builds on its card", () => {
     expect(await r.deps.removePlan('official').catch((e: { code: string }) => e.code)).toBe('VALIDATION');
   }, 90_000);
 
+  it("deleting a NInfer variant: the checkout LLM Bench built goes with it; the user's own, or one outside a home folder, stays", async () => {
+    const variant = (id: string, p: string): CustomEngine => ({ ...allEngine({ path: p, source: { url: 'https://github.com/x/fusion.git' } }), id, name: id, template: undefined }) as CustomEngine;
+    const fusion = variant('fusion', '/home/user/ninfer-fusion');
+    const r = setup(
+      { checkouts: ['/home/user/ninfer-fusion', '/home/user/mine', '/opt/fork'], builds: ['/home/user/ninfer-fusion/build/apps/ninfer-serve', '/home/user/mine/build/apps/ninfer-serve', '/opt/fork/build/apps/ninfer-serve'], built: { '/home/user/ninfer-fusion': COMMIT, '/opt/fork': COMMIT }, sizes: { '/home/user/ninfer-fusion': 1024 } },
+      { customEngines: [fusion] },
+    );
+    expect(await r.services.variantFiles(fusion)).toEqual({ kind: 'folder', target: '/home/user/ninfer-fusion', distro: 'Ubuntu-24.04', sizeBytes: 1024 * 1024, command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/user/ninfer-fusion' });
+    // Built by hand (no record), or somewhere LLM Bench never deletes: only forgotten.
+    expect(await r.services.variantFiles(variant('mine', '/home/user/mine'))).toBeUndefined();
+    expect(await r.services.variantFiles(variant('fork', '/opt/fork'))).toBeUndefined();
+    // Not while NInfer is being built.
+    const files = (await r.services.variantFiles(fusion))!;
+    r.deps.jobs.building = true;
+    await expect(r.services.removeVariantFiles(fusion, files)).rejects.toMatchObject({ code: 'ENGINE_IN_USE', params: { engine: 'fusion' } });
+    r.deps.jobs.building = false;
+    await r.services.removeVariantFiles(fusion, files);
+    expect(await r.services.variantFiles(fusion)).toBeUndefined();
+  }, 90_000);
+
   it('removing on Linux (a fake host runs every program): the official build LLM Bench made, deleted there; a failed deletion is said', async () => {
     const host = [...WSL_ARGV, '--host'];
     const r = setup({ checkouts: ['/home/user/ninfer'], builds: ['/home/user/ninfer/build/apps/ninfer-serve'], built: { '/home/user/ninfer': COMMIT }, sizes: { '/home/user/ninfer': 0 } }, { ninfer: { native: { path: '/home/user/ninfer' } } }, 'linux', undefined, undefined, host);
     // du says nothing useful: no size, the rest as usual.
     expect(await r.deps.removePlan('official')).toEqual({ build: 'official', mode: 'delete', dir: '/home/user/ninfer', command: 'rm -rf /home/user/ninfer' });
+    // A variant built there (natively): its folder, no distro, no size.
+    const native = { ...allEngine({ path: '/home/user/ninfer' }), id: 'here', run: { mode: 'ninfer', path: '/home/user/ninfer' } } as CustomEngine;
+    expect(await r.services.variantFiles(native)).toEqual({ kind: 'folder', target: '/home/user/ninfer', command: 'rm -rf /home/user/ninfer' });
     await r.deps.remove('official');
     expect(r.saved().ninfer).toEqual({});
   }, 90_000);

@@ -183,7 +183,9 @@ export class EngineUpdates {
     if (engine.run.mode === 'docker') {
       return this.docker(target, installer(baseOf(this.d.registry, kind)), expandCustom(engine, { kind }), opts, undefined, async (image) => {
         const list = (await this.d.settings.get()).customEngines;
-        await this.d.settings.update({ customEngines: list.map((e) => (e.id === engine.id && e.run.mode === 'docker' ? { ...e, run: { ...e.run, image } } : e)) });
+        // The new image of one LLM Bench pulled is LLM Bench's too (deleting the engine can remove it).
+        const ours = (e: CustomEngine) => (e.pulledImage === (e.run as { image: string }).image ? { pulledImage: image } : {});
+        await this.d.settings.update({ customEngines: list.map((e) => (e.id === engine.id && e.run.mode === 'docker' ? { ...e, run: { ...e.run, image }, ...ours(e) } : e)) });
       });
     }
     if (engine.run.mode === 'native' && engine.base === 'llamacpp') return this.git(target, engine, opts);

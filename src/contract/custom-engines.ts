@@ -21,7 +21,8 @@
  *   GET    /api/engines/custom                -> CustomEngineInfo[] (every saved engine, its kind and check)
  *   POST   /api/engines/custom                (CustomEngineDraft) -> CustomEngine (id from its name)
  *   PUT    /api/engines/custom/:id            (CustomEngineDraft) -> CustomEngine
- *   DELETE /api/engines/custom/:id            -> { ok: true }
+ *   GET    /api/engines/custom/:id/remove     -> CustomEngineRemovePlan (what deleting it can remove)
+ *   DELETE /api/engines/custom/:id            -> { ok: true } (?files=1: the files LLM Bench added for it too)
  *   POST   /api/engines/custom/:id/duplicate  -> CustomEngine ("… (copia)")
  *   POST   /api/engines/custom/check          (CustomEngineDraft) -> CustomEngineCheck ("Prova": --version / --help)
  *
@@ -192,6 +193,8 @@ export const customEngineSchema = z
     schema: z.union([z.literal(1), z.literal(CUSTOM_ENGINE_SCHEMA_VERSION)]).optional(),
     id: z.string().regex(CUSTOM_ENGINE_ID),
     ...draftShape,
+    /** The Docker image LLM Bench pulled for it, not on this PC before: deleting the engine can remove it too. */
+    pulledImage: z.string().optional(),
   })
   .superRefine(refineEngine)
   .transform((e) => ({ ...e, schema: customEngineVersionOf(e) }));
@@ -600,3 +603,29 @@ export const customEngineInfoSchema = z.object({
   check: customEngineCheckSchema,
 });
 export type CustomEngineInfo = z.infer<typeof customEngineInfoSchema>;
+
+/**
+ * Files LLM Bench added for a saved engine, which deleting the engine can remove from the same place:
+ *   folder  the checkout LLM Bench cloned and built (a NInfer variant: its record of the build is there),
+ *           a Linux path, inside `distro` on Windows
+ *   image   the Docker image LLM Bench pulled for it (it was not on this PC before: CustomEngine.pulledImage)
+ * `command` is what LLM Bench runs to remove them, shown before asking.
+ */
+export const customEngineFilesSchema = z.object({
+  kind: z.enum(['folder', 'image']),
+  /** The folder or the image. */
+  target: z.string(),
+  distro: z.string().optional(),
+  sizeBytes: z.number().optional(),
+  command: z.string(),
+});
+export type CustomEngineFiles = z.infer<typeof customEngineFilesSchema>;
+
+/**
+ * Deleting a saved engine (GET /api/engines/custom/:id/remove -> CustomEngineRemovePlan; DELETE
+ * /api/engines/custom/:id, with ?files=1 to remove its `files` too). Without `files` (a program, a folder
+ * or an image of the user's own, or one another engine uses) it is only forgotten: the files stay.
+ * Removing the files is refused while a test, a server or a build runs (ENGINE_IN_USE).
+ */
+export const customEngineRemovePlanSchema = z.object({ id: z.string(), files: customEngineFilesSchema.optional() });
+export type CustomEngineRemovePlan = z.infer<typeof customEngineRemovePlanSchema>;

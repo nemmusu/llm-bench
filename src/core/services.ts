@@ -19,7 +19,7 @@ import { ModelVolumes, modelVolumeName } from './docker/model-volumes';
 import { createDockerRoutes } from './docker/routes';
 import { createDockerServices, dockerTimings, type DockerServices } from './docker/services';
 import { LlamaDockerAdapter } from './engines/llamacpp-docker/adapter';
-import { smFromComputeCap } from './engines/shared/compat';
+import { BUILTIN_COMPAT, smFromComputeCap } from './engines/shared/compat';
 import type { DockerLaunchPlan } from './engines/shared/docker-engine';
 import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
 import { VllmNativeAdapter } from './engines/vllm-native/adapter';
@@ -31,6 +31,7 @@ import { TrtllmNativeAdapter } from './engines/trtllm-native/adapter';
 import { wslUv } from './engines/trtllm-native/wsl-uv';
 import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
+import { createCustomEngineFiles } from './engines/custom/files';
 import { createCustomEngineRoutes } from './engines/custom/routes';
 import { createEngineUpdateRoutes } from './engines/updates/routes';
 import { createNativeEnvRoutes } from './engines/native-env/routes';
@@ -331,7 +332,13 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   const llamaDocker = new LlamaDockerAdapter(dockerEngine);
   const sglangDocker = new SglangDockerAdapter({ ...dockerEngine, hub: docker.hub, api: docker.api, hfToken: () => ctx.secrets.hfToken });
   // "Motori personalizzati": read from the settings on every use, so an edit applies to the next launch.
-  const customEngines: CustomEngineSource = { list: async () => (await ctx.settings.get()).customEngines };
+  const customEngines: CustomEngineSource = {
+    list: async () => (await ctx.settings.get()).customEngines,
+    pulled: async (id, image) => {
+      const list = (await ctx.settings.get()).customEngines;
+      await ctx.settings.update({ customEngines: list.map((e) => (e.id === id && e.run.mode === 'docker' && e.run.image === image ? { ...e, pulledImage: image } : e)) });
+    },
+  };
   const ninfer = createNinferServices({
     deps,
     createClient,
@@ -701,7 +708,17 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         },
         shutdown: ctx.shutdown,
       })(app, ctx),
-    (app, ctx) => createCustomEngineRoutes({ settings: ctx.settings, registry: s.registry })(app, ctx),
+    (app, ctx) =>
+      createCustomEngineRoutes({
+        settings: ctx.settings,
+        registry: s.registry,
+        files: createCustomEngineFiles({
+          ninfer: { files: s.ninfer.variantFiles, remove: s.ninfer.removeVariantFiles },
+          images: s.docker.images,
+          officialRepos: [BUILTIN_COMPAT.vllm.image, BUILTIN_COMPAT.sglang.image, BUILTIN_COMPAT.llamacpp.dockerImage.split(':')[0] as string],
+        }),
+        busy: () => s.bench.active() !== undefined || s.serve.busy(),
+      })(app, ctx),
     (app, ctx) =>
       createEngineUpdateRoutes({
         updates: s.updates,

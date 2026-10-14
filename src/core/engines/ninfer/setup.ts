@@ -1,7 +1,7 @@
 /** NInfer's part of the composition root: both adapters, WSL's process records, builders, routes, its two builds, variants' updates. */
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { customEngineKindOf, NINFER_ALL_DIR, NINFER_ALL_SOURCE, NINFER_ALL_TEMPLATE, ninferAllEngineOf, type CustomEngine, type GitSource } from '../../../contract/custom-engines';
+import { customEngineKindOf, NINFER_ALL_DIR, NINFER_ALL_SOURCE, NINFER_ALL_TEMPLATE, ninferAllEngineOf, type CustomEngine, type CustomEngineFiles, type GitSource } from '../../../contract/custom-engines';
 import type { EngineConfig } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
 import {
@@ -28,7 +28,7 @@ import { NinferAdapter, probeStale, serveOf, type GpuFacts, type NinferWhere } f
 import { NinferBuilder } from './build';
 import { withBuild, withVariantBuild, type NinferRouteDeps } from './routes';
 import { NinferUpdater } from './update';
-import { deleteFolder, folderBytes, removeCommand, removeModeOf } from './remove';
+import { deletableDir, deleteFolder, folderBytes, removeCommand, removeModeOf } from './remove';
 import { distroRunner, hostArgv, listDistros, WslProcesses, type DistroRun } from './wsl';
 
 export interface NinferServices {
@@ -43,6 +43,10 @@ export interface NinferServices {
   findAll(kind: NinferKind): Promise<CustomEngine | undefined>;
   /** Stops our ninfer-serve left in WSL by a crashed session (no record = WSL is not asked). */
   cleanupOrphans(): Promise<void>;
+  /** A NInfer variant's checkout, when LLM Bench built it (its record of the build is there) in a folder it deletes: what deleting the engine can remove. */
+  variantFiles(engine: CustomEngine): Promise<CustomEngineFiles | undefined>;
+  /** Deletes that checkout (ENGINE_IN_USE while NInfer is being built). */
+  removeVariantFiles(engine: CustomEngine, files: CustomEngineFiles): Promise<void>;
   routes(o: { publish: (e: ServerEvent) => void; shutdown?: AbortSignal; busy?: () => boolean }): NinferRouteDeps;
 }
 
@@ -263,6 +267,29 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     deps.log.info('NInfer build removed', { build, mode, dir: info.dir });
   };
 
+  const variantFiles = async (engine: CustomEngine): Promise<CustomEngineFiles | undefined> => {
+    const kind = customEngineKindOf(engine) as NinferKind;
+    const where = whereOf(engine);
+    if (where.repo === undefined || !deletableDir(where.repo)) return undefined;
+    if ((await adapters[kind].probe(where, true)).built === undefined) return undefined;
+    const size = await folderBytes(runnerOf(kind, where.distro), where.repo);
+    return {
+      kind: 'folder',
+      target: where.repo,
+      ...(where.distro ? { distro: where.distro } : {}),
+      ...(size !== undefined ? { sizeBytes: size } : {}),
+      command: removeCommand(where.repo, where.distro),
+    };
+  };
+
+  const removeVariantFiles = async (engine: CustomEngine, files: CustomEngineFiles): Promise<void> => {
+    if (jobs.building) throw new AppError('ENGINE_IN_USE', 'NInfer is being built', { params: { engine: engine.name } });
+    const kind = customEngineKindOf(engine) as NinferKind;
+    await deleteFolder(runnerOf(kind, files.distro), files.target);
+    adapters[kind].forget();
+    deps.log.info('NInfer variant removed with its folder', { id: engine.id, dir: files.target });
+  };
+
   /** NInfer-all's saved engine on this PC's kind, if any. */
   const savedAll = async (kind: NinferKind): Promise<CustomEngine | undefined> => ninferAllEngineOf((await o.settings.get()).customEngines ?? [], kind);
 
@@ -272,6 +299,8 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     processes,
     updaters: { 'ninfer-native': updaterOf('ninfer-native'), 'ninfer-wsl': updaterOf('ninfer-wsl') },
     variantUpdater,
+    variantFiles,
+    removeVariantFiles,
     findAll,
     cleanupOrphans: async () => {
       if (deps.platform !== 'win32') return;

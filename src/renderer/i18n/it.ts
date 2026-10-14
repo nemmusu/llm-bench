@@ -3437,7 +3437,17 @@ export const it = {
       useInBenchmark: 'Usa nel Benchmark',
       pullImage: 'Scarica l’immagine',
       deleteTitle: 'Eliminare {name}?',
-      deleteBody: 'Lo tolgo dai motori. I risultati già fatti con lui restano nello storico.',
+      deleteBody: 'Lo tolgo dai motori; i suoi file restano dove sono. I risultati già fatti con lui restano nello storico.',
+      deleteFolderBody:
+        'Per lui LLM Bench ha scaricato e compilato la cartella {dir}, {size}. Puoi eliminarla insieme al motore, oppure dimenticare soltanto il motore e lasciare i file dove sono. I risultati già fatti restano nello storico.',
+      deleteFolderBodyNoSize:
+        'Per lui LLM Bench ha scaricato e compilato la cartella {dir}. Puoi eliminarla insieme al motore, oppure dimenticare soltanto il motore e lasciare i file dove sono. I risultati già fatti restano nello storico.',
+      deleteImageBody:
+        'Per lui LLM Bench ha scaricato l’immagine Docker {image}, {size}. Puoi eliminarla insieme al motore, oppure dimenticare soltanto il motore e lasciare l’immagine in Docker. I risultati già fatti restano nello storico.',
+      deleteCommand: 'Il comando che eseguo',
+      deleteWithFiles: 'Rimuovi anche i file',
+      forgetOnly: 'Dimentica soltanto',
+      deletedWithFiles: 'Motore e file eliminati',
       deleteConfirm: 'Elimina',
       saved: 'Motore salvato',
       deleted: 'Motore eliminato',

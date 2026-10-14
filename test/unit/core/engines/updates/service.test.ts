@@ -199,6 +199,14 @@ describe('custom engines in Docker', () => {
     expect(s.tagRefreshes).toEqual([true]);
     await s.update('custom:fork');
     expect(s.settings().customEngines.map((e) => (e.run.mode === 'docker' ? e.run.image : e.run.mode))).toEqual(['me/vllm-fork:v1.3.0', 'native']);
+    expect(s.settings().customEngines[0]).not.toHaveProperty('pulledImage');
+    // An image LLM Bench pulled: the newer one is LLM Bench's too (deleting the engine can remove it).
+    const pulled = setup({
+      settings: { customEngines: [engine({ base: 'vllm', run: { mode: 'docker', image: 'me/vllm-fork:v1.2.0' }, pulledImage: 'me/vllm-fork:v1.2.0' } as never)] } as never,
+      hubTags: { 'me/vllm-fork': [{ name: 'v1.3.0' }, { name: 'v1.2.0' }] },
+    });
+    await pulled.update('custom:fork');
+    expect(pulled.settings().customEngines[0]).toMatchObject({ run: { image: 'me/vllm-fork:v1.3.0' }, pulledImage: 'me/vllm-fork:v1.3.0' });
   });
 
   it('Docker Hub, a moving tag: its digest against the local one', async () => {

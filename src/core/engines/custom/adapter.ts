@@ -17,6 +17,8 @@ import type { CoreEngineConfig, EngineAdapter, EngineCaps, EngineInstance, Insta
 /** Where the saved engines come from (settings, read on every use: edits apply at once). */
 export interface CustomEngineSource {
   list(): Promise<readonly CustomEngine[]>;
+  /** LLM Bench pulled this image for the engine (it was not on this PC): saved as its pulledImage. */
+  pulled?(id: string, image: string): Promise<void>;
 }
 
 export interface ResolvedCustom {
@@ -79,9 +81,19 @@ export class CustomEngineAdapter implements EngineAdapter {
     this.kind = inner.kind;
     const { installPlan, install, evict, remove } = inner;
     if (installPlan && install) {
-      // A fork's Docker image is pulled like the base's ("Scarica").
-      this.installPlan = async (cfg) => installPlan.call(inner, (await resolveCustom(this.source, cfg))?.cfg ?? cfg);
-      this.install = (plan, progress, signal) => install.call(inner, plan, progress, signal);
+      // A fork's Docker image is pulled like the base's ("Scarica"). One that was not on this PC is
+      // remembered as LLM Bench's (CustomEngine.pulledImage): deleting the engine can remove it too.
+      this.installPlan = async (cfg) => {
+        const r = await resolveCustom(this.source, cfg);
+        const plan = await installPlan.call(inner, r?.cfg ?? cfg);
+        if (r?.engine.run.mode !== 'docker' || (await inner.detect(r.cfg)).installed) return plan;
+        return { ...plan, data: { ...plan.data, pulledFor: r.engine.id } };
+      };
+      this.install = async (plan, progress, signal) => {
+        await install.call(inner, plan, progress, signal);
+        const id = plan.data.pulledFor;
+        if (typeof id === 'string' && typeof plan.data.image === 'string') await this.source.pulled?.(id, plan.data.image);
+      };
     }
     // Cold loads of an engine with its own page cache (WSL), and "Rimuovi": the base's own.
     if (evict) this.evict = (plan, signal) => evict.call(inner, plan, signal);

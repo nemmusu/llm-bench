@@ -2,12 +2,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Boxes, Copy, Cpu, FlaskConical, GitBranch, Hammer, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { toast } from 'sonner';
 import { customUpdateTarget } from '../../../contract/engine-updates';
 import { commandLines, CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, ninferAllEngineOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { NINFER_VARIANT_BUILD, ninferServeOf, type NinferKind } from '../../../contract/ninfer';
 import { useI18n, type MessageKey } from '../../i18n';
-import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
+import { useCustomEngines, useDuplicateCustomEngine } from '../../lib/queries-engines';
 import { activeEvent, useInstallEvent } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { saveDraft } from '../bench/run-context';
@@ -15,9 +14,9 @@ import { ErrorCallout } from '../library/error-callout';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { ConfirmDialog } from '../ui/dialog';
 import { Skeleton } from '../ui/skeleton';
 import { CheckView, CommandList, customEngineWhere, kindText } from './custom-engine-check';
+import { CustomEngineDelete } from './custom-engine-delete';
 import { CustomEngineDialog } from './custom-engine-dialog';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
@@ -91,7 +90,7 @@ export function CustomEnginesSection({ template, forModel, onTemplateDone }: Cus
           </div>
         </Card>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 @4xl/page:grid-cols-2">
           {engines.map((info) => (
             <CustomEngineCard key={info.engine.id} info={info} onEdit={() => setEditing({ kind: 'edit', engine: info.engine })} />
           ))}
@@ -120,7 +119,6 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
   const qc = useQueryClient();
   const { settings, update } = useSettings();
   const duplicate = useDuplicateCustomEngine();
-  const remove = useDeleteCustomEngine();
   const [confirm, setConfirm] = useState(false);
   const e = info.engine;
   const { status } = info.check;
@@ -189,15 +187,7 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
             <Trash2 aria-hidden />
             {t('engines.custom.delete')}
           </Button>
-          <ConfirmDialog
-            open={confirm}
-            onOpenChange={setConfirm}
-            title={t('engines.custom.deleteTitle', { name: e.name })}
-            description={t('engines.custom.deleteBody')}
-            confirmLabel={t('engines.custom.deleteConfirm')}
-            cancelLabel={t('common.cancel')}
-            onConfirm={() => remove.mutate(e.id, { onSuccess: () => toast.success(t('engines.custom.deleted')) })}
-          />
+          <CustomEngineDelete engine={e} open={confirm} onOpenChange={setConfirm} />
         </>
       }
     >
@@ -229,7 +219,6 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
       {/* A fork's own update: its image, its git checkout; a program of the user's own says it is updated with its tools. */}
       <EngineUpdatePanel target={customUpdateTarget(e.id)} name={e.name} enabled={status.installed} />
       {duplicate.isError && <ErrorCallout error={duplicate.error} />}
-      {remove.isError && <ErrorCallout error={remove.error} />}
     </EngineCard>
   );
 }

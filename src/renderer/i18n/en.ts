@@ -3432,7 +3432,17 @@ export const en: Messages = {
       useInBenchmark: 'Use in Benchmark',
       pullImage: 'Download the image',
       deleteTitle: 'Delete {name}?',
-      deleteBody: 'I remove it from the engines. Results you already got with it stay in the history.',
+      deleteBody: 'I remove it from the engines; its files stay where they are. Results you already got with it stay in the history.',
+      deleteFolderBody:
+        'LLM Bench downloaded and built the folder {dir} for it, {size}. You can delete it along with the engine, or only forget the engine and leave the files where they are. Results you already got stay in the history.',
+      deleteFolderBodyNoSize:
+        'LLM Bench downloaded and built the folder {dir} for it. You can delete it along with the engine, or only forget the engine and leave the files where they are. Results you already got stay in the history.',
+      deleteImageBody:
+        'LLM Bench pulled the Docker image {image} for it, {size}. You can delete it along with the engine, or only forget the engine and leave the image in Docker. Results you already got stay in the history.',
+      deleteCommand: 'The command I run',
+      deleteWithFiles: 'Remove the files too',
+      forgetOnly: 'Only forget it',
+      deletedWithFiles: 'Engine and files deleted',
       deleteConfirm: 'Delete',
       saved: 'Engine saved',
       deleted: 'Engine deleted',

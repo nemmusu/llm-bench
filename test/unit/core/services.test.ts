@@ -203,6 +203,28 @@ describe('createServices', () => {
     expect(needsFork).toEqual([]);
   });
 
+  it('remembers the image LLM Bench pulled for a custom engine, and removes it with the engine when asked', async () => {
+    const ctx = testContext(testDeps(t.dir, { proc: quietProc }));
+    const team = { id: 'team', name: 'Team', base: 'sglang', run: { mode: 'docker', image: 'team/sglang:v1' }, extraArgs: [], env: {}, notes: '' };
+    const other = { ...team, id: 'other', run: { mode: 'docker', image: 'team/sglang:v2' } };
+    await ctx.settings.update({ customEngines: [team, other] as never });
+    const s = await createServices(ctx, { modelServices: false });
+    const source = (s.registry.require('sglang-docker') as unknown as { source: { pulled(id: string, image: string): Promise<void> } }).source;
+    await source.pulled('team', 'team/sglang:v1');
+    // Only the engine that runs that image.
+    await source.pulled('other', 'team/sglang:v1');
+    expect((await ctx.settings.get()).customEngines.map((e) => e.pulledImage)).toEqual(['team/sglang:v1', undefined]);
+    const removed: string[] = [];
+    s.docker.images.inspect = async () => ({ id: 'sha256:x', repoTags: [], repoDigests: [], size: 7 });
+    s.docker.images.remove = async (ref: string) => void removed.push(ref);
+    const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
+    const call = (method: string, url: string) => app.request(url, { method, headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+    expect(await (await call('GET', '/api/engines/custom/team/remove')).json()).toEqual({ id: 'team', files: { kind: 'image', target: 'team/sglang:v1', sizeBytes: 7, command: 'docker rmi team/sglang:v1' } });
+    expect(await (await call('DELETE', '/api/engines/custom/team?files=1')).json()).toEqual({ ok: true });
+    expect(removed).toEqual(['team/sglang:v1']);
+    expect((await ctx.settings.get()).customEngines.map((e) => e.id)).toEqual(['other']);
+  });
+
   it('plans the image pull of a Docker engine whose image is missing', async () => {
     const ctx = testContext(testDeps(t.dir, { proc: quietProc }));
     const s = await createServices(ctx, { modelServices: false });
