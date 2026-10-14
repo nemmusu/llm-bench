@@ -31,9 +31,9 @@ function repoOf(image: string): string {
   return colon > name.lastIndexOf('/') ? name.slice(0, colon) : name;
 }
 
-/** The checkout another saved engine runs from (its folder and distro). */
+/** The checkout another saved engine runs from (its folder and distro; a program without one never matches a folder). */
 function checkoutOf(e: CustomEngine): string | undefined {
-  return e.run.mode === 'ninfer' ? `${e.run.distro ?? ''}|${ninferServeOf(e.run.path).repo ?? ''}` : undefined;
+  return e.run.mode === 'ninfer' ? `${e.run.distro ?? ''}|${String(ninferServeOf(e.run.path).repo)}` : undefined;
 }
 
 export function createCustomEngineFiles(d: CustomEngineFilesDeps) {

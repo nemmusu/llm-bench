@@ -120,7 +120,7 @@ describe('what LLM Bench added for an engine', () => {
     expect(await files.plan(fusion, [fusion, same, team])).toBeUndefined();
     // The same folder in another distro is another folder.
     const elsewhere = engine({ id: 'else', base: 'ninfer', run: { mode: 'ninfer', path: '/home/u/fusion' } });
-    expect(await files.plan(fusion, [fusion, elsewhere])).toEqual(folder);
+    expect(await files.plan(fusion, [team, fusion, elsewhere])).toEqual(folder);
     ninfer.files.mockResolvedValueOnce(undefined as never);
     expect(await files.plan(fusion, [fusion])).toBeUndefined();
     await files.remove(fusion, folder);
