@@ -510,6 +510,15 @@ export function pointsByDepth(points: readonly LatencyPoint[]): LatencyPoint[] {
   return [...best.values()].sort((a, b) => a.promptTokens - b.promptTokens);
 }
 
+/** The tuner's sweep order (Tuner.sweepOrder) of the fitting KV types, given each one's largest context. */
+export function sweepOrderOf(fitting: readonly TuneKvType[], maxOf: (kv: TuneKvType) => number): TuneKvType[] {
+  const bySize = [...fitting].sort((a, b) => maxOf(b) - maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
+  const precise = [...fitting].sort((a, b) => kvPrecisionRank(a) - kvPrecisionRank(b) || maxOf(b) - maxOf(a))[0];
+  // Nothing fits, or the most precise type is also the one with the largest context: by context.
+  if (precise === undefined || precise === bySize[0]) return bySize;
+  return [bySize[0] as TuneKvType, precise, ...bySize.slice(1).filter((kv) => kv !== precise)];
+}
+
 export class Tuner {
   protected readonly rules: BudgetRules;
   protected readonly cap: number;
@@ -604,11 +613,7 @@ export class Tuner {
    * by context, the more precise first.
    */
   protected sweepOrder(fitting: readonly TuneKvType[]): TuneKvType[] {
-    const bySize = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
-    const precise = [...fitting].sort((a, b) => kvPrecisionRank(a) - kvPrecisionRank(b) || this.maxOf(b) - this.maxOf(a))[0];
-    // Nothing fits, or the most precise type is also the one with the largest context: by context.
-    if (precise === undefined || precise === bySize[0]) return bySize;
-    return [bySize[0] as TuneKvType, precise, ...bySize.slice(1).filter((kv) => kv !== precise)];
+    return sweepOrderOf(fitting, (kv) => this.maxOf(kv));
   }
 
   protected maxOf(kv: TuneKvType): number {

@@ -430,7 +430,7 @@ export class ModelScanner {
   private async chatTemplate(l: DirListing): Promise<string | undefined> {
     const read = (name: string) => {
       const f = l.files.find((x) => x.name === name);
-      return f ? readFile(f.path, 'utf8').catch(() => undefined) : Promise.resolve(undefined);
+      return f ? maybe(readFile(f.path, 'utf8')) : Promise.resolve(undefined);
     };
     const config = await read('tokenizer_config.json');
     let parsed: unknown;

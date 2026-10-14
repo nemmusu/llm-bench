@@ -121,6 +121,8 @@ export interface CoreServices {
   keys: ServerKeys;
   /** Unattended starts that failed (start-up, tray). */
   notices: ServerNotices;
+  /** Tells the UI and the tray that servers or their presets changed ("servers.changed"). */
+  serversChanged: () => void;
   /** "Controllo sistema" checklist and guided installs (Docker, uv). */
   setup: SetupService;
   systemCheck: SystemCheck;
@@ -532,8 +534,9 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
   // Servers are planned like runs (same model resolution, engine tweaks, fit), with their own settings.
   const serversChanged = () => ctx.hub.publish({ type: 'servers.changed' });
   const keys = new ServerKeys();
-  const notices = new ServerNotices({ now: () => deps.clock.wall(), onChange: serversChanged });
-  const presets = new ServerPresets({ store: ctx.settings, now: () => deps.clock.wall() });
+  const wall = () => deps.clock.wall();
+  const notices = new ServerNotices({ now: wall, onChange: serversChanged });
+  const presets = new ServerPresets({ store: ctx.settings, now: wall });
   const interfaces = opts.networkInterfaces ?? (() => os.networkInterfaces());
   const serve: ServeService = new ServeService({
     clock: deps.clock,
@@ -634,6 +637,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     keys,
     presets,
     notices,
+    serversChanged,
     ownership,
     registry,
     llama,
@@ -748,7 +752,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         shutdown: ctx.shutdown,
       })(app, ctx),
     (app, ctx) =>
-      createServerRoutes({ serve: s.serve, presets: s.presets, keys: s.keys, notices: s.notices, changed: () => ctx.hub.publish({ type: 'servers.changed' }) })(app, ctx),
+      createServerRoutes({ serve: s.serve, presets: s.presets, keys: s.keys, notices: s.notices, changed: s.serversChanged })(app, ctx),
     createSetupRoutes(s.setup),
     createCacheRoutes(s),
     ...(s.modelServices?.routes ?? []),
