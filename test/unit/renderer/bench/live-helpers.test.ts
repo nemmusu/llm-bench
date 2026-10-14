@@ -136,6 +136,9 @@ describe('engine start, stage by stage', () => {
     expect(engineName('vllm-native')).toBe('vLLM');
     expect(engineName('external')).toBeUndefined();
     expect(engineName('llamacpp-docker')).toBe('llama.cpp');
+    // NInfer's load line names NInfer (it said llama.cpp).
+    expect(engineName('ninfer-wsl')).toBe('NInfer');
+    expect(engineName('ninfer-native')).toBe('NInfer');
     expect(clock(18_400)).toBe('0:18');
     expect(clock(125_000)).toBe('2:05');
     expect(clock(-5)).toBe('0:00');

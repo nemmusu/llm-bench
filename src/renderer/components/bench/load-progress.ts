@@ -4,6 +4,7 @@
  */
 import type { LoadProgress, LoadStage } from '../../../contract/events';
 import type { EngineKind } from '../../../contract/engines';
+import { isNinferKind } from '../../../contract/ninfer';
 import type { Formatters } from '../../i18n';
 
 export interface LoadSpan {
@@ -45,10 +46,11 @@ export function finishedStages(track: LoadTrack): { stage: LoadStage; ms: number
   return track.spans.flatMap((s) => (s.endMs === undefined ? [] : [{ stage: s.stage, ms: s.endMs - s.startMs }]));
 }
 
-/** "vLLM", "llama.cpp" (no name for an external server). */
+/** "vLLM", "NInfer", "llama.cpp" (no name for an external server). */
 export function engineName(kind: EngineKind): string | undefined {
   if (kind === 'vllm-docker' || kind === 'vllm-native') return 'vLLM';
   if (kind === 'sglang-docker' || kind === 'sglang-native') return 'SGLang';
+  if (isNinferKind(kind)) return 'NInfer';
   if (kind === 'external' || kind === 'command') return undefined;
   return 'llama.cpp';
 }
