@@ -5,7 +5,8 @@
  * offers for a model, and the arguments it adds with one click.
  */
 import { customBaseReads, splitCommandLine, type CustomEngineBase } from '../../../contract/custom-engines';
-import type { RopeScaling } from '../../../contract/engines';
+import type { EngineKind, RopeScaling } from '../../../contract/engines';
+import { engineRunsFormat, FORMAT_ENGINE_BASES, type ModelFormatId } from '../../../contract/ninfer';
 import {
   argGroups,
   DRAFT_AUTO,
@@ -209,6 +210,11 @@ const TARGET_BASE: Readonly<Record<RecipeArgTarget, CustomEngineBase>> = { llama
  */
 export function baseFits(base: CustomEngineBase, format: string | undefined, family: boolean): boolean {
   return family || customBaseReads(base, format);
+}
+
+/** The same for one of LLM Bench's own engines (TensorRT-LLM among them, which no custom engine is built on). */
+export function kindFits(kind: EngineKind, format: string | undefined, family: boolean): boolean {
+  return family || format === undefined || (format in FORMAT_ENGINE_BASES && engineRunsFormat(kind, format as ModelFormatId));
 }
 
 /**

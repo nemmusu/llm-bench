@@ -10,6 +10,7 @@ import {
   argPresent,
   argTargetsFor,
   baseFits,
+  kindFits,
   engineOfValue,
   engineValue,
   formOfRecipe,
@@ -256,6 +257,12 @@ describe('the editor’s form', () => {
     expect(argTargetsFor({ scope: 'pattern', args: args() }, 'ninfer', true)).toEqual(['llamacpp', 'vllm', 'sglang', 'ninfer', 'command']);
     expect(baseFits('vllm', 'gguf', false)).toBe(false);
     expect(baseFits('vllm', 'gguf', true)).toBe(true);
+    // LLM Bench's own engines, TensorRT-LLM among them (no custom engine is built on it).
+    expect(kindFits('trtllm-docker', 'safetensors', false)).toBe(true);
+    expect(kindFits('trtllm-native', 'gguf', false)).toBe(false);
+    expect(kindFits('trtllm-native', 'gguf', true)).toBe(true);
+    expect(kindFits('vllm-docker', undefined, false)).toBe(true);
+    expect(kindFits('vllm-docker', 'exl2', false)).toBe(false);
   });
 
   it('one-click arguments: added after what is typed, taken out with their values, never while a quote is open', () => {

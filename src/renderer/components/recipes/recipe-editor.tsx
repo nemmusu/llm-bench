@@ -10,7 +10,7 @@ import { Check, Plus, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { CUSTOM_ENGINE_TEMPLATES, templateForModel, type CustomEngineBase } from '../../../contract/custom-engines';
-import { engineBaseOf, ENGINE_KINDS } from '../../../contract/engines';
+import { ENGINE_KINDS } from '../../../contract/engines';
 import { modelRecipeDraftSchema, modelRecipeSchema, recipeIdFor, recipeIsEmpty, type ModelRecipe, type RecipeArgTarget } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
@@ -28,6 +28,7 @@ import {
   argPresent,
   argTargetsFor,
   baseFits,
+  kindFits,
   formOfRecipe,
   recipeOfForm,
   toggleArg,
@@ -152,7 +153,7 @@ function EditorBody({ onOpenChange, target, initial, editing }: RecipeEditorProp
   const templates = CUSTOM_ENGINE_TEMPLATES.filter((x) => templateForModel(target.template)?.id === x.id || form.engine === `template:${x.id}`);
   const engineOptions = [
     { value: 'default', label: t('recipes.editor.engineDefault') },
-    ...ENGINE_KINDS.filter((k) => k !== 'external' && k !== 'command' && (fits(engineBaseOf(k) as CustomEngineBase) || form.engine === `builtin:${k}`)).map((k) => ({
+    ...ENGINE_KINDS.filter((k) => k !== 'external' && k !== 'command' && (kindFits(k, format, family) || form.engine === `builtin:${k}`)).map((k) => ({
       value: `builtin:${k}`,
       label: t(`benchmark.engines.${k}`),
     })),
