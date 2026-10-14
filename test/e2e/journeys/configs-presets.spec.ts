@@ -46,8 +46,9 @@ test('two settings of one model, compared by configuration; a preset back to the
     await page.getByRole('tab', { name: 'Configurazioni' }).click();
     const configs = page.getByRole('table', { name: 'Configurazioni provate' });
     await expect(configs.getByRole('row')).toHaveCount(3);
-    await expect(configs.getByText('ub 256', { exact: true })).toBeVisible();
-    await expect(configs.getByText('ub 1024', { exact: true })).toBeVisible();
+    // The configuration in its column on a wide page, under the model on a narrow one: the one in sight.
+    await expect(configs.getByText('ub 256', { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(configs.getByText('ub 1024', { exact: true }).filter({ visible: true })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: /Generazione/ })).toHaveAttribute('aria-sort', 'descending');
     const decodeOf = async (row: number) => Number((await configs.getByRole('row').nth(row).getByRole('cell').nth(3).innerText()).replace(/\./g, '').replace(',', '.'));
     expect(await decodeOf(1)).toBeGreaterThanOrEqual(await decodeOf(2));
