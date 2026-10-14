@@ -65,7 +65,9 @@ export function RecipeChip({ target, use, onUseChange, className }: RecipeChipPr
         )}
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-3 @2xl:ml-auto">
           <SquareTerminal aria-hidden className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{info.recipe.name}</span>
+          <span className="min-w-0 truncate" title={info.recipe.name}>
+            {info.recipe.name}
+          </span>
           <Button variant="link" size="sm" className="ml-auto h-auto text-xs @2xl:ml-1" onClick={dialogs.edit} aria-label={`${t('recipes.chip.open')}: ${info.recipe.name}`}>
             {t('recipes.chip.open')}
           </Button>

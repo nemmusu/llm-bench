@@ -165,8 +165,10 @@ export function ServerCard({ server: s, customs, onStop, onRestart, onSave, now 
             {lan ? <Globe className="size-[18px]" /> : <Laptop className="size-[18px]" />}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <h3 className="truncate text-md font-semibold text-fg">{name}</h3>
-            <p className="truncate text-sm text-fg-2">
+            <h3 className="truncate text-md font-semibold text-fg" title={name}>
+              {name}
+            </h3>
+            <p className="truncate text-sm text-fg-2" title={`${s.presetName ? `${s.modelLabel} · ` : ''}${prettyEngineLabel(serverEngineName(s, customs, f))}`}>
               {s.presetName ? `${s.modelLabel} · ` : ''}
               {prettyEngineLabel(serverEngineName(s, customs, f))}
             </p>
@@ -209,12 +211,12 @@ export function ServerCard({ server: s, customs, onStop, onRestart, onSave, now 
           <LoadLine progress={s.loading} engineKind={s.engineKind} />
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3 @4xl/page:grid-cols-2">
               <CopyField label={t('servers.card.baseUrl')} value={url} copyLabel={t('servers.card.copyBaseUrl', { name })} />
               <CopyField label={t('servers.card.modelName')} value={s.modelName} copyLabel={t('servers.card.copyModel', { name })} />
             </div>
             {lan && (
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3 @4xl/page:grid-cols-2">
                 {key && (
                   <CopyField
                     label={t('servers.card.apiKey')}

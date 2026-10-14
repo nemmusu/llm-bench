@@ -130,7 +130,7 @@ export function MonitorPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-section">
-          <section aria-label={t('monitor.live')} className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          <section aria-label={t('monitor.live')} className="grid grid-cols-2 gap-4 @3xl/page:grid-cols-3 @7xl/page:grid-cols-6">
             <StatTile label={t('monitor.metrics.util')} help={t('metrics.util.help')} value={show(current?.utilPct, integer)} unit="%" />
             <StatTile
               label={t('monitor.metrics.vram')}
@@ -171,7 +171,7 @@ export function MonitorPage() {
             <Activity aria-hidden className="size-4 text-fg-3" />
             {t('monitor.lastMinutes', { n: HISTORY_SECONDS / 60 })}
           </div>
-          <div className="grid gap-section lg:grid-cols-2">
+          <div className="grid gap-section @4xl/page:grid-cols-2">
             <LiveChart title={t('monitor.chartUtil')} history={history} metric="utilPct" format={fmtPct} max={100} />
             <LiveChart title={t('monitor.chartVram')} history={history} metric="memUsedMiB" scale={1024} format={fmtGb} max={totalMiB ? Math.ceil(totalMiB / 1024) : undefined} />
             <LiveChart title={t('monitor.chartPower')} history={history} metric="powerW" format={fmtW} max={gpu?.powerLimitW} />

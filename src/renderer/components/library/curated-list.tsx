@@ -60,7 +60,7 @@ export function CuratedRows({ models, showEngine }: { models: Suggestion[]; show
       {curated.isSuccess && models.length === 0 && (
         <EmptyState illustration="search" title={t('models.search.noResults')} description={t('models.search.noResultsBody')} headingLevel={3} className="rounded-xl border border-dashed border-border" />
       )}
-      <ul className="grid gap-2 xl:grid-cols-2" aria-label={t('models.curated.title')}>
+      <ul className="grid gap-2 @5xl/page:grid-cols-2 @[100rem]/page:grid-cols-3" aria-label={t('models.curated.title')}>
         {models.map((m) => {
           const [owner, name] = m.repo.split('/') as [string, string];
           return (

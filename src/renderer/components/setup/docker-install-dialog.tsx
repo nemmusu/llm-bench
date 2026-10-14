@@ -29,7 +29,9 @@ function WindowsPlan() {
         <dt className="text-fg-3">{t('docker.install.size')}</dt>
         <dd className="font-medium text-fg tabular-nums">{p.sizeBytes ? bytes(p.sizeBytes) : '–'}</dd>
         <dt className="text-fg-3">{t('docker.install.source')}</dt>
-        <dd className="truncate font-mono text-xs text-fg">{new URL(p.url).host}</dd>
+        <dd className="truncate font-mono text-xs text-fg" title={p.url}>
+          {new URL(p.url).host}
+        </dd>
       </dl>
       {!p.wsl.available && <Callout tone="info" title={t('docker.install.wslMissing')} />}
       {p.wsl.meetsDockerMinimum === false && <Callout tone="info" title={t('docker.install.wslOld')} />}

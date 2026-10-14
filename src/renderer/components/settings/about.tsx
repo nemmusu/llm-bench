@@ -49,7 +49,9 @@ export function AboutSection() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <div className="flex min-w-0 flex-col">
               <span className="text-sm font-medium">{t('about.dataDir')}</span>
-              <span className="truncate font-mono text-xs text-fg-3">{dataDir}</span>
+              <span className="truncate font-mono text-xs text-fg-3" title={dataDir}>
+                {dataDir}
+              </span>
             </div>
             <Button size="sm" onClick={() => void window.gpubench?.revealPath(dataDir)}>
               <FolderOpen aria-hidden />

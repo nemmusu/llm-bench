@@ -1,5 +1,16 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+
+/**
+ * How wide a page grows (the window's content panel, sidebar excluded):
+ *   - "text": forms and settings, read top to bottom (lines stay short enough to read);
+ *   - "default": pages of cards (engines, a model, starting a server): they fill a normal window and stop
+ *     before a full-screen one turns them into long thin lines;
+ *   - "wide": dashboards (a live run, monitor, models, servers): all of a full-screen window;
+ *   - "full": wide tables whose columns use every pixel of a large screen (Risultati, Confronta), no limit.
+ * "narrow" is the old name of "text".
+ */
+export type PageWidth = 'text' | 'default' | 'wide' | 'full' | 'narrow';
 
 export interface PageProps {
   title: ReactNode;
@@ -10,17 +21,27 @@ export interface PageProps {
   eyebrow?: ReactNode;
   children: ReactNode;
   className?: string;
-  /** Max content width; wide pages (tables, dashboards) use "wide". */
-  width?: 'default' | 'wide' | 'narrow' | 'full';
+  /** Max content width (see {@link PageWidth}). */
+  width?: PageWidth;
 }
 
-/** "full": the whole window, for wide tables whose columns use every pixel of a large screen (Risultati, Confronta). */
-const widths = { default: 'max-w-[1240px]', wide: 'max-w-[1440px]', narrow: 'max-w-[880px]', full: 'max-w-none' } as const;
+export const PAGE_WIDTHS: Record<PageWidth, string> = {
+  text: 'max-w-[960px]',
+  narrow: 'max-w-[960px]',
+  default: 'max-w-[1600px]',
+  wide: 'max-w-[2200px]',
+  full: 'max-w-none',
+};
 
-/** Standard page frame: one h1, subtitle, actions, consistent gutters. */
+/**
+ * Standard page frame: one h1, subtitle, actions, consistent gutters. It is a size container named
+ * "page": what is inside lays out on the room the page really has (the sidebar takes part of the
+ * window) with `@4xl/page:`, `@5xl/page:`… rather than on the window's width (`lg:`, `xl:`).
+ * {@link PageSplit} does it for a main column with side cards.
+ */
 export function Page({ title, subtitle, actions, eyebrow, children, className, width = 'default' }: PageProps) {
   return (
-    <div className={cn('mx-auto w-full px-8 pt-7 pb-12 compact:px-6 compact:pt-5', widths[width], className)}>
+    <div className={cn('@container/page mx-auto w-full px-8 pt-7 pb-12 compact:px-6 compact:pt-5', PAGE_WIDTHS[width], className)}>
       <header className="mb-section flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-col gap-1">
           {eyebrow}
@@ -30,6 +51,34 @@ export function Page({ title, subtitle, actions, eyebrow, children, className, w
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </header>
       {children}
+    </div>
+  );
+}
+
+export interface PageSplitProps {
+  /** The main column. */
+  children: ReactNode;
+  /** Side cards: at the right while the page has 64rem (1024 px) of content, below the main column when less. */
+  aside: ReactNode;
+  /** Width of the side column in px (default 320). */
+  asideWidth?: number;
+  className?: string;
+}
+
+/**
+ * A main column and side cards: side by side when the page has room (64rem of content, a window of
+ * about 1320 px with the sidebar open), the side cards below when it has not, so the main column is
+ * never squeezed.
+ */
+export function PageSplit({ children, aside, asideWidth = 320, className }: PageSplitProps) {
+  return (
+    <div
+      className={cn('grid items-start gap-section @5xl/page:grid-cols-[minmax(0,1fr)_var(--page-aside)]', className)}
+      style={{ '--page-aside': `${asideWidth}px` } as CSSProperties}
+    >
+      <div className="flex min-w-0 flex-col gap-section">{children}</div>
+      {/* Not an <aside>: a complementary landmark inside <main> is an axe violation. */}
+      <div className="flex min-w-0 flex-col gap-section">{aside}</div>
     </div>
   );
 }

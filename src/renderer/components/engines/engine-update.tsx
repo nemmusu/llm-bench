@@ -74,7 +74,9 @@ export function CommitLog({ log, total }: { log: NonNullable<EngineUpdateCheck['
         {log.slice(0, SHOWN_COMMITS).map((c) => (
           <li key={c.sha} className="flex gap-2">
             <span className="font-mono text-xs text-fg-3 tabular-nums">{c.sha}</span>
-            <span className="min-w-0 truncate">{c.title}</span>
+            <span className="min-w-0 truncate" title={c.title}>
+              {c.title}
+            </span>
           </li>
         ))}
       </ul>

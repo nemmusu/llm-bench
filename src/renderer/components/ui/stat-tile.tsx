@@ -34,7 +34,9 @@ export function StatTile({ label, value, unit, help, icon, delta, hint, sparklin
     <div className={cn('flex min-w-0 flex-col gap-1.5 rounded-xl border border-border bg-surface p-card shadow-xs', className)}>
       <div className="flex min-h-5 items-center gap-1.5 text-sm text-fg-2">
         {icon && <span className="text-fg-3 [&_svg]:size-4">{icon}</span>}
-        <span className="truncate">{label}</span>
+        <span className="truncate" title={label}>
+          {label}
+        </span>
         {help && <HelpTip term={label}>{help}</HelpTip>}
       </div>
       <p className="flex min-w-0 items-baseline gap-1.5">

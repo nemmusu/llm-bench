@@ -53,8 +53,12 @@ function JobRow({ job }: { job: DownloadJob }) {
     <li className="flex flex-col gap-2.5 px-5 py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate font-semibold text-fg">{job.label}</span>
-          <span className="truncate font-mono text-xs text-fg-3">{job.repo}</span>
+          <span className="truncate font-semibold text-fg" title={job.label}>
+            {job.label}
+          </span>
+          <span className="truncate font-mono text-xs text-fg-3" title={job.repo}>
+            {job.repo}
+          </span>
         </div>
         <Badge tone={STATE_TONE[job.state]} size="sm">
           {t(`downloads.state.${job.state}`)}

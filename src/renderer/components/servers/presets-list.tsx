@@ -41,10 +41,12 @@ function PresetRow({ p, running, customs, onStart, onEdit, onRemove }: { p: Serv
     );
   const switchId = `autostart-${p.id}`;
   return (
-    <li className="flex flex-col gap-3 px-card py-4 lg:flex-row lg:items-center">
+    <li className="flex flex-col gap-3 px-card py-4 @3xl/page:flex-row @3xl/page:items-center">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="truncate text-md font-semibold text-fg">{p.name}</h3>
+          <h3 className="truncate text-md font-semibold text-fg" title={p.name}>
+            {p.name}
+          </h3>
           {running && (
             <Badge tone="success" size="sm" dot>
               {t('servers.presets.running')}
@@ -60,7 +62,7 @@ function PresetRow({ p, running, customs, onStart, onEdit, onRemove }: { p: Serv
             </Badge>
           )}
         </div>
-        <p className="truncate text-sm text-fg-2">
+        <p className="truncate text-sm text-fg-2" title={`${p.modelLabel} · ${engineNameOf(p.engine, customs, f)}`}>
           {p.modelLabel} · {engineNameOf(p.engine, customs, f)}
         </p>
         <p className="text-xs text-fg-3">

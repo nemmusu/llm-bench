@@ -26,6 +26,7 @@ export function RowTitle({ owner, name, extra }: { owner: string; name: string; 
         // The model page's "← Modelli" then goes back here (same list, same scroll) instead of a fresh catalog.
         state={(prev) => ({ ...prev, fromCatalog: true })}
         aria-label={`${owner}/${name}`}
+        title={`${owner}/${name}`}
         className="min-w-0 truncate rounded-xs font-mono text-[13px] text-fg after:absolute after:inset-0 after:rounded-lg focus-ring"
       >
         <span className="text-fg-2">{owner}/</span>

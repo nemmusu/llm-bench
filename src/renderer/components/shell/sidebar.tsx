@@ -66,7 +66,9 @@ function GpuStatus({ collapsed }: { collapsed: boolean }) {
         <Skeleton className="h-10" />
       ) : gpu ? (
         <>
-          <p className="truncate text-xs font-semibold text-fg">{gpu.name.replace('NVIDIA GeForce ', '')}</p>
+          <p className="truncate text-xs font-semibold text-fg" title={gpu.name}>
+            {gpu.name.replace('NVIDIA GeForce ', '')}
+          </p>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3" aria-hidden>
             <div
               className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-2))]"

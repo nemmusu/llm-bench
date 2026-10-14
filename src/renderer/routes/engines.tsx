@@ -64,7 +64,7 @@ export function EnginesPage() {
         <Card className="p-card">
           <SystemCheckPanel onPickModel={() => void navigate({ to: '/models', search: { tab: 'download', view: 'curated' } })} />
         </Card>
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 @4xl/page:grid-cols-2">
           <LlamaCard installBytes={llamaBytes} />
           <DockerCard />
           <VllmDockerCard />

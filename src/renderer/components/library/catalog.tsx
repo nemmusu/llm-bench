@@ -194,7 +194,7 @@ function TriedRow({ m }: { m: TriedModel }) {
 function SkeletonRows() {
   const { t } = useI18n();
   return (
-    <div className="grid gap-2 xl:grid-cols-2" aria-label={t('common.loading')} role="status">
+    <div className="grid gap-2 @5xl/page:grid-cols-2 @[100rem]/page:grid-cols-3" aria-label={t('common.loading')} role="status">
       {Array.from({ length: 10 }, (_, i) => (
         <Skeleton key={i} className="h-[58px] rounded-lg" />
       ))}
@@ -272,8 +272,8 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
   const showCount = view !== 'hub' || catalog.isSuccess;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside aria-label={t('models.catalog.filters')} className="flex flex-col gap-5 lg:sticky lg:top-4 lg:self-start">
+    <div className="grid gap-6 @3xl/page:grid-cols-[220px_minmax(0,1fr)]">
+      <aside aria-label={t('models.catalog.filters')} className="flex flex-col gap-5 @3xl/page:sticky @3xl/page:top-4 @3xl/page:self-start">
         {/* Keeps the outline valid: page h1, then this h2, then the filter groups' h3. */}
         <h2 className="sr-only">{t('models.catalog.filters')}</h2>
         <FilterGroup title={t('models.catalog.viewLabel')}>
@@ -329,7 +329,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
       <section aria-labelledby={ids.title} className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
-            <h2 id={ids.title} className="truncate text-lg font-semibold tracking-[-0.01em]">
+            <h2 id={ids.title} className="truncate text-lg font-semibold tracking-[-0.01em]" title={heading}>
               {heading}
             </h2>
             {showCount && (
@@ -363,7 +363,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
           triedShown.length === 0 ? (
             <EmptyState illustration="search" title={t('models.catalog.triedEmptyTitle')} description={t('models.catalog.triedEmptyBody')} headingLevel={3} className="rounded-xl border border-dashed border-border" />
           ) : (
-            <ul className="grid gap-2 xl:grid-cols-2" aria-label={t('models.catalog.triedTitle')}>
+            <ul className="grid gap-2 @5xl/page:grid-cols-2 @[100rem]/page:grid-cols-3" aria-label={t('models.catalog.triedTitle')}>
               {triedShown.map((m) => (
                 <TriedRow key={m.repo} m={m} />
               ))}
@@ -384,7 +384,7 @@ export function ModelCatalog({ state, onChange }: { state: CatalogState; onChang
           />
         ) : (
           <>
-            <ul className="grid gap-2 xl:grid-cols-2" aria-label={t('models.catalog.results')}>
+            <ul className="grid gap-2 @5xl/page:grid-cols-2 @[100rem]/page:grid-cols-3" aria-label={t('models.catalog.results')}>
               {models.map((m) => (
                 <HubRow key={m.repo} m={m} tried={triedByRepo.get(m.repo)} engine={engine} gpu={gpu} />
               ))}

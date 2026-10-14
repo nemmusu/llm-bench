@@ -51,17 +51,23 @@ export function ActiveRunCard({ collapsed }: { collapsed: boolean }) {
         <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-accent-text">
           <Activity className="size-3.5" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg" title={title}>
+          {title}
+        </span>
         <ArrowUpRight aria-hidden className="size-3.5 shrink-0 text-fg-3 transition-colors group-hover:text-accent-text" />
       </span>
-      <span className="truncate text-xs text-fg-2">{active.modelName}</span>
+      <span className="truncate text-xs text-fg-2" title={active.modelName}>
+        {active.modelName}
+      </span>
       <span aria-hidden className="h-1.5 overflow-hidden rounded-full bg-surface-3">
         <span className="block h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-2))] transition-[width] duration-500" style={{ width: `${percent}%` }} />
       </span>
       <span className="flex items-center justify-between gap-2 text-2xs text-fg-3 tabular-nums">
         <span className="flex min-w-0 items-center gap-1.5">
           <StatusDot tone="accent" pulse />
-          <span className="truncate">{phase}</span>
+          <span className="truncate" title={phase}>
+            {phase}
+          </span>
         </span>
         <span>{percent}%</span>
       </span>
@@ -101,7 +107,9 @@ export function ServersCard({ collapsed }: { collapsed: boolean }) {
         <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-md bg-success-soft text-success-text">
           <Server className="size-3.5" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg" title={title}>
+          {title}
+        </span>
         <span aria-hidden className="rounded-full bg-success-soft px-1.5 text-2xs font-semibold text-success-text tabular-nums">
           {list.length}
         </span>
@@ -109,7 +117,9 @@ export function ServersCard({ collapsed }: { collapsed: boolean }) {
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-2">
         <StatusDot tone={first.loading ? 'warning' : 'success'} pulse={first.loading !== undefined} />
-        <span className="min-w-0 truncate">{t('shell.serversOne', { model: name, port: first.port })}</span>
+        <span className="min-w-0 truncate" title={t('shell.serversOne', { model: name, port: first.port })}>
+          {t('shell.serversOne', { model: name, port: first.port })}
+        </span>
       </span>
       {(list.length > 1 || loading) && (
         <span className="text-2xs text-fg-3">

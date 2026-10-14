@@ -1,6 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Page, PAGE_WIDTHS, PageSplit } from '../../../src/renderer/components/shell/page';
 import { hasWindowControlsOverlay, isMac } from '../../../src/renderer/components/shell/title-bar';
 import { fakeApi, renderApp } from './helpers';
 
@@ -23,6 +24,41 @@ beforeEach(() => {
 afterEach(() => {
   delete (window as { gpubench?: unknown }).gpubench;
   vi.restoreAllMocks();
+});
+
+describe('page layout', () => {
+  it('text pages stay readable, card pages fill a normal window, dashboards take a full screen; "narrow" is "text"', () => {
+    const px = (w: keyof typeof PAGE_WIDTHS) => Number(/max-w-\[(\d+)px\]/.exec(PAGE_WIDTHS[w])?.[1]);
+    expect(px('text')).toBeLessThan(px('default'));
+    expect(px('default')).toBeLessThan(px('wide'));
+    expect(PAGE_WIDTHS.narrow).toBe(PAGE_WIDTHS.text);
+    // A 1350 px window with the sidebar open fits a default page without margins to spare; 2000 px fits a wide one.
+    expect(px('default')).toBeGreaterThan(1350 - 232);
+    expect(px('wide')).toBeGreaterThan(2000 - 232);
+  });
+
+  it('is a size container the content lays out on; side cards sit in their own column, sized as asked', () => {
+    const { container } = render(
+      <Page title="T" width="text">
+        <PageSplit aside={<p>side</p>} asideWidth={300}>
+          <p>main</p>
+        </PageSplit>
+      </Page>,
+    );
+    const page = container.firstElementChild as HTMLElement;
+    expect(page.className).toContain('@container/page');
+    expect(page.className).toContain(PAGE_WIDTHS.text);
+    const split = screen.getByText('main').parentElement?.parentElement as HTMLElement;
+    expect(split.className).toContain('@5xl/page:grid-cols-[minmax(0,1fr)_var(--page-aside)]');
+    expect(split.style.getPropertyValue('--page-aside')).toBe('300px');
+    expect(screen.getByText('side').parentElement?.parentElement).toBe(split);
+    render(
+      <PageSplit aside={<p>side2</p>}>
+        <p>main2</p>
+      </PageSplit>,
+    );
+    expect((screen.getByText('main2').parentElement?.parentElement as HTMLElement).style.getPropertyValue('--page-aside')).toBe('320px');
+  });
 });
 
 describe('title bar helpers', () => {
