@@ -3,7 +3,7 @@
  * Good performance = the highest number measured among the launch combinations of this run: no
  * absolute thresholds. Differences within the measurement noise count as ties.
  */
-import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
+import { fullContextPoint, nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
 import { prefillStat } from '../bench/format';
 
 /** More precise KV cache first (ties go to the more precise one). */
@@ -69,9 +69,12 @@ export function measuredCombinations(tuning: Pick<Tuning, 'combinations'>): numb
 export interface RankRow {
   index: number;
   combo: TuneCombination;
-  /** The measurement at the compared depth; undefined when the combination does not reach it. */
+  /**
+   * The measurement it is compared on: at the compared depth, or ("Contesto massimo") with its own
+   * largest context full; undefined when it was not measured there.
+   */
   point?: LatencyPoint;
-  /** 1-based position among those reaching the depth. */
+  /** 1-based position among those measured where they are compared. */
   rank?: number;
   /** Its generation speed is within the noise of the row above: the order came from the tie-breaks. */
   tie?: boolean;
@@ -127,11 +130,60 @@ export function depthOptions(tuning: Pick<Tuning, 'combinations'>): number[] {
   return shared.length ? shared : all;
 }
 
-/** Default compared depth: the deepest option every measured combination reached (else the shallowest option). */
-export function defaultDepth(tuning: Pick<Tuning, 'combinations'>, options: readonly number[]): number | undefined {
+/** "Confronta a" → "Contesto massimo": every combination with its own largest context full (the default). */
+export const AT_MAX = 'max';
+/** What the ranking compares at: one depth for all, or each combination's own largest context full. */
+export type CompareAt = number | typeof AT_MAX;
+
+/**
+ * The ranking with every combination at its own largest context full (fullContextPoint): the core's
+ * recommendation first, then the largest context first, then {@link compareContenders}; those never
+ * measured with their context full at the bottom (recommendation first, largest context first), unranked.
+ * A tie is only marked between rows with the same context (speeds at different contexts do not compare).
+ */
+export function rankAtMax(tuning: Pick<Tuning, 'combinations' | 'recommended'>): RankRow[] {
   const ids = measuredCombinations(tuning);
-  const common = options.filter((d) => ids.every((i) => pointAt(tuning.combinations[i]!, d) !== undefined));
-  return common.length ? common[common.length - 1] : options[0];
+  const rec = tuning.recommended;
+  const ctx = (i: number) => tuning.combinations[i]!.maxContext;
+  const first = (a: number, b: number) => (a === rec ? -1 : b === rec ? 1 : ctx(b) - ctx(a));
+  const full: Contender[] = [];
+  const short: number[] = [];
+  for (const i of ids) {
+    const combo = tuning.combinations[i]!;
+    const point = fullContextPoint(combo);
+    if (point) full.push({ index: i, kvType: combo.kvType, point });
+    else short.push(i);
+  }
+  full.sort((a, b) => first(a.index, b.index) || compareContenders(a, b));
+  short.sort((a, b) => first(a, b) || a - b);
+  return [
+    ...full.map((c, k) => {
+      const above = full[k - 1];
+      const tie = above !== undefined && ctx(above.index) === ctx(c.index) && sameWithinNoise(above.point.decodeTps, c.point.decodeTps);
+      return { index: c.index, combo: tuning.combinations[c.index]!, point: c.point, rank: k + 1, ...(tie ? { tie: true } : {}) };
+    }),
+    ...short.map((i) => ({ index: i, combo: tuning.combinations[i]! })),
+  ];
+}
+
+/** The rows whose speeds compare at "Contesto massimo": those with the largest context of the ranking. */
+export function sameLargestContext(rows: readonly RankRow[]): RankRow[] {
+  const top = Math.max(...rows.map((r) => r.combo.maxContext));
+  return rows.filter((r) => r.combo.maxContext === top);
+}
+
+/**
+ * A combination's points by the depth they are drawn at: each at its grid depth, except the one with
+ * the context full, drawn at the context itself (a 256K context's 261 200 or 240 000 tokens sit on "256K").
+ */
+export function drawnPoints(combo: Pick<TuneCombination, 'maxContext' | 'sweep'>): Map<number, LatencyPoint> {
+  const out = new Map(combo.sweep.map((p) => [nominalDepth(p.promptTokens), p] as const));
+  const full = fullContextPoint(combo);
+  if (full) {
+    out.delete(nominalDepth(full.promptTokens));
+    out.set(nominalDepth(combo.maxContext), full);
+  }
+  return out;
 }
 
 export type SortDir = 'asc' | 'desc';
@@ -309,7 +361,10 @@ export function bestValues(rows: readonly RankRow[], columns: readonly MetricCol
   return out;
 }
 
-/** The recommended combination: the core's pick, else the fastest at its deepest point among those reaching the largest context. */
+/**
+ * The recommended combination: the core's pick, else among those reaching the largest context the
+ * fastest with its context full (those measured that far first; else the fastest at its deepest point).
+ */
 export function recommendedIndex(tuning: Pick<Tuning, 'combinations' | 'recommended'>): number | undefined {
   if (tuning.recommended !== undefined && tuning.combinations[tuning.recommended]) return tuning.recommended;
   const ids = measuredCombinations(tuning);
@@ -317,13 +372,56 @@ export function recommendedIndex(tuning: Pick<Tuning, 'combinations' | 'recommen
   const top = Math.max(...ids.map((i) => tuning.combinations[i]!.maxContext));
   const contenders = ids
     .filter((i) => tuning.combinations[i]!.maxContext === top)
-    .map((i) => ({ index: i, kvType: tuning.combinations[i]!.kvType, point: deepestPoint(tuning.combinations[i]!)! }));
-  return contenders.sort(compareContenders)[0]!.index;
+    .map((i) => {
+      const combo = tuning.combinations[i]!;
+      const full = fullContextPoint(combo);
+      return { index: i, kvType: combo.kvType, point: full ?? deepestPoint(combo)!, full: full !== undefined };
+    });
+  return contenders.sort((a, b) => Number(b.full) - Number(a.full) || compareContenders(a, b))[0]!.index;
+}
+
+/** The search's precision for a KV type's limit (the core's): the context that did not fit is at most this far above the one that did. */
+export function limitStep(measuredMax: number): number {
+  return Math.max(8192, measuredMax / 8);
+}
+
+type Capacity = Tuning['capacity'][number];
+
+/**
+ * "Limite trovato": a larger context was tried and did not fit, close enough above the largest that did
+ * (within {@link limitStep}). A wider gap (older runs) leaves the contexts in between untried; without
+ * the context that failed (not saved), the core's word is taken.
+ */
+export function limitFound(c: Pick<Capacity, 'bound' | 'measuredMax' | 'failedAt'>): boolean {
+  return c.bound === 'found' && (c.failedAt === undefined || c.failedAt - (c.measuredMax as number) <= limitStep(c.measuredMax as number));
+}
+
+/** A KV type's largest context is only a lower bound: larger ones left untried (estimate, time, a wide gap) or the search cut short. */
+export function capacityAtLeast(c: Capacity): boolean {
+  return c.measuredMax !== undefined && (c.bound === 'estimate' || c.bound === 'budget' || searchCut(c) || (c.bound === 'found' && !limitFound(c)));
+}
+
+/**
+ * The capacity as its launches say it: a type marked "deduced without a launch" whose attempts did load
+ * at that context (older runs launched it later on, e.g. to compare its settings) counts as launched.
+ */
+export function launchedCapacity(tuning: Pick<Tuning, 'capacity' | 'attempts'>): Tuning['capacity'] {
+  return tuning.capacity.map((c) =>
+    c.inferred && tuning.attempts.some((a) => a.kvType === c.kvType && a.contextSize === c.measuredMax && a.outcome === 'ok') ? { ...c, inferred: false } : c,
+  );
+}
+
+/** The median engine start of the attempts that say how long they took (seconds); undefined when none does. */
+export function medianLoadSeconds(attempts: readonly Pick<TuneAttempt, 'loadMs'>[]): number | undefined {
+  const ms = attempts.flatMap((a) => (a.loadMs === undefined ? [] : [a.loadMs])).sort((a, b) => a - b);
+  if (!ms.length) return undefined;
+  const mid = Math.floor(ms.length / 2);
+  return (ms.length % 2 ? ms[mid]! : (ms[mid - 1]! + ms[mid]!) / 2) / 1000;
 }
 
 export interface CapacityLead {
   best: { kvType: TuneKvType; max: number };
-  /** The next KV type with a smaller measured maximum. */
+  /** The next KV type with a smaller measured maximum, when that maximum is exact (a lower bound would make the comparison say too much). */
   next?: { kvType: TuneKvType; max: number };
   /** Every measured type reached the same context. */
   allSame: boolean;
@@ -332,6 +430,8 @@ export interface CapacityLead {
    * bound, 'other' = another one's is (comparisons with it would say too much).
    */
   unfinished?: 'best' | 'other';
+  /** The best one's maximum is a lower bound for another reason (larger contexts left untried): "almeno". */
+  atLeast?: true;
 }
 
 /** The run ended (cancelled / failed) while this type was being searched: its maximum is only "at least". */
@@ -350,9 +450,10 @@ export function capacityLead(tuning: Pick<Tuning, 'capacity'>): CapacityLead | u
   const unfinished = searchCut(top) ? 'best' : measured.some(searchCut) ? 'other' : undefined;
   return {
     best: { kvType: top.kvType, max: top.measuredMax },
-    ...(next ? { next: { kvType: next.kvType, max: next.measuredMax } } : {}),
+    ...(next && !capacityAtLeast(next) ? { next: { kvType: next.kvType, max: next.measuredMax } } : {}),
     allSame: measured.length > 1 && next === undefined,
     ...(unfinished ? { unfinished } : {}),
+    ...(capacityAtLeast(top) ? { atLeast: true as const } : {}),
   };
 }
 
@@ -387,32 +488,32 @@ export function ratioOf(big: number, small: number): Ratio {
   return { kind: 'percent', pct: Math.round((r - 1) * 100) };
 }
 
-export interface SpeedSegment {
-  /** First and last depth where the same combination is the fastest. */
-  from: number;
-  to: number;
-  combination: number;
-  /** Generation speed of that combination at `to`. */
-  decodeTps: number;
+/** The fastest of a comparison and how many were compared (1 = nothing to compare it with). */
+export interface SpeedWinner {
+  row: RankRow & { point: LatencyPoint };
+  of: number;
 }
 
-/** Winner per depth (the core's list, else computed), grouped into runs of the same combination. */
-export function speedSegments(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth'>): SpeedSegment[] {
-  const winners = tuning.fastestByDepth.length
-    ? [...tuning.fastestByDepth].sort((a, b) => a.depth - b.depth)
-    : // Every option is a measured depth: the first of its ranking reaches it.
-      depthOptions(tuning).map((depth) => ({ depth, combination: rankAt(tuning, depth)[0]!.index }));
-  const out: SpeedSegment[] = [];
-  for (const w of winners) {
-    const point = pointAt(tuning.combinations[w.combination] ?? { sweep: [] }, w.depth);
-    if (!point) continue;
-    const last = out[out.length - 1];
-    if (last && last.combination === w.combination) {
-      last.to = w.depth;
-      last.decodeTps = point.decodeTps.median;
-    } else out.push({ from: w.depth, to: w.depth, combination: w.combination, decodeTps: point.decodeTps.median });
-  }
-  return out;
+/**
+ * What the summary says about speed, at the context full: among the combinations with the search's
+ * largest context, the fastest with it full; when none was measured that far, the deepest depth they
+ * reached and the fastest there (said with that depth).
+ */
+export interface SpeedLead {
+  context: number;
+  full?: SpeedWinner;
+  below?: SpeedWinner & { depth: number };
+}
+
+export function speedLead(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth' | 'recommended'>): SpeedLead | undefined {
+  const top = sameLargestContext(rankAtMax(tuning));
+  if (!top.length) return undefined;
+  const context = top[0]!.combo.maxContext;
+  const winner = (rows: readonly RankRow[]): SpeedWinner => ({ row: rows[0] as SpeedWinner['row'], of: rows.length });
+  const full = top.filter(reaches);
+  if (full.length) return { context, full: winner(full) };
+  const depth = Math.max(...top.map((r) => reachOf(r.combo)));
+  return { context, below: { depth, ...winner(rankAt(tuning, depth).filter((r) => reaches(r) && r.combo.maxContext === context)) } };
 }
 
 /** Launches that did not make it: out of memory, spilled to shared memory, errors, and values lost in the screening. */

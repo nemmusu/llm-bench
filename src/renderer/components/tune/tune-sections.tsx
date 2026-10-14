@@ -1,8 +1,10 @@
+import { useNavigate } from '@tanstack/react-router';
 import { ChevronDown } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
+import { configParamsOf, configTagsOf } from '../../../contract/configs';
 import type { EngineKind } from '../../../contract/engines';
-import { nominalDepth, type TuneCombination, type Tuning } from '../../../contract/results';
+import { fullContextPoint, nominalDepth, type TuneCombination, type Tuning, type ValidityFlag } from '../../../contract/results';
 import { useI18n, type Formatters } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { MIB_PER_GB, prefillStat } from '../bench/format';
@@ -13,18 +15,30 @@ import { Card } from '../ui/card';
 import { CodeBlock } from '../ui/code-block';
 import { HelpTip } from '../ui/help-tip';
 import { Tooltip } from '../ui/tooltip';
-import { depthLabel, discardReason, kvName, outcomeText, roughDuration, settingsText } from './tune-format';
-import { discardedAttempts, lastPoint, searchCut } from './tune-logic';
+import { depthLabel, discardReason, kvName, loadTime, outcomeText, roughDuration, settingsText } from './tune-format';
+import { capacityAtLeast, discardedAttempts, lastPoint, launchedCapacity, limitFound, medianLoadSeconds } from './tune-logic';
 
 /**
  * The search stopped early: why (its time limit, its launch cap, or the run was cancelled or failed),
  * how many launches it made in how much time, and the requests it left out because they would have
- * ended after the time limit.
+ * ended after the time limit. Out of time: how long each engine start took against what the estimate
+ * expected, and — the model read from a Windows folder by Docker or WSL — how to make starts faster.
  */
-export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'attempts' | 'limitSeconds'> }) {
+export function StoppedNote({
+  tuning,
+  validity = [],
+}: {
+  tuning: Pick<Tuning, 'stoppedBy' | 'attempts' | 'limitSeconds' | 'expectedLoadSeconds'>;
+  /** The run's validity flags (slow_shared_filesystem says why starts were slow). */
+  validity?: readonly ValidityFlag[];
+}) {
   const f = useI18n();
   const { t, duration } = f;
+  const navigate = useNavigate();
   const why = tuning.stoppedBy as NonNullable<Tuning['stoppedBy']>;
+  const outOfTime = why === 'budget';
+  const load = outOfTime ? medianLoadSeconds(tuning.attempts) : undefined;
+  const slowDisk = outOfTime && validity.includes('slow_shared_filesystem');
   const skipped = tuning.attempts.flatMap((a) => a.skipped ?? []);
   const depths = [...new Set(skipped.map((s) => nominalDepth(s.depth)))].sort((a, b) => a - b);
   const n = tuning.attempts.length;
@@ -37,8 +51,21 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
         ? t('tune.stopped.bodyLimit', { n, limit: duration(tuning.limitSeconds * 1000) })
         : t('tune.stopped.body', { n });
   return (
-    <Callout className="mt-4" tone="info" title={t(`tune.stopped.${why}`)}>
+    <Callout
+      className="mt-4"
+      tone="info"
+      title={t(`tune.stopped.${why}`)}
+      {...(slowDisk ? { action: { label: t('validity.slow_shared_filesystem.action'), onClick: () => void navigate({ to: '/engines' }) } } : {})}
+    >
       <p>{body}</p>
+      {load !== undefined && (
+        <p className="mt-1">
+          {tuning.expectedLoadSeconds === undefined
+            ? t('tune.stopped.loads', { actual: loadTime(load, f) })
+            : t('tune.stopped.loadsExpected', { actual: loadTime(load, f), expected: loadTime(tuning.expectedLoadSeconds, f) })}
+        </p>
+      )}
+      {slowDisk && <p className="mt-1">{t('tune.stopped.slowDisk')}</p>}
       {skipped.length > 0 && (
         <p className="mt-1">
           {t('tune.discarded.skipped', {
@@ -51,11 +78,17 @@ export function StoppedNote({ tuning }: { tuning: Pick<Tuning, 'stoppedBy' | 'at
   );
 }
 
-/** "Misurata in parte (tempo finito)": a combination the search could not measure to the end, with why on hover. */
-export function PartialBadge({ why }: { why: NonNullable<TuneCombination['partial']> }) {
-  const { t } = useI18n();
+/**
+ * "Misurata in parte (tempo finito)": a combination the search could not measure to the end, with what
+ * that means on hover — not measured with its context full, or (with `combo`, measured that far) not at
+ * every depth nor against all its settings.
+ */
+export function PartialBadge({ why, combo }: { why: NonNullable<TuneCombination['partial']>; combo?: Pick<TuneCombination, 'maxContext' | 'sweep'> }) {
+  const f = useI18n();
+  const { t } = f;
+  const help = combo ? t(fullContextPoint(combo) ? 'tune.partial.helpFull' : 'tune.partial.helpNotFull', { ctx: depthLabel(combo.maxContext, f) }) : t('tune.partial.help');
   return (
-    <Tooltip content={t('tune.partial.help')}>
+    <Tooltip content={help}>
       <Badge tone="warning" size="sm">
         {t(`tune.partial.${why}`)}
       </Badge>
@@ -93,8 +126,8 @@ export function DiscardedAttempts({ tuning, engineKind }: { tuning: Pick<Tuning,
               const settings = settingsText(a.params, engineKind, label);
               const numbers = [
                 t('tune.discarded.context', { ctx: depthLabel(a.contextSize, f) }),
-                p ? t('tune.discarded.decode', { tps: number(p.decodeTps.median, 1) }) : undefined,
-                p ? t('tune.discarded.prefill', { tps: integer(prefillStat(p).median) }) : undefined,
+                // Its numbers with the depth they were measured at (not the launch's context).
+                p ? t('tune.discarded.measured', { depth: depthLabel(nominalDepth(p.promptTokens), f), decode: number(p.decodeTps.median, 1), prefill: integer(prefillStat(p).median) }) : undefined,
                 a.vramPeakMiB === undefined ? undefined : t('tune.discarded.vram', { size: number(a.vramPeakMiB / MIB_PER_GB, 1) }),
                 a.sharedPeakMiB === undefined ? undefined : t('tune.discarded.shared', { size: number(a.sharedPeakMiB / MIB_PER_GB, 1) }),
               ].filter(Boolean);
@@ -122,9 +155,10 @@ export function DiscardedAttempts({ tuning, engineKind }: { tuning: Pick<Tuning,
 /**
  * The note of a KV type's largest context: why it was not tried ("Non provato (test annullato | tempo
  * finito | non serviva)"…), that it was deduced, or what is known above it — "Limite trovato" (the next
- * context up did not fit) against "Almeno …" (larger ones were not tried: the estimate stopped there, the
- * time ran out, or the run ended mid-search). "Nessun contesto è entrato" only when every context tried
- * failed and the search came to its end. Runs before the bound was saved: "measured".
+ * context up did not fit, within the search's precision) against "Almeno …" (larger ones were not tried:
+ * the estimate stopped there, the time ran out, the run ended mid-search, or — older runs — the context
+ * that did not fit is far above, the ones in between untried). "Nessun contesto è entrato" only when
+ * every context tried failed and the search came to its end. Runs before the bound was saved: "measured".
  */
 export function capacityNote(c: Tuning['capacity'][number], f: Pick<Formatters, 't' | 'number' | 'integer'>): string {
   const { t } = f;
@@ -138,7 +172,7 @@ export function capacityNote(c: Tuning['capacity'][number], f: Pick<Formatters, 
   const ctx = depthLabel(c.measuredMax, f);
   switch (c.bound) {
     case 'found':
-      return t('tune.capacity.bound.found', { next: depthLabel(c.failedAt as number, f) });
+      return t(limitFound(c) ? 'tune.capacity.bound.found' : 'tune.capacity.bound.gap', { ctx, next: depthLabel(c.failedAt as number, f) });
     case 'model':
       return t('tune.capacity.bound.model');
     case 'estimate':
@@ -153,12 +187,16 @@ export function capacityNote(c: Tuning['capacity'][number], f: Pick<Formatters, 
   }
 }
 
-/** "Contesto massimo per tipo di cache": the estimate, what was measured, and why a type was not tried. Plus the fidelity check. */
-export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fidelity'> }) {
+/**
+ * "Contesto massimo per tipo di cache": the estimate, what was measured (as its launches say it), and why a
+ * type was not tried. Plus the fidelity check.
+ */
+export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fidelity' | 'attempts'> }) {
   const f = useI18n();
   const { t, integer } = f;
   const ctx = (n: number | undefined) => (n === undefined ? '–' : depthLabel(n, f));
   const fid = tuning.fidelity;
+  const capacity = launchedCapacity(tuning);
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-1.5 px-card pt-card">
@@ -178,7 +216,7 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
             </tr>
           </thead>
           <tbody>
-            {tuning.capacity.map((c) => (
+            {capacity.map((c) => (
               <tr key={c.kvType}>
                 <th scope="row" className="h-row border-b border-border px-3 pl-card text-left font-medium whitespace-nowrap">
                   {kvName(c.kvType, f)}
@@ -188,7 +226,7 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
                 </td>
                 <td className="h-row border-b border-border px-3 text-right font-semibold tabular-nums" title={c.measuredMax === undefined ? undefined : integer(c.measuredMax)}>
                   {/* Larger contexts left untried: it holds at least this much. */}
-                  {c.measuredMax !== undefined && (c.bound === 'estimate' || c.bound === 'budget' || searchCut(c)) ? t('tune.capacity.atLeast', { ctx: ctx(c.measuredMax) }) : ctx(c.measuredMax)}
+                  {capacityAtLeast(c) ? t('tune.capacity.atLeast', { ctx: ctx(c.measuredMax) }) : ctx(c.measuredMax)}
                 </td>
                 <td className="h-row border-b border-border px-3 pr-card text-fg-2">{capacityNote(c, f)}</td>
               </tr>
@@ -222,16 +260,43 @@ export function CapacityCard({ tuning }: { tuning: Pick<Tuning, 'capacity' | 'fi
   );
 }
 
-/** The words of the settings, each with its explanation: cache KV, context, flash attention, ub / b, shared RAM. */
-export function TuneGlossary({ className }: { className?: string }) {
+/** A word of the glossary: its term and its explanation are tune.help.{key}Term and tune.help.{key}. */
+export type GlossaryTerm = 'kv' | 'context' | 'fa' | 'batch' | 'batchTokens' | 'eager' | 'speculative' | 'offload' | 'shared';
+
+/** Without a run to read them from: the words of a llama.cpp search. */
+const LLAMA_TERMS: readonly GlossaryTerm[] = ['kv', 'context', 'fa', 'batch', 'shared'];
+
+/**
+ * The words the settings of this run show (the same rules as their labels, engine defaults left out):
+ * the KV cache and the context always; flash attention, ub / b, the batch in tokens, eager mode,
+ * speculative decoding and the CPU only when a launch has them; the shared RAM when a launch spilled.
+ */
+export function glossaryTerms(engineKind: EngineKind, tuning: Pick<Tuning, 'combinations' | 'attempts'>): GlossaryTerm[] {
+  const launches = [...tuning.combinations, ...tuning.attempts];
+  const settings = launches.map((l) => ({ p: configParamsOf({ engineKind, params: l.params }), tags: 'tags' in l ? l.tags : [] }));
+  const any = (test: (s: (typeof settings)[number]) => boolean) => settings.some(test);
+  const has: Record<GlossaryTerm, boolean> = {
+    kv: true,
+    context: true,
+    fa: any(({ p }) => p.flashAttention !== undefined),
+    batch: any(({ p }) => p.ubatchSize !== undefined || p.batchSize !== undefined),
+    batchTokens: any(({ p }) => p.maxNumBatchedTokens !== undefined),
+    eager: any(({ p, tags }) => p.enforceEager === true || tags.includes('eager')),
+    speculative: any(({ p, tags }) => configTagsOf(p).includes('draft') || p.draftMax !== undefined || tags.includes('draft')),
+    offload: any(({ p, tags }) => configTagsOf(p).includes('cpu-offload') || tags.includes('cpu-offload')),
+    shared: tuning.attempts.some((a) => a.outcome === 'spill'),
+  };
+  return (Object.keys(has) as GlossaryTerm[]).filter((k) => has[k]);
+}
+
+/**
+ * The words of the settings, each with its explanation: those the run's labels show (glossaryTerms);
+ * without a run, those of a llama.cpp search (cache KV, context, flash attention, ub / b, shared RAM).
+ */
+export function TuneGlossary({ className, engineKind, tuning }: { className?: string; engineKind?: EngineKind; tuning?: Pick<Tuning, 'combinations' | 'attempts'> }) {
   const { t } = useI18n();
-  const terms = [
-    { term: t('tune.help.kvTerm'), help: t('tune.help.kv') },
-    { term: t('tune.help.contextTerm'), help: t('tune.help.context') },
-    { term: t('tune.help.faTerm'), help: t('tune.help.fa') },
-    { term: t('tune.help.batchTerm'), help: t('tune.help.batch') },
-    { term: t('tune.help.sharedTerm'), help: t('tune.help.shared') },
-  ];
+  const keys = engineKind && tuning ? glossaryTerms(engineKind, tuning) : LLAMA_TERMS;
+  const terms = keys.map((k) => ({ term: t(`tune.help.${k}Term`), help: t(`tune.help.${k}`) }));
   return (
     <p className={cn('flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-3', className)}>
       <span>{t('tune.help.glossary')}</span>

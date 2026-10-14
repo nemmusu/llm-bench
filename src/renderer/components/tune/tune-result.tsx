@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { nominalDepth, type RunResult, type Tuning } from '../../../contract/results';
+import { fullContextPoint, nominalDepth, type LatencyPoint, type RunResult, type Tuning } from '../../../contract/results';
 import { useI18n } from '../../i18n';
+import { tooltipHead } from '../../lib/speed-at';
 import { MIB_PER_GB, prefillStat } from '../bench/format';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
@@ -8,7 +9,7 @@ import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
 import { capacitySentence, comboText, depthLabel, recommendedOf, speedSentence } from './tune-format';
-import { deepestPoint, defaultDepth, depthOptions, rankAt, withRunEnd } from './tune-logic';
+import { AT_MAX, deepestPoint, depthOptions, rankAt, rankAtMax, withRunEnd, type CompareAt } from './tune-logic';
 import { RecheckOverview } from './tune-recheck';
 import { TuneRanking } from './tune-ranking';
 import { UsersOverview } from './tune-users';
@@ -42,7 +43,8 @@ const NONE = { cancelled: 'tune.summary.noneCancelled', failed: 'tune.summary.no
 /**
  * One user, the largest context, top to bottom: the summary sentence (numbers only) and the
  * recommended combination, speed against context per combination, the ranking table (the main
- * element), the discarded launches and the capacity per KV cache type.
+ * element; by default every combination with its own largest context full), the discarded launches
+ * and the capacity per KV cache type.
  */
 function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactNode }) {
   const f = useI18n();
@@ -51,9 +53,8 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
   const kind = run.engine.kind;
   const label = useConfigLabel();
   const depths = useMemo(() => depthOptions(tuning), [tuning]);
-  const [picked, setPicked] = useState<number | undefined>(undefined);
-  const depth = picked ?? defaultDepth(tuning, depths);
-  const rows = useMemo(() => (depth === undefined ? [] : rankAt(tuning, depth)), [tuning, depth]);
+  const [depth, setDepth] = useState<CompareAt>(AT_MAX);
+  const rows = useMemo(() => (depth === AT_MAX ? rankAtMax(tuning) : rankAt(tuning, depth)), [tuning, depth]);
   const rec = recommendedOf(tuning);
   const order = useMemo(() => rows.map((r) => r.index), [rows]);
   const sentences = [capacitySentence(tuning, f), speedSentence(tuning, kind, label, f)].filter(Boolean);
@@ -66,7 +67,7 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
         <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">
           {sentences.length ? sentences.join(' ') : t(tuning.stoppedBy === 'cancelled' || tuning.stoppedBy === 'failed' ? NONE[tuning.stoppedBy] : 'tune.summary.none')}
         </p>
-        {tuning.stoppedBy && <StoppedNote tuning={tuning} />}
+        {tuning.stoppedBy && <StoppedNote tuning={tuning} validity={run.validity} />}
         {rec && <RecommendedCard run={run} index={rec.index} text={comboText(rec.combo, kind, label)} />}
       </Card>
 
@@ -75,16 +76,17 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
           tuning={tuning}
           engineKind={kind}
           order={order}
-          // Something was measured: there is a recommendation and a compared depth.
+          // Something was measured: there is a recommendation.
           recommended={rec!.index}
-          marker={depth}
+          // At "Contesto massimo" each combination is read at its own context: no single depth to mark.
+          {...(depth === AT_MAX ? {} : { marker: depth })}
           title={t('tune.chart.title')}
           help={t('tune.chart.help')}
         />
       )}
 
-      {depth !== undefined && rows.length > 0 ? (
-        <TuneRanking run={run} rows={rows} depth={depth} depths={depths} onDepth={setPicked} recommended={rec?.index} />
+      {rows.length > 0 ? (
+        <TuneRanking run={run} rows={rows} depth={depth} depths={depths} onDepth={setDepth} recommended={rec?.index} />
       ) : (
         <Card className="p-card text-sm text-fg-2">{t('tune.ranking.empty')}</Card>
       )}
@@ -95,41 +97,56 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
   );
 }
 
-/** "Consigliata": the fastest of those reaching the largest context, its numbers and the two ways to use it. */
+/**
+ * "Consigliata": the fastest of those reaching the largest context, its numbers with that context full
+ * and the two ways to use it. Never measured that far: its speeds say so, and how far it was measured.
+ */
 function RecommendedCard({ run, index, text }: { run: TunedRun; index: number; text: string }) {
   const f = useI18n();
   const { t, number, integer } = f;
   const combo = run.tuning.combinations[index]!;
+  const full = fullContextPoint(combo);
   const deep = deepestPoint(combo);
-  const stats = [
-    { label: t('tune.rec.context'), value: depthLabel(combo.maxContext, f), help: t('tune.help.context') },
-    ...(deep
-      ? [
-          { label: t('tune.rec.decodeAt', { depth: depthLabel(nominalDepth(deep.promptTokens), f) }), value: `${number(deep.decodeTps.median, 1)} tok/s` },
-          { label: t('tune.rec.prefillAt', { depth: depthLabel(nominalDepth(deep.promptTokens), f) }), value: `${integer(prefillStat(deep).median)} tok/s` },
-        ]
-      : []),
+  const ctx = depthLabel(combo.maxContext, f);
+  // A speed with the context full, its exact tokens on hover; undefined = not measured that far.
+  const speed = (label: string, value: (p: LatencyPoint) => string) => ({ label, value: full && value(full), title: full && tooltipHead(full.promptTokens, 'depth', f) });
+  const stats: { label: string; value: string | undefined; help?: string; title?: string | undefined }[] = [
+    { label: t('tune.rec.context'), value: ctx, help: t('tune.help.context') },
+    speed(t('tune.rec.decodeAtMax', { ctx }), (p) => `${number(p.decodeTps.median, 1)} tok/s`),
+    speed(t('tune.rec.prefillAtMax', { ctx }), (p) => `${integer(prefillStat(p).median)} tok/s`),
+    speed(t('tune.rec.ttftAtMax', { ctx }), (p) => `${number(p.ttftMs.median / 1000, 2)} s`),
     ...(combo.vramPeakMiB === undefined ? [] : [{ label: t('tune.rec.vram'), value: `${number(combo.vramPeakMiB / MIB_PER_GB, 1)} GB` }]),
   ];
+  // Measured only below its context: how far, why, and what to do.
+  const upTo = !full && deep ? { depth: depthLabel(nominalDepth(deep.promptTokens), f), ctx } : undefined;
   return (
     <section aria-label={t('tune.rec.title')} className="mt-5 flex flex-col gap-4 rounded-lg border border-accent/30 bg-surface/70 p-5">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="accent">{t('tune.recommended')}</Badge>
         <HelpTip term={t('tune.recommended')}>{t('tune.rec.help')}</HelpTip>
         <span className="text-md font-semibold text-fg">{text}</span>
-        {combo.partial && <PartialBadge why={combo.partial} />}
+        {combo.partial && <PartialBadge why={combo.partial} combo={combo} />}
       </div>
-      <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+      <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 xl:grid-cols-5">
         {stats.map((s) => (
           <div key={s.label} className="flex flex-col gap-0.5">
             <dt className="inline-flex items-center gap-1 text-xs text-fg-3">
               {s.label}
               {s.help && <HelpTip term={s.label}>{s.help}</HelpTip>}
             </dt>
-            <dd className="text-lg font-semibold text-fg tabular-nums">{s.value}</dd>
+            {s.value === undefined ? (
+              <dd className="text-md font-medium text-fg-3 italic">{t('tune.rec.notMeasured')}</dd>
+            ) : (
+              <dd className="text-lg font-semibold text-fg tabular-nums" title={s.title}>
+                {s.value}
+              </dd>
+            )}
           </div>
         ))}
       </dl>
+      {upTo && (
+        <p className="text-sm text-fg-2">{combo.partial ? t('tune.rec.onlyUpTo', { ...upTo, why: t(`tune.rec.why.${combo.partial}`) }) : t('tune.rec.onlyUpToNoWhy', upTo)}</p>
+      )}
       {/* "Usa questo preset" for this combination is in the page header. */}
     </section>
   );

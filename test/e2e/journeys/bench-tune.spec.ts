@@ -1,5 +1,9 @@
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { TUNE_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
-import { expect, launchApp, test } from '../fixtures';
+import { expect, launchApp, ROOT, test } from '../fixtures';
+import { goToHash } from '../ui/helpers';
 import { h1, scan, skipWelcome } from './bench-helpers';
 
 // A 'fast' search against the fake engine: 14 launches, about half a minute.
@@ -41,13 +45,15 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     const recommended = page.getByRole('region', { name: 'Combinazione consigliata' });
     await expect(recommended.getByText(/Cache KV q4_0 · flash attention · ub 2048/)).toBeVisible();
 
+    // Every combination with its own largest context full, the largest context first.
     const ranking = page.getByRole('table', { name: /^Classifica delle combinazioni a/ });
-    await expect(ranking).toHaveAccessibleName('Classifica delle combinazioni a 16K');
+    await expect(ranking).toHaveAccessibleName('Classifica delle combinazioni al contesto massimo');
+    await expect(ranking.getByRole('columnheader', { name: /^Generazione \(tok\/s\) al contesto massimo/ })).toBeVisible();
     const q4 = ranking.getByRole('row', { name: /^Cache KV q4_0/ });
     await expect(q4.getByText('Consigliata')).toBeVisible();
     await expect(q4.getByRole('cell', { name: '40K', exact: true })).toBeVisible();
-    // Sorted by generation speed: the first row has the best one (which cache wins at 16K is down to
-    // the noise of a busy PC; within the noise they all count as best).
+    // The recommendation on top, with the best generation among those with its context (within the
+    // noise of a busy PC they all count as best).
     const first = ranking.getByRole('row').nth(1);
     await expect(first.getByRole('cell').nth(0)).toHaveText('1');
     await expect(first.getByRole('cell').nth(2)).toContainText('il migliore');
@@ -80,5 +86,36 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('q4_0');
   } finally {
     await gb.close();
+  }
+});
+
+test('a NInfer search saved before the context full was measured reads at the largest context, and says why the time ran out', async () => {
+  // The real run of the report (sanitized): 256K launched, nothing measured beyond 64K, each start ~1,5 min.
+  const id = '01M4X46BTJW9EH2YHE32Q7N9ZM';
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-tune-'));
+  mkdirSync(path.join(userData, 'results'), { recursive: true });
+  copyFileSync(path.join(ROOT, 'test', 'fixtures', 'runs', 'tune', `2026-10-14_11-54-04_${id}.json`), path.join(userData, 'results', `2026-10-14_11-54-04_${id}.json`));
+  const gb = await launchApp({ userData });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await goToHash(page, `#/results/${id}`);
+    await expect(h1(page, /Qwen3\.8-27B/)).toBeVisible();
+    await expect(page.getByText(/Al contesto massimo \(256K\) la velocità non è stata misurata\. Misurata solo fino a 64K/)).toBeVisible();
+    await expect(page.getByText('Ogni avvio del motore ha richiesto in media 1 min 36 s.')).toBeVisible();
+    const recommended = page.getByRole('region', { name: 'Combinazione consigliata' });
+    await expect(recommended.getByText('non misurata')).toHaveCount(3);
+    await expect(recommended.getByText('Misurata solo fino a 64K (tempo finito): rifai la ricerca per avere la velocità a 256K.')).toBeVisible();
+    const ranking = page.getByRole('table', { name: 'Classifica delle combinazioni al contesto massimo' });
+    await expect(ranking.getByText('non misurata a 256K')).toHaveCount(2);
+    await expect(ranking.getByText(/arriva solo/)).toHaveCount(0);
+    const capacity = page.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
+    await expect(capacity.getByRole('row').filter({ hasText: 'int8' })).toContainText('Almeno 128K: a 236K non entra più, in mezzo non provato.');
+    await expect(capacity.getByRole('row').filter({ hasText: 'nvfp4' })).toContainText('Arriva al contesto massimo del modello.');
+    await expect(page.getByText('Flash attention', { exact: true })).toHaveCount(0);
+    await scan(page, 'tune result of an older NInfer search');
+  } finally {
+    await gb.close();
+    rmSync(userData, { recursive: true, force: true });
   }
 });

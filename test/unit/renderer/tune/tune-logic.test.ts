@@ -9,7 +9,6 @@ import {
   compareContenders,
   CONTEXT_COLUMNS,
   deepestPoint,
-  defaultDepth,
   depthOptions,
   discardedAttempts,
   lastPoint,
@@ -21,7 +20,7 @@ import {
   recommendedIndex,
   sameWithinNoise,
   sortRows,
-  speedSegments,
+  speedLead,
 } from '../../../../src/renderer/components/tune/tune-logic';
 import {
   capacitySentence,
@@ -90,16 +89,11 @@ describe('ranking at a depth', () => {
     expect(same.map((r) => r.index)).toEqual([2, 0, 1]);
   });
 
-  it('offers depths measured by two combinations and starts at the deepest one everybody reached', () => {
+  it('offers depths measured by two combinations (by one, when there is only one)', () => {
     const t = tuning();
-    const options = depthOptions(t);
-    expect(options).toEqual([K, 4 * K, 8 * K, 16 * K, 32 * K, 64 * K]);
-    expect(defaultDepth(t, options)).toBe(16 * K);
+    expect(depthOptions(t)).toEqual([K, 4 * K, 8 * K, 16 * K, 32 * K, 64 * K]);
     const one = { combinations: [t.combinations[0]!] };
     expect(depthOptions(one)).toEqual([K, 4 * K, 8 * K, 16 * K, 24 * K]);
-    expect(defaultDepth(t, [64 * K])).toBe(64 * K);
-    expect(defaultDepth({ combinations: [t.combinations[2]!, combo('f16', 2 * K, [point(2 * K, 1, 1)])] }, [K, 4 * K])).toBe(K);
-    expect(defaultDepth(t, [])).toBeUndefined();
   });
 
   it('sorts by any column, keeping those that do not reach the depth at the bottom', () => {
@@ -166,26 +160,25 @@ describe('summary from the numbers', () => {
     expect(ratioOf(1.5, 1)).toEqual({ kind: 'percent', pct: 50 });
   });
 
-  it('says which combination is fastest at each depth', () => {
+  it('says the speed at the context full, among those with the largest context', () => {
     const t = tuning();
-    expect(speedSegments(t)).toEqual([
-      { from: K, to: 16 * K, combination: 0, decodeTps: 78 },
-      { from: 32 * K, to: 32 * K, combination: 1, decodeTps: 72 },
-      { from: 64 * K, to: 64 * K, combination: 2, decodeTps: 60 },
-    ]);
-    expect(speedSentence(t, 'llamacpp-native', label, f)).toBe(
-      'Fino a 16K la più veloce a scrivere è cache KV f16 (78,0 tok/s a 16K); a 32K cache KV q8_0 fa 72,0 tok/s; a 64K cache KV q4_0 · ub 2048 · b 4096 fa 60,0 tok/s.',
-    );
-    // Computed when the core sent no list; unknown combinations and missing points are skipped.
-    expect(speedSegments({ ...t, fastestByDepth: [] }).map((s) => s.combination)).toEqual([0, 1, 2]);
-    expect(speedSegments({ ...t, fastestByDepth: [{ depth: K, combination: 99 }, { depth: 64 * K, combination: 0 }] })).toEqual([]);
+    expect(speedLead(t)).toMatchObject({ context: 64 * K, full: { row: { index: 2 }, of: 3 } });
+    expect(speedSentence(t, 'llamacpp-native', label, f)).toBe('Al contesto massimo (64K) la più veloce a scrivere è cache KV q4_0 · ub 2048 · b 4096: 60,0 tok/s.');
     expect(speedSentence({ combinations: [], fastestByDepth: [] }, 'llamacpp-native', label, f)).toBeUndefined();
-    const two = { combinations: [t.combinations[2]!], fastestByDepth: [{ depth: 32 * K, combination: 0 }, { depth: 64 * K, combination: 0 }] };
-    // One combination: nothing to tell apart, its whole settings.
-    expect(speedSentence(two, 'llamacpp-native', label, f)).toBe('Fino a 64K la più veloce a scrivere è cache KV q4_0 · flash attention · ub 2048 · b 4096 (60,0 tok/s a 64K).');
-    const single = { combinations: [t.combinations[0]!, t.combinations[1]!], fastestByDepth: [{ depth: K, combination: 1 }, { depth: 4 * K, combination: 0 }, { depth: 8 * K, combination: 0 }] };
-    expect(speedSentence(single, 'llamacpp-native', label, f)).toBe(
-      'A 1K la più veloce a scrivere è cache KV q8_0 (90,0 tok/s); da 4K a 8K cache KV f16 (84,0 tok/s a 8K).',
+    // One combination with the largest context: nothing to compare it with, its whole settings.
+    const two = { combinations: [t.combinations[0]!, t.combinations[1]!], fastestByDepth: [] };
+    expect(speedSentence(two, 'llamacpp-native', label, f)).toBe('Al contesto massimo (32K) cache KV q8_0 scrive a 72,0 tok/s.');
+    // Never measured with the context full (the time ran out): said so, and what was measured below, with its depth.
+    const q8 = combo('q8_0', 256 * K, [point(K, 54.8, 1787), point(64 * K, 46.5, 2049)], { partial: 'budget' });
+    const q4 = combo('q4_0', 256 * K, [point(K, 60, 1800), point(64 * K, 44, 1900)], { partial: 'budget' });
+    const f16 = combo('f16', 208 * K, [point(K, 55.9, 1810)], { partial: 'budget' });
+    const cut = { combinations: [f16, q8, q4], fastestByDepth: [], recommended: 1 };
+    expect(speedLead(cut)).toMatchObject({ context: 256 * K, below: { depth: 64 * K, row: { index: 1 }, of: 2 } });
+    expect(speedSentence(cut, 'llamacpp-native', label, f)).toBe(
+      'Al contesto massimo (256K) la velocità non è stata misurata. Misurata solo fino a 64K: lì la più veloce a scrivere è cache KV q8_0 (46,5 tok/s a 64K).',
+    );
+    expect(speedSentence({ ...cut, combinations: [f16, q8] }, 'llamacpp-native', label, f)).toBe(
+      'Al contesto massimo (256K) la velocità non è stata misurata. Misurata solo fino a 64K: lì cache KV q8_0 scrive a 46,5 tok/s.',
     );
   });
 });

@@ -1,0 +1,1208 @@
+{
+  "schema": 1,
+  "id": "01M4X46BTJW9EH2YHE32Q7N9ZM",
+  "app": {"name":"llm-bench","version":"0.4.0"},
+  "createdAt": "2026-10-14T11:54:04.558Z",
+  "finishedAt": "2026-10-14T12:27:25.574Z",
+  "status": "completed",
+  "scenario": {
+    "profile": "tune",
+    "steps": [
+      {"kind":"context-sweep","depths":[],"fractions":false,"outputTokens":128,"reps":2}
+    ],
+    "seed": 42
+  },
+  "hardware": {
+    "hostId": "host-1",
+    "hostLabel": "WORKSTATION",
+    "gpus": [
+      {"index":0,"uuid":"GPU-00000000-0000-0000-0000-000000000000","name":"NVIDIA GeForce RTX 5090","vendor":"nvidia","memoryTotalMiB":32607,"driverVersion":"617.14","cudaVersion":"13.4","computeCapability":"12.0","powerLimitW":575,"pcieGenMax":5,"pcieWidthMax":16}
+    ],
+    "cpu": {"model":"Intel(R) Core(TM) Ultra 7 265F","cores":20,"threads":20},
+    "ramBytes": 205751443456,
+    "os": {"platform":"win32","release":"10.0.26300","arch":"x64","name":"Windows 11 Pro 26H2","isWsl":false,"powerPlan":"Prestazioni elevate"}
+  },
+  "model": {
+    "displayName": "Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP",
+    "format": "ninfer",
+    "source": "hf",
+    "repo": "nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-GGUF-NInfer",
+    "revision": "01401563cfc93f133c10f97f22e4d19eb9a8c0e4",
+    "file": "Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer",
+    "files": ["Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer"],
+    "quant": "Q6_K",
+    "sizeBytes": 23379962880,
+    "sha256": "60d7b3f4f79304e1ab1e22c161cdace29e7f8f9b8350755e4eab45e2d5e0d168",
+    "weakKey": "nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-GGUF-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer//23379962880",
+    "path": "C:\\Users\\user\\GPU Bench\\models\\nerkyor\\Qwen3.8-27B-NInfer\\Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer",
+    "facts": {"name":"qwen3.8-27b-coder390-q6k-mtp","paramsB":27,"contextLength":262144,"components":["text","mtp","vision"],"layouts":["contiguous_le_v1","gguf_blocks_v1","row_split_k128_v1"],"containerVersion":3}
+  },
+  "engine": {
+    "kind": "ninfer-wsl",
+    "name": "NInfer-all",
+    "version": "0.12.0-rtx3090+v0.6.0-rtx3090-1719-ge408e428",
+    "build": "e408e428ae86",
+    "variant": "Ubuntu-24.04",
+    "executable": "/home/user/ninfer-all/build/apps/ninfer-serve",
+    "customEngine": {"id":"ninfer-all","name":"NInfer-all","base":"ninfer"}
+  },
+  "launch": {
+    "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+    "env": {},
+    "display": {
+      "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking",
+      "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking"
+    },
+    "params": {
+      "contextSize": 262144,
+      "parallel": 1,
+      "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":4,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+      "extraArgs": [],
+      "env": {}
+    },
+    "host": "127.0.0.1",
+    "port": 60768,
+    "requestExample": {
+      "model": "gpubench-00000000-0000-0000-0000-000000000000",
+      "messages": [
+        {"role":"user","content":"Continue the following text.\n\ny\nforth the kind of relation i…"}
+      ],
+      "max_tokens": 32,
+      "temperature": 0,
+      "seed": 42,
+      "stream": true,
+      "stream_options": {"include_usage":true}
+    }
+  },
+  "metrics": {
+    "formulaVersion": 1,
+    "load": {"phases":[]},
+    "latency": [],
+    "contextSweep": [
+      {
+        "promptTokens": 1024,
+        "outputTokens": 128,
+        "ttftMs": {"n":2,"median":347.14729999995325,"mean":347.14729999995325,"min":337.0586999999359,"max":357.23589999997057,"stddev":14.267434945381705,"cv":0.04109908083797174,"values":[337.0586999999359,357.23589999997057]},
+        "prefillTps": {"n":2,"median":2988.0044338259704,"mean":2988.0044338259704,"min":2916.405955402388,"max":3059.602912249553,"stddev":101.25553923190778,"cv":0.03388734570994455,"values":[2916.405955402388,3059.602912249553]},
+        "prefillTpsEngine": {"n":2,"median":3226.1696761577523,"mean":3226.1696761577523,"min":3207.8247689660484,"max":3244.5145833494557,"stddev":25.943616550983055,"cv":0.00804161564802783,"values":[3207.8247689660484,3244.5145833494557]},
+        "decodeTps": {"n":2,"median":84.93791034531856,"mean":84.93791034531856,"min":84.15405625863737,"max":85.72176443199976,"stddev":1.108537080306122,"cv":0.013051146134856851,"values":[84.15405625863737,85.72176443199976]},
+        "decodeTpsEngine": {"n":2,"median":85.61859842884314,"mean":85.61859842884314,"min":84.83979805657103,"max":86.39739880111527,"stddev":1.1013900488484514,"cv":0.012863911218586542,"values":[84.83979805657103,86.39739880111527]},
+        "itlP50Ms": 23.087300000013784,
+        "itlP95Ms": 27.30042499996489,
+        "itlPerChunk": true,
+        "draftAcceptance": 0.2545777988614801,
+        "totalMs": {"n":2,"median":1842.752850000048,"mean":1842.752850000048,"min":1839.1994000000414,"max":1846.3063000000548,"stddev":5.025337183224158,"cv":0.0027270814874734975,"values":[1846.3063000000548,1839.1994000000414]},
+        "promptTokensReported": 1038
+      },
+      {
+        "promptTokens": 65536,
+        "outputTokens": 128,
+        "ttftMs": {"n":2,"median":20821.466850000084,"mean":20821.466850000084,"min":20468.743400000036,"max":21174.190300000133,"stddev":498.826286757097,"cv":0.02395730763594569,"values":[20468.743400000036,21174.190300000133]},
+        "prefillTps": {"n":2,"median":3138.299048330532,"mean":3138.299048330532,"min":3085.8795105850913,"max":3190.7185860759723,"stddev":74.13242121293032,"cv":0.023621847399267523,"values":[3190.7185860759723,3085.8795105850913]},
+        "prefillTpsEngine": {"n":2,"median":3149.9155049818,"mean":3149.9155049818,"min":3096.8989107799116,"max":3202.932099183689,"stddev":74.97678655114174,"cv":0.023802792942401466,"values":[3202.932099183689,3096.8989107799116]},
+        "decodeTps": {"n":2,"median":82.99206958589384,"mean":82.99206958589384,"min":82.89357313726268,"max":83.09056603452501,"stddev":0.13929501349978096,"cv":0.0016784135423399168,"values":[83.09056603452501,82.89357313726268]},
+        "decodeTpsEngine": {"n":2,"median":83.64511634230914,"mean":83.64511634230914,"min":83.54916770414388,"max":83.74106498047439,"stddev":0.13569186538453082,"cv":0.0016222329685002248,"values":[83.74106498047439,83.54916770414388]},
+        "itlP50Ms": 24.65385000000242,
+        "itlP95Ms": 25.19717000009259,
+        "itlPerChunk": true,
+        "draftAcceptance": 0.2674897119341564,
+        "totalMs": {"n":2,"median":22351.867600000114,"mean":22351.867600000114,"min":21997.292000000132,"max":22706.443200000096,"stddev":501.44562240655205,"cv":0.022434171111793338,"values":[21997.292000000132,22706.443200000096]},
+        "promptTokensReported": 65325.5
+      }
+    ],
+    "concurrency": [],
+    "sessions": [],
+    "llamaBench": [],
+    "vram": {"baselineMiB":1644,"peakMiB":31944,"deltaMiB":30300,"estimateMiB":31577,"method":"total-delta"},
+    "energy": {"avgPowerW":464.13145696162826,"maxPowerW":616.13,"tokensPerJoule":0.14106729076911734},
+    "thermals": {"maxTempC":78,"throttleReasons":["sw_power_cap"]}
+  },
+  "validity": ["throttling","tokens_approximate","slow_shared_filesystem"],
+  "notes": [
+    {
+      "code": "ninfer_all_chosen",
+      "params": {"layout":"gguf_blocks_v1","why":"layout"}
+    },
+    {
+      "code": "text_prompts_calibrated",
+      "params": {"charsPerToken":0.21,"overhead":0}
+    }
+  ],
+  "sharedGpu": [],
+  "telemetry": {"intervalMs":1000,"t":[1526,2582,3639,4696],"utilPct":[8,5.5,9.5,11],"memUsedMiB":[2121,24121,24122,24150],"powerW":[82,95,108.9,106.2],"tempC":[55,55,56,55.3],"smClockMHz":[1860,2621,2887,2821.8],"marks":[]},
+  "logExcerpt": "=== tune 1 (reference) ===\n2026-10-14 13:54:05.796  INFO  build 0.12.0-rtx3090+v0.6.0-rtx3090-1719-ge408e428\n2026-10-14 13:54:05.865  INFO  starting engine\n2026-10-14 13:54:06.027  INFO  engine | device profile nvidia-geforce-rtx-5090-sm120: 61 routed keys (built in: RTX 5090 at 575 W, 2026-09-25; unified routes and two-stage GDN at 450 W, 2026-09-27)\n2026-10-14 13:54:06.950  INFO  loading weights | 21.5 GiB\n2026-10-14 13:54:17.193  INFO    loading weights 12.2% | 2.62 GiB/21.5 GiB | 232.3 MiB/s | ETA 1m 23.2s\n2026-10-14 13:54:27.310  INFO    loading weights 23.6% | 5.06 GiB/21.5 GiB | 256.4 MiB/s | ETA 1m 5.6s\n2026-10-14 13:54:37.368  INFO    loading weights 34.3% | 7.37 GiB/21.5 GiB | 246.6 MiB/s | ETA 58.6s",
+  "tuning": {
+    "budget": "fast",
+    "maxLaunches": 24,
+    "estimateSeconds": 1319,
+    "limitSeconds": 1978,
+    "stoppedBy": "budget",
+    "dimensions": [
+      {"key":"kv","values":["bf16","int8","rk8v4","nvfp4"]},
+      {"key":"spec","values":["mtp","off"]},
+      {"key":"draft","values":[3,2,4]},
+      {"key":"kv8","values":["int8","fp8"]}
+    ],
+    "capacity": [
+      {"kvType":"bf16","predictedMax":163584,"measuredMax":65536,"inferred":false,"bound":"found","failedAt":120832},
+      {"kvType":"int8","predictedMax":262144,"measuredMax":131072,"inferred":false,"bound":"found","failedAt":241664},
+      {"kvType":"rk8v4","predictedMax":262144,"measuredMax":262144,"inferred":false,"bound":"model"},
+      {"kvType":"nvfp4","predictedMax":262144,"measuredMax":262144,"inferred":true,"skipped":"no-gain","bound":"model"}
+    ],
+    "depths": [1024,65536],
+    "attempts": [
+      {
+        "stage": "reference",
+        "params": {
+          "contextSize": 4096,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":4096,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 4096,
+        "outcome": "ok",
+        "loadMs": 93854.1051,
+        "vramPeakMiB": 23202,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":101.67960000000312,"mean":101.67960000000312,"min":101.67960000000312,"max":101.67960000000312,"stddev":0,"cv":0,"values":[101.67960000000312]},
+            "prefillTps": {"n":1,"median":727.7762697728722,"mean":727.7762697728722,"min":727.7762697728722,"max":727.7762697728722,"stddev":0,"cv":0,"values":[727.7762697728722]},
+            "prefillTpsEngine": {"n":1,"median":995.0377199974614,"mean":995.0377199974614,"min":995.0377199974614,"max":995.0377199974614,"stddev":0,"cv":0,"values":[995.0377199974614]},
+            "decodeTps": {"n":1,"median":94.51219512195122,"mean":94.51219512195122,"min":94.51219512195122,"max":94.51219512195122,"stddev":0,"cv":0,"values":[94.51219512195122]},
+            "decodeTpsEngine": {"n":1,"median":97.66972131568782,"mean":97.66972131568782,"min":97.66972131568782,"max":97.66972131568782,"stddev":0,"cv":0,"values":[97.66972131568782]},
+            "itlP50Ms": 23.386399999995774,
+            "itlP95Ms": 24.415875000006782,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.425,
+            "totalMs": {"n":1,"median":429.83750000000873,"mean":429.83750000000873,"min":429.83750000000873,"max":429.83750000000873,"stddev":0,"cv":0,"values":[429.83750000000873]},
+            "promptTokensReported": 74
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","4096","--max-concurrency","1","--kv-capacity","4096","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 4096 --max-concurrency 1 --kv-capacity 4096 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 4096 --max-concurrency 1 --kv-capacity 4096 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 1.200700000001234,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 155648,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":155648,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 155648,
+        "outcome": "oom",
+        "error": {
+          "code": "ENGINE_OOM",
+          "message": "NInfer cannot reserve its runtime memory",
+          "params": {"needMiB":11170,"availableMiB":8921,"reason":"ninfer-reservation","estimatedMaxModelLen":120832},
+          "detail": "2026-10-14 13:55:40.942  INFO  build 0.12.0-rtx3090+v0.6.0-rtx3090-1719-ge408e428\n2026-10-14 13:55:41.016  INFO  starting engine\n2026-10-14 13:55:41.174  INFO  engine | device profile nvidia-geforce-rtx-5090-sm120: 61 routed keys (built in: RTX 5090 at 575 W, 2026-09-25; unified routes and two-stage GDN at 450 W, 2026-09-27)\n2026-10-14 13:55:42.089  INFO  loading weights | 21.5 GiB\n2026-10-14 13:55:52.290  INFO    loading weights 12.2% | 2.62 GiB/21.5 GiB | 285.7 MiB/s | ETA 1m 7.6s\n2026-10-14 13:56:02.524  INFO    loading weights 25.0% | 5.37 GiB/21.5 GiB | 251.8 MiB/s | ETA 1m 5.5s\n2026-10-14 13:56:12.565  INFO    loading weights 37.8% | 8.12 GiB/21.5 GiB | 295.1 MiB/s | ETA 46.4s\n2026-10-14 13:56:22.600  INFO    loading weights 49.2% | 10.6 GiB/21.5 GiB | 264.0 MiB/s | ETA 42.4s\n2026-10-14 13:56:32.862  INFO    loading weights 59.6% | 12.8 GiB/21.5 GiB | 223.4 MiB/s | ETA 39.8s\n2026-10-14 13:56:43.160  INFO    loading weights 70.4% | 15.1 GiB/21.5 GiB | 206.9 MiB/s | ETA 31.5s\n2026-10-14 13:56:53.744  INFO    loading weights 73.0% | 15.7 GiB/21.5 GiB | 107.6 MiB/s | ETA 55.2s\n2026-10-14 13:57:03.860  INFO    loading weights 79.7% | 17.1 GiB/21.5 GiB | 227.1 MiB/s | ETA 19.7s\n2026-10-14 13:57:13.972  INFO    loading weights 89.3% | 19.2 GiB/21.5 GiB | 232.6 MiB/s | ETA 10.1s\n2026-10-14 13:57:24.037  INFO    loading weights 98.6% | 21.2 GiB/21.5 GiB | 202.2 MiB/s | ETA 1.5s\n2026-10-14 13:57:25.348  INFO  weights ready | 21.5 GiB | 1m 43.2s | 213.1 MiB/s\n2026-10-14 13:57:25.377  ERROR startup failed | finalizing target | 26.1 ms\n2026-10-14 13:57:25.620  ERROR requested Engine runtime reservation requires 11712728576 bytes, but only 9354346496 bytes are available for runtime capacity"
+        },
+        "loadMs": 105257.01179999998,
+        "points": [],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","155648","--max-concurrency","1","--kv-capacity","155648","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 155648 --max-concurrency 1 --kv-capacity 155648 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 155648 --max-concurrency 1 --kv-capacity 155648 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 95320.7182,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 120832,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":120832,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 120832,
+        "outcome": "spill",
+        "spill": "decode-collapse",
+        "loadMs": 120132.57340000002,
+        "vramPeakMiB": 30300,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":3951.682299999986,"mean":3951.682299999986,"min":3951.682299999986,"max":3951.682299999986,"stddev":0,"cv":0,"values":[3951.682299999986]},
+            "prefillTps": {"n":1,"median":240.9100549403993,"mean":240.9100549403993,"min":240.9100549403993,"max":240.9100549403993,"stddev":0,"cv":0,"values":[240.9100549403993]},
+            "prefillTpsEngine": {"n":1,"median":242.76255538177622,"mean":242.76255538177622,"min":242.76255538177622,"max":242.76255538177622,"stddev":0,"cv":0,"values":[242.76255538177622]},
+            "decodeTps": {"n":1,"median":19.232829720653022,"mean":19.232829720653022,"min":19.232829720653022,"max":19.232829720653022,"stddev":0,"cv":0,"values":[19.232829720653022]},
+            "decodeTpsEngine": {"n":1,"median":19.85317799358975,"mean":19.85317799358975,"min":19.85317799358975,"max":19.85317799358975,"stddev":0,"cv":0,"values":[19.85317799358975]},
+            "itlP50Ms": 103.1015999999945,
+            "itlP95Ms": 147.39249000000999,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.37209302325581395,
+            "totalMs": {"n":1,"median":5564.428799999994,"mean":5564.428799999994,"min":5564.428799999994,"max":5564.428799999994,"stddev":0,"cv":0,"values":[5564.428799999994]},
+            "promptTokensReported": 952
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","120832","--max-concurrency","1","--kv-capacity","120832","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 120832 --max-concurrency 1 --kv-capacity 120832 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 120832 --max-concurrency 1 --kv-capacity 120832 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 200840.3196,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 16384,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":16384,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 16384,
+        "outcome": "ok",
+        "loadMs": 101318.4891,
+        "vramPeakMiB": 23736,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":423.64379999996163,"mean":423.64379999996163,"min":423.64379999996163,"max":423.64379999996163,"stddev":0,"cv":0,"values":[423.64379999996163]},
+            "prefillTps": {"n":1,"median":2502.1020017290375,"mean":2502.1020017290375,"min":2502.1020017290375,"max":2502.1020017290375,"stddev":0,"cv":0,"values":[2502.1020017290375]},
+            "prefillTpsEngine": {"n":1,"median":2726.2054225259753,"mean":2726.2054225259753,"min":2726.2054225259753,"max":2726.2054225259753,"stddev":0,"cv":0,"values":[2726.2054225259753]},
+            "decodeTps": {"n":1,"median":82.36512246232029,"mean":82.36512246232029,"min":82.36512246232029,"max":82.36512246232029,"stddev":0,"cv":0,"values":[82.36512246232029]},
+            "decodeTpsEngine": {"n":1,"median":84.87016110555246,"mean":84.87016110555246,"min":84.87016110555246,"max":84.87016110555246,"stddev":0,"cv":0,"values":[84.87016110555246]},
+            "itlP50Ms": 25.17249999998603,
+            "itlP95Ms": 26.480510000011417,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.4,
+            "totalMs": {"n":1,"median":800.4244999999646,"mean":800.4244999999646,"min":800.4244999999646,"max":800.4244999999646,"stddev":0,"cv":0,"values":[800.4244999999646]},
+            "promptTokensReported": 1060
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","16384","--max-concurrency","1","--kv-capacity","16384","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 16384 --max-concurrency 1 --kv-capacity 16384 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 16384 --max-concurrency 1 --kv-capacity 16384 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 327529.1148,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 32768,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":32768,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 32768,
+        "outcome": "ok",
+        "loadMs": 97441.7168,
+        "vramPeakMiB": 25239,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":362.1872999999905,"mean":362.1872999999905,"min":362.1872999999905,"max":362.1872999999905,"stddev":0,"cv":0,"values":[362.1872999999905]},
+            "prefillTps": {"n":1,"median":2700.2603349151823,"mean":2700.2603349151823,"min":2700.2603349151823,"max":2700.2603349151823,"stddev":0,"cv":0,"values":[2700.2603349151823]},
+            "prefillTpsEngine": {"n":1,"median":2990.6819524233506,"mean":2990.6819524233506,"min":2990.6819524233506,"max":2990.6819524233506,"stddev":0,"cv":0,"values":[2990.6819524233506]},
+            "decodeTps": {"n":1,"median":70.29853064732637,"mean":70.29853064732637,"min":70.29853064732637,"max":70.29853064732637,"stddev":0,"cv":0,"values":[70.29853064732637]},
+            "decodeTpsEngine": {"n":1,"median":72.62071008757263,"mean":72.62071008757263,"min":72.62071008757263,"max":72.62071008757263,"stddev":0,"cv":0,"values":[72.62071008757263]},
+            "itlP50Ms": 22.92070000001695,
+            "itlP95Ms": 24.62939999999944,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.23076923076923078,
+            "totalMs": {"n":1,"median":803.4411000000546,"mean":803.4411000000546,"min":803.4411000000546,"max":803.4411000000546,"stddev":0,"cv":0,"values":[803.4411000000546]},
+            "promptTokensReported": 978
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","32768","--max-concurrency","1","--kv-capacity","32768","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 32768 --max-concurrency 1 --kv-capacity 32768 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 32768 --max-concurrency 1 --kv-capacity 32768 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 430465.6475,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 65536,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":65536,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "contextSize": 65536,
+        "outcome": "ok",
+        "loadMs": 90324.70090000005,
+        "vramPeakMiB": 27178,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":410.5540000000037,"mean":410.5540000000037,"min":410.5540000000037,"max":410.5540000000037,"stddev":0,"cv":0,"values":[410.5540000000037]},
+            "prefillTps": {"n":1,"median":2564.827038586862,"mean":2564.827038586862,"min":2564.827038586862,"max":2564.827038586862,"stddev":0,"cv":0,"values":[2564.827038586862]},
+            "prefillTpsEngine": {"n":1,"median":2803.333451527693,"mean":2803.333451527693,"min":2803.333451527693,"max":2803.333451527693,"stddev":0,"cv":0,"values":[2803.333451527693]},
+            "decodeTps": {"n":1,"median":71.03496570156581,"mean":71.03496570156581,"min":71.03496570156581,"max":71.03496570156581,"stddev":0,"cv":0,"values":[71.03496570156581]},
+            "decodeTpsEngine": {"n":1,"median":73.22775296413415,"mean":73.22775296413415,"min":73.22775296413415,"max":73.22775296413415,"stddev":0,"cv":0,"values":[73.22775296413415]},
+            "itlP50Ms": 25.493799999938346,
+            "itlP95Ms": 27.457380000012925,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2916666666666667,
+            "totalMs": {"n":1,"median":847.2750000000233,"mean":847.2750000000233,"min":847.2750000000233,"max":847.2750000000233,"stddev":0,"cv":0,"values":[847.2750000000233]},
+            "promptTokensReported": 1053
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","65536","--max-concurrency","1","--kv-capacity","65536","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 65536 --max-concurrency 1 --kv-capacity 65536 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 65536 --max-concurrency 1 --kv-capacity 65536 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "combination": 0,
+        "atMs": 529655.3494,
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"int8","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "int8",
+        "contextSize": 262144,
+        "outcome": "oom",
+        "error": {
+          "code": "ENGINE_OOM",
+          "message": "NInfer cannot reserve its runtime memory",
+          "params": {"needMiB":9592,"availableMiB":8921,"reason":"ninfer-reservation","estimatedMaxModelLen":241664},
+          "detail": "2026-10-14 14:04:27.127  INFO  build 0.12.0-rtx3090+v0.6.0-rtx3090-1719-ge408e428\n2026-10-14 14:04:27.208  INFO  starting engine\n2026-10-14 14:04:27.375  INFO  engine | device profile nvidia-geforce-rtx-5090-sm120: 61 routed keys (built in: RTX 5090 at 575 W, 2026-09-25; unified routes and two-stage GDN at 450 W, 2026-09-27)\n2026-10-14 14:04:28.319  INFO  loading weights | 21.5 GiB\n2026-10-14 14:04:38.375  INFO    loading weights 9.6% | 2.06 GiB/21.5 GiB | 250.1 MiB/s | ETA 1m 19.5s\n2026-10-14 14:04:48.455  INFO    loading weights 20.7% | 4.44 GiB/21.5 GiB | 242.7 MiB/s | ETA 1m 11.9s\n2026-10-14 14:04:58.642  INFO    loading weights 28.8% | 6.19 GiB/21.5 GiB | 210.7 MiB/s | ETA 1m 14.3s\n2026-10-14 14:05:08.681  INFO    loading weights 39.0% | 8.37 GiB/21.5 GiB | 193.2 MiB/s | ETA 1m 9.5s\n2026-10-14 14:05:18.751  INFO    loading weights 49.2% | 10.6 GiB/21.5 GiB | 236.7 MiB/s | ETA 47.3s\n2026-10-14 14:05:28.935  INFO    loading weights 57.3% | 12.3 GiB/21.5 GiB | 224.8 MiB/s | ETA 41.8s\n2026-10-14 14:05:39.036  INFO    loading weights 68.1% | 14.6 GiB/21.5 GiB | 219.4 MiB/s | ETA 32.0s\n2026-10-14 14:05:49.079  INFO    loading weights 78.5% | 16.9 GiB/21.5 GiB | 235.4 MiB/s | ETA 20.1s\n2026-10-14 14:05:59.134  INFO    loading weights 87.3% | 18.7 GiB/21.5 GiB | 209.1 MiB/s | ETA 13.4s\n2026-10-14 14:06:09.345  INFO    loading weights 96.9% | 20.8 GiB/21.5 GiB | 196.2 MiB/s | ETA 3.5s\n2026-10-14 14:06:12.258  INFO  weights ready | 21.5 GiB | 1m 43.9s | 211.7 MiB/s\n2026-10-14 14:06:12.279  ERROR startup failed | finalizing target | 17.7 ms\n2026-10-14 14:06:12.483  ERROR requested Engine runtime reservation requires 10057534976 bytes, but only 9354346496 bytes are available for runtime capacity"
+        },
+        "loadMs": 105876.92759999994,
+        "points": [],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","int8","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 621694.4774,
+        "variant": {"kv":"int8","spec":"mtp","draft":3,"lmhead":false,"kv8":"int8","vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 241664,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":241664,"kvDtype":"int8","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "int8",
+        "contextSize": 241664,
+        "outcome": "spill",
+        "spill": "decode-collapse",
+        "loadMs": 102924.3776,
+        "vramPeakMiB": 30194,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":18259.036300000036,"mean":18259.036300000036,"min":18259.036300000036,"max":18259.036300000036,"stddev":0,"cv":0,"values":[18259.036300000036]},
+            "prefillTps": {"n":1,"median":52.79577652189662,"mean":52.79577652189662,"min":52.79577652189662,"max":52.79577652189662,"stddev":0,"cv":0,"values":[52.79577652189662]},
+            "prefillTpsEngine": {"n":1,"median":52.959190551857624,"mean":52.959190551857624,"min":52.959190551857624,"max":52.959190551857624,"stddev":0,"cv":0,"values":[52.959190551857624]},
+            "decodeTps": {"n":1,"median":4.945650097329561,"mean":4.945650097329561,"min":4.945650097329561,"max":4.945650097329561,"stddev":0,"cv":0,"values":[4.945650097329561]},
+            "decodeTpsEngine": {"n":1,"median":5.103204608158421,"mean":5.103204608158421,"min":5.103204608158421,"max":5.103204608158421,"stddev":0,"cv":0,"values":[5.103204608158421]},
+            "itlP50Ms": 347.67949999996927,
+            "itlP95Ms": 417.50237500000515,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.26,
+            "totalMs": {"n":1,"median":24528.554200000013,"mean":24528.554200000013,"min":24528.554200000013,"max":24528.554200000013,"stddev":0,"cv":0,"values":[24528.554200000013]},
+            "promptTokensReported": 964
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","241664","--max-concurrency","1","--kv-capacity","241664","--kv-dtype","int8","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 241664 --max-concurrency 1 --kv-capacity 241664 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 241664 --max-concurrency 1 --kv-capacity 241664 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 728035.9324,
+        "variant": {"kv":"int8","spec":"mtp","draft":3,"lmhead":false,"kv8":"int8","vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 131072,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":131072,"kvDtype":"int8","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "int8",
+        "contextSize": 131072,
+        "outcome": "ok",
+        "loadMs": 95545.19759999996,
+        "vramPeakMiB": 26847,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":384.50540000002366,"mean":384.50540000002366,"min":384.50540000002366,"max":384.50540000002366,"stddev":0,"cv":0,"values":[384.50540000002366]},
+            "prefillTps": {"n":1,"median":2691.7697384742487,"mean":2691.7697384742487,"min":2691.7697384742487,"max":2691.7697384742487,"stddev":0,"cv":0,"values":[2691.7697384742487]},
+            "prefillTpsEngine": {"n":1,"median":2879.4025985748804,"mean":2879.4025985748804,"min":2879.4025985748804,"max":2879.4025985748804,"stddev":0,"cv":0,"values":[2879.4025985748804]},
+            "decodeTps": {"n":1,"median":59.60895372634652,"mean":59.60895372634652,"min":59.60895372634652,"max":59.60895372634652,"stddev":0,"cv":0,"values":[59.60895372634652]},
+            "decodeTpsEngine": {"n":1,"median":61.662191350069804,"mean":61.662191350069804,"min":61.662191350069804,"max":61.662191350069804,"stddev":0,"cv":0,"values":[61.662191350069804]},
+            "itlP50Ms": 24.2833999999566,
+            "itlP95Ms": 27.332700000028126,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.1724137931034483,
+            "totalMs": {"n":1,"median":904.812200000044,"mean":904.812200000044,"min":904.812200000044,"max":904.812200000044,"stddev":0,"cv":0,"values":[904.812200000044]},
+            "promptTokensReported": 1035
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","131072","--max-concurrency","1","--kv-capacity","131072","--kv-dtype","int8","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 131072 --max-concurrency 1 --kv-capacity 131072 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 131072 --max-concurrency 1 --kv-capacity 131072 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "combination": 1,
+        "atMs": 856390.1292,
+        "variant": {"kv":"int8","spec":"mtp","draft":3,"lmhead":false,"kv8":"int8","vision":false}
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 99289.95189999999,
+        "vramPeakMiB": 29319,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":378.69919999991544,"mean":378.69919999991544,"min":378.69919999991544,"max":378.69919999991544,"stddev":0,"cv":0,"values":[378.69919999991544]},
+            "prefillTps": {"n":1,"median":2651.1806732103587,"mean":2651.1806732103587,"min":2651.1806732103587,"max":2651.1806732103587,"stddev":0,"cv":0,"values":[2651.1806732103587]},
+            "prefillTpsEngine": {"n":1,"median":2886.142644311602,"mean":2886.142644311602,"min":2886.142644311602,"max":2886.142644311602,"stddev":0,"cv":0,"values":[2886.142644311602]},
+            "decodeTps": {"n":1,"median":75.82439461559876,"mean":75.82439461559876,"min":75.82439461559876,"max":75.82439461559876,"stddev":0,"cv":0,"values":[75.82439461559876]},
+            "decodeTpsEngine": {"n":1,"median":78.19890483802256,"mean":78.19890483802256,"min":78.19890483802256,"max":78.19890483802256,"stddev":0,"cv":0,"values":[78.19890483802256]},
+            "itlP50Ms": 23.618199999909848,
+            "itlP95Ms": 26.24565999996848,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.30434782608695654,
+            "totalMs": {"n":1,"median":787.8009999999776,"mean":787.8009999999776,"min":787.8009999999776,"max":787.8009999999776,"stddev":0,"cv":0,"values":[787.8009999999776]},
+            "promptTokensReported": 1004
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 953870.5753,
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 86013.07129999995,
+        "vramPeakMiB": 29331,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":367.23889999999665,"mean":367.23889999999665,"min":367.23889999999665,"max":367.23889999999665,"stddev":0,"cv":0,"values":[367.23889999999665]},
+            "prefillTps": {"n":1,"median":2788.375632320022,"mean":2788.375632320022,"min":2788.375632320022,"max":2788.375632320022,"stddev":0,"cv":0,"values":[2788.375632320022]},
+            "prefillTpsEngine": {"n":1,"median":3037.439728289626,"mean":3037.439728289626,"min":3037.439728289626,"max":3037.439728289626,"stddev":0,"cv":0,"values":[3037.439728289626]},
+            "decodeTps": {"n":1,"median":84.11850723840283,"mean":84.11850723840283,"min":84.11850723840283,"max":84.11850723840283,"stddev":0,"cv":0,"values":[84.11850723840283]},
+            "decodeTpsEngine": {"n":1,"median":86.90147602998894,"mean":86.90147602998894,"min":86.90147602998894,"max":86.90147602998894,"stddev":0,"cv":0,"values":[86.90147602998894]},
+            "itlP50Ms": 24.73010000004433,
+            "itlP95Ms": 25.531610000063665,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.37209302325581395,
+            "totalMs": {"n":1,"median":736.0119999998715,"mean":736.0119999998715,"min":736.0119999998715,"max":736.0119999998715,"stddev":0,"cv":0,"values":[736.0119999998715]},
+            "promptTokensReported": 1024
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":362.39124999998603,"mean":362.39124999998603,"min":345.39219999988563,"max":379.3903000000864,"stddev":24.040287057600345,"cv":0.06633793464274115,"values":[379.3903000000864,345.39219999988563]},
+            "prefillTps": {"n":2,"median":2744.918998346393,"mean":2744.918998346393,"min":2701.7032327915776,"max":2788.134763901208,"stddev":61.11632175595557,"cv":0.022265255110541896,"values":[2701.7032327915776,2788.134763901208]},
+            "prefillTpsEngine": {"n":2,"median":2949.5169449370533,"mean":2949.5169449370533,"min":2897.0043121329786,"max":3002.0295777411284,"stddev":74.26407750744099,"cv":0.025178386459151495,"values":[2897.0043121329786,3002.0295777411284]},
+            "decodeTps": {"n":2,"median":84.68013194173025,"mean":84.68013194173025,"min":78.04689069484311,"max":91.3133731886174,"stddev":9.38081973384042,"cv":0.1107794652504263,"values":[78.04689069484311,91.3133731886174]},
+            "decodeTpsEngine": {"n":2,"median":85.34834155652783,"mean":85.34834155652783,"min":78.6501476696462,"max":92.04653544340945,"stddev":9.472676638232551,"cv":0.11098840897756189,"values":[78.6501476696462,92.04653544340945]},
+            "itlP50Ms": 24.200249999994412,
+            "itlP95Ms": 25.911274999845773,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.3597854740478138,
+            "totalMs": {"n":2,"median":1871.559399999911,"mean":1871.559399999911,"min":1736.3199999998324,"max":2006.7987999999896,"stddev":191.25739364731112,"cv":0.10219146325108368,"values":[2006.7987999999896,1736.3199999998324]},
+            "promptTokensReported": 994
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":21926.648849999998,"mean":21926.648849999998,"min":21743.01879999996,"max":22110.278900000034,"stddev":259.69210716930064,"cv":0.011843675198424162,"values":[21743.01879999996,22110.278900000034]},
+            "prefillTps": {"n":2,"median":2982.747679666282,"mean":2982.747679666282,"min":2981.8710247024474,"max":2983.624334630116,"stddev":1.2397773393763403,"cv":0.0004156494187651334,"values":[2983.624334630116,2981.8710247024474]},
+            "prefillTpsEngine": {"n":2,"median":2993.68860887939,"mean":2993.68860887939,"min":2993.346864973326,"max":2994.030352785454,"stddev":0.483298866814121,"cv":0.00016143925770390377,"values":[2993.346864973326,2994.030352785454]},
+            "decodeTps": {"n":2,"median":81.2999535386883,"mean":81.2999535386883,"min":76.6385302685163,"max":85.96137680886028,"stddev":6.5922480086387685,"cv":0.08108550769960414,"values":[85.96137680886028,76.6385302685163]},
+            "decodeTpsEngine": {"n":2,"median":81.94263337251408,"mean":81.94263337251408,"min":77.26211907403108,"max":86.6231476709971,"stddev":6.619246799795867,"cv":0.08077903439720492,"values":[86.6231476709971,77.26211907403108]},
+            "itlP50Ms": 24.88219999987632,
+            "itlP95Ms": 26.90655999984592,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.354890913450012,
+            "totalMs": {"n":2,"median":23494.119749999838,"mean":23494.119749999838,"min":23220.65839999984,"max":23767.581099999836,"stddev":386.73274995485264,"cv":0.016460831649368575,"values":[23220.65839999984,23767.581099999836]},
+            "promptTokensReported": 65401.5
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "lost",
+        "atMs": 1055075.7225,
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"off","vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 84565.37910000002,
+        "vramPeakMiB": 28634,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":322.3930999999866,"mean":322.3930999999866,"min":322.3930999999866,"max":322.3930999999866,"stddev":0,"cv":0,"values":[322.3930999999866]},
+            "prefillTps": {"n":1,"median":3145.228604458477,"mean":3145.228604458477,"min":3145.228604458477,"max":3145.228604458477,"stddev":0,"cv":0,"values":[3145.228604458477]},
+            "prefillTpsEngine": {"n":1,"median":3181.3521810357556,"mean":3181.3521810357556,"min":3181.3521810357556,"max":3181.3521810357556,"stddev":0,"cv":0,"values":[3181.3521810357556]},
+            "decodeTps": {"n":1,"median":56.58306549162153,"mean":56.58306549162153,"min":56.58306549162153,"max":56.58306549162153,"stddev":0,"cv":0,"values":[56.58306549162153]},
+            "decodeTpsEngine": {"n":1,"median":58.40732280203429,"mean":58.40732280203429,"min":58.40732280203429,"max":58.40732280203429,"stddev":0,"cv":0,"values":[58.40732280203429]},
+            "itlP50Ms": 17.57799999997951,
+            "itlP95Ms": 18.39409999991767,
+            "itlPerChunk": true,
+            "totalMs": {"n":1,"median":870.6319999999832,"mean":870.6319999999832,"min":870.6319999999832,"max":870.6319999999832,"stddev":0,"cv":0,"values":[870.6319999999832]},
+            "promptTokensReported": 1014
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":331.18224999995437,"mean":331.18224999995437,"min":318.11470000003465,"max":344.2497999998741,"stddev":18.480306436875004,"cv":0.05580101722504014,"values":[344.2497999998741,318.11470000003465]},
+            "prefillTps": {"n":2,"median":3088.199683470012,"mean":3088.199683470012,"min":2992.0133577430597,"max":3184.386009196965,"stddev":136.0280063578926,"cv":0.044047671880157256,"values":[2992.0133577430597,3184.386009196965]},
+            "prefillTpsEngine": {"n":2,"median":3115.425829038535,"mean":3115.425829038535,"min":3014.8341460267584,"max":3216.0175120503113,"stddev":142.25812237718955,"cv":0.04566249693740661,"values":[3014.8341460267584,3216.0175120503113]},
+            "decodeTps": {"n":2,"median":56.43791896660179,"mean":56.43791896660179,"min":56.40758647394383,"max":56.468251459259754,"stddev":0.0428966224974722,"cv":0.0007600674029610675,"values":[56.468251459259754,56.40758647394383]},
+            "decodeTpsEngine": {"n":2,"median":56.8857931795628,"mean":56.8857931795628,"min":56.85330071882148,"max":56.91828564030413,"stddev":0.04595127865525536,"cv":0.0008077812769562322,"values":[56.91828564030413,56.85330071882148]},
+            "itlP50Ms": 17.612799999886192,
+            "itlP95Ms": 18.712529999902472,
+            "itlPerChunk": true,
+            "totalMs": {"n":2,"median":2581.811299999943,"mean":2581.811299999943,"min":2570.059699999867,"max":2593.562900000019,"stddev":16.619272099691138,"cv":0.006437059168379775,"values":[2593.562900000019,2570.059699999867]},
+            "promptTokensReported": 1021.5
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":21684.750549999997,"mean":21684.750549999997,"min":21573.444900000002,"max":21796.05619999999,"stddev":157.40995979874552,"cv":0.007259016396605288,"values":[21796.05619999999,21573.444900000002]},
+            "prefillTps": {"n":2,"median":3023.747488864945,"mean":3023.747488864945,"min":3003.8920527283294,"max":3043.6029250015604,"stddev":28.07982707123446,"cv":0.009286432539304092,"values":[3003.8920527283294,3043.6029250015604]},
+            "prefillTpsEngine": {"n":2,"median":3032.651101492861,"mean":3032.651101492861,"min":3012.9807832822403,"max":3052.3214197034813,"stddev":27.818030789653992,"cv":0.009172842459839911,"values":[3012.9807832822403,3052.3214197034813]},
+            "decodeTps": {"n":2,"median":52.409890029481744,"mean":52.409890029481744,"min":51.992587248983085,"max":52.82719280998041,"stddev":0.5901552517972112,"cv":0.011260379509768777,"values":[51.992587248983085,52.82719280998041]},
+            "decodeTpsEngine": {"n":2,"median":52.82307001777427,"mean":52.82307001777427,"min":52.397796139852225,"max":53.24834389569632,"stddev":0.6014280858803611,"cv":0.011385708662483805,"values":[52.397796139852225,53.24834389569632]},
+            "itlP50Ms": 18.89284999994561,
+            "itlP95Ms": 20.336235000018494,
+            "itlPerChunk": true,
+            "totalMs": {"n":2,"median":24108.359149999917,"mean":24108.359149999917,"min":23977.85409999988,"max":24238.864199999953,"stddev":184.56201166822999,"cv":0.007655519420459216,"values":[24238.864199999953,23977.85409999988]},
+            "promptTokensReported": 65567
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "lost",
+        "atMs": 1193308.3824,
+        "variant": {"kv":"rk8v4","spec":"off","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":2,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 104387.91399999987,
+        "vramPeakMiB": 29470,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":362.848300000187,"mean":362.848300000187,"min":362.848300000187,"max":362.848300000187,"stddev":0,"cv":0,"values":[362.848300000187]},
+            "prefillTps": {"n":1,"median":2791.80031985675,"mean":2791.80031985675,"min":2791.80031985675,"max":2791.80031985675,"stddev":0,"cv":0,"values":[2791.80031985675]},
+            "prefillTpsEngine": {"n":1,"median":3009.2091662852026,"mean":3009.2091662852026,"min":3009.2091662852026,"max":3009.2091662852026,"stddev":0,"cv":0,"values":[3009.2091662852026]},
+            "decodeTps": {"n":1,"median":72.49286354528289,"mean":72.49286354528289,"min":72.49286354528289,"max":72.49286354528289,"stddev":0,"cv":0,"values":[72.49286354528289]},
+            "decodeTpsEngine": {"n":1,"median":74.82056456217065,"mean":74.82056456217065,"min":74.82056456217065,"max":74.82056456217065,"stddev":0,"cv":0,"values":[74.82056456217065]},
+            "itlP50Ms": 21.697299999999814,
+            "itlP95Ms": 23.229364999849352,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2972972972972973,
+            "totalMs": {"n":1,"median":790.7909000001382,"mean":790.7909000001382,"min":790.7909000001382,"max":790.7909000001382,"stddev":0,"cv":0,"values":[790.7909000001382]},
+            "promptTokensReported": 1013
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":348.15984999993816,"mean":348.15984999993816,"min":343.88789999997243,"max":352.4317999999039,"stddev":6.041449627731274,"cv":0.017352516746926297,"values":[352.4317999999039,343.88789999997243]},
+            "prefillTps": {"n":2,"median":2926.9399995276226,"mean":2926.9399995276226,"min":2916.876399917034,"max":2937.0035991382106,"stddev":14.232079055586428,"cv":0.004862443049014785,"values":[2916.876399917034,2937.0035991382106]},
+            "prefillTpsEngine": {"n":2,"median":3217.179236246261,"mean":3217.179236246261,"min":3211.7567136773614,"max":3222.6017588151612,"stddev":7.668604959212465,"cv":0.002383642438324337,"values":[3222.6017588151612,3211.7567136773614]},
+            "decodeTps": {"n":2,"median":102.71318156243213,"mean":102.71318156243213,"min":86.05384897523012,"max":119.37251414963413,"stddev":23.559854084905133,"cv":0.22937517586858852,"values":[119.37251414963413,86.05384897523012]},
+            "decodeTpsEngine": {"n":2,"median":103.53898697465041,"mean":103.53898697465041,"min":86.76359228201297,"max":120.31438166728785,"stddev":23.723990688489508,"cv":0.22913099095993555,"values":[120.31438166728785,86.76359228201297]},
+            "itlP50Ms": 20.328850000048988,
+            "itlP95Ms": 21.534505000163335,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.4866307218309859,
+            "totalMs": {"n":2,"median":1618.2115499998908,"mean":1618.2115499998908,"min":1416.5209999999497,"max":1819.902099999832,"stddev":285.23351121240563,"cv":0.1762646615718599,"values":[1416.5209999999497,1819.902099999832]},
+            "promptTokensReported": 1019
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":21924.774600000004,"mean":21924.774600000004,"min":21665.307700000005,"max":22184.241500000004,"stddev":366.94160896690283,"cv":0.016736391395645308,"values":[21665.307700000005,22184.241500000004]},
+            "prefillTps": {"n":2,"median":2992.562042137246,"mean":2992.562042137246,"min":2956.9187659627664,"max":3028.2053183117255,"stddev":50.407204573358754,"cv":0.016844163584110235,"values":[3028.2053183117255,2956.9187659627664]},
+            "prefillTpsEngine": {"n":2,"median":3010.7548648322663,"mean":3010.7548648322663,"min":2970.986704805237,"max":3050.523024859295,"stddev":56.240671260848174,"cv":0.018679923735332542,"values":[3050.523024859295,2970.986704805237]},
+            "decodeTps": {"n":2,"median":95.20950045188815,"mean":95.20950045188815,"min":83.26378294246098,"max":107.1552179613153,"stddev":16.893795714109643,"cv":0.1774381299547572,"values":[107.1552179613153,83.26378294246098]},
+            "decodeTpsEngine": {"n":2,"median":95.9566542998754,"mean":95.9566542998754,"min":83.93273612691083,"max":107.98057247283997,"stddev":17.004388153070824,"cv":0.17720905628837566,"values":[107.98057247283997,83.93273612691083]},
+            "itlP50Ms": 22.105400000000373,
+            "itlP95Ms": 24.150799999944866,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.4402062772294834,
+            "totalMs": {"n":2,"median":23280.206349999993,"mean":23280.206349999993,"min":22850.69439999992,"max":23709.718300000066,"stddev":607.4216248914177,"cv":0.02609176292337365,"values":[22850.69439999992,23709.718300000066]},
+            "promptTokensReported": 65602
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","2","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 2 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 2 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "lost",
+        "atMs": 1332758.4331,
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":2,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":4,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 83459.04209999996,
+        "vramPeakMiB": 29567,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":334.1509000000078,"mean":334.1509000000078,"min":334.1509000000078,"max":334.1509000000078,"stddev":0,"cv":0,"values":[334.1509000000078]},
+            "prefillTps": {"n":1,"median":2977.6966035404266,"mean":2977.6966035404266,"min":2977.6966035404266,"max":2977.6966035404266,"stddev":0,"cv":0,"values":[2977.6966035404266]},
+            "prefillTpsEngine": {"n":1,"median":3278.15069075577,"mean":3278.15069075577,"min":3278.15069075577,"max":3278.15069075577,"stddev":0,"cv":0,"values":[3278.15069075577]},
+            "decodeTps": {"n":1,"median":85.66439508638875,"mean":85.66439508638875,"min":85.66439508638875,"max":85.66439508638875,"stddev":0,"cv":0,"values":[85.66439508638875]},
+            "decodeTpsEngine": {"n":1,"median":88.44999729964923,"mean":88.44999729964923,"min":88.44999729964923,"max":88.44999729964923,"stddev":0,"cv":0,"values":[88.44999729964923]},
+            "itlP50Ms": 23.28139999997802,
+            "itlP95Ms": 26.637960000010207,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2909090909090909,
+            "totalMs": {"n":1,"median":696.4812000000384,"mean":696.4812000000384,"min":696.4812000000384,"max":696.4812000000384,"stddev":0,"cv":0,"values":[696.4812000000384]},
+            "promptTokensReported": 995
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":347.14729999995325,"mean":347.14729999995325,"min":337.0586999999359,"max":357.23589999997057,"stddev":14.267434945381705,"cv":0.04109908083797174,"values":[337.0586999999359,357.23589999997057]},
+            "prefillTps": {"n":2,"median":2988.0044338259704,"mean":2988.0044338259704,"min":2916.405955402388,"max":3059.602912249553,"stddev":101.25553923190778,"cv":0.03388734570994455,"values":[2916.405955402388,3059.602912249553]},
+            "prefillTpsEngine": {"n":2,"median":3226.1696761577523,"mean":3226.1696761577523,"min":3207.8247689660484,"max":3244.5145833494557,"stddev":25.943616550983055,"cv":0.00804161564802783,"values":[3207.8247689660484,3244.5145833494557]},
+            "decodeTps": {"n":2,"median":84.93791034531856,"mean":84.93791034531856,"min":84.15405625863737,"max":85.72176443199976,"stddev":1.108537080306122,"cv":0.013051146134856851,"values":[84.15405625863737,85.72176443199976]},
+            "decodeTpsEngine": {"n":2,"median":85.61859842884314,"mean":85.61859842884314,"min":84.83979805657103,"max":86.39739880111527,"stddev":1.1013900488484514,"cv":0.012863911218586542,"values":[84.83979805657103,86.39739880111527]},
+            "itlP50Ms": 23.087300000013784,
+            "itlP95Ms": 27.30042499996489,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2545777988614801,
+            "totalMs": {"n":2,"median":1842.752850000048,"mean":1842.752850000048,"min":1839.1994000000414,"max":1846.3063000000548,"stddev":5.025337183224158,"cv":0.0027270814874734975,"values":[1846.3063000000548,1839.1994000000414]},
+            "promptTokensReported": 1038
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":20821.466850000084,"mean":20821.466850000084,"min":20468.743400000036,"max":21174.190300000133,"stddev":498.826286757097,"cv":0.02395730763594569,"values":[20468.743400000036,21174.190300000133]},
+            "prefillTps": {"n":2,"median":3138.299048330532,"mean":3138.299048330532,"min":3085.8795105850913,"max":3190.7185860759723,"stddev":74.13242121293032,"cv":0.023621847399267523,"values":[3190.7185860759723,3085.8795105850913]},
+            "prefillTpsEngine": {"n":2,"median":3149.9155049818,"mean":3149.9155049818,"min":3096.8989107799116,"max":3202.932099183689,"stddev":74.97678655114174,"cv":0.023802792942401466,"values":[3202.932099183689,3096.8989107799116]},
+            "decodeTps": {"n":2,"median":82.99206958589384,"mean":82.99206958589384,"min":82.89357313726268,"max":83.09056603452501,"stddev":0.13929501349978096,"cv":0.0016784135423399168,"values":[83.09056603452501,82.89357313726268]},
+            "decodeTpsEngine": {"n":2,"median":83.64511634230914,"mean":83.64511634230914,"min":83.54916770414388,"max":83.74106498047439,"stddev":0.13569186538453082,"cv":0.0016222329685002248,"values":[83.74106498047439,83.54916770414388]},
+            "itlP50Ms": 24.65385000000242,
+            "itlP95Ms": 25.19717000009259,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2674897119341564,
+            "totalMs": {"n":2,"median":22351.867600000114,"mean":22351.867600000114,"min":21997.292000000132,"max":22706.443200000096,"stddev":501.44562240655205,"cv":0.022434171111793338,"values":[21997.292000000132,22706.443200000096]},
+            "promptTokensReported": 65325.5
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "kept",
+        "combination": 2,
+        "atMs": 1488894.7524,
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":4,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":4,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "contextSize": 262144,
+        "outcome": "error",
+        "error": {
+          "code": "ENDPOINT_INVALID",
+          "message": "HTTP 400 from /v1/chat/completions: prepared prompt exceeds Engine max_context 262144",
+          "params": {"status":400,"path":"/v1/chat/completions"},
+          "detail": "{\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"prepared prompt exceeds Engine max_context 262144\",\"param\":\"messages\",\"type\":\"invalid_request_error\"}}"
+        },
+        "loadMs": 86988.43869999982,
+        "vramPeakMiB": 29603,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":373.8670000000857,"mean":373.8670000000857,"min":373.8670000000857,"max":373.8670000000857,"stddev":0,"cv":0,"values":[373.8670000000857]},
+            "prefillTps": {"n":1,"median":2966.2955008057565,"mean":2966.2955008057565,"min":2966.2955008057565,"max":2966.2955008057565,"stddev":0,"cv":0,"values":[2966.2955008057565]},
+            "prefillTpsEngine": {"n":1,"median":3239.44088033246,"mean":3239.44088033246,"min":3239.44088033246,"max":3239.44088033246,"stddev":0,"cv":0,"values":[3239.44088033246]},
+            "decodeTps": {"n":1,"median":74.73533445631891,"mean":74.73533445631891,"min":74.73533445631891,"max":74.73533445631891,"stddev":0,"cv":0,"values":[74.73533445631891]},
+            "decodeTpsEngine": {"n":1,"median":77.15754255859952,"mean":77.15754255859952,"min":77.15754255859952,"max":77.15754255859952,"stddev":0,"cv":0,"values":[77.15754255859952]},
+            "itlP50Ms": 22.99895000003744,
+            "itlP95Ms": 23.440770000068007,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.19402985074626866,
+            "totalMs": {"n":1,"median":788.9887000001036,"mean":788.9887000001036,"min":788.9887000001036,"max":788.9887000001036,"stddev":0,"cv":0,"values":[788.9887000001036]},
+            "promptTokensReported": 1109
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":1166.921800000011,"mean":1166.921800000011,"min":1131.9909999999218,"max":1201.8526000001002,"stddev":49.39961110466829,"cv":0.042333266123460736,"values":[1131.9909999999218,1201.8526000001002]},
+            "prefillTps": {"n":2,"median":3446.833808078175,"mean":3446.833808078175,"min":3427.208960566093,"max":3466.4586555902574,"stddev":27.753725511090497,"cv":0.008051947687772313,"values":[3466.4586555902574,3427.208960566093]},
+            "prefillTpsEngine": {"n":2,"median":3532.196734744756,"mean":3532.196734744756,"min":3492.4938853376357,"max":3571.899584151877,"stddev":56.14830809640679,"cv":0.01589614404659263,"values":[3571.899584151877,3492.4938853376357]},
+            "decodeTps": {"n":2,"median":86.70663222870343,"mean":86.70663222870343,"min":71.67247147844367,"max":101.7407929789632,"stddev":21.261514031914626,"cv":0.24521208453620688,"values":[71.67247147844367,101.7407929789632]},
+            "decodeTpsEngine": {"n":2,"median":87.39598407506332,"mean":87.39598407506332,"min":72.24665693213706,"max":102.54531121798958,"stddev":21.424383906353167,"cv":0.24514151460268507,"values":[72.24665693213706,102.54531121798958]},
+            "itlP50Ms": 23.68500000005588,
+            "itlP95Ms": 25.199609999917445,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.26904674273095325,
+            "totalMs": {"n":2,"median":2677.1587500000605,"mean":2677.1587500000605,"min":2450.2991000001784,"max":2904.0183999999426,"stddev":320.8279937850468,"cv":0.11983898742838449,"values":[2904.0183999999426,2450.2991000001784]},
+            "promptTokensReported": 4021.5
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":4654.7507500000065,"mean":4654.7507500000065,"min":4513.626299999887,"max":4795.875200000126,"stddev":199.5801111726126,"cv":0.04287664837319427,"values":[4513.626299999887,4795.875200000126]},
+            "prefillTps": {"n":2,"median":3493.3949750852635,"mean":3493.3949750852635,"min":3437.5373237401104,"max":3549.252626430416,"stddev":78.99464809462287,"cv":0.022612572771761902,"values":[3549.252626430416,3437.5373237401104]},
+            "prefillTpsEngine": {"n":2,"median":3519.3586888174345,"mean":3519.3586888174345,"min":3461.1809259802976,"max":3577.5364516545715,"stddev":82.27578123280448,"cv":0.023378060751304258,"values":[3577.5364516545715,3461.1809259802976]},
+            "decodeTps": {"n":2,"median":86.37350844316052,"mean":86.37350844316052,"min":85.69362477893067,"max":87.05339210739037,"stddev":0.961500698789767,"cv":0.011131893518282842,"values":[87.05339210739037,85.69362477893067]},
+            "decodeTpsEngine": {"n":2,"median":87.05778765170646,"mean":87.05778765170646,"min":86.36466568262543,"max":87.75090962078748,"stddev":0.9802224890531329,"cv":0.011259446345853921,"values":[87.75090962078748,86.36466568262543]},
+            "itlP50Ms": 23.659100000048056,
+            "itlP95Ms": 25.18513000002131,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.27127203511900677,
+            "totalMs": {"n":2,"median":6125.288300000015,"mean":6125.288300000015,"min":5972.590799999889,"max":6277.98580000014,"stddev":215.94687544064348,"cv":0.035254973294994614,"values":[5972.590799999889,6277.98580000014]},
+            "promptTokensReported": 16253
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "atMs": 1622024.8496,
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":4,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"nvfp4","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "nvfp4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 84528.56279999996,
+        "vramPeakMiB": 27670,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":324.17279999982566,"mean":324.17279999982566,"min":324.17279999982566,"max":324.17279999982566,"stddev":0,"cv":0,"values":[324.17279999982566]},
+            "prefillTps": {"n":1,"median":3078.6049909200797,"mean":3078.6049909200797,"min":3078.6049909200797,"max":3078.6049909200797,"stddev":0,"cv":0,"values":[3078.6049909200797]},
+            "prefillTpsEngine": {"n":1,"median":3346.870092605615,"mean":3346.870092605615,"min":3346.870092605615,"max":3346.870092605615,"stddev":0,"cv":0,"values":[3346.870092605615]},
+            "decodeTps": {"n":1,"median":88.64949078012997,"mean":88.64949078012997,"min":88.64949078012997,"max":88.64949078012997,"stddev":0,"cv":0,"values":[88.64949078012997]},
+            "decodeTpsEngine": {"n":1,"median":91.5340296147712,"mean":91.5340296147712,"min":91.5340296147712,"max":91.5340296147712,"stddev":0,"cv":0,"values":[91.5340296147712]},
+            "itlP50Ms": 22.7214999999851,
+            "itlP95Ms": 26.017309999978167,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.38095238095238093,
+            "totalMs": {"n":1,"median":674.5859999998938,"mean":674.5859999998938,"min":674.5859999998938,"max":674.5859999998938,"stddev":0,"cv":0,"values":[674.5859999998938]},
+            "promptTokensReported": 998
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":361.9612500000512,"mean":361.9612500000512,"min":320.9935000000987,"max":402.9290000000037,"stddev":57.93714766984319,"cv":0.16006450323020763,"values":[402.9290000000037,320.9935000000987]},
+            "prefillTps": {"n":2,"median":2814.552693909777,"mean":2814.552693909777,"min":2588.5453764806957,"max":3040.5600113388587,"stddev":319.6226135037682,"cv":0.11356071399742426,"values":[2588.5453764806957,3040.5600113388587]},
+            "prefillTpsEngine": {"n":2,"median":3068.9732177629867,"mean":3068.9732177629867,"min":2873.179638570916,"max":3264.7667969550575,"stddev":276.89393511899726,"cv":0.09022364011401467,"values":[2873.179638570916,3264.7667969550575]},
+            "decodeTps": {"n":2,"median":122.42007551633331,"mean":122.42007551633331,"min":91.79579757392884,"max":153.0443534587378,"stddev":43.30926920403163,"cv":0.3537758739435943,"values":[153.0443534587378,91.79579757392884]},
+            "decodeTpsEngine": {"n":2,"median":123.43507834452176,"mean":123.43507834452176,"min":92.52094481197634,"max":154.34921187706718,"stddev":43.719186910738614,"cv":0.3541877033424263,"values":[154.34921187706718,92.52094481197634]},
+            "itlP50Ms": 22.640200000139885,
+            "itlP95Ms": 25.959574999986216,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.48102174069024894,
+            "totalMs": {"n":2,"median":1468.7301999999909,"mean":1468.7301999999909,"min":1232.8455999998841,"max":1704.6148000000976,"stddev":333.5912004751035,"cv":0.2271289856197589,"values":[1232.8455999998841,1704.6148000000976]},
+            "promptTokensReported": 1009.5
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":21982.013750000042,"mean":21982.013750000042,"min":21971.942800000077,"max":21992.084700000007,"stddev":14.242474075931534,"cv":0.0006479148925075851,"values":[21992.084700000007,21971.942800000077]},
+            "prefillTps": {"n":2,"median":2983.283631112845,"mean":2983.283631112845,"min":2975.1613315676245,"max":2991.4059306580652,"stddev":11.486666174507452,"cv":0.0038503433112132943,"values":[2975.1613315676245,2991.4059306580652]},
+            "prefillTpsEngine": {"n":2,"median":2993.2658907315954,"mean":2993.2658907315954,"min":2985.9454395828034,"max":3000.586341880388,"stddev":10.352681297311696,"cv":0.003458657424777375,"values":[2985.9454395828034,3000.586341880388]},
+            "decodeTps": {"n":2,"median":74.67221403598136,"mean":74.67221403598136,"min":70.64536936847783,"max":78.69905870348488,"stddev":5.694818342353262,"cv":0.07626422245373857,"values":[78.69905870348488,70.64536936847783]},
+            "decodeTpsEngine": {"n":2,"median":75.26204030585431,"mean":75.26204030585431,"min":71.20102839783874,"max":79.32305221386989,"stddev":5.743138117274262,"cv":0.07630856264240192,"values":[79.32305221386989,71.20102839783874]},
+            "itlP50Ms": 23.979700000025332,
+            "itlP95Ms": 24.93343500003684,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.26840082766775053,
+            "totalMs": {"n":2,"median":23688.02025000006,"mean":23688.02025000006,"min":23606.16189999995,"max":23769.87860000017,"stddev":115.76518876364116,"cv":0.0048870774147384,"values":[23606.16189999995,23769.87860000017]},
+            "promptTokensReported": 65578.5
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","nvfp4","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "kept",
+        "combination": 3,
+        "atMs": 1728127.3256,
+        "variant": {"kv":"nvfp4","spec":"mtp","draft":3,"lmhead":false,"vision":false}
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"nvfp4","spec":"off","vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "nvfp4",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 79276.42109999992,
+        "vramPeakMiB": 27029,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":342.6169000000227,"mean":342.6169000000227,"min":342.6169000000227,"max":342.6169000000227,"stddev":0,"cv":0,"values":[342.6169000000227]},
+            "prefillTps": {"n":1,"median":3061.7287121561444,"mean":3061.7287121561444,"min":3061.7287121561444,"max":3061.7287121561444,"stddev":0,"cv":0,"values":[3061.7287121561444]},
+            "prefillTpsEngine": {"n":1,"median":3091.9258256603266,"mean":3091.9258256603266,"min":3091.9258256603266,"max":3091.9258256603266,"stddev":0,"cv":0,"values":[3091.9258256603266]},
+            "decodeTps": {"n":1,"median":55.59250763634624,"mean":55.59250763634624,"min":55.59250763634624,"max":55.59250763634624,"stddev":0,"cv":0,"values":[55.59250763634624]},
+            "decodeTpsEngine": {"n":1,"median":57.387305852983154,"mean":57.387305852983154,"min":57.387305852983154,"max":57.387305852983154,"stddev":0,"cv":0,"values":[57.387305852983154]},
+            "itlP50Ms": 17.692100000102073,
+            "itlP95Ms": 19.241900000022724,
+            "itlPerChunk": true,
+            "totalMs": {"n":1,"median":900.4352000001818,"mean":900.4352000001818,"min":900.4352000001818,"max":900.4352000001818,"stddev":0,"cv":0,"values":[900.4352000001818]},
+            "promptTokensReported": 1049
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":354.88930000015534,"mean":354.88930000015534,"min":345.54280000017025,"max":364.23580000014044,"stddev":13.217947060699059,"cv":0.03724526792071013,"values":[364.23580000014044,345.54280000017025]},
+            "prefillTps": {"n":2,"median":3068.3902433940284,"mean":3068.3902433940284,"min":3061.8493570101264,"max":3074.93112977793,"stddev":9.250210234055446,"cv":0.0030146785448722916,"values":[3074.93112977793,3061.8493570101264]},
+            "prefillTpsEngine": {"n":2,"median":3094.0012802526917,"mean":3094.0012802526917,"min":3086.89762103304,"max":3101.104939472343,"stddev":10.046091210907814,"cv":0.00324695767743423,"values":[3101.104939472343,3086.89762103304]},
+            "decodeTps": {"n":2,"median":54.277856036363076,"mean":54.277856036363076,"min":53.650362194865274,"max":54.90534987786088,"stddev":0.8874103009517854,"cv":0.016349398553201347,"values":[54.90534987786088,53.650362194865274]},
+            "decodeTpsEngine": {"n":2,"median":54.70347496620283,"mean":54.70347496620283,"min":54.07289341090883,"max":55.33405652149684,"stddev":0.8917769876791002,"cv":0.01630201716125095,"values":[55.33405652149684,54.07289341090883]},
+            "itlP50Ms": 18.442700000014156,
+            "itlP95Ms": 19.48076499995077,
+            "itlPerChunk": true,
+            "totalMs": {"n":2,"median":2695.25475000008,"mean":2695.25475000008,"min":2677.693800000008,"max":2712.815700000152,"stddev":24.834933658257484,"cv":0.009214317740561164,"values":[2677.693800000008,2712.815700000152]},
+            "promptTokensReported": 1089
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":22103.918199999956,"mean":22103.918199999956,"min":21924.215899999952,"max":22283.62049999996,"stddev":254.13742984964497,"cv":0.011497392794805288,"values":[21924.215899999952,22283.62049999996]},
+            "prefillTps": {"n":2,"median":2969.2545234557965,"mean":2969.2545234557965,"min":2946.110126045277,"max":2992.3989208663165,"stddev":32.73112071090983,"cv":0.011023346248140218,"values":[2992.3989208663165,2946.110126045277]},
+            "prefillTpsEngine": {"n":2,"median":2977.817978175193,"mean":2977.817978175193,"min":2952.895102868326,"max":3002.7408534820597,"stddev":35.24626827230468,"cv":0.01183627358375464,"values":[3002.7408534820597,2952.895102868326]},
+            "decodeTps": {"n":2,"median":51.54322306417419,"mean":51.54322306417419,"min":51.500603915544794,"max":51.58584221280359,"stddev":0.06027257800849042,"cv":0.0011693598969053157,"values":[51.500603915544794,51.58584221280359]},
+            "decodeTpsEngine": {"n":2,"median":51.946233226871854,"mean":51.946233226871854,"min":51.90079437904277,"max":51.99167207470094,"stddev":0.06426023485850056,"cv":0.0012370528307191803,"values":[51.90079437904277,51.99167207470094]},
+            "itlP50Ms": 19.339699999894947,
+            "itlP95Ms": 20.492569999967237,
+            "itlPerChunk": true,
+            "totalMs": {"n":2,"median":24568.109850000008,"mean":24568.109850000008,"min":24390.354300000006,"max":24745.86540000001,"stddev":251.3843095970912,"cv":0.010232138782019127,"values":[24390.354300000006,24745.86540000001]},
+            "promptTokensReported": 65628
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","nvfp4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "screen": "lost",
+        "atMs": 1864784.8763,
+        "variant": {"kv":"nvfp4","spec":"off","draft":3,"lmhead":false,"vision":false}
+      }
+    ],
+    "combinations": [
+      {
+        "params": {
+          "contextSize": 65536,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":65536,"kvDtype":"bf16","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "bf16",
+        "maxContext": 65536,
+        "vramPeakMiB": 27178,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":410.5540000000037,"mean":410.5540000000037,"min":410.5540000000037,"max":410.5540000000037,"stddev":0,"cv":0,"values":[410.5540000000037]},
+            "prefillTps": {"n":1,"median":2564.827038586862,"mean":2564.827038586862,"min":2564.827038586862,"max":2564.827038586862,"stddev":0,"cv":0,"values":[2564.827038586862]},
+            "prefillTpsEngine": {"n":1,"median":2803.333451527693,"mean":2803.333451527693,"min":2803.333451527693,"max":2803.333451527693,"stddev":0,"cv":0,"values":[2803.333451527693]},
+            "decodeTps": {"n":1,"median":71.03496570156581,"mean":71.03496570156581,"min":71.03496570156581,"max":71.03496570156581,"stddev":0,"cv":0,"values":[71.03496570156581]},
+            "decodeTpsEngine": {"n":1,"median":73.22775296413415,"mean":73.22775296413415,"min":73.22775296413415,"max":73.22775296413415,"stddev":0,"cv":0,"values":[73.22775296413415]},
+            "itlP50Ms": 25.493799999938346,
+            "itlP95Ms": 27.457380000012925,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2916666666666667,
+            "totalMs": {"n":1,"median":847.2750000000233,"mean":847.2750000000233,"min":847.2750000000233,"max":847.2750000000233,"stddev":0,"cv":0,"values":[847.2750000000233]},
+            "promptTokensReported": 1053
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","65536","--max-concurrency","1","--kv-capacity","65536","--kv-dtype","bf16","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 65536 --max-concurrency 1 --kv-capacity 65536 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 65536 --max-concurrency 1 --kv-capacity 65536 --kv-dtype bf16 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {"kv":"bf16","spec":"mtp","draft":3,"lmhead":false,"vision":false},
+        "partial": "budget"
+      },
+      {
+        "params": {
+          "contextSize": 131072,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":131072,"kvDtype":"int8","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "int8",
+        "maxContext": 131072,
+        "vramPeakMiB": 26847,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {"n":1,"median":384.50540000002366,"mean":384.50540000002366,"min":384.50540000002366,"max":384.50540000002366,"stddev":0,"cv":0,"values":[384.50540000002366]},
+            "prefillTps": {"n":1,"median":2691.7697384742487,"mean":2691.7697384742487,"min":2691.7697384742487,"max":2691.7697384742487,"stddev":0,"cv":0,"values":[2691.7697384742487]},
+            "prefillTpsEngine": {"n":1,"median":2879.4025985748804,"mean":2879.4025985748804,"min":2879.4025985748804,"max":2879.4025985748804,"stddev":0,"cv":0,"values":[2879.4025985748804]},
+            "decodeTps": {"n":1,"median":59.60895372634652,"mean":59.60895372634652,"min":59.60895372634652,"max":59.60895372634652,"stddev":0,"cv":0,"values":[59.60895372634652]},
+            "decodeTpsEngine": {"n":1,"median":61.662191350069804,"mean":61.662191350069804,"min":61.662191350069804,"max":61.662191350069804,"stddev":0,"cv":0,"values":[61.662191350069804]},
+            "itlP50Ms": 24.2833999999566,
+            "itlP95Ms": 27.332700000028126,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.1724137931034483,
+            "totalMs": {"n":1,"median":904.812200000044,"mean":904.812200000044,"min":904.812200000044,"max":904.812200000044,"stddev":0,"cv":0,"values":[904.812200000044]},
+            "promptTokensReported": 1035
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","131072","--max-concurrency","1","--kv-capacity","131072","--kv-dtype","int8","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 131072 --max-concurrency 1 --kv-capacity 131072 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 131072 --max-concurrency 1 --kv-capacity 131072 --kv-dtype int8 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {"kv":"int8","spec":"mtp","draft":3,"lmhead":false,"kv8":"int8","vision":false},
+        "partial": "budget"
+      },
+      {
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"rk8v4","spec":"mtp","draftTokens":4,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "rk8v4",
+        "maxContext": 262144,
+        "vramPeakMiB": 29567,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":347.14729999995325,"mean":347.14729999995325,"min":337.0586999999359,"max":357.23589999997057,"stddev":14.267434945381705,"cv":0.04109908083797174,"values":[337.0586999999359,357.23589999997057]},
+            "prefillTps": {"n":2,"median":2988.0044338259704,"mean":2988.0044338259704,"min":2916.405955402388,"max":3059.602912249553,"stddev":101.25553923190778,"cv":0.03388734570994455,"values":[2916.405955402388,3059.602912249553]},
+            "prefillTpsEngine": {"n":2,"median":3226.1696761577523,"mean":3226.1696761577523,"min":3207.8247689660484,"max":3244.5145833494557,"stddev":25.943616550983055,"cv":0.00804161564802783,"values":[3207.8247689660484,3244.5145833494557]},
+            "decodeTps": {"n":2,"median":84.93791034531856,"mean":84.93791034531856,"min":84.15405625863737,"max":85.72176443199976,"stddev":1.108537080306122,"cv":0.013051146134856851,"values":[84.15405625863737,85.72176443199976]},
+            "decodeTpsEngine": {"n":2,"median":85.61859842884314,"mean":85.61859842884314,"min":84.83979805657103,"max":86.39739880111527,"stddev":1.1013900488484514,"cv":0.012863911218586542,"values":[84.83979805657103,86.39739880111527]},
+            "itlP50Ms": 23.087300000013784,
+            "itlP95Ms": 27.30042499996489,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2545777988614801,
+            "totalMs": {"n":2,"median":1842.752850000048,"mean":1842.752850000048,"min":1839.1994000000414,"max":1846.3063000000548,"stddev":5.025337183224158,"cv":0.0027270814874734975,"values":[1846.3063000000548,1839.1994000000414]},
+            "promptTokensReported": 1038
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":20821.466850000084,"mean":20821.466850000084,"min":20468.743400000036,"max":21174.190300000133,"stddev":498.826286757097,"cv":0.02395730763594569,"values":[20468.743400000036,21174.190300000133]},
+            "prefillTps": {"n":2,"median":3138.299048330532,"mean":3138.299048330532,"min":3085.8795105850913,"max":3190.7185860759723,"stddev":74.13242121293032,"cv":0.023621847399267523,"values":[3190.7185860759723,3085.8795105850913]},
+            "prefillTpsEngine": {"n":2,"median":3149.9155049818,"mean":3149.9155049818,"min":3096.8989107799116,"max":3202.932099183689,"stddev":74.97678655114174,"cv":0.023802792942401466,"values":[3202.932099183689,3096.8989107799116]},
+            "decodeTps": {"n":2,"median":82.99206958589384,"mean":82.99206958589384,"min":82.89357313726268,"max":83.09056603452501,"stddev":0.13929501349978096,"cv":0.0016784135423399168,"values":[83.09056603452501,82.89357313726268]},
+            "decodeTpsEngine": {"n":2,"median":83.64511634230914,"mean":83.64511634230914,"min":83.54916770414388,"max":83.74106498047439,"stddev":0.13569186538453082,"cv":0.0016222329685002248,"values":[83.74106498047439,83.54916770414388]},
+            "itlP50Ms": 24.65385000000242,
+            "itlP95Ms": 25.19717000009259,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.2674897119341564,
+            "totalMs": {"n":2,"median":22351.867600000114,"mean":22351.867600000114,"min":21997.292000000132,"max":22706.443200000096,"stddev":501.44562240655205,"cv":0.022434171111793338,"values":[21997.292000000132,22706.443200000096]},
+            "promptTokensReported": 65325.5
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","rk8v4","--spec","mtp","--draft-tokens","4","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype rk8v4 --spec mtp --draft-tokens 4 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {"kv":"rk8v4","spec":"mtp","draft":4,"lmhead":false,"vision":false},
+        "partial": "budget"
+      },
+      {
+        "params": {
+          "contextSize": 262144,
+          "parallel": 1,
+          "ninfer": {"kvCapacity":262144,"kvDtype":"nvfp4","spec":"mtp","draftTokens":3,"lmHeadDraft":false,"vision":false,"deviceStateSlots":2,"hostStateSlots":8,"hostKvMib":8192,"prefixReuse":false,"thinking":false,"preserveThinking":true},
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "nvfp4",
+        "maxContext": 262144,
+        "vramPeakMiB": 27670,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":361.9612500000512,"mean":361.9612500000512,"min":320.9935000000987,"max":402.9290000000037,"stddev":57.93714766984319,"cv":0.16006450323020763,"values":[402.9290000000037,320.9935000000987]},
+            "prefillTps": {"n":2,"median":2814.552693909777,"mean":2814.552693909777,"min":2588.5453764806957,"max":3040.5600113388587,"stddev":319.6226135037682,"cv":0.11356071399742426,"values":[2588.5453764806957,3040.5600113388587]},
+            "prefillTpsEngine": {"n":2,"median":3068.9732177629867,"mean":3068.9732177629867,"min":2873.179638570916,"max":3264.7667969550575,"stddev":276.89393511899726,"cv":0.09022364011401467,"values":[2873.179638570916,3264.7667969550575]},
+            "decodeTps": {"n":2,"median":122.42007551633331,"mean":122.42007551633331,"min":91.79579757392884,"max":153.0443534587378,"stddev":43.30926920403163,"cv":0.3537758739435943,"values":[153.0443534587378,91.79579757392884]},
+            "decodeTpsEngine": {"n":2,"median":123.43507834452176,"mean":123.43507834452176,"min":92.52094481197634,"max":154.34921187706718,"stddev":43.719186910738614,"cv":0.3541877033424263,"values":[154.34921187706718,92.52094481197634]},
+            "itlP50Ms": 22.640200000139885,
+            "itlP95Ms": 25.959574999986216,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.48102174069024894,
+            "totalMs": {"n":2,"median":1468.7301999999909,"mean":1468.7301999999909,"min":1232.8455999998841,"max":1704.6148000000976,"stddev":333.5912004751035,"cv":0.2271289856197589,"values":[1232.8455999998841,1704.6148000000976]},
+            "promptTokensReported": 1009.5
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {"n":2,"median":21982.013750000042,"mean":21982.013750000042,"min":21971.942800000077,"max":21992.084700000007,"stddev":14.242474075931534,"cv":0.0006479148925075851,"values":[21992.084700000007,21971.942800000077]},
+            "prefillTps": {"n":2,"median":2983.283631112845,"mean":2983.283631112845,"min":2975.1613315676245,"max":2991.4059306580652,"stddev":11.486666174507452,"cv":0.0038503433112132943,"values":[2975.1613315676245,2991.4059306580652]},
+            "prefillTpsEngine": {"n":2,"median":2993.2658907315954,"mean":2993.2658907315954,"min":2985.9454395828034,"max":3000.586341880388,"stddev":10.352681297311696,"cv":0.003458657424777375,"values":[2985.9454395828034,3000.586341880388]},
+            "decodeTps": {"n":2,"median":74.67221403598136,"mean":74.67221403598136,"min":70.64536936847783,"max":78.69905870348488,"stddev":5.694818342353262,"cv":0.07626422245373857,"values":[78.69905870348488,70.64536936847783]},
+            "decodeTpsEngine": {"n":2,"median":75.26204030585431,"mean":75.26204030585431,"min":71.20102839783874,"max":79.32305221386989,"stddev":5.743138117274262,"cv":0.07630856264240192,"values":[79.32305221386989,71.20102839783874]},
+            "itlP50Ms": 23.979700000025332,
+            "itlP95Ms": 24.93343500003684,
+            "itlPerChunk": true,
+            "draftAcceptance": 0.26840082766775053,
+            "totalMs": {"n":2,"median":23688.02025000006,"mean":23688.02025000006,"min":23606.16189999995,"max":23769.87860000017,"stddev":115.76518876364116,"cv":0.0048870774147384,"values":[23606.16189999995,23769.87860000017]},
+            "promptTokensReported": 65578.5
+          }
+        ],
+        "command": {
+          "argv": ["wsl.exe","-d","Ubuntu-24.04","--exec","/usr/bin/env","GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000","/bin/sh","-c","echo \"gpubench-pid $$\" >&2; exec \"$@\"","sh","/home/user/ninfer-all/build/apps/ninfer-serve","/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer","--host","127.0.0.1","--port","60768","--model-id","gpubench-00000000-0000-0000-0000-000000000000","--max-context","262144","--max-concurrency","1","--kv-capacity","262144","--kv-dtype","nvfp4","--spec","mtp","--draft-tokens","3","--no-prefix-reuse","--no-thinking","--preserve-thinking"],
+          "powershell": "& 'wsl.exe' -d 'Ubuntu-24.04' --exec '/usr/bin/env' 'GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000' '/bin/sh' -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh '/home/user/ninfer-all/build/apps/ninfer-serve' '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host '127.0.0.1' --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking",
+          "bash": "wsl.exe -d Ubuntu-24.04 --exec /usr/bin/env GPUBENCH_OWNER=gpubench-00000000-0000-0000-0000-000000000000 /bin/sh -c 'echo \"gpubench-pid $$\" >&2; exec \"$@\"' sh /home/user/ninfer-all/build/apps/ninfer-serve '/mnt/c/Users/user/GPU Bench/models/nerkyor/Qwen3.8-27B-NInfer/Qwen3.8-27B-Coder390-EfficientThink-Q6_K-MTP.ninfer' --host 127.0.0.1 --port 60768 --model-id gpubench-00000000-0000-0000-0000-000000000000 --max-context 262144 --max-concurrency 1 --kv-capacity 262144 --kv-dtype nvfp4 --spec mtp --draft-tokens 3 --no-prefix-reuse --no-thinking --preserve-thinking"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {"kv":"nvfp4","spec":"mtp","draft":3,"lmhead":false,"vision":false},
+        "partial": "budget"
+      }
+    ],
+    "recommended": 2,
+    "fastestByDepth": [
+      {"depth":1024,"combination":2},
+      {"depth":65536,"combination":2}
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Fragment, useState, type ReactNode } from 'react';
-import type { RunResult, TuneCombination } from '../../../contract/results';
+import { nominalDepth, type LatencyPoint, type RunResult, type TuneCombination } from '../../../contract/results';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { UsersTable } from '../bench/concurrency-users';
@@ -8,7 +8,7 @@ import { SweepTable } from '../bench/context-sweep';
 import { MIB_PER_GB } from '../bench/format';
 import { entryOfRun } from '../compare/compare-entries';
 import { CompareToggle } from '../compare/compare-tray';
-import { headerAt } from '../../lib/speed-at';
+import { headerAt, headerAtMax, notMeasuredAt, tooltipHead } from '../../lib/speed-at';
 import { PresetActions } from '../presets/preset-actions';
 import { useConfigLabel } from '../presets/config-label';
 import { Badge } from '../ui/badge';
@@ -19,7 +19,7 @@ import { HelpTip } from '../ui/help-tip';
 import { SegmentedControl } from '../ui/segmented-control';
 import { comboText, depthLabel } from './tune-format';
 import { PartialBadge, TuneGlossary } from './tune-sections';
-import { bestValues, CONTEXT_COLUMNS, reaches as reachesRow, sortRows, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
+import { AT_MAX, bestValues, CONTEXT_COLUMNS, reaches as reachesRow, sameLargestContext, sortRows, type CompareAt, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 
@@ -44,35 +44,38 @@ export const CONTEXT_VIEWS: readonly ColumnView[] = [
 export interface RankingProps {
   run: RunResult & { tuning: NonNullable<RunResult['tuning']> };
   rows: readonly RankRow[];
-  /** The compared depth (goal "Un utente"); absent for goal "Più utenti". */
-  depth?: number | undefined;
+  /** What goal "Un utente" compares at: a depth, or each combination's own largest context full; absent for goal "Più utenti". */
+  depth?: CompareAt | undefined;
   depths: readonly number[];
   /** What the order means and how to read it (default: ranked by generation at the compared depth). */
   subtitle?: string;
   /** Accessible name of the table (default: the ranking at the compared depth). */
   caption?: string;
-  /** A new compared depth (needed with more than one depth). */
-  onDepth?: (depth: number) => void;
+  /** A new compared depth, or "Contesto massimo" (needed with a depth to choose). */
+  onDepth?: (depth: CompareAt) => void;
   recommended: number | undefined;
   /** The metric columns, in order (default: the one-user context search). */
   views?: readonly ColumnView[];
 }
 
 /**
- * "Classifica": one row per measured combination, ranked by generation speed at the compared depth;
- * any column can sort; those that stop earlier sit greyed at the bottom. Every row opens its
- * measurements and the exact command, and has the preset actions.
+ * "Classifica": one row per measured combination, ranked by generation speed with each one's largest
+ * context full ("Contesto massimo", the largest context first) or at one compared depth; any column can
+ * sort; those not measured there sit greyed at the bottom, saying why ("non misurata a 256K", "arriva
+ * solo a 32K"). Every row opens its measurements and the exact command, and has the preset actions.
  */
 export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, views = CONTEXT_VIEWS, subtitle, caption }: RankingProps) {
   const f = useI18n();
   const { t } = f;
-  const tableCaption = caption ?? t('tune.ranking.caption', { depth: depthLabel(depth as number, f) });
+  const atMax = depth === AT_MAX;
+  const tableCaption = caption ?? (atMax ? t('tune.ranking.captionMax') : t('tune.ranking.caption', { depth: depthLabel(depth as number, f) }));
   // key undefined = the ranking's own order.
   const [sort, setSort] = useState<{ key: string | undefined; dir: SortDir }>({ key: undefined, dir: 'asc' });
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const label = useConfigLabel();
   const columns = views.map((v) => v.column);
-  const best = bestValues(rows, columns);
+  // At "Contesto massimo" speeds compare only between rows with the same (largest) context.
+  const best = bestValues(atMax ? sameLargestContext(rows) : rows, columns);
   const sorted = sortRows(
     rows,
     columns.find((c) => c.key === sort.key),
@@ -121,19 +124,28 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
       )}
     </td>
   );
-  /** The metric cells of a row; the depth-bound ones become one "arriva solo a 32K" cell when it stops earlier. */
+  /**
+   * Why a row has no number where it is compared: its context is smaller than the depth ("arriva solo a
+   * 32K"), or it is large enough but was not measured there ("non misurata a 64K", at "Contesto
+   * massimo" its own context: "non misurata a 256K").
+   */
+  const missing = (r: RankRow) =>
+    atMax ? notMeasuredAt(r.combo.maxContext, f) : r.combo.maxContext < (depth as number) ? t('tune.ranking.reachesOnly', { depth: depthLabel(r.combo.maxContext, f) }) : notMeasuredAt(depth as number, f);
+  /** The metric cells of a row; the depth-bound ones become one cell saying why when it was not measured there. */
   const metrics = (r: RankRow) =>
     views.flatMap((v, k) => {
       if (v.column.atDepth && !r.point) {
         if (views.findIndex((w) => w.column.atDepth) !== k) return [];
         return [
           <td key="short" colSpan={atDepth} className="border-b border-border px-3 py-3 text-right text-sm whitespace-nowrap italic">
-            {t('tune.ranking.reachesOnly', { depth: depthLabel(r.combo.maxContext, f) })}
+            {missing(r)}
           </td>,
         ];
       }
       const value = v.column.value(r);
-      return [cell(v.column.key, best.get(v.column.key)?.has(r.index) === true, value === undefined ? '–' : v.format(value, f), value === undefined || !v.title ? undefined : v.title(value, f))];
+      // A speed says the exact context it was measured at on hover.
+      const title = v.column.atDepth ? tooltipHead((r.point as LatencyPoint).promptTokens, 'depth', f) : value === undefined || !v.title ? undefined : v.title(value, f);
+      return [cell(v.column.key, best.get(v.column.key)?.has(r.index) === true, value === undefined ? '–' : v.format(value, f), title)];
     });
 
   return (
@@ -143,7 +155,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
           <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.ranking.title')}</h2>
           <HelpTip term={t('tune.ranking.title')}>{t('tune.ranking.help')}</HelpTip>
         </div>
-        {depth !== undefined && depths.length > 1 && (
+        {depth !== undefined && depths.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <span aria-hidden className="text-sm text-fg-2">
               {t('tune.ranking.compareAt')}
@@ -152,14 +164,14 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
               size="sm"
               label={t('tune.ranking.compareAt')}
               value={String(depth)}
-              onValueChange={(v) => (onDepth as (depth: number) => void)(Number(v))}
+              onValueChange={(v) => (onDepth as (depth: CompareAt) => void)(v === AT_MAX ? AT_MAX : Number(v))}
               className="flex-wrap"
-              options={depths.map((d) => ({ value: String(d), label: depthLabel(d, f) }))}
+              options={[{ value: AT_MAX, label: t('tune.ranking.compareMax') }, ...depths.map((d) => ({ value: String(d), label: depthLabel(d, f) }))]}
             />
           </div>
         )}
       </div>
-      <p className="px-card pt-1.5 text-sm text-fg-2">{subtitle ?? t('tune.ranking.subtitle', { depth: depthLabel(depth as number, f) })}</p>
+      <p className="px-card pt-1.5 text-sm text-fg-2">{subtitle ?? (atMax ? t('tune.ranking.subtitleMax') : t('tune.ranking.subtitle', { depth: depthLabel(depth as number, f) }))}</p>
       <div role="region" aria-label={tableCaption} tabIndex={0} className="mt-3 overflow-x-auto focus-ring">
         <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{tableCaption}</caption>
@@ -169,7 +181,7 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
               <th scope="col" className="h-10 border-b border-border px-3 pb-2 text-left align-bottom text-xs font-medium text-fg-3">
                 {t('tune.columns.settings')}
               </th>
-              {views.map((v) => head(v.column.key, v.column.dir, v.column.atDepth && depth !== undefined ? headerAt(t(v.header), depth, f) : t(v.header)))}
+              {views.map((v) => head(v.column.key, v.column.dir, !v.column.atDepth ? t(v.header) : atMax ? headerAtMax(t(v.header), f) : headerAt(t(v.header), depth as number, f)))}
             </tr>
           </thead>
           <tbody>
@@ -197,10 +209,11 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
                               {t('tune.recommended')}
                             </Badge>
                           )}
-                          {r.combo.partial && <PartialBadge why={r.combo.partial} />}
+                          {r.combo.partial && <PartialBadge why={r.combo.partial} {...(depth === undefined ? {} : { combo: r.combo })} />}
                         </span>
                         <span className="flex flex-wrap items-start gap-2">
-                          <PresetActions run={run} combo={r.index} at={depth} layout="compact" />
+                          {/* The preset quotes the speed this row is compared on (at "Contesto massimo": with the context full, or none). */}
+                          <PresetActions run={run} combo={r.index} at={atMax ? nominalDepth(r.point?.promptTokens ?? r.combo.maxContext) : (depth as number | undefined)} layout="compact" />
                           <CompareToggle entry={entryOfRun(run, r.index, f)} />
                           <Button
                             size="sm"
@@ -231,8 +244,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
         </table>
       </div>
       <div className="flex flex-col gap-2 px-card py-3">
-        <p className="text-xs text-fg-3">{t('tune.ranking.footnote')}</p>
-        <TuneGlossary />
+        <p className="text-xs text-fg-3">{t(atMax ? 'tune.ranking.footnoteMax' : 'tune.ranking.footnote')}</p>
+        <TuneGlossary engineKind={kind} tuning={run.tuning} />
       </div>
     </Card>
   );

@@ -37,6 +37,7 @@ export function tooltipSentence(text: string): string {
 /** What ECharts passes to an axis tooltip formatter (the fields used here). */
 export interface AxisParam {
   dataIndex: number;
+  seriesIndex: number;
   seriesName: string;
   color: string;
   value: unknown;

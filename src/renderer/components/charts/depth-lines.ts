@@ -11,6 +11,11 @@ export interface DepthSeries {
   values: readonly (number | null)[];
   /** Drawn thicker (the recommended configuration). */
   emphasis?: boolean;
+  /**
+   * What the tooltip says at each depth instead of the plain value ("non misurata", a value with its
+   * exact tokens); undefined = the formatted value, or "–" where there is none.
+   */
+  texts?: readonly (string | undefined)[];
 }
 
 export interface DepthLinesOpts {
@@ -71,7 +76,9 @@ export function depthLinesOption(tk: ChartTokens, depths: readonly number[], ser
                 o.tooltipHead!(depth),
                 list.map((p) => {
                   const v = yOf(p.value);
-                  return { name: p.seriesName, value: v === null ? '–' : o.format(v), color: p.color };
+                  // ECharts names the series by index (a caller without it gets the plain value).
+                  const text = series[p.seriesIndex]?.texts?.[p.dataIndex];
+                  return { name: p.seriesName, value: text ?? (v === null ? '–' : o.format(v)), color: p.color };
                 }),
               );
             },

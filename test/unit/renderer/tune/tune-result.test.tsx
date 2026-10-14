@@ -44,13 +44,19 @@ describe('tune result', () => {
   it('sums up from the numbers and recommends the fastest at the largest context', async () => {
     open();
     expect(await h1(/Qwen3 8B/)).toBeTruthy();
-    expect(screen.getByText(/Con cache q4_0 arrivi a 64K, il doppio di q8_0 \(32K\)\. Fino a 16K la più veloce a scrivere è cache KV f16 \(78,0 tok\/s a 16K\)/)).toBeTruthy();
+    expect(
+      screen.getByText('Con cache q4_0 arrivi a 64K, il doppio di q8_0 (32K). Al contesto massimo (64K) la più veloce a scrivere è cache KV q4_0 · ub 2048 · b 4096: 60,0 tok/s.'),
+    ).toBeTruthy();
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('Cache KV q4_0 · flash attention · ub 2048 · b 4096')).toBeTruthy();
     expect(within(rec).getByText('64K')).toBeTruthy();
-    expect(within(rec).getByText('60,0 tok/s')).toBeTruthy();
+    // Its speeds with the context full, the exact tokens on hover.
+    expect(within(rec).getByText('Generazione al contesto massimo (64K)')).toBeTruthy();
+    expect(within(rec).getByText('60,0 tok/s').getAttribute('title')).toBe('a 65.392 token di contesto');
     expect(within(rec).getByText('6.400 tok/s')).toBeTruthy();
+    expect(within(rec).getByText('10,22 s')).toBeTruthy();
     expect(within(rec).getByText('29,8 GB')).toBeTruthy();
+    expect(within(rec).queryByText(/Misurata solo fino a/)).toBeNull();
     // Its preset is in the page header (and on its row of the ranking).
     expect(screen.getAllByRole('group', { name: /^Preset di Qwen3 8B/ }).length).toBeGreaterThan(1);
   });
@@ -58,7 +64,27 @@ describe('tune result', () => {
   it('ranks by generation at the compared depth; any column sorts; shorter ones greyed at the bottom', async () => {
     open();
     await h1(/Qwen3 8B/);
-    // Default: the deepest depth every combination reached.
+    // Default: every combination with its own largest context full, the largest context first.
+    expect(ranking().querySelector('caption')!.textContent).toBe('Classifica delle combinazioni al contesto massimo');
+    expect(screen.getByText(/^Ogni configurazione con il proprio contesto massimo pieno; prima il contesto più grande/)).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /^Generazione \(tok\/s\) al contesto massimo/ })).toBeTruthy();
+    const atMax = rankRows();
+    expect(atMax.map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Cache KV q4_0 · flash attention · ub 2048 · b 4096',
+      'Cache KV q4_0 · flash attention',
+      'Cache KV q8_0 · 8 livelli MoE sulla CPU · flash attention',
+      'Cache KV q8_0 · flash attention',
+      'Cache KV f16 · flash attention',
+    ]);
+    expect(within(atMax[0]!).getByText('Consigliata')).toBeTruthy();
+    // The best values only among the 64K ones: q8_0 writes faster at its 32K, but that does not compare.
+    expect(within(atMax[0]!).getAllByText('il migliore', { exact: false })).toHaveLength(3);
+    expect(within(atMax[3]!).queryByText('il migliore', { exact: false })).toBeNull();
+    expect(atMax[3]!.textContent).toContain('72,0');
+    expect(within(atMax[3]!).getByText('72,0').closest('td')!.getAttribute('title')).toBe('a 32.624 token di contesto');
+    expect(screen.getByText(/^In verde il valore migliore di ogni colonna tra le configurazioni con il contesto più grande/)).toBeTruthy();
+
+    await userEvent.click(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getByRole('radio', { name: '16K' }));
     expect(ranking().querySelector('caption')!.textContent).toBe('Classifica delle combinazioni a 16K');
     expect(rankRows().map((r) => r.getAttribute('aria-label'))).toEqual([
       'Cache KV f16 · flash attention',
@@ -92,12 +118,15 @@ describe('tune result', () => {
     expect(vram.getAttribute('aria-sort')).toBe('descending');
     expect(decode.getAttribute('aria-sort')).toBeNull();
     expect(rankRows()[2]!.textContent).toContain('–');
+    // Back to "Contesto massimo".
+    await userEvent.click(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getByRole('radio', { name: 'Contesto massimo' }));
+    expect(ranking().querySelector('caption')!.textContent).toBe('Classifica delle combinazioni al contesto massimo');
   });
 
   it('opens every measurement of a row with its exact command', async () => {
     open();
     await h1(/Qwen3 8B/);
-    const row = rankRows()[2]!;
+    const row = rankRows()[0]!;
     const toggle = within(row).getByRole('button', { name: 'Misure' });
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
@@ -107,19 +136,19 @@ describe('tune result', () => {
     expect(screen.getByText(/VRAM picco 29,8 GB · avviato con contesto 65.536 token · 2 ripetizioni per misura/)).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Comando di Cache KV q4_0 · flash attention · ub 2048 · b 4096' }).textContent).toContain('-ctk q4_0');
     // The offload combination has the engine's own generation figure.
-    await userEvent.click(within(rankRows()[4]!).getByRole('button', { name: 'Misure' }));
+    await userEvent.click(within(rankRows()[2]!).getByRole('button', { name: 'Misure' }));
     expect(screen.getByRole('table', { name: /Misure di .*MoE sulla CPU/ }).textContent).toContain('18,4');
     await userEvent.click(toggle);
     expect(screen.queryByRole('table', { name: 'Misure di Cache KV q4_0 · flash attention · ub 2048 · b 4096' })).toBeNull();
     // No VRAM figure for this one: the line says the rest.
-    await userEvent.click(within(rankRows()[3]!).getByRole('button', { name: 'Misure' }));
+    await userEvent.click(within(rankRows()[1]!).getByRole('button', { name: 'Misure' }));
     expect(screen.getByText(/^avviato con contesto 65.536 token · 2 ripetizioni per misura/)).toBeTruthy();
   });
 
   it('“Usa questo preset” fills the Benchmark with that combination; “Avvia il server così” opens the start flow with it', async () => {
     const { api, router } = open();
     await h1(/Qwen3 8B/);
-    await userEvent.click(await within(rankRows()[3]!).findByRole('button', { name: 'Avvia il server così' }));
+    await userEvent.click(await within(rankRows()[1]!).findByRole('button', { name: 'Avvia il server così' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/servers/new'));
     await waitFor(() =>
       expect(api.calls.filter((c) => c.path === '/api/servers/plan').map((c) => c.body)).toContainEqual(
@@ -128,7 +157,7 @@ describe('tune result', () => {
     );
     act(() => router.history.back());
     await h1(/Qwen3 8B/);
-    await userEvent.click(within(rankRows()[2]!).getByRole('button', { name: 'Usa questo preset' }));
+    await userEvent.click(within(rankRows()[0]!).getByRole('button', { name: 'Usa questo preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(await screen.findByText('Impostazioni copiate nel Benchmark')).toBeTruthy();
     expect(((await screen.findByLabelText('Contesto (token)')) as HTMLInputElement).value).toBe('65536');
@@ -156,7 +185,8 @@ describe('tune result', () => {
     await userEvent.click(screen.getByRole('button', { name: /Prove scartate/ }));
     expect(screen.getByText('Con contesto 32K la memoria video non bastava: il motore non è partito.')).toBeTruthy();
     expect(screen.getByText(/Windows ha spostato 2,0 GB nella RAM condivisa/)).toBeTruthy();
-    expect(screen.getByText('contesto 48K · generazione 31,0 tok/s · lettura 2.400 tok/s · VRAM picco 31,1 GB · RAM condivisa 2,0 GB')).toBeTruthy();
+    // Its numbers with the depth they were measured at, not the launch's context.
+    expect(screen.getByText('contesto 48K · con il contesto riempito a 4K: generazione 31,0 tok/s, lettura 2.400 tok/s · VRAM picco 31,1 GB · RAM condivisa 2,0 GB')).toBeTruthy();
     expect(screen.getByText('Il motore non riconosce un parametro')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Comando della prova 2: Cache KV f16 · flash attention, contesto 32K' })).toBeTruthy();
     const capacity = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
@@ -190,9 +220,9 @@ describe('tune result', () => {
     const { unmount } = open(sparse);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Mi sono fermato prima: tempo finito')).toBeTruthy();
-    expect(screen.getByText(/Con cache q8_0 arrivi a 32K\. Fino a 32K la più veloce a scrivere è/)).toBeTruthy();
-    // One combination: its own depths to compare at, no "Prove scartate".
-    expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(5);
+    expect(screen.getByText('Con cache q8_0 arrivi a 32K. Al contesto massimo (32K) cache KV q8_0 · flash attention scrive a 72,0 tok/s.')).toBeTruthy();
+    // One combination: its own largest context and depths to compare at, no "Prove scartate".
+    expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(6);
     expect(screen.queryByRole('button', { name: /Prove scartate/ })).toBeNull();
     const capacity = screen.getByRole('table', { name: 'Contesto massimo per tipo di cache' });
     expect(capacity.textContent).toContain('Non provato (la stima della memoria lo escludeva).');
@@ -216,7 +246,12 @@ describe('tune result', () => {
     const second = open(single);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Mi sono fermato prima: raggiunto il numero massimo di prove')).toBeTruthy();
-    expect(screen.queryByRole('radiogroup', { name: 'Confronta a' })).toBeNull();
+    // Measured at 1K only, its context is 2K: "Contesto massimo" says it was not measured there, 1K has the number.
+    expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(2);
+    expect(within(ranking()).getByText('non misurata a 2K')).toBeTruthy();
+    const card = screen.getByRole('region', { name: 'Combinazione consigliata' });
+    expect(within(card).getAllByText('non misurata')).toHaveLength(3);
+    expect(within(card).getByText('Misurata solo fino a 1K: rifai la ricerca per avere la velocità a 2K.')).toBeTruthy();
     expect(screen.getByText(/tutti i 32 token generati sono identici/)).toBeTruthy();
     second.unmount();
 
@@ -248,12 +283,13 @@ describe('tune result', () => {
     await waitFor(() => expect((charts.options.at(-1) as { series: unknown[] }).series).toHaveLength(7));
     await userEvent.click(screen.getByRole('button', { name: 'Solo le prime 5' }));
     unmount();
-    // A recommendation without a sweep (older or partial data): just its context.
+    // A recommendation without a sweep (older or partial data): its context, its speeds not measured.
     open(tunedRun({ recommended: 5 }));
     await h1(/Qwen3 8B/);
     const bare = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(bare).getByText('Contesto massimo')).toBeTruthy();
-    expect(within(bare).queryByText(/Generazione a/)).toBeNull();
+    expect(within(bare).getAllByText('non misurata')).toHaveLength(3);
+    expect(within(bare).queryByText(/Misurata solo fino a/)).toBeNull();
   });
 
   it('combinations measured without a context sweep (other goals) do not break the page', async () => {

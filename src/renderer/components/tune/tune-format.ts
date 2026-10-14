@@ -3,7 +3,7 @@ import type { EngineKind, LaunchParams } from '../../../contract/engines';
 import type { TuneAttempt, TuneCombination, TuneKvType, Tuning } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { useConfigLabel } from '../presets/config-label';
-import { capacityLead, measuredCombinations, ratioOf, recommendedIndex, speedSegments } from './tune-logic';
+import { capacityLead, measuredCombinations, ratioOf, recommendedIndex, speedLead, type SpeedWinner } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 export type LabelFn = ReturnType<typeof useConfigLabel>;
@@ -24,6 +24,11 @@ export function roughDuration(seconds: number): string {
   const min = Math.round(seconds / 60);
   if (min < 60) return `${min} min`;
   return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min`;
+}
+
+/** An engine start as people say it, to the second: "15 s", "1 min 36 s". */
+export function loadTime(seconds: number, f: Pick<Formatters, 'duration'>): string {
+  return seconds < 60 ? `${Math.max(1, Math.round(seconds))} s` : f.duration(Math.round(seconds) * 1000);
 }
 
 /** An engine build or image as people read it: "b10997", a digest shortened to "sha256:1a2b3c4d5e6f"; unknown in words. */
@@ -89,6 +94,8 @@ export function capacitySentence(tuning: Pick<Tuning, 'capacity'>, f: F): string
   const ctx = depthLabel(lead.best.max, f);
   // A search the run's end cut short: only what is certain, no comparison.
   if (lead.unfinished === 'best') return f.t('tune.summary.capacityAtLeast', { kv, ctx });
+  // Larger contexts left untried: "almeno", no comparison.
+  if (lead.atLeast) return f.t('tune.summary.capacityAtLeastOnly', { kv, ctx });
   if (lead.unfinished) return f.t('tune.summary.capacityOne', { kv, ctx });
   if (lead.allSame) return f.t('tune.summary.capacityAll', { ctx });
   if (!lead.next) return f.t('tune.summary.capacityOne', { kv, ctx });
@@ -100,24 +107,22 @@ export function capacitySentence(tuning: Pick<Tuning, 'capacity'>, f: F): string
   return f.t('tune.summary.capacityMore', { ...params, pct: r.pct });
 }
 
-/** "Fino a 32K la più veloce è f16 · flash attention (91 tok/s a 32K); a 64K: q4_0 (74 tok/s)." */
-export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth'>, engineKind: EngineKind, label: LabelFn, f: F): string | undefined {
-  const segments = speedSegments(tuning);
-  if (!segments.length) return undefined;
+/**
+ * Speed at the context full, among the combinations with the largest context: "Al contesto massimo (64K)
+ * la più veloce a scrivere è cache KV q4_0 (60,0 tok/s)." When none was measured that far it says so,
+ * and what was measured below comes with its depth: "Misurata solo fino a 64K: lì …".
+ */
+export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth' | 'recommended'>, engineKind: EngineKind, label: LabelFn, f: F): string | undefined {
+  const lead = speedLead(tuning);
+  if (!lead) return undefined;
   const names = distinctNames(tuning, engineKind, label);
-  const parts = segments.map((s, i) => {
-    const params = {
-      from: depthLabel(s.from, f),
-      to: depthLabel(s.to, f),
-      // Winners are measured combinations: they all have a name.
-      settings: names.get(s.combination)!,
-      tps: f.number(s.decodeTps, 1),
-    };
-    const single = s.from === s.to;
-    if (i === 0) return f.t(single ? 'tune.summary.firstAt' : 'tune.summary.firstUpTo', params);
-    return f.t(single ? 'tune.summary.nextAt' : 'tune.summary.nextRange', params);
-  });
-  return `${parts.join('; ')}.`;
+  const ctx = depthLabel(lead.context, f);
+  // Winners are measured combinations: they all have a name.
+  const of = (w: SpeedWinner) => ({ settings: names.get(w.row.index)!, tps: f.number(w.row.point.decodeTps.median, 1) });
+  if (lead.full) return f.t(lead.full.of > 1 ? 'tune.summary.atMax' : 'tune.summary.atMaxOne', { ctx, ...of(lead.full) });
+  const below = lead.below!;
+  const params = { ctx, depth: depthLabel(below.depth, f), ...of(below) };
+  return `${f.t('tune.summary.atMaxNone', { ctx })} ${f.t(below.of > 1 ? 'tune.summary.belowMax' : 'tune.summary.belowMaxOne', params)}`;
 }
 
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
