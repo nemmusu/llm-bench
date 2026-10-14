@@ -57,6 +57,29 @@ export function nominalDepth(depth: number): number {
   return up - depth <= Math.max(256, up * 0.01) ? up : depth;
 }
 
+/**
+ * Share of a launch's context a prompt must reach to count as "the context full", the depth every
+ * speed of a tune combination is read at (table, recommended card, chart, Results list). A sweep's
+ * deepest prompt is the context minus the answer and a small margin, or a little less when a text
+ * prompt (a server that cannot tokenize) was refused as too long and sent again shorter; a grid point
+ * below it (200K or 64K of a 256K context) is not the full context.
+ */
+export const FULL_CONTEXT_SHARE = 0.9;
+
+/** A prompt of `promptTokens` tokens fills a context of `contextSize` tokens (see FULL_CONTEXT_SHARE). */
+export function fillsContext(promptTokens: number, contextSize: number): boolean {
+  return contextSize > 0 && promptTokens >= contextSize * FULL_CONTEXT_SHARE;
+}
+
+/**
+ * The point of a one-user tune combination measured with its context full (its deepest point, when
+ * that fills `maxContext`); undefined when the search never got there (time limit, launch cap…).
+ */
+export function fullContextPoint(combo: { maxContext: number; sweep: readonly LatencyPoint[] }): LatencyPoint | undefined {
+  const deepest = combo.sweep.reduce<LatencyPoint | undefined>((best, p) => (best === undefined || p.promptTokens > best.promptTokens ? p : best), undefined);
+  return deepest !== undefined && fillsContext(deepest.promptTokens, combo.maxContext) ? deepest : undefined;
+}
+
 // ---- "Conversazioni lunghe" (step 'sessions') and "Contesto tenuto in memoria" ------------------
 
 /**
@@ -686,6 +709,12 @@ export const tuningSchema = z.object({
   /** Expected length of the whole search when it started, and its time limit (the estimate times a margin), seconds. */
   estimateSeconds: z.number().min(0).optional(),
   limitSeconds: z.number().min(0).optional(),
+  /**
+   * How long one engine start was expected to take when the estimate was made (earlier runs of this
+   * model here, else its size and the disk it is read from), seconds: with the starts the attempts
+   * measured (TuneAttempt.loadMs) it says why a search ran out of time.
+   */
+  expectedLoadSeconds: z.number().min(0).optional(),
   /** The search stopped before the end: time budget or launch cap spent, or the run was cancelled or failed. */
   stoppedBy: z.enum(TUNE_STOPS).optional(),
   /** Searched dimensions with the values tried, in search order (kv, fa, ubatch, batch, draft, batchTokens…). */
