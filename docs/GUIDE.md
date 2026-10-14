@@ -135,7 +135,7 @@ At the top you find the score and a sentence that explains it; below, every numb
 |---|---|
 | **Generation (tok/s)** | How fast the model writes. A token is about three quarters of a word |
 | **Prompt reading (tok/s)** | How fast it reads the text you give it; it matters with long documents |
-| **First token (ms)** | How long you wait before the first word appears |
+| **First token** | How long you wait before the first word appears ("850 ms", "3 min 50 s" with a huge document) |
 | **Cold load** | The time to load the model from disk the first time |
 | **Warm load** | The time to load it again when the PC already holds it in memory |
 | **Peak VRAM** | The most video memory the model used |
@@ -157,14 +157,24 @@ LLM Bench then starts the model several times and tries by itself:
 - the **largest context** that fits entirely in video memory, for each cache type;
 - the settings that change the speed: *flash attention*, *batch* and *micro-batch* (how many prompt tokens the card reads at once) and, if the model has a draft or MTP file in your library, speculative decoding.
 
-It measures each combination **filling the context step by step** (1K, 4K, 8K, 16K… tokens) up to its largest context.
+It measures each combination **filling the context step by step** (1K, 4K, 8K, 16K… tokens) up to its largest context: first the combination with the largest context, then the one with the most precise cache, so that if the time runs out the two answers that matter most are already there. Your choices for **reasoning** and **vision** stay as you set them: the search never switches them.
+
+While it runs, **Attempts made** lists every engine start: the **context at start** (how much it can hold, not where the speed was measured) and the generation of the quick check right after each start, said once in the column header ("at 1K"); a speed measured elsewhere says so under its number ("at 40K, context full").
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/en/tune-result-dark.png">
   <img src="screenshots/en/tune-result.png" alt="The result of Find the best settings: the summary, the recommended combination with its speeds at the largest context, and the speed chart">
 </picture>
 
-How to read the result:
+How to read the result. **In short** answers five questions, each with a number, where it was measured and which configuration gave it:
+
+1. how fast it reads and writes **at its largest context**, full (the recommended combination);
+2. at which context it **reads fastest**;
+3. at which context it **writes fastest**;
+4. where it is **best at both** (each speed as a share of its best, the weaker of the two counting more);
+5. with the **most faithful settings** (the most precise KV cache that fits: f16 or bf16, else q8_0, int8 or fp8), how much context it holds and how fast it is there.
+
+Where the search did not get to measure something, it says "not measured", never a number from elsewhere. Below:
 
 - **Every speed is read at the largest context, with that context full.** That is how the model runs when you use all the context you set.
 - The **recommended combination** is the fastest among those that reach the largest context. Its card shows the largest context, generation, prompt reading and first token at that context, and peak VRAM.
@@ -183,7 +193,7 @@ The search has a **time limit** (its estimate, with some margin). If the time ru
 
 Other options:
 
-- **Several users** instead of *One user, largest context*: how many people use the server at once and how much context each one needs; what counts is the speed each one gets when everyone is busy.
+- **Several users** instead of *One user, largest context*: how many people use the server at once and how much context each one needs; what counts is the speed each one gets when everyone is busy. **How users are measured**: *From 1 to N* (1 user, then 2, … up to N: how much each one slows down as more arrive) or *Only N at once* (all N straight away, quicker); the configurations are compared with all N busy either way.
 - **Quick recheck**: after an engine update, it reloads only the recommended configuration and the runner-up and checks whether the numbers still hold.
 - In **expert mode**: the **Fidelity check** (the same text generated with the most precise cache and the recommended one) and **Also search beyond the model's limit (YaRN)**, up to 300K, 500K or a context you choose. Beyond the training context, quality is not guaranteed: LLM Bench measures only speed and memory.
 

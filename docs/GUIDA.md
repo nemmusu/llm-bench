@@ -135,7 +135,7 @@ In cima trovi il punteggio e una frase che lo spiega; sotto, ogni numero con il 
 |---|---|
 | **Generazione (tok/s)** | Quanto velocemente il modello scrive. Un token è circa 0,7 parole |
 | **Lettura prompt (tok/s)** | Quanto velocemente legge il testo che gli dai; conta con i documenti lunghi |
-| **Primo token (ms)** | Quanto aspetti prima che compaia la prima parola |
+| **Primo token** | Quanto aspetti prima che compaia la prima parola ("850 ms", "3 min 50 s" con un documento enorme) |
 | **Caricamento a freddo** | Il tempo per caricare il modello dal disco la prima volta |
 | **Caricamento a caldo** | Il tempo per ricaricarlo quando il PC lo tiene già in memoria |
 | **VRAM di picco** | La memoria video usata dal modello nel momento di massimo |
@@ -157,14 +157,24 @@ Poi LLM Bench avvia il modello più volte e prova da solo:
 - il **contesto più grande** che entra tutto nella memoria video, per ogni tipo di cache;
 - le impostazioni che cambiano la velocità: *flash attention*, *batch* e *micro-batch* (quanti token del prompt la scheda legge insieme) e, se il modello ha già un file draft o MTP nella libreria, la generazione speculativa.
 
-Misura ogni combinazione **riempiendo il contesto un po' alla volta** (1K, 4K, 8K, 16K… token) fino al suo contesto massimo.
+Misura ogni combinazione **riempiendo il contesto un po' alla volta** (1K, 4K, 8K, 16K… token) fino al suo contesto massimo: prima la combinazione con il contesto più grande, poi quella con la cache più precisa, così se il tempo finisce le due risposte che contano di più ci sono già. Le tue scelte per **ragionamento** e **visione** restano come le hai impostate: la ricerca non le cambia mai.
+
+Mentre lavora, **Prove fatte** elenca ogni avvio del motore: il **contesto all'avvio** (quanto può tenere, non dove è misurata la velocità) e la generazione della prova rapida subito dopo ogni avvio, detta una volta nell'intestazione della colonna ("a 1K"); una velocità misurata altrove lo dice sotto il numero ("a 40K, contesto pieno").
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/it/tune-result-dark.png">
   <img src="screenshots/it/tune-result.png" alt="Il risultato di Trova le impostazioni migliori: il riepilogo, la combinazione consigliata con le sue velocità al contesto massimo e il grafico delle velocità">
 </picture>
 
-Come leggere il risultato:
+Come leggere il risultato. **In breve** risponde a cinque domande, ognuna con un numero, dove è stato misurato e quale configurazione lo ha dato:
+
+1. quanto legge e scrive **al contesto più grande**, pieno (la combinazione consigliata);
+2. a quale contesto **legge più in fretta**;
+3. a quale contesto **scrive più in fretta**;
+4. dove va **meglio in tutte e due** (ogni velocità in proporzione alla sua migliore, conta di più la più debole delle due);
+5. con le **impostazioni più fedeli** (la cache KV più precisa che entra: f16 o bf16, altrimenti q8_0, int8 o fp8), quanto contesto tiene e quanto va veloce lì.
+
+Dove la ricerca non è arrivata a misurare qualcosa dice "non misurata", mai un numero preso da un'altra parte. Più sotto:
 
 - **Ogni velocità è letta al contesto massimo, con quel contesto pieno.** È così che va il modello quando usi tutto il contesto che hai impostato.
 - La **combinazione consigliata** è la più veloce tra quelle che arrivano al contesto più grande. Il suo riquadro mostra il contesto massimo, la generazione, la lettura del prompt e il primo token con quel contesto, e la VRAM di picco.
@@ -183,7 +193,7 @@ La ricerca ha un **tempo massimo** (la sua stima, con un po' di margine). Se il 
 
 Altre scelte:
 
-- **Più utenti** invece di *Un utente, contesto massimo*: quante persone usano il server insieme e quanto contesto serve a ognuno; conta la velocità che ottiene ciascuno quando tutti lo usano.
+- **Più utenti** invece di *Un utente, contesto massimo*: quante persone usano il server insieme e quanto contesto serve a ognuno; conta la velocità che ottiene ciascuno quando tutti lo usano. **Come misuro gli utenti**: *Da 1 a N* (1 utente, poi 2, … fino a N: quanto rallenta ognuno man mano che ne arrivano altri) o *Solo N insieme* (subito tutti gli N, ci vuole meno); le configurazioni si confrontano comunque con tutti gli N al lavoro.
 - **Ricontrollo rapido**: dopo un aggiornamento del motore, ricarica solo la configurazione consigliata e la seconda e controlla se i numeri tengono ancora.
 - In **modalità esperto**: il **Controllo di fedeltà** (lo stesso testo generato con la cache più precisa e con quella consigliata) e **Cerca anche oltre il limite del modello (YaRN)**, fino a 300K, 500K o a un contesto che scegli tu. Oltre il contesto di addestramento la qualità non è garantita: LLM Bench misura solo velocità e memoria.
 
