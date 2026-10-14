@@ -68,7 +68,8 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     const ranking = page.getByRole('table', { name: /^Classifica delle combinazioni a/ });
     await expect(ranking).toHaveAccessibleName('Classifica delle combinazioni al contesto massimo');
     await expect(ranking.getByRole('columnheader', { name: /^Generazione \(tok\/s\) al contesto massimo/ })).toBeVisible();
-    const q4 = ranking.getByRole('row', { name: /^Cache KV q4_0/ });
+    // The recommended q4_0 row (a runner-up q4_0 that won at some depth may have its own row too).
+    const q4 = ranking.getByRole('row', { name: /^Cache KV q4_0/ }).filter({ hasText: 'Consigliata' });
     await expect(q4.getByText('Consigliata')).toBeVisible();
     await expect(q4.getByRole('cell', { name: '40K', exact: true })).toBeVisible();
     // The recommendation on top, with the best generation among those with its context (within the
@@ -130,7 +131,10 @@ test('a NInfer search saved before the context full was measured reads at the la
     await skipWelcome(page);
     await goToHash(page, `#/results/${id}`);
     await expect(h1(page, /Qwen3\.8-27B/)).toBeVisible();
-    await expect(page.getByText(/Al contesto massimo \(256K\) la velocità non è stata misurata\. Misurata solo fino a 64K/)).toBeVisible();
+    // "In breve": the largest context's speed was not measured, said so (never a number from 64K in its place).
+    const brief = page.getByRole('list', { name: 'Le risposte principali' });
+    await expect(brief.getByRole('listitem').first()).toContainText('Velocità non misurata a 256K');
+    await expect(brief.getByRole('listitem')).toHaveCount(5);
     await expect(page.getByText('Ogni avvio del motore ha richiesto in media 1 min 36 s.')).toBeVisible();
     const recommended = page.getByRole('region', { name: 'Combinazione consigliata' });
     await expect(recommended.getByText('non misurata')).toHaveCount(3);

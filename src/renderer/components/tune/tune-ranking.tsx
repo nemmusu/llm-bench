@@ -234,7 +234,10 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
                   {expanded && (
                     <tr id={`tune-measures-${r.index}`}>
                       <td colSpan={views.length + 2} className="border-b border-border bg-surface-2/60 px-card py-4">
-                        <Measures combo={r.combo} title={text} />
+                        {/* As wide as the table, never wider: the measurements and the command scroll inside it. */}
+                        <div className="w-0 min-w-full">
+                          <Measures combo={r.combo} title={text} />
+                        </div>
                       </td>
                     </tr>
                   )}
