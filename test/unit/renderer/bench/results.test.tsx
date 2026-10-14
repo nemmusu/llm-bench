@@ -45,7 +45,8 @@ describe('results list', () => {
       expect(screen.getByRole('columnheader', { name })).toBeTruthy();
     }
     // Over its short numbers the VRAM name stays on one line; the model column takes the room left and cuts long names.
-    expect(screen.getByRole('columnheader', { name: 'VRAM picco (GB)' }).querySelector('.whitespace-nowrap')?.textContent).toBe('VRAM picco');
+    // "VRAM picco" may wrap like the other headers (nine columns share a 1024 px window).
+    expect(screen.getByRole('columnheader', { name: 'VRAM picco (GB)' }).querySelector('.whitespace-normal')?.textContent).toBe('VRAM picco');
     expect(screen.getByRole('columnheader', { name: /^Modello/ }).className).toContain('max-w-0');
     const mistral = (await screen.findByRole('link', { name: /Mistral Small/ })).closest('tr')!;
     expect(within(mistral).getByText('a 512 token di contesto')).toBeTruthy();

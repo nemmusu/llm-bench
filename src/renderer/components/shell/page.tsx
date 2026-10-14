@@ -11,10 +11,11 @@ export interface PageProps {
   children: ReactNode;
   className?: string;
   /** Max content width; wide pages (tables, dashboards) use "wide". */
-  width?: 'default' | 'wide' | 'narrow';
+  width?: 'default' | 'wide' | 'narrow' | 'full';
 }
 
-const widths = { default: 'max-w-[1240px]', wide: 'max-w-[1440px]', narrow: 'max-w-[880px]' } as const;
+/** "full": the whole window, for wide tables whose columns use every pixel of a large screen (Risultati, Confronta). */
+const widths = { default: 'max-w-[1240px]', wide: 'max-w-[1440px]', narrow: 'max-w-[880px]', full: 'max-w-none' } as const;
 
 /** Standard page frame: one h1, subtitle, actions, consistent gutters. */
 export function Page({ title, subtitle, actions, eyebrow, children, className, width = 'default' }: PageProps) {

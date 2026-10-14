@@ -163,7 +163,8 @@ function ItemCard({ item, index, at, onRemove, onPick }: { item: CompareItem; in
       </dl>
       {where && <p className={cn('text-xs font-medium', item.full ? 'text-fg' : 'text-fg-3 italic')}>{where}</p>}
       {item.spill && <SpillBadge className="self-start" />}
-      <div className="mt-auto flex flex-col gap-2 pt-1">
+      {/* Four columns on a small window: a button's words wrap instead of widening the column. */}
+      <div className="mt-auto flex flex-col gap-2 pt-1 [&_.flex]:flex-wrap [&_:is(a,button)]:h-auto [&_:is(a,button)]:min-h-8 [&_:is(a,button)]:py-1 [&_:is(a,button)]:text-left [&_:is(a,button)]:whitespace-normal [&_:is(a,button)]:max-w-full [&_:is(a,button)]:shrink">
         <ConfigPicker item={item} at={at} onPick={onPick} />
         {run.status === 'completed' && <PresetActions run={run} combo={item.comboIndex} at={presetAt} layout="compact" />}
       </div>
@@ -196,6 +197,7 @@ function ValueCell({ row, i }: { row: CompareRow; i: number }) {
           {row.format(v)}
           {reread && <span className="font-normal"> · {t('longConversations.compare.reread')}</span>}
         </span>
+        {row.notes?.[i] && <span className="text-xs text-fg-2">{row.notes[i]}</span>}
         {apart ? (
           <span className="text-xs text-fg-3">{t('compare.smallerContext')}</span>
         ) : allSame ? (
@@ -324,17 +326,25 @@ function DiffSection({ items }: { items: readonly CompareItem[] }) {
   );
 }
 
-/** Speed as the context fills up, one line per item; the compared depth marked. */
-function SpeedChart({ items, names, depth }: { items: readonly CompareItem[]; names: readonly string[]; depth: number | undefined }) {
+/**
+ * Writing (or reading) as the context fills up, one line per item up to its own largest context (its
+ * point with the context full at the context); the dots are what was measured, the tooltip says each
+ * one's exact tokens; the compared depth marked.
+ */
+function SpeedChart({ items, names, depth, metric }: { items: readonly CompareItem[]; names: readonly string[]; depth: number | undefined; metric: 'decode' | 'prefill' }) {
   const f = useI18n();
   const { t, number, integer } = f;
-  const [metric, setMetric] = useState<'decode' | 'prefill'>('decode');
   const data = useMemo(() => speedSeries(items, names, metric), [items, names, metric]);
   const fmt = useCallback((v: number) => (metric === 'decode' ? `${number(v, 1)} tok/s` : `${integer(v)} tok/s`), [metric, number, integer]);
-  const title = t('compare.charts.speed');
+  const title = t(metric === 'decode' ? 'compare.charts.speedWrite' : 'compare.charts.speedRead');
+  // Each value with the exact tokens it was measured at ("45,5 tok/s · 212.848 token").
+  const series = useMemo(
+    () => data.series.map((s) => ({ ...s, texts: s.values.map((v, k) => (v === null ? undefined : t('compare.charts.valueAt', { value: fmt(v), tokens: integer(s.tokens[k]!) }))) })),
+    [data, fmt, integer, t],
+  );
   const build = useCallback(
     (tk: ChartTokens) =>
-      depthLinesOption(tk, data.depths, data.series, {
+      depthLinesOption(tk, data.depths, series, {
         format: fmt,
         axis: integer,
         depthLabel: (d) => tokensK(d, f),
@@ -343,25 +353,13 @@ function SpeedChart({ items, names, depth }: { items: readonly CompareItem[]; na
         connectNulls: true,
         ...(depth === undefined ? {} : { marker: depth }),
       }),
-    [data, fmt, integer, f, depth],
+    [data, series, fmt, integer, f, depth],
   );
   const label = t(metric === 'decode' ? 'compare.charts.write' : 'compare.charts.read');
   return (
     <ChartCard
       title={title}
       help={t('compare.charts.speedHelp')}
-      controls={
-        <SegmentedControl
-          size="sm"
-          label={t('compare.charts.metric')}
-          value={metric}
-          onValueChange={setMetric}
-          options={[
-            { value: 'decode', label: t('compare.charts.write') },
-            { value: 'prefill', label: t('compare.charts.read') },
-          ]}
-        />
-      }
       table={{
         columns: [axisName('depth', f), ...names.map((n) => `${n} · ${label} (tok/s)`)],
         numeric: [0, ...names.map((_, i) => i + 1)],
@@ -486,12 +484,12 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
 
       <Card className="overflow-hidden">
         <ScrollX role="region" aria-label={t('compare.table')} tabIndex={0} className="focus-ring">
-          <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-sm">
             <caption className="sr-only">{t('compare.table')}</caption>
             <colgroup>
-              <col className="w-[220px]" />
+              <col className="w-36 xl:w-[220px]" />
               {items.map((_, i) => (
-                <col key={i} className="min-w-[180px]" />
+                <col key={i} />
               ))}
             </colgroup>
             <thead>
@@ -513,10 +511,14 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
         </ScrollX>
       </Card>
 
-      <div className={cn('grid gap-section', users && 'xl:grid-cols-2')}>
-        {items.some((it) => it.points.length > 0) && <SpeedChart items={items} names={short} depth={depth} />}
-        {users && <UsersChart items={items} names={short} choice={users} />}
-      </div>
+      {/* Where each one writes and reads faster: one line per item, each up to its own largest context (side by side on a large screen, where the legend fits). */}
+      {items.some((it) => it.points.length > 0) && (
+        <div className="grid gap-section 2xl:grid-cols-2">
+          <SpeedChart items={items} names={short} depth={depth} metric="decode" />
+          <SpeedChart items={items} names={short} depth={depth} metric="prefill" />
+        </div>
+      )}
+      {users && <UsersChart items={items} names={short} choice={users} />}
 
       <DiffSection items={items} />
 

@@ -31,7 +31,7 @@
     "gpus": [
       {
         "index": 0,
-        "uuid": "GPU-00000000-0000-0000-0000-000000000000",
+        "uuid": "GPU-3d36b2ac-a47c-233d-3308-4c71f3bc4a30",
         "name": "NVIDIA GeForce RTX 5090",
         "vendor": "nvidia",
         "memoryTotalMiB": 32607,

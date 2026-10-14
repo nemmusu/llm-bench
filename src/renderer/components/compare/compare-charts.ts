@@ -14,19 +14,25 @@ export interface ItemSeries {
   values: (number | null)[];
 }
 
+/** A speed line: its values and, at each depth, the exact tokens of the prompt (or of the context) it was measured with. */
+export interface SpeedSeries extends ItemSeries {
+  tokens: (number | null)[];
+}
+
 /** Generation (or prompt reading) of every item at every depth any of them measured; null where one did not. */
-export function speedSeries(items: readonly CompareItem[], names: readonly string[], metric: 'decode' | 'prefill'): { depths: number[]; series: ItemSeries[] } {
+export function speedSeries(items: readonly CompareItem[], names: readonly string[], metric: 'decode' | 'prefill'): { depths: number[]; series: SpeedSeries[] } {
   const depths = [...new Set(items.flatMap((it) => it.points.map((p) => p.depth)))].sort((a, b) => a - b);
   return {
     depths,
-    series: items.map((it, i) => ({
-      name: names[i]!,
-      item: i,
-      values: depths.map((d) => {
-        const p = it.points.find((q) => q.depth === d);
-        return p === undefined ? null : metric === 'decode' ? p.point.decodeTps.median : prefillStat(p.point).median;
-      }),
-    })),
+    series: items.map((it, i) => {
+      const at = depths.map((d) => it.points.find((q) => q.depth === d));
+      return {
+        name: names[i]!,
+        item: i,
+        values: at.map((p) => (p === undefined ? null : metric === 'decode' ? p.point.decodeTps.median : prefillStat(p.point).median)),
+        tokens: at.map((p) => p?.point.promptTokens ?? null),
+      };
+    }),
   };
 }
 

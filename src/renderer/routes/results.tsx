@@ -47,11 +47,17 @@ function SpeedContext({ run, kind, tokens }: { run: RunSummary; kind: SpeedKind;
   const ctx = run.contextSize;
   const short = run.profile === 'tune' && run.tuneGoal !== 'multi' && ctx !== undefined && !fillsContext(tokens, ctx);
   return (
-    <span className={cn('text-xs', short ? 'text-warning-text' : 'text-fg-3')} title={short ? f.t('results.tuning.notFull', { depth: tokensK(tokens, f), ctx: tokensK(ctx, f) }) : undefined}>
+    <span className={cn(WRAP, 'text-xs', short ? 'text-warning-text' : 'text-fg-3')} title={short ? f.t('results.tuning.notFull', { depth: tokensK(tokens, f), ctx: tokensK(ctx, f) }) : undefined}>
       {contextShort({ kind, tokens, basis: run.speedBasis }, f)}
     </span>
   );
 }
+
+/**
+ * A speed's second line that wraps below a large screen (1024–1440 px: the sidebar and nine columns):
+ * "a 512 token" over "di contesto", so the whole table fits without scrolling sideways.
+ */
+const WRAP = 'max-w-20 whitespace-normal 2xl:max-w-none 2xl:whitespace-nowrap';
 
 /** History of every saved run: filters, sorting, "Confronta" on every row, import/export and delete. */
 export function ResultsPage() {
@@ -73,6 +79,17 @@ export function ResultsPage() {
   const data = useMemo(() => filterRuns(all, filters, system.data?.hostId), [all, filters, system.data?.hostId]);
   const chosen = all.filter((r) => selected.has(r.id));
   const manyGpus = distinct(all, (r) => r.gpuName).length > 1;
+  /**
+   * The profile under the date ("Standard · 1.104 punti"). A search: "Trova le impostazioni migliori · 6
+   * combinazioni" is wider than the numbers leave room for, so "Impostazioni migliori" and the whole on hover.
+   */
+  const whenOf = useCallback((r: RunSummary): { text: string; title?: string } => {
+    const profile = t(`benchmark.profiles.${r.profile}`);
+    const combos = r.tunedCombinations === undefined ? undefined : t(countKey(r.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: r.tunedCombinations });
+    // The LLM Bench score belongs to its profile (Standard): next to it, so the numbers fit.
+    const text = `${combos ? t('results.tuning.short') : profile}${r.score !== undefined ? ` · ${t('results.score', { n: integer(r.score) })}` : ''}`;
+    return combos ? { text, title: `${profile} · ${combos}` } : { text };
+  }, [t, integer]);
   const set = (patch: Partial<RunFilters>) => setFilters((cur) => ({ ...cur, ...patch }));
   const toggle = useCallback(
     (id: string, on: boolean) =>
@@ -102,19 +119,15 @@ export function ResultsPage() {
       }),
       col.accessor('createdAt', {
         header: t('results.columns.date'),
+        // On a small window (1024 px) the date and the profile go under the model, so the model's name has room.
+        meta: { className: 'hidden xl:table-cell' },
         cell: (c) => {
-          const r = c.row.original;
-          const profile = t(`benchmark.profiles.${r.profile}`);
-          // A search: "Trova le impostazioni migliori · 6 combinazioni" is wider than the numbers leave room for,
-          // so "Impostazioni migliori" here and the whole on hover.
-          const combos = r.tunedCombinations === undefined ? undefined : t(countKey(r.tunedCombinations, 'results.tuning.combosOne', 'results.tuning.combos'), { n: r.tunedCombinations });
+          const when = whenOf(c.row.original);
           return (
             <span className="flex flex-col leading-5">
               <span className="text-fg-2 tabular-nums">{dateTime(c.getValue())}</span>
-              <span className="text-xs text-fg-3" title={combos && `${profile} · ${combos}`}>
-                {combos ? t('results.tuning.short') : profile}
-                {/* The LLM Bench score belongs to its profile (Standard): next to it, so the numbers fit. */}
-                {r.score !== undefined && ` · ${t('results.score', { n: integer(r.score) })}`}
+              <span className="text-xs text-fg-3" title={when.title}>
+                {when.text}
               </span>
             </span>
           );
@@ -123,8 +136,13 @@ export function ResultsPage() {
       // The model, what went wrong (failed, cancelled, shared memory), then engine and card: one column, so the numbers fit.
       // It takes the room the numbers leave: a long name ends with "…" and shows whole on hover.
       col.accessor('modelName', {
-        header: t('results.columns.model'),
-        meta: { fill: true, className: 'min-w-48 py-1.5' },
+        header: () => (
+          <>
+            {t('results.columns.model')}
+            <span className="xl:hidden"> · {t('results.columns.date')}</span>
+          </>
+        ),
+        meta: { fill: true, className: 'min-w-40 py-1.5 2xl:min-w-48' },
         cell: (c) => {
           const r = c.row.original;
           const quant = r.quant && !c.getValue().includes(r.quant) ? r.quant : undefined;
@@ -161,6 +179,10 @@ export function ResultsPage() {
                     {t('results.otherPc')}
                   </Badge>
                 )}
+              </span>
+              {/* The date column's words, here on a small window. */}
+              <span className="text-xs whitespace-normal text-fg-3 tabular-nums xl:hidden" title={whenOf(r).title}>
+                {dateTime(r.createdAt)} · {whenOf(r).text}
               </span>
             </span>
           );
@@ -244,7 +266,7 @@ export function ResultsPage() {
           ].filter((s): s is string => s !== undefined);
           return (
             <span
-              className="flex flex-col items-end leading-5 whitespace-nowrap"
+              className="flex min-w-24 flex-col items-end text-right leading-5 whitespace-normal xl:whitespace-nowrap"
               title={speeds.length ? t('results.usersTip', { users: usersWords(v, prompt, f), speeds: speeds.join(', ') }) : undefined}
             >
               <span>
@@ -257,8 +279,8 @@ export function ResultsPage() {
         },
       }),
       col.accessor('vramPeakMiB', {
-        // "VRAM picco" on one line: its numbers are short, and the model column takes the rest.
-        header: () => <UnitHeader text={t('results.columns.vram')} nowrap />,
+        // "VRAM picco" may wrap like the other headers: its numbers are short, and the model column takes the rest.
+        header: () => <UnitHeader text={t('results.columns.vram')} />,
         meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
@@ -271,11 +293,17 @@ export function ResultsPage() {
       col.display({
         id: 'compare',
         meta: { stickyEnd: true },
-        header: t('results.columns.compare'),
+        // On a small window the button's icon stands for the word (the same icon as on every row).
+        header: () => (
+          <span title={t('results.columns.compare')} className="inline-flex">
+            <GitCompareArrows aria-hidden className="size-4 xl:hidden" />
+            <span className="sr-only xl:not-sr-only">{t('results.columns.compare')}</span>
+          </span>
+        ),
         cell: (c) => (c.row.original.status === 'failed' ? null : <CompareToggle compact entry={entryOfSummary(c.row.original, f)} />),
       }),
     ],
-    [t, f, number, integer, dateTime, selected, toggle, all, system.data, manyGpus],
+    [t, f, number, integer, dateTime, selected, toggle, all, system.data, manyGpus, whenOf],
   );
 
   const onImport = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -324,7 +352,7 @@ export function ResultsPage() {
     <Page
       title={t('results.title')}
       subtitle={t('results.subtitle')}
-      width="wide"
+      width="full"
       actions={
         // Import, export and delete work on tests: the Configurazioni view has its own actions per row.
         <>

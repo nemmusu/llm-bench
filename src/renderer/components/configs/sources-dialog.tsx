@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import type { ConfigEntry, ConfigSource } from '../../../contract/configs';
 import { useI18n } from '../../i18n';
-import { notMeasuredAt } from '../../lib/speed-at';
+import { headerAt, headerAtMax, notMeasuredAt } from '../../lib/speed-at';
 import { MIB_PER_GB, summaryModelLabel } from '../bench/format';
 import { configLabelOf } from '../presets/config-label';
 import { tokensShort } from '../presets/format';
@@ -70,8 +70,10 @@ export function SourcesDialog({ entry, at, onOpenChange }: SourcesDialogProps) {
         notFull,
       ),
     ];
-    if (any((s) => point(s)?.prefillTps)) list.push(numeric('prefill', t('configs.columns.prefill'), (s) => point(s)?.prefillTps, integer));
-    if (any((s) => point(s)?.ttftMs)) list.push(numeric('ttft', t('configs.columns.ttft'), (s) => point(s)?.ttftMs, integer));
+    // Read where the generation is (the same point): the header says it, like the generation's.
+    const where = (label: string) => (at === AT_MAX ? headerAtMax(label, f) : headerAt(label, at, f));
+    if (any((s) => point(s)?.prefillTps)) list.push(numeric('prefill', where(t('configs.columns.prefill')), (s) => point(s)?.prefillTps, integer));
+    if (any((s) => point(s)?.ttftMs)) list.push(numeric('ttft', where(t('configs.columns.ttft')), (s) => point(s)?.ttftMs, f.duration));
     if (any((s) => s.contextSize)) list.push(numeric('context', t('configs.columns.context'), (s) => s.contextSize, integer));
     if (any((s) => s.vramPeakMiB)) list.push(numeric('vram', t('configs.columns.vram'), (s) => s.vramPeakMiB, (v) => number(v / MIB_PER_GB, 1)));
     if (any((s) => s.parallel)) {

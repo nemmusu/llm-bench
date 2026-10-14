@@ -95,15 +95,16 @@ describe('the comparison', () => {
     expect(within(await screen.findByRole('option', { name: /^512 token/ })).getByText('misurato da tutti')).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 
-    // One line per item; reading and the total as toggles; the numbers as tables.
-    await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(2));
+    // Writing and reading side by side, one line per item, each value with its exact tokens; the total as a toggle; the numbers as tables.
+    await waitFor(() => expect(charts.options.length).toBeGreaterThanOrEqual(3));
     for (const o of charts.options) expect(exerciseFormatters(o).join(' ')).toMatch(/tok\/s|token|utenti/);
     const speed = charts.options.find((o) => JSON.stringify(o).includes('Token già nel contesto'))!;
     expect(exerciseFormatters(speed).join(' ')).toContain('a 128 token di contesto');
-    await userEvent.click(screen.getByRole('radio', { name: 'Lettura' }));
+    expect(exerciseFormatters(speed).join(' ')).toMatch(/tok\/s · 128 token/);
     await userEvent.click(screen.getByRole('radio', { name: 'In tutto' }));
     for (const b of screen.getAllByRole('button', { name: 'Mostra tabella' })) await userEvent.click(b);
-    expect(screen.getByRole('table', { name: /Velocità al crescere del contesto/ }).textContent).toContain('C · Qwen3 8B · Lettura (tok/s)');
+    expect(screen.getByRole('table', { name: /Scrittura al crescere del contesto/ }).textContent).toContain('C · Qwen3 8B · Scrittura (tok/s)');
+    expect(screen.getByRole('table', { name: /Lettura al crescere del contesto/ }).textContent).toContain('C · Qwen3 8B · Lettura (tok/s)');
     expect(screen.getByRole('table', { name: /Più utenti insieme/ }).textContent).toContain('In tutto (tok/s)');
 
     // "Cosa cambia tra loro": closed at first, only the differences until asked.

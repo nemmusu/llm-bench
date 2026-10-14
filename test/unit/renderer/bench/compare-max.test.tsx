@@ -174,6 +174,28 @@ describe('"Contesto massimo": each at its own largest context, full', () => {
     expect(reservesMemory({ engine: { kind: 'llamacpp-native', name: 'llama.cpp' } })).toBe(false);
   });
 
+  it('each one at its best: where it writes and reads fastest, its largest context, its most precise cache', () => {
+    const list = items();
+    const row = (rows: ReturnType<typeof compareRows>, id: string) => rows.find((r) => r.id === id)!;
+    const max = compareRows(list, AT_MAX, it_);
+    // At "Contesto massimo" the speed rows already are each one's largest context: not twice.
+    expect(max.find((r) => r.id === 'writeFull')).toBeUndefined();
+    expect(row(max, 'writePeak')).toMatchObject({ group: 'best', plain: true, best: [], notes: ['a 1K di contesto', 'a 1K di contesto', 'a 1K di contesto'] });
+    expect(row(max, 'writePeak').values.map((v) => it_.number(v!, 1))).toEqual(['55,8', '67,0', '68,8']);
+    expect(row(max, 'readPeak').notes).toEqual(['a 4K di contesto', 'a 8K di contesto', 'a 16K di contesto']);
+    expect(row(max, 'precise')).toMatchObject({ values: [112_640, 229_376, 245_760], notes: ['cache KV auto · combinazione 2', 'cache KV f16 · combinazione 2', 'cache KV f16 · combinazione 3'] });
+    expect(row(max, 'precise').format(112_640)).toBe('contesto 112.640');
+    // At one depth: each one's speed with its largest context full is still there, with its context.
+    const at64 = compareRows(list, 64 * K, it_);
+    expect(row(at64, 'writeFull')).toMatchObject({ notes: ['con il contesto pieno a 208K', 'con il contesto pieno a 256K', 'con il contesto pieno a 256K'], best: [] });
+    expect(row(at64, 'readFull').values[0]).toBeCloseTo(1249.8, 0);
+    // A run among them: no search, said so; never filled: why.
+    const mixed = compareRows([list[0]!, itemOf(seeded(IDS.moe))], 512, it_);
+    expect(row(mixed, 'precise').missing).toEqual([undefined, 'un test, non una ricerca']);
+    expect(row(mixed, 'writeFull').missing).toEqual([undefined, 'non misurata a 8K: misurata solo fino a 4K']);
+    expect(row(compareRows(list, AT_MAX, en), 'precise').notes[0]).toBe('KV cache auto · combination 2');
+  });
+
   it('the sheet says the context of every number at "Contesto massimo", and why one is missing', () => {
     const list = items();
     const names = ['A', 'B', 'C'];

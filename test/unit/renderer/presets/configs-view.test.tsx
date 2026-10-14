@@ -59,7 +59,9 @@ describe('Risultati → Configurazioni', () => {
     const decode = screen.getByRole('columnheader', { name: /Generazione/ });
     expect(decode.getAttribute('aria-sort')).toBe('descending');
     expect(decode.textContent).toContain('(tok/s)');
-    expect(screen.getByRole('columnheader', { name: /Primo token/ }).textContent).toContain('(ms)');
+    // The first token's wait has its unit in every cell ("58 ms", "3 min 50 s"), and the header says where.
+    expect(screen.getByRole('columnheader', { name: /Primo token/ }).textContent).toBe('Primo token a 512 token');
+    expect(screen.getAllByText(/^\d+ ms$/).length).toBeGreaterThan(0);
     expect(screen.getByRole('columnheader', { name: /VRAM/ }).textContent).toContain('(GB)');
     expect(rowModels()[0]).toContain('gpt-oss 20B');
     expect(rowModels().at(-1)).toContain('Gemma 4 31B');

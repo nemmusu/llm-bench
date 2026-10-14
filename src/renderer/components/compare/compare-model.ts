@@ -10,14 +10,14 @@ import { configParamsOf, sweepDepths } from '../../../contract/configs';
 import type { LaunchParams } from '../../../contract/engines';
 import { fillsContext, nominalDepth, spilledRun, type ConcurrencyPoint, type EngineIdentity, type LatencyPoint, type RunResult, type SessionsPoint, type TuneCombination } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
-import { contextWords, firstTokenWords, notMeasuredAt, tokensK, usersWords, type ContextBasis } from '../../lib/speed-at';
+import { contextShort, contextWords, firstTokenWords, notMeasuredAt, tokensK, usersWords, type ContextBasis } from '../../lib/speed-at';
 import { AT_MAX, type CompareAt } from '../configs/depths';
 import { deltaWords, REREAD_SHARE, type DeltaKind } from '../bench/compare-words';
 import type { DeltaView } from '../bench/delta';
 import { SAME_THRESHOLD } from '../bench/delta';
 import { engineLabelOf, MIB_PER_GB, modelLabelOf, prefillStat, vramFigure } from '../bench/format';
 import { contextSweepOf, sessionsOf, soloPoint, writeStat } from '../bench/sessions-view';
-import { recommendedIndex } from '../tune/tune-logic';
+import { KV_PRECISION, recommendedIndex } from '../tune/tune-logic';
 import type { CompareRef } from '../../lib/compare-selection';
 
 /** One thing being compared, with every number the comparison can use. */
@@ -272,8 +272,8 @@ function soloAt(item: Pick<CompareItem, 'sessions'>, depth: number | undefined):
 
 // ---- the rows -------------------------------------------------------------------------------------
 
-export type RowGroup = 'speed' | 'memory' | 'users' | 'sessions' | 'other';
-export const ROW_GROUPS: readonly RowGroup[] = ['speed', 'memory', 'users', 'sessions', 'other'];
+export type RowGroup = 'speed' | 'best' | 'memory' | 'users' | 'sessions' | 'other';
+export const ROW_GROUPS: readonly RowGroup[] = ['speed', 'best', 'memory', 'users', 'sessions', 'other'];
 
 export interface CompareRow {
   id: string;
@@ -299,6 +299,8 @@ export interface CompareRow {
   compared?: boolean[];
   /** No winner: the numbers are shown side by side, not ranked (what they mean differs between engines). */
   plain?: boolean;
+  /** What each number was measured at, under it ("a 1K di contesto"): a row whose items each have their own depth. */
+  notes?: (string | undefined)[];
   /** Why an item has no number ("non misurata a 256K", "arriva solo a 208K", "il motore non lo dice"); default "non misurato". */
   missing?: (string | undefined)[];
   /** Items with the best value (more than one: equal within half a percent); empty below two values. */
@@ -380,8 +382,66 @@ function speedRows(items: readonly CompareItem[], at: CompareAt, f: CompareForma
   return [
     { ...common, id: 'decode', label: t('compare.rows.decode'), context: ctx.write, values: points.map((p) => p?.point.decodeTps.median), higherIsBetter: true, kind: 'speed', format: (v) => `${number(v, 1)} tok/s` },
     { ...common, id: 'prefill', label: t('compare.rows.prefill'), context: ctx.read, values: points.map((p) => (p ? prefillStat(p.point).median : undefined)), higherIsBetter: true, kind: 'speed', format: (v) => `${integer(v)} tok/s` },
-    { ...common, id: 'ttft', label: t('compare.rows.ttft'), context: ctx.first, values: points.map((p) => p?.point.ttftMs.median), higherIsBetter: false, kind: 'time', format: (v) => `${integer(v)} ms` },
+    { ...common, id: 'ttft', label: t('compare.rows.ttft'), context: ctx.first, values: points.map((p) => p?.point.ttftMs.median), higherIsBetter: false, kind: 'time', format: f.duration },
   ];
+}
+
+/** The point where an item writes (or reads) fastest, among everything it measured. */
+export function peakPoint(item: Pick<CompareItem, 'points'>, kind: 'write' | 'read'): DepthPoint | undefined {
+  const speed = (p: DepthPoint) => (kind === 'write' ? p.point.decodeTps.median : prefillStat(p.point).median);
+  return item.points.reduce<DepthPoint | undefined>((best, p) => (best === undefined || speed(p) > speed(best) ? p : best), undefined);
+}
+
+/**
+ * The combination of an item's search with the most precise KV cache that was measured (the best
+ * quality of answers its search tried), with its largest context; undefined for a run without a search.
+ */
+export function preciseCombo(item: Pick<CompareItem, 'run'>): { index: number; combo: TuneCombination } | undefined {
+  const list = item.run.tuning?.combinations.flatMap((combo, index) => (combo.sweep.length || combo.concurrency?.length ? [{ index, combo }] : [])) ?? [];
+  return list.sort((a, b) => KV_PRECISION[a.combo.kvType] - KV_PRECISION[b.combo.kvType] || b.combo.maxContext - a.combo.maxContext || a.index - b.index)[0];
+}
+
+/**
+ * "Il meglio di ognuno": what each item does at its best, every number with its own context (side by
+ * side, no winner: each at a different depth). Its speeds with its largest context full (when the
+ * table compares at one depth), where it writes and reads fastest, and for a search the most precise
+ * KV cache it measured.
+ */
+function bestRows(items: readonly CompareItem[], at: CompareAt | undefined, f: CompareFormatters): RowInput[] {
+  const { t, number, integer } = f;
+  const tps1 = (v: number) => `${number(v, 1)} tok/s`;
+  const tps0 = (v: number) => `${integer(v)} tok/s`;
+  const rows: RowInput[] = [];
+  const common = { group: 'best' as const, higherIsBetter: true, kind: 'speed' as const, plain: true };
+  if (at !== AT_MAX && items.some((it) => it.full)) {
+    const full = (it: CompareItem) => (it.full ? t('compare.rows.atFull', { ctx: tokensK(it.full.depth, f) }) : undefined);
+    const missing = items.map((it) => (it.full ? undefined : missingSpeed(it, AT_MAX, f)));
+    rows.push(
+      { ...common, id: 'writeFull', label: t('compare.rows.writeFull'), values: items.map((it) => it.full?.point.decodeTps.median), notes: items.map(full), missing, format: tps1 },
+      { ...common, id: 'readFull', label: t('compare.rows.readFull'), values: items.map((it) => (it.full ? prefillStat(it.full.point).median : undefined)), notes: items.map(full), missing, format: tps0 },
+    );
+  }
+  const write = items.map((it) => peakPoint(it, 'write'));
+  const read = items.map((it) => peakPoint(it, 'read'));
+  rows.push(
+    { ...common, id: 'writePeak', label: t('compare.rows.writePeak'), values: write.map((p) => p?.point.decodeTps.median), notes: write.map((p) => p && contextShort({ kind: 'write', tokens: p.depth, basis: p.basis }, f)), format: tps1 },
+    { ...common, id: 'readPeak', label: t('compare.rows.readPeak'), values: read.map((p) => (p ? prefillStat(p.point).median : undefined)), notes: read.map((p) => p && contextShort({ kind: 'read', tokens: p.depth, basis: p.basis }, f)), format: tps0 },
+  );
+  if (items.some((it) => it.run.tuning)) {
+    const precise = items.map(preciseCombo);
+    rows.push({
+      ...common,
+      id: 'precise',
+      label: t('compare.rows.precise'),
+      context: t('compare.rows.preciseHint'),
+      kind: 'amount',
+      values: precise.map((p) => p?.combo.maxContext),
+      notes: precise.map((p) => p && t('compare.rows.preciseNote', { kv: p.combo.kvType, n: p.index + 1 })),
+      missing: items.map((it) => (it.run.tuning ? undefined : t('compare.rows.preciseNone'))),
+      format: (v) => t('compare.rows.preciseContext', { ctx: integer(v) }),
+    });
+  }
+  return rows;
 }
 
 /**
@@ -394,9 +454,9 @@ export function compareRows(items: readonly CompareItem[], at: CompareAt | undef
   const tps1 = (v: number) => `${number(v, 1)} tok/s`;
   const tps0 = (v: number) => `${integer(v)} tok/s`;
   const sec = (v: number) => `${number(v / 1000, 2)} s`;
-  const ms = (v: number) => `${integer(v)} ms`;
   const rows: RowInput[] = [];
   if (at !== undefined) rows.push(...speedRows(items, at, f));
+  rows.push(...bestRows(items, at, f));
   const allCombos = items.every((it) => it.combo);
   const reserves = items.some((it) => reservesMemory(it.run));
   rows.push(
@@ -446,7 +506,7 @@ export function compareRows(items: readonly CompareItem[], at: CompareAt | undef
     rows.push(
       { id: 'perUser', group: 'users', label: t('compare.rows.perUser'), context, values: at.map((p) => p?.perRequestDecodeTpsP50), higherIsBetter: true, kind: 'speed', format: tps1 },
       { id: 'total', group: 'users', label: t('compare.rows.total'), context, values: at.map((p) => p?.aggregateTps), higherIsBetter: true, kind: 'speed', format: tps0 },
-      { id: 'usersTtft', group: 'users', label: t('compare.rows.usersTtft'), context, values: at.map((p) => p?.ttftP95Ms), higherIsBetter: false, kind: 'time', format: ms },
+      { id: 'usersTtft', group: 'users', label: t('compare.rows.usersTtft'), context, values: at.map((p) => p?.ttftP95Ms), higherIsBetter: false, kind: 'time', format: duration },
     );
   }
   const sd = sessionsDepth(items);

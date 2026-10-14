@@ -104,7 +104,7 @@ export function ComparePage() {
   const refs = useMemo(() => parseIds(search.ids), [search.ids]);
   const comparing = refs.length >= 2 && !search.view;
   return (
-    <Page title={t('compare.title')} subtitle={comparing ? t('compare.subtitle', { n: refs.length }) : t('compare.startSubtitle')} width="wide">
+    <Page title={t('compare.title')} subtitle={comparing ? t('compare.subtitle', { n: refs.length }) : t('compare.startSubtitle')} width="full">
       {comparing ? <CompareItems refs={refs} at={search.at} /> : <Start refs={refs} view={search.view} />}
     </Page>
   );

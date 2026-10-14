@@ -125,12 +125,13 @@ export function ConfigsView() {
       // The model and, under it, the engine (as in the Test list).
       col.accessor(({ entry: e }) => summaryModelLabel({ modelName: e.model.name, quant: e.model.quant }), {
         id: 'model',
-        meta: { className: 'min-w-44 max-w-60 whitespace-normal py-2' },
+        meta: { className: 'min-w-40 max-w-60 whitespace-normal py-2' },
         header: t('configs.columns.model'),
         cell: (c) => (
           <span className="flex flex-col items-start leading-5">
-            <span className="font-medium text-fg">{c.getValue()}</span>
-            <span className="text-xs whitespace-nowrap text-fg-3">{configEngineLabel(c.row.original.entry)}</span>
+            <span className="font-medium break-words text-fg">{c.getValue()}</span>
+            {/* A long engine name ("NInfer-all e408e428ae86 (Ubuntu-24.04)") wraps under the model, never over the next column. */}
+            <span className="text-xs text-fg-3">{configEngineLabel(c.row.original.entry)}</span>
             {/* Its tests spilled to shared memory: these numbers are not the card's. */}
             {c.row.original.entry.spill && <SpillBadge className="mt-1" />}
           </span>
@@ -140,7 +141,7 @@ export function ConfigsView() {
       col.accessor(({ entry: e }) => configLabelOf(e.engineKind, e.params, f, { context: false, kv: 'custom', capitalize: false, tags: e.tags }).text || t('configs.defaults'), {
         id: 'config',
         enableSorting: false,
-        meta: { className: 'min-w-40 max-w-56 whitespace-normal py-2 leading-5' },
+        meta: { className: 'min-w-32 max-w-48 whitespace-normal py-2 leading-5' },
         header: () => (
           <span className="inline-flex items-center gap-1">
             {t('configs.columns.config')}
@@ -196,7 +197,8 @@ export function ConfigsView() {
         },
       }),
       ...atDepth('prefill', 'configs.columns.prefill', (p) => p.prefillTps, integer),
-      ...atDepth('ttft', 'configs.columns.ttft', (p) => p.ttftMs, integer),
+      // A wait of minutes at 256K reads "3 min 50 s", not "229.970 ms".
+      ...atDepth('ttft', 'configs.columns.ttft', (p) => p.ttftMs, f.duration),
       ...(entries.some((e) => e.vramPeakMiB !== undefined)
         ? [
             col.accessor((r) => r.entry.vramPeakMiB, {

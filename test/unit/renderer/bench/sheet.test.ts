@@ -59,7 +59,7 @@ describe('Scheda da condividere: content', () => {
     expect(cache?.text).toBe('Dal secondo messaggio in poi il server riusa quello che ha già letto (99,7% con 1 sessione, 97,5% con 2 sessioni) e legge solo il testo nuovo: con 1 sessione l’attesa passa da 1 min 53 s a 1,00 s.');
     expect(queue?.paragraphs).toEqual(['Con 2 sessioni insieme ogni messaggio viene letto a 1.783 token/s (con una sessione sola: 1.763 token/s); quello che aspetta di più resta in coda 1 min 48 s (stima) prima che la sua lettura cominci.']);
     expect(memory?.text).toBe('La memoria del motore (KV cache) tiene 889.820 token (bastano per 4 conversazioni da 200.000).');
-    expect(compare?.text).toBe('Stesso modello, stesso PC: 2 configurazioni a confronto, con le velocità misurate alla stessa lunghezza di contesto.');
+    expect(compare?.text).toBe('Stesso modello, stesso PC: 2 configurazioni a confronto: una velocità si confronta solo con quelle misurate allo stesso contesto.');
     expect(compare?.paragraphs).toEqual([
       'A · Qwen3-8B-FP8: vLLM v0.12.0 (CUDA) · Contesto 8.192 · cache KV auto · 4 slot paralleli · memoria GPU 84%, test del 6 ott 2026, 10:00.',
       expect.stringMatching(/^B · Qwen3-8B-FP8 \(questa scheda\): vLLM /),
@@ -119,7 +119,7 @@ describe('Scheda da condividere: content', () => {
     const other = structuredClone(teamRuns().before);
     other.hardware = { ...other.hardware, hostId: 'elsewhere' };
     const r = sheetOf(input({ compare: compared([other, teamRuns().now]) }), it_);
-    expect(r.sections.find((s) => s.title === 'Confronto con le altre configurazioni')?.text).toBe('2 configurazioni a confronto, con le velocità misurate alla stessa lunghezza di contesto.');
+    expect(r.sections.find((s) => s.title === 'Confronto con le altre configurazioni')?.text).toBe('2 configurazioni a confronto: una velocità si confronta solo con quelle misurate allo stesso contesto.');
     // The same number on both sides.
     const cold = r.sections.find((s) => s.title === 'Confronto con le altre configurazioni')?.table?.rows.find((x) => (x[0] as string).startsWith('Caricamento a freddo'));
     expect(cold?.[3]).toBe('uguale');

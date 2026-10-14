@@ -388,8 +388,10 @@ describe('the rows: the best number marked, the others in words', () => {
   it('speeds at the compared depth, memory, users, the rest; a row nobody measured is left out', () => {
     const items = [itemOf(seeded(IDS.moe)), itemOf(seeded(IDS.gemma))];
     const rows = compareRows(items, 512, it_);
-    expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'maxContext', 'vram', 'perUser', 'total', 'usersTtft', 'warm', 'cold', 'efficiency', 'score']);
+    expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'writePeak', 'readPeak', 'maxContext', 'vram', 'perUser', 'total', 'usersTtft', 'warm', 'cold', 'efficiency', 'score']);
     const row = (id: string) => rows.find((r) => r.id === id)!;
+    // Each one at its best: where it writes fastest, said under the number, no winner.
+    expect(row('writePeak')).toMatchObject({ plain: true, best: [], notes: ['a 512 token di contesto', 'a 512 token di contesto'] });
     expect(row('decode')).toMatchObject({ label: 'Generazione (tok/s)', context: 'scrittura con 512 token già nel contesto', best: [0] });
     expect(row('decode').words[1]?.text).toBe('3,7 volte più lento');
     expect(row('prefill').context).toBe('lettura di un prompt da 512 token');
@@ -413,8 +415,8 @@ describe('the rows: the best number marked, the others in words', () => {
     expect(deeper.find((r) => r.id === 'prefill')?.values[2]).toBeUndefined();
     // Why: its context is smaller than that depth.
     expect(deeper.find((r) => r.id === 'prefill')?.missing).toEqual([undefined, undefined, 'arriva solo a 1K']);
-    // No compared depth: no speed rows.
-    expect(compareRows(items, undefined, it_)[0]?.id).toBe('maxContext');
+    // No compared depth: no speed rows, only each one at its best.
+    expect(compareRows(items, undefined, it_)[0]?.id).toBe('writePeak');
     // A context sweep only: its reading is the context's, not a prompt's.
     const sweeps = [itemOf(swept(seeded(IDS.failed), 'a', [K])), itemOf(swept(seeded(IDS.failed), 'b', [K]))];
     expect(compareRows(sweeps, K, it_).find((r) => r.id === 'prefill')?.context).toBe('lettura del contesto fino a 1.024 token');
@@ -424,7 +426,7 @@ describe('the rows: the best number marked, the others in words', () => {
   it('tune combinations have no load times of their own', () => {
     const run = tunedRun();
     const rows = compareRows([itemOf(run, { runId: run.id, combo: 0 }), itemOf(run, { runId: run.id, combo: 1 })], 4 * K, it_);
-    expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'maxContext', 'vram']);
+    expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'writeFull', 'readFull', 'writePeak', 'readPeak', 'precise', 'maxContext', 'vram']);
     expect(rows[0]!.best).toEqual([0]);
     // The largest context that fits is what a search found: ranked.
     expect(rows.find((r) => r.id === 'maxContext')).toMatchObject({ plain: false, context: 'il più grande che entra nella scheda, trovato dalla ricerca' });

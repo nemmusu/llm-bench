@@ -16,9 +16,9 @@ export function UnitHeader({ text, nowrap }: { text: string; nowrap?: boolean })
   return (
     <span className="inline-flex flex-col leading-4">
       <span className={nowrap ? 'whitespace-nowrap' : 'whitespace-normal'}>{m[1]}</span>
-      <span className="text-[11px] font-normal text-fg-3">
-        ({m[2]}){m[3]}
-      </span>
+      <span className="text-[11px] font-normal text-fg-3">({m[2]})</span>
+      {/* Where the numbers were measured ("al contesto massimo", "a 32K") on a line of its own, over a column of short numbers. */}
+      {m[3] && <span className="text-[11px] font-normal text-fg-3">{m[3]}</span>}
     </span>
   );
 }
