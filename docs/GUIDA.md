@@ -260,6 +260,8 @@ In **Impostazioni → Area di notifica** scegli cosa fa la chiusura della finest
 
 I motori sono i programmi che fanno girare i modelli. Ognuno ha la sua scheda nella pagina **Motori**, con lo stato, le versioni e i pulsanti per installare e **Aggiorna**. Prima di aggiornare LLM Bench ti mostra i comandi esatti che eseguirà; la versione di prima resta sul PC finché la nuova non funziona.
 
+Quello che LLM Bench installa si toglie dalla stessa scheda, dopo una conferma che dice cosa va via (e, dove può, quanto spazio libera): una versione di llama.cpp, una versione Docker segnata **Sul PC** (vLLM, SGLang, l'immagine di llama.cpp), una compilazione di NInfer fatta da lui (la sua cartella), l'ambiente Python di vLLM o SGLang su Linux. Niente viene tolto mentre un test o un server lo sta usando. Una compilazione o un ambiente tuo viene solo **dimenticato**: LLM Bench smette di usarlo e i suoi file restano.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/it/engines-dark.png">
   <img src="screenshots/it/engines.png" alt="La pagina Motori: llama.cpp, Docker e vLLM con il loro stato e le versioni">

@@ -260,6 +260,8 @@ In **Settings → Notification area** you choose what closing the window does an
 
 Engines are the programs that run the models. Each one has a card on the **Engines** page with its state, its versions and the buttons to install and **Update**. Before updating, LLM Bench shows the exact commands it will run; the previous version stays on the PC until the new one works.
 
+What LLM Bench installs is removed from the same card, after a confirmation that says what goes (and, where it can, how much space it frees): a llama.cpp version, a Docker version marked **On the PC** (vLLM, SGLang, the llama.cpp image), a NInfer build it compiled (its folder), the Python environment of vLLM or SGLang on Linux. Nothing is removed while a test or a server is using it. A build or an environment of your own is only **forgotten**: LLM Bench stops using it and its files stay.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/en/engines-dark.png">
   <img src="screenshots/en/engines.png" alt="The Engines page: llama.cpp, Docker and vLLM with their state and versions">
