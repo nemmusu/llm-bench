@@ -248,7 +248,8 @@ describe('SGLang cards', () => {
   it('Docker tags: use, download; native on Linux with uv first, then SGLang', async () => {
     bridge({ platform: 'linux' });
     const engines = [...ENGINES(), { kind: 'sglang-docker' as const, available: true, installed: true, problems: [], supported: true }, { kind: 'sglang-native' as const, available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }];
-    const w = world({ system: linux, engines, check: report([item('vllm-native', { state: 'optional', action: { kind: 'install-uv', bytes: 20e6 } })]) });
+    // v0.5.21-cu130 is on the PC: it can be used; the others are downloaded first.
+    const w = world({ system: linux, engines, check: report([item('vllm-native', { state: 'optional', action: { kind: 'install-uv', bytes: 20e6 } })]), images: { 'lmsysorg/sglang': [{ id: 'sha256:s1', tags: ['v0.5.21-cu130'], digests: [], sizeBytes: 14e9, running: false }] } });
     const api = libApi(w);
     renderLib('/engines', api);
     const docker = await card('SGLang (Docker)');
@@ -262,7 +263,7 @@ describe('SGLang cards', () => {
     expect(within(tags).getAllByRole('listitem')).toHaveLength(8);
     await userEvent.click(within(docker).getByRole('button', { name: 'Mostra meno' }));
     await userEvent.click(within(tags).getAllByRole('button', { name: 'Scarica' })[0]!);
-    expect(api.calls.find((c) => c.path === '/api/engines/sglang-docker/install')?.body).toEqual({ image: 'lmsysorg/sglang:v0.5.21-cu130' });
+    expect(api.calls.find((c) => c.path === '/api/engines/sglang-docker/install')?.body).toEqual({ image: 'lmsysorg/sglang:v0.5.21' });
 
     const native = await card('SGLang nativo');
     expect(within(native).getByText('Non installato')).toBeTruthy();
@@ -387,7 +388,7 @@ describe('Motori personalizzati: the check in words, the dialog on Linux, errors
   it('SGLang cards: a choice that cannot be saved, an install that failed without saying why', async () => {
     bridge({ platform: 'linux' });
     const engines = [...ENGINES(), { kind: 'sglang-docker' as const, available: true, installed: true, problems: [], supported: true }, { kind: 'sglang-native' as const, available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }];
-    const api = libApi(world({ system: linux, engines }));
+    const api = libApi(world({ system: linux, engines, images: { 'lmsysorg/sglang': [{ id: 'sha256:s1', tags: ['v0.5.21-cu130'], digests: [], sizeBytes: 14e9, running: false }] } }));
     api.on('PUT /api/settings', () => fail('VALIDATION'));
     renderLib('/engines', api);
     const docker = await card('SGLang (Docker)');

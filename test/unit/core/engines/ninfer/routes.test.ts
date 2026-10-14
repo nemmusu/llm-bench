@@ -40,6 +40,10 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
     },
     builds: async (fresh) => ({ kind: 'ninfer-native', builds: fresh ? [] : [{ build: 'official', kind: 'ninfer-native', state: 'missing', source: { url: 'https://x/y.git' }, dir: '~/ninfer' }] }),
     setBuildPath: async (build, body) => ({ saved: build === 'all', status: { kind: 'ninfer-native', available: true, installed: true, location: body.path, problems: [], supported: true } }),
+    removePlan: async (build) => ({ build, mode: 'delete', dir: '~/ninfer', sizeBytes: 1024, command: 'rm -rf ~/ninfer' }),
+    remove: async (build) => {
+      saved.push(['removed', build]);
+    },
     jobs: { building: false },
     publish: (e) => events.push(e as InstallEvent),
     ...over,
@@ -58,6 +62,25 @@ function stub(over: Partial<NinferRouteDeps> = {}) {
 }
 
 describe('NInfer routes (stub services)', () => {
+  it('removing a build: its plan, then the removal; never while a build, a test or a server runs', async () => {
+    let busy = false;
+    const r = stub({ busy: () => busy });
+    expect(await (await r.send('GET', '/api/engines/ninfer/builds/official/remove')).json()).toEqual({ build: 'official', mode: 'delete', dir: '~/ninfer', sizeBytes: 1024, command: 'rm -rf ~/ninfer' });
+    expect(await (await r.post('/api/engines/ninfer/builds/all/remove')).json()).toEqual({ ok: true });
+    expect(r.saved).toEqual([['removed', 'all']]);
+    busy = true;
+    const refused = await r.post('/api/engines/ninfer/builds/official/remove');
+    expect(await refused.json()).toMatchObject({ error: { code: 'ENGINE_IN_USE', params: { engine: 'NInfer' } } });
+    expect(await (await r.post('/api/engines/ninfer/builds/all/remove')).json()).toMatchObject({ error: { code: 'ENGINE_IN_USE', params: { engine: 'NInfer-all' } } });
+    busy = false;
+    r.deps.jobs.building = true;
+    expect((await r.post('/api/engines/ninfer/builds/official/remove')).status).toBeGreaterThanOrEqual(400);
+    expect((await r.send('GET', '/api/engines/ninfer/builds/nope/remove')).status).toBe(400);
+    // Without a busy check (tests of the routes alone): only a running build stops it.
+    const plain = stub();
+    expect(await (await plain.post('/api/engines/ninfer/builds/official/remove')).json()).toEqual({ ok: true });
+  });
+
   it('a native build has no distro in its result', async () => {
     const r = stub();
     await r.post('/api/engines/ninfer/build', { kind: 'ninfer-native', confirm: true });

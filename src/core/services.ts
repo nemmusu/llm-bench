@@ -29,6 +29,8 @@ import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
 import { createCustomEngineRoutes } from './engines/custom/routes';
 import { createEngineUpdateRoutes } from './engines/updates/routes';
+import { createNativeEnvRoutes } from './engines/native-env/routes';
+import { NativeEnvs, trackInstalls } from './engines/native-env/service';
 import { EngineUpdates } from './engines/updates/service';
 import { createNinferRoutes } from './engines/ninfer/routes';
 import { createNinferServices, type NinferServices } from './engines/ninfer/setup';
@@ -682,7 +684,18 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         busy: () => s.bench.active() !== undefined || s.serve.busy(),
         shutdown: ctx.shutdown,
       })(app, ctx),
-    (app, ctx) => createNinferRoutes(s.ninfer.routes({ publish: (e) => ctx.hub.publish(e), shutdown: ctx.shutdown }))(app, ctx),
+    (app, ctx) =>
+      createNativeEnvRoutes(
+        new NativeEnvs({
+          platform: ctx.deps.platform,
+          enginesDir: ctx.deps.paths.enginesDir,
+          settings: ctx.settings,
+          busy: () => s.bench.active() !== undefined || s.serve.busy(),
+          installing: trackInstalls((l) => ctx.hub.subscribe(l)),
+        }),
+      )(app, ctx),
+    (app, ctx) =>
+      createNinferRoutes(s.ninfer.routes({ publish: (e) => ctx.hub.publish(e), shutdown: ctx.shutdown, busy: () => s.bench.active() !== undefined || s.serve.busy() }))(app, ctx),
     createBenchRoutes(s.bench, s.runs),
     createConfigRoutes(new ConfigsIndex(s.runs), () => s.bench.here()),
     (app, ctx) =>

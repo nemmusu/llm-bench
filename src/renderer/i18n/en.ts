@@ -891,6 +891,7 @@ export const en: Messages = {
     DOCKER_UNSUPPORTED: { title: 'This Docker version is not supported', what: 'Use an up-to-date Docker Desktop or Docker Engine.' },
     DOCKER_PULL_FAILED: { title: 'Docker image download failed', what: 'Check the connection and disk space, then try again.' },
     DOCKER_IMAGE_IN_USE: { title: 'This image is in use', what: 'A server or a test is using it: stop it first, then remove the image. A stopped container may hold it too: “Clean up LLM Bench containers” on the Docker card removes those.' },
+    ENGINE_IN_USE: { title: '{engine} is in use', what: 'A test, a server or a build is using the engines: stop it, then remove it.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub is limiting requests', what: 'Wait a few minutes and try again.' },
     RUN_NOT_FOUND: { title: 'Result not found', what: 'It may have been deleted, or the results folder changed. Go back to the results list.' },
     RUN_IN_PROGRESS: { title: 'A test is already running', what: 'Wait for it to finish, or cancel it, before starting another one.' },
@@ -3702,11 +3703,35 @@ export const en: Messages = {
       removeConfirm: 'Remove',
       removeRunning: 'A server or a test is using it: stop it first, then you can remove it'
     },
+    native: {
+      folder: 'Installed by LLM Bench in {folder} · {size}',
+      own: 'This Python environment is yours ({path}): LLM Bench uses it and never removes it.',
+      remove: 'Remove {name}',
+      removeBusy: 'A test, a server or an install is using {name}: stop it first, then you can remove it',
+      removeTitle: 'Remove {name}?',
+      removeBody:
+        'I delete the folder {folder} ({size}, {files} files): the Python environment with {name} and everything uv installed in it. Results, models and settings stay; you can install it again from here.',
+      removeConfirm: 'Remove',
+    },
     external: {
       configure: 'Set it up in Benchmark',
     },
   },
   ninfer: {
+    remove: {
+      remove: 'Remove',
+      forget: 'Forget',
+      title: 'Remove {name}?',
+      forgetTitle: 'Forget {name}?',
+      deleteBody: 'LLM Bench built it: I delete its folder {dir} with everything in it, {size}. Models and results stay. You can download and build it again from here.',
+      deleteBodyNoSize: 'LLM Bench built it: I delete its folder {dir} with everything in it. Models and results stay. You can download and build it again from here.',
+      forgetBody: 'It is a build of yours: LLM Bench stops using the one in {dir}, its files stay where they are. Delete them yourself if you no longer need them.',
+      manualBody: 'LLM Bench did not build the one in {dir}, and it finds NInfer-all in that folder by itself: to remove it, delete the folder yourself (the command is below), then press Check again.',
+      command: 'Command',
+      confirm: 'Delete the folder',
+      removed: '{name} removed',
+      forgotten: 'LLM Bench no longer uses {name}',
+    },
     title: 'NInfer',
     badge: 'RTX 5090 only · Linux / WSL',
     desc: 'An engine made for Qwen 3.6 and 3.8 on a single RTX 5090. It reads models in the .ninfer format.',

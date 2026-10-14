@@ -15,6 +15,7 @@ import type { AppErrorData } from '../../../../src/contract/errors';
 import type { ServerEvent } from '../../../../src/contract/events';
 import type { GpuSample } from '../../../../src/contract/hardware';
 import type { DownloadJob, FitEstimate, HubFile, HubModel, LocalFileState, LocalModel, ModelUpdates } from '../../../../src/contract/models';
+import type { NativeEnvKind, NativeEnvPlan } from '../../../../src/contract/native-envs';
 import type { NinferBuildInfo, NinferBuilds } from '../../../../src/contract/ninfer';
 import type { RunSummary } from '../../../../src/contract/results';
 import { defaultSettings, type Settings } from '../../../../src/contract/settings';
@@ -306,6 +307,8 @@ export interface World {
   ninferBuilds: NinferBuilds;
   /** GET /api/docker/images?repo=…: the images of each repository on this Docker. */
   images: Record<string, LocalImage[]>;
+  /** GET /api/engines/:kind/environment (absent: not installed; supported on Linux); DELETE sets installed false. */
+  nativeEnvs?: Partial<Record<NativeEnvKind, NativeEnvPlan>>;
 }
 
 /** One of NInfer's builds as the card lists it (default: the official one, not set up, in WSL). */
@@ -395,6 +398,12 @@ function saveCustom(w: World, draft: CustomEngineDraft, id?: string): CustomEngi
 function updateOf(w: World, target: string, q: URLSearchParams): EngineUpdateCheck {
   const key = q.get('fetch') === '1' && w.updates[`${target}?fetch`] ? `${target}?fetch` : target;
   return w.updates[key] ?? { target, method: 'docker-pull', state: 'current', commands: [], checkedAt: '2026-10-13T10:00:00.000Z' };
+}
+
+/** LLM Bench's environment of a native engine: the world's, else not installed (supported on Linux). */
+export function nativeEnvOf(w: World, kind: NativeEnvKind): NativeEnvPlan {
+  const folder = `/home/u/.local/share/LLM Bench/engines/${kind === 'vllm-native' ? 'vllm' : 'sglang'}-venv`;
+  return w.nativeEnvs?.[kind] ?? { kind, supported: w.system.os.platform === 'linux', installed: false, folder, sizeBytes: 0, files: 0, busy: false };
 }
 
 export const fail = (code: AppErrorData['code'], status = 400, message: string = code): never => {
@@ -517,6 +526,12 @@ export function libApi(w: World = world()): LibApi {
       return { ok: true };
     },
     'GET /api/engines/ninfer/builds': () => w.ninferBuilds,
+    'GET /api/engines/*/environment': (_b, _q, p) => nativeEnvOf(w, p.split('/').at(-2) as NativeEnvKind),
+    'DELETE /api/engines/*/environment': (_b, _q, p) => {
+      const kind = p.split('/').at(-2) as NativeEnvKind;
+      w.nativeEnvs = { ...w.nativeEnvs, [kind]: { ...nativeEnvOf(w, kind), installed: false, sizeBytes: 0, files: 0 } };
+      return { ok: true };
+    },
     'PUT /api/engines/ninfer/builds/*': (b) => ({ saved: true, status: { kind: 'ninfer-wsl', available: true, installed: true, location: (b as { path: string }).path, problems: [], supported: true } }),
     'POST /api/engines/ninfer/build/cancel': () => ({ ok: true, cancelled: true }),
     'POST /api/engines/custom/*/update/cancel': () => ({ ok: true, cancelled: true }),

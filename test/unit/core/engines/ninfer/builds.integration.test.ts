@@ -198,6 +198,39 @@ describe("NInfer's builds on its card", () => {
     expect((await linux.deps.setBuildPath('all', { path: '/opt/x' })).saved).toBe(false);
   }, 90_000);
 
+  it('removing a build: one LLM Bench built goes with its folder, the user\'s own is forgotten, one built by hand in ~/ninfer-all goes by hand', async () => {
+    const all = allEngine();
+    const r = setup({ ...withAll, checkouts: [...withAll.checkouts, '/opt/mine'], builds: [...withAll.builds, '/opt/mine/build/apps/ninfer-serve'], built: { '/home/user/ninfer': COMMIT }, sizes: { '/home/user/ninfer': 2048 } }, { ...official, customEngines: [all] });
+    // Built by LLM Bench (its record is there): deleted, with its size and the command first.
+    expect(await r.deps.removePlan('official')).toEqual({ build: 'official', mode: 'delete', dir: '/home/user/ninfer', distro: 'Ubuntu-24.04', sizeBytes: 2048 * 1024, command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/user/ninfer' });
+    // Built by hand where LLM Bench looks for NInfer-all: it would be found again, so by hand.
+    expect(await r.deps.removePlan('all')).toEqual({ build: 'all', mode: 'manual', dir: '/home/user/ninfer-all', distro: 'Ubuntu-24.04' });
+    await expect(r.deps.remove('all')).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'manual' } });
+    expect(r.saved().customEngines).toEqual([all]);
+
+    const res = await r.app.request('/api/engines/ninfer/builds/official/remove', { method: 'POST' });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(r.saved().ninfer).toEqual({});
+    expect((await r.deps.builds(true)).builds[0]).toMatchObject({ build: 'official', state: 'missing' });
+    // Gone: nothing to remove.
+    await expect(r.deps.removePlan('official')).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'not-installed' } });
+
+    // The user's own build, somewhere else: only forgotten, its files stay.
+    expect((await r.deps.setBuildPath('all', { path: '/opt/mine', distro: 'Ubuntu-24.04' })).saved).toBe(true);
+    expect(await r.deps.removePlan('all')).toEqual({ build: 'all', mode: 'forget', dir: '/opt/mine', distro: 'Ubuntu-24.04' });
+    await r.deps.remove('all');
+    expect(r.saved().customEngines).toEqual([]);
+    expect(await r.deps.removePlan('official').catch((e: { code: string }) => e.code)).toBe('VALIDATION');
+  }, 90_000);
+
+  it('removing on Linux (a fake host runs every program): the official build LLM Bench made, deleted there; a failed deletion is said', async () => {
+    const host = [...WSL_ARGV, '--host'];
+    const r = setup({ checkouts: ['/home/user/ninfer'], builds: ['/home/user/ninfer/build/apps/ninfer-serve'], built: { '/home/user/ninfer': COMMIT } }, { ninfer: { native: { path: '/home/user/ninfer' } } }, 'linux', undefined, undefined, host);
+    expect(await r.deps.removePlan('official')).toMatchObject({ mode: 'delete', dir: '/home/user/ninfer', command: 'rm -rf /home/user/ninfer', sizeBytes: 1_843_200 * 1024 });
+    await r.deps.remove('official');
+    expect(r.saved().ninfer).toEqual({});
+  }, 90_000);
+
   it("NInfer-all's build request: its repository and folder, its saved engine and checkout", async () => {
     const r = setup();
     expect(await r.deps.normalize({ kind: 'ninfer-wsl', distro: 'Ubuntu-24.04', build: 'all' })).toEqual({

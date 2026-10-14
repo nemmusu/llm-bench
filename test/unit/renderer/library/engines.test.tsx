@@ -1,6 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { NativeEnvPlan } from '../../../../src/contract/native-envs';
+import { ApiError } from '../../../../src/renderer/lib/api';
 import { bridge, BUILDS, ENGINES, fail, item, libApi, okItems, renderLib, report, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -427,6 +429,74 @@ describe('engines: vLLM and others', () => {
     act(() => api.emit({ type: 'engine.install', kind: 'vllm-native', stage: 'done', bytesDone: 0 }));
     expect(await within(native).findByText('Versione installata: 0.11.0')).toBeTruthy();
     expect(within(native).getByText('Pronto')).toBeTruthy();
+  });
+
+  const VENV = '/home/u/.local/share/LLM Bench/engines/vllm-venv';
+  const vllmEnv = (over: Partial<NativeEnvPlan> = {}): NativeEnvPlan => ({ kind: 'vllm-native', supported: true, installed: true, folder: VENV, sizeBytes: 9e9, files: 41000, busy: false, ...over });
+
+  it("vLLM on Linux: LLM Bench's environment removed after a confirmation (folder, size, results stay), then the install again", async () => {
+    const api = libApi(
+      world({
+        system: linux,
+        engines: [...ENGINES().slice(0, 3), { kind: 'vllm-native', available: true, installed: true, version: '0.11.0', problems: [], supported: true }],
+        check: report([...okItems().slice(0, 6), item('vllm-native', { params: { version: '0.11.0' } })], { platform: 'linux' }),
+        nativeEnvs: { 'vllm-native': vllmEnv() },
+      }),
+    );
+    renderLib('/engines', api);
+    const native = await card('vLLM (Linux)');
+    expect(await within(native).findByText(`Installato da LLM Bench in ${VENV} · 8,4 GB`)).toBeTruthy();
+    // Cancelled: nothing removed.
+    await userEvent.click(within(native).getByRole('button', { name: 'Rimuovi vLLM (Linux)' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Annulla' }));
+    expect(api.calls.some((c) => c.method === 'DELETE')).toBe(false);
+
+    await userEvent.click(within(native).getByRole('button', { name: 'Rimuovi vLLM (Linux)' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Rimuovere vLLM (Linux)?' });
+    expect(within(confirm).getByText(`Elimino la cartella ${VENV} (8,4 GB, 41000 file)`, { exact: false })).toBeTruthy();
+    expect(within(confirm).getByText(/Risultati, modelli e impostazioni restano/)).toBeTruthy();
+    api.w.engines = [...ENGINES().slice(0, 3), { kind: 'vllm-native', available: false, installed: false, problems: ['ENGINE_NOT_INSTALLED'], supported: true }];
+    api.w.check = report([...okItems().slice(0, 6), item('vllm-native', { state: 'optional', params: { uv: true }, action: { kind: 'install-vllm' } })], { platform: 'linux' });
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Rimuovi' }));
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/api/engines/vllm-native/environment')).toBe(true));
+    expect(await within(native).findByRole('button', { name: 'Installa vLLM' })).toBeTruthy();
+    await waitFor(() => expect(within(native).queryByRole('button', { name: 'Rimuovi vLLM (Linux)' })).toBeNull());
+    expect(within(native).getByText('Non installato')).toBeTruthy();
+  });
+
+  it('vLLM on Linux: not while a test or a server runs (said on the button), the core refusing is shown', async () => {
+    const api = libApi(world({ system: linux, nativeEnvs: { 'vllm-native': vllmEnv({ busy: true }) } }));
+    renderLib('/engines', api);
+    const native = await card('vLLM (Linux)');
+    const busy = await within(native).findByRole('button', { name: 'Un test, un server o un’installazione sta usando vLLM (Linux): fermalo, poi potrai rimuoverlo' });
+    expect(busy.getAttribute('aria-disabled')).toBe('true');
+    // The test ended: a click asks again, no confirmation yet.
+    api.w.nativeEnvs = { 'vllm-native': vllmEnv() };
+    await userEvent.click(busy);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    // Free as far as the card knew, busy for the core: its error.
+    api.on('DELETE /api/engines/*/environment', () => {
+      throw new ApiError({ code: 'ENGINE_IN_USE', message: 'in use', params: { engine: 'vLLM' } }, 500);
+    });
+    await userEvent.click(await within(native).findByRole('button', { name: 'Rimuovi vLLM (Linux)' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(native).findByText('vLLM è in uso')).toBeTruthy();
+  });
+
+  it("SGLang on Linux: the user's own environment is theirs (said, no removal)", async () => {
+    const own = '/home/u/venvs/sglang';
+    const api = libApi(
+      world({
+        system: linux,
+        engines: [...ENGINES().slice(0, 3), { kind: 'sglang-native', available: true, installed: true, version: '0.5.21', problems: [], supported: true }],
+        nativeEnvs: { 'sglang-native': { kind: 'sglang-native', supported: true, installed: false, folder: '/e/sglang-venv', sizeBytes: 0, files: 0, own, busy: false } },
+      }),
+    );
+    renderLib('/engines', api);
+    const native = await card('SGLang nativo');
+    expect(await within(native).findByText(`Questo ambiente Python è tuo (${own}): LLM Bench lo usa e non lo rimuove mai.`)).toBeTruthy();
+    expect(within(native).queryByRole('button', { name: /^Rimuovi/ })).toBeNull();
   });
 
   it('external server opens the Benchmark in expert mode', async () => {

@@ -733,6 +733,25 @@ export type NinferBuildPath = z.infer<typeof ninferBuildPathSchema>;
 export const ninferBuildPathResultSchema = z.object({ saved: z.boolean(), status: engineStatusSchema });
 export type NinferBuildPathResult = z.infer<typeof ninferBuildPathResultSchema>;
 
+/**
+ * Removing one of NInfer's builds (GET /api/engines/ninfer/builds/:build/remove -> NinferRemovePlan; POST
+ * the same -> { ok: true }, ENGINE_IN_USE while a test, a server or a build runs):
+ * - 'delete': LLM Bench built it (its record of the commit is there): its folder is deleted, `command`
+ *   says how, `sizeBytes` how much it frees;
+ * - 'forget': a build of the user's own: LLM Bench only stops using it, the files stay;
+ * - 'manual': one built by hand in NInfer-all's usual folder, which LLM Bench would find again: delete
+ *   that folder yourself.
+ */
+export const ninferRemovePlanSchema = z.object({
+  build: ninferBuildIdSchema,
+  mode: z.enum(['delete', 'forget', 'manual']),
+  dir: z.string(),
+  distro: z.string().optional(),
+  sizeBytes: z.number().optional(),
+  command: z.string().optional(),
+});
+export type NinferRemovePlan = z.infer<typeof ninferRemovePlanSchema>;
+
 /** settings.ninfer: where NInfer's build is, per kind (Engines page). */
 export const ninferSettingsSchema = z.object({
   native: z.object({ path: z.string().min(1) }).optional(),

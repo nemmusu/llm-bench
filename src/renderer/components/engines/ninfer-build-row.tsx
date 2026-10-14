@@ -27,6 +27,7 @@ import { NinferArtifacts } from './ninfer-artifacts';
 import { repoText } from './ninfer-build-dialog';
 import { BuildFailure, BuildProgress, Checking, PlanCommands, PlanNeeds, useGuidedBuild } from './ninfer-guided';
 import { NinferProblem } from './ninfer-problem';
+import { NinferRemove } from './ninfer-remove';
 
 const TONES: Record<NinferBuildState, StatusDotProps['tone']> = { ready: 'success', stale: 'warning', 'not-built': 'warning', broken: 'danger', missing: 'neutral' };
 
@@ -199,6 +200,8 @@ export function NinferBuildRow({ info, kind, distro, highlight, forModel }: Ninf
             <FolderSearch aria-hidden />
             {info.state === 'missing' ? t('ninfer.builds.have') : t('ninfer.builds.change')}
           </Button>
+          {/* What LLM Bench adds is removed where it was added. */}
+          {info.state !== 'missing' && <NinferRemove info={info} name={short} />}
         </div>
       )}
       {installed && !busy && check && <UpdateLine check={check} onRecheck={() => recheck.mutate()} rechecking={recheck.isPending} />}

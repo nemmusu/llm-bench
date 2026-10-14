@@ -16,8 +16,10 @@ import {
   type NinferBuildPath,
   type NinferBuildPathResult,
   type NinferKind,
+  type NinferRemovePlan,
   type NinferSettings,
 } from '../../../contract/ninfer';
+import { AppError } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
 import type { CoreDeps } from '../../deps';
 import type { OwnershipRegistry } from '../../process/ownership';
@@ -26,7 +28,8 @@ import { NinferAdapter, probeStale, serveOf, type GpuFacts, type NinferWhere } f
 import { NinferBuilder } from './build';
 import { withBuild, withVariantBuild, type NinferRouteDeps } from './routes';
 import { NinferUpdater } from './update';
-import { listDistros, WslProcesses } from './wsl';
+import { deleteFolder, folderBytes, removeCommand, removeModeOf } from './remove';
+import { distroRunner, hostArgv, listDistros, WslProcesses, type DistroRun } from './wsl';
 
 export interface NinferServices {
   native: NinferAdapter;
@@ -40,7 +43,7 @@ export interface NinferServices {
   findAll(kind: NinferKind): Promise<CustomEngine | undefined>;
   /** Stops our ninfer-serve left in WSL by a crashed session (no record = WSL is not asked). */
   cleanupOrphans(): Promise<void>;
-  routes(o: { publish: (e: ServerEvent) => void; shutdown?: AbortSignal }): NinferRouteDeps;
+  routes(o: { publish: (e: ServerEvent) => void; shutdown?: AbortSignal; busy?: () => boolean }): NinferRouteDeps;
 }
 
 export interface NinferServicesOptions {
@@ -202,6 +205,59 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     return probe?.ok && probe.at ? adoptAll(probe.at, where?.distro) : undefined;
   };
 
+  /** Both builds of this PC's NInfer kind, each with its state. */
+  const listBuilds = async (fresh: boolean) => {
+    const kind = ninferKindFor(deps.platform);
+    if (!kind) return { builds: [] };
+    const saved = await o.settings.get();
+    const distro = kind === 'ninfer-wsl' ? saved.ninfer?.wsl?.distro : undefined;
+    const official = await infoOf('official', kind, await adapters[kind].where(), { source: NINFER_SOURCE, dir: NINFER_DEFAULT_DIR, ...(distro ? { distro } : {}) }, fresh);
+    const all = ninferAllEngineOf(saved.customEngines ?? [], kind);
+    const allSource: GitSource = (all?.run as { source?: GitSource } | undefined)?.source ?? NINFER_ALL_SOURCE;
+    const base = { source: allSource, dir: NINFER_ALL_DIR, ...(distro ? { distro } : {}) };
+    const allBuild = all ? await infoOf('all', kind, whereOf(all), { ...base, customEngineId: all.id }, fresh) : await unsavedAll(kind, base, fresh);
+    return { kind, builds: [official, allBuild] };
+  };
+
+  /** Runs a program where a build is: its distro (WSL) or this system (the fake Linux host in tests). */
+  const runnerOf = (kind: NinferKind, distro: string | undefined): DistroRun =>
+    kind === 'ninfer-wsl' ? distroRunner(deps.proc, argv, distro as string) : (cmd, args, opts) => deps.proc.run(...hostArgv(deps.endpoints.ninferHost ?? [], [cmd, ...args]), opts);
+
+  /** A build that is there (not "missing"), else VALIDATION. */
+  const installedBuild = async (build: NinferBuildId): Promise<NinferBuildInfo> => {
+    const info = (await listBuilds(true)).builds.find((b) => b.build === build);
+    if (!info || info.state === 'missing') throw new AppError('VALIDATION', 'This build of NInfer is not there', { params: { reason: 'not-installed', build } });
+    return info;
+  };
+
+  const removePlan = async (build: NinferBuildId): Promise<NinferRemovePlan> => {
+    const info = await installedBuild(build);
+    const mode = removeModeOf(info);
+    const base: NinferRemovePlan = { build, mode, dir: info.dir, ...(info.distro ? { distro: info.distro } : {}) };
+    if (mode !== 'delete') return base;
+    const size = await folderBytes(runnerOf(info.kind, info.distro), info.dir).catch(() => undefined);
+    return { ...base, ...(size !== undefined ? { sizeBytes: size } : {}), command: removeCommand(info.dir, info.distro) };
+  };
+
+  /** Deleted (LLM Bench built it) or forgotten (the user's): either way LLM Bench no longer uses it. */
+  const remove = async (build: NinferBuildId): Promise<void> => {
+    const info = await installedBuild(build);
+    const mode = removeModeOf(info);
+    if (mode === 'manual') throw new AppError('VALIDATION', 'Built by hand in its usual folder: delete it by hand', { params: { reason: 'manual', dir: info.dir } });
+    if (mode === 'delete') await deleteFolder(runnerOf(info.kind, info.distro), info.dir);
+    const saved = await o.settings.get();
+    if (build === 'official') {
+      const ninfer: NinferSettings = { ...saved.ninfer };
+      if (info.kind === 'ninfer-wsl') delete ninfer.wsl;
+      else delete ninfer.native;
+      await o.settings.update({ ninfer });
+    } else {
+      await o.settings.update({ customEngines: (saved.customEngines ?? []).filter((e) => e.id !== info.customEngineId) });
+    }
+    adapters[info.kind].forget();
+    deps.log.info('NInfer build removed', { build, mode, dir: info.dir });
+  };
+
   /** NInfer-all's saved engine on this PC's kind, if any. */
   const savedAll = async (kind: NinferKind): Promise<CustomEngine | undefined> => ninferAllEngineOf((await o.settings.get()).customEngines ?? [], kind);
 
@@ -240,18 +296,10 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
         await o.settings.update({ customEngines: made.engines });
         return made.id;
       },
-      builds: async (fresh) => {
-        const kind = ninferKindFor(deps.platform);
-        if (!kind) return { builds: [] };
-        const saved = await o.settings.get();
-        const distro = kind === 'ninfer-wsl' ? saved.ninfer?.wsl?.distro : undefined;
-        const official = await infoOf('official', kind, await adapters[kind].where(), { source: NINFER_SOURCE, dir: NINFER_DEFAULT_DIR, ...(distro ? { distro } : {}) }, fresh);
-        const all = ninferAllEngineOf(saved.customEngines ?? [], kind);
-        const allSource: GitSource = (all?.run as { source?: GitSource } | undefined)?.source ?? NINFER_ALL_SOURCE;
-        const base = { source: allSource, dir: NINFER_ALL_DIR, ...(distro ? { distro } : {}) };
-        const allBuild = all ? await infoOf('all', kind, whereOf(all), { ...base, customEngineId: all.id }, fresh) : await unsavedAll(kind, base, fresh);
-        return { kind, builds: [official, allBuild] };
-      },
+      builds: listBuilds,
+      removePlan,
+      remove,
+      ...(r.busy ? { busy: r.busy } : {}),
       setBuildPath: async (build, body: NinferBuildPath): Promise<NinferBuildPathResult> => {
         const kind = ninferKindFor(deps.platform) as NinferKind;
         const saved = await o.settings.get();

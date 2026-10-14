@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineStatus } from '../../../../src/contract/engines';
 import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
 import type { NinferBuildInfo, NinferBuildPlan } from '../../../../src/contract/ninfer';
+import { ApiError } from '../../../../src/renderer/lib/api';
 import { bridge, fail, libApi, ninferBuild, patchPointer, renderLib, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
@@ -229,6 +230,74 @@ describe('NInfer card', () => {
     // "Ricontrolla": both builds probed again.
     await userEvent.click(within(c).getByRole('button', { name: 'Ricontrolla' }));
     await waitFor(() => expect(api.calls.some((x) => x.path === '/api/engines/ninfer/builds?fresh=1')).toBe(true));
+  });
+
+  it('"Rimuovi" on a build LLM Bench made: the folder, its size and the command first, then it goes', async () => {
+    const api = ninferApi({ builds: [ready(), readyAll({ built: 'a1b2c3d' })] });
+    api.on('GET /api/engines/ninfer/builds/*/remove', (_b, _q, p) => ({
+      build: p.includes('/all/') ? 'all' : 'official',
+      mode: 'delete',
+      dir: '/home/u/ninfer',
+      distro: 'Ubuntu-24.04',
+      sizeBytes: 1.8e9,
+      command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/u/ninfer',
+    }));
+    api.on('POST /api/engines/ninfer/builds/*/remove', () => {
+      api.w.ninferBuilds = { kind: 'ninfer-wsl', builds: [ninferBuild(), readyAll({ built: 'a1b2c3d' })] };
+      return { ok: true };
+    });
+    renderLib('/engines', api);
+    const off = await official();
+    await userEvent.click(within(off).getByRole('button', { name: 'Rimuovi' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Rimuovere NInfer (ufficiale)?' });
+    expect(await within(dialog).findByText('L’ha compilato LLM Bench: elimino la sua cartella /home/u/ninfer · Ubuntu-24.04 con tutto quello che contiene, 1,7 GB. Modelli e risultati restano. Puoi riscaricarlo e ricompilarlo da qui.')).toBeTruthy();
+    expect(dialog.textContent).toContain('wsl -d Ubuntu-24.04 -- rm -rf /home/u/ninfer');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Elimina la cartella' }));
+    expect(await screen.findByText('NInfer (ufficiale) rimosso')).toBeTruthy();
+    expect(await within(await official()).findByRole('button', { name: 'Scarica e compila' })).toBeTruthy();
+    expect(within(await official()).queryByRole('button', { name: 'Rimuovi' })).toBeNull();
+  });
+
+  it('"Dimentica" a build of the user\'s own (its files stay); one built by hand in ~/ninfer-all goes by hand; refused while in use; no size known', async () => {
+    const api = ninferApi({ builds: [ready({ built: undefined, dir: '/opt/mine' }), readyAll()] });
+    api.on('GET /api/engines/ninfer/builds/official/remove', () => ({ build: 'official', mode: 'forget', dir: '/opt/mine', distro: 'Ubuntu-24.04' }));
+    api.on('GET /api/engines/ninfer/builds/all/remove', () => ({ build: 'all', mode: 'manual', dir: '/home/u/ninfer-all' }));
+    let n = 0;
+    api.on('POST /api/engines/ninfer/builds/*/remove', () => {
+      if (n++ === 0) throw new ApiError({ code: 'ENGINE_IN_USE', message: 'busy', params: { engine: 'NInfer' } }, 409);
+      return { ok: true };
+    });
+    renderLib('/engines', api);
+    const off = await official();
+    await userEvent.click(within(off).getByRole('button', { name: 'Dimentica' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Dimenticare NInfer (ufficiale)?' });
+    expect(await within(dialog).findByText(/È una tua compilazione: LLM Bench smette di usare quella in \/opt\/mine · Ubuntu-24\.04, i suoi file restano dove sono/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Dimentica' }));
+    expect(await within(dialog).findByText('NInfer è in uso')).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Dimentica' }));
+    expect(await screen.findByText('LLM Bench non usa più NInfer (ufficiale)')).toBeTruthy();
+
+    const all = await allRow();
+    await userEvent.click(within(all).getByRole('button', { name: 'Rimuovi' }));
+    const manual = await screen.findByRole('dialog', { name: 'Rimuovere NInfer-all?' });
+    expect(await within(manual).findByText(/Quella in \/home\/u\/ninfer-all non l’ha compilata LLM Bench/)).toBeTruthy();
+    expect(manual.textContent).toContain('rm -rf /home/u/ninfer-all');
+    expect(within(manual).queryByRole('button', { name: 'Elimina la cartella' })).toBeNull();
+    await userEvent.click(within(manual).getAllByRole('button', { name: 'Chiudi' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('removing: no size known, and a plan that cannot be read', async () => {
+    const api = ninferApi({ builds: [ready(), readyAll({ built: 'a1b2c3d' })] });
+    api.on('GET /api/engines/ninfer/builds/official/remove', () => ({ build: 'official', mode: 'delete', dir: '/home/u/ninfer' }));
+    api.on('GET /api/engines/ninfer/builds/all/remove', () => fail('VALIDATION'));
+    renderLib('/engines', api);
+    await userEvent.click(within(await official()).getByRole('button', { name: 'Rimuovi' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Rimuovere NInfer (ufficiale)?' });
+    expect(await within(dialog).findByText(/L’ha compilato LLM Bench: elimino la sua cartella \/home\/u\/ninfer con tutto quello che contiene\. Modelli/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+    await userEvent.click(within(await allRow()).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(await screen.findByRole('dialog')).findByText('Alcuni valori non sono validi')).toBeTruthy();
   });
 
   it('new commits: "Aggiorna" pulls and rebuilds in one click, with progress, "Annulla" and what happened', async () => {

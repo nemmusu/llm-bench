@@ -173,6 +173,17 @@ test('NInfer not on the PC yet: "Scarica e compila" checks what it needs, downlo
     await expect(page.getByText('NInfer (ufficiale) è pronto.')).toBeVisible({ timeout: 60_000 });
     await expect(official.getByText('Pronto')).toBeVisible({ timeout: 30_000 });
     await expect(folderValue(official, '/home/user/ninfer')).toBeVisible();
+
+    // What LLM Bench built is removed from the same place: its folder, its size and the command first.
+    await official.getByRole('button', { name: 'Rimuovi' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Rimuovere NInfer (ufficiale)?' });
+    await expect(dialog.getByText(/elimino la sua cartella \/home\/user\/ninfer · .* con tutto quello che contiene, 1,8 GB/)).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText('rm -rf /home/user/ninfer');
+    await scan(page, 'remove NInfer');
+    await dialog.getByRole('button', { name: 'Elimina la cartella' }).click();
+    await expect(page.getByText('NInfer (ufficiale) rimosso')).toBeVisible({ timeout: 30_000 });
+    await expect(official.getByText('Non installato')).toBeVisible({ timeout: 30_000 });
+    await expect(official.getByRole('button', { name: 'Scarica e compila' })).toBeVisible();
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

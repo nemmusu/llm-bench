@@ -13,6 +13,8 @@
  *        engine: result.customEngineId) or 'error'.
  *   POST /api/engines/ninfer/build/cancel    -> { ok: true, cancelled }: the build running is stopped inside
  *        the distro (its own session), then reported as 'error' CANCELLED.
+ *   GET  /api/engines/ninfer/builds/:build/remove -> NinferRemovePlan (delete, forget, or by hand)
+ *   POST /api/engines/ninfer/builds/:build/remove -> { ok: true } (ENGINE_IN_USE while a test, a server or a build runs)
  */
 import { customEngineIdFor, customEngineSchema, customEngineTemplate, type CustomEngine, type GitSource } from '../../../contract/custom-engines';
 import { engineConfigSchema, type EngineConfig, type EngineStatus } from '../../../contract/engines';
@@ -20,6 +22,7 @@ import { AppError, toAppErrorData } from '../../../contract/errors';
 import type { ServerEvent } from '../../../contract/events';
 import {
   isNinferKind,
+  NINFER_ALL_NAME,
   ninferBuildEventKind,
   ninferBuildIdSchema,
   ninferBuildPathSchema,
@@ -33,6 +36,7 @@ import {
   type NinferBuilds,
   type NinferDistros,
   type NinferKind,
+  type NinferRemovePlan,
   type NinferSettings,
   type NinferVariantTarget,
 } from '../../../contract/ninfer';
@@ -55,6 +59,12 @@ export interface NinferRouteDeps {
   builds(fresh: boolean): Promise<NinferBuilds>;
   /** "Cambia cartella": a build of the user's own, saved when it answers. */
   setBuildPath(build: NinferBuildId, body: NinferBuildPath): Promise<NinferBuildPathResult>;
+  /** What removing a build does: its folder deleted (LLM Bench built it), forgotten (the user's), or by hand. */
+  removePlan(build: NinferBuildId): Promise<NinferRemovePlan>;
+  /** Removes it as its plan says ('manual' is refused). */
+  remove(build: NinferBuildId): Promise<void>;
+  /** A benchmark or a server runs: nothing is removed under it. */
+  busy?: () => boolean;
   /** Shared with the update: a build is running (one compile of NInfer at a time), and how to stop it. */
   jobs: { building: boolean; cancel?: (() => void) | undefined };
   publish(e: ServerEvent): void;
@@ -92,6 +102,13 @@ export function withVariantBuild(
   const id = customEngineIdFor(variant.name, engines.map((e) => e.id));
   const engine = customEngineSchema.parse({ id, name: variant.name, base: 'ninfer', run, ...(tpl ? { match: tpl.match, template: tpl.id } : {}) });
   return { engines: [...engines, engine], id };
+}
+
+/** The :build of a route, or VALIDATION. */
+function buildOf(param: string): NinferBuildId {
+  const id = ninferBuildIdSchema.safeParse(param);
+  if (!id.success) throw new AppError('VALIDATION', 'Not a build of NInfer', { params: { reason: 'ninfer_build_id', build: param } });
+  return id.data;
 }
 
 export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
@@ -139,10 +156,15 @@ export function createNinferRoutes(d: NinferRouteDeps): RouteModule {
 
     app.get('/api/engines/ninfer/builds', async (c) => c.json(await d.builds(c.req.query('fresh') === '1')));
 
-    app.put('/api/engines/ninfer/builds/:build', async (c) => {
-      const id = ninferBuildIdSchema.safeParse(c.req.param('build'));
-      if (!id.success) throw new AppError('VALIDATION', 'Not a build of NInfer', { params: { reason: 'ninfer_build_id', build: c.req.param('build') } });
-      return c.json(await d.setBuildPath(id.data, await parseBody(c, ninferBuildPathSchema)));
+    app.put('/api/engines/ninfer/builds/:build', async (c) => c.json(await d.setBuildPath(buildOf(c.req.param('build')), await parseBody(c, ninferBuildPathSchema))));
+
+    app.get('/api/engines/ninfer/builds/:build/remove', async (c) => c.json(await d.removePlan(buildOf(c.req.param('build')))));
+
+    app.post('/api/engines/ninfer/builds/:build/remove', async (c) => {
+      const build = buildOf(c.req.param('build'));
+      if (d.jobs.building || d.busy?.()) throw new AppError('ENGINE_IN_USE', 'NInfer is in use', { params: { engine: build === 'all' ? NINFER_ALL_NAME : 'NInfer' } });
+      await d.remove(build);
+      return c.json({ ok: true as const });
     });
 
     app.post('/api/engines/ninfer/check', async (c) => {

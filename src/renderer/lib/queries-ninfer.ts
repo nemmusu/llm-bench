@@ -11,6 +11,7 @@ import {
   type NinferBuilds,
   type NinferDistros,
   type NinferKind,
+  type NinferRemovePlan,
 } from '../../contract/ninfer';
 import { useApi } from './api-context';
 import { engineKeys } from './queries-engines';
@@ -93,6 +94,32 @@ export function useRecheckBuilds() {
     onSuccess: (builds) => {
       qc.setQueryData(ninferKeys.builds, builds);
       for (const k of [libKeys.engines, ENGINES_KEY, engineKeys.custom]) void qc.invalidateQueries({ queryKey: k });
+    },
+  });
+}
+
+/** GET …/builds/:build/remove: what removing it does (its folder deleted, forgotten, or by hand), read when asked. */
+export function useNinferRemovePlan(build: NinferBuildId, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['lib', 'ninfer', 'remove-plan', build],
+    queryFn: () => api.get<NinferRemovePlan>(`/api/engines/ninfer/builds/${build}/remove`),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+}
+
+/** POST …/builds/:build/remove: deleted or forgotten; the card, the engines and the settings read again. */
+export function useRemoveNinferBuild(build: NinferBuildId) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: true }>(`/api/engines/ninfer/builds/${build}/remove`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ninferKeys.builds });
+      refreshAfterBuild(qc);
     },
   });
 }

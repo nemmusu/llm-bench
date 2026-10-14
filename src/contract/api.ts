@@ -22,6 +22,8 @@ import { serverNetworkSchema, serverPortSchema } from './servers';
  *   GET    /api/engines                      -> EngineStatus[]
  *   POST   /api/engines/:kind/install        (InstallEngineRequest) -> { ok: true } (any kind with an installer)
  *   GET    /api/engines/llamacpp/releases    -> LlamaRelease[]
+ *   GET    /api/engines/:kind/environment    -> NativeEnvPlan (vllm-native, sglang-native: LLM Bench's uv environment, contract/native-envs.ts)
+ *   DELETE /api/engines/:kind/environment    -> { ok: true } (deletes that folder; never the user's own environment)
  *   GET    /api/models/local                 -> LocalModel[]
  *   POST   /api/models/rescan                -> LocalModel[]
  *   GET    /api/models/search?q=&format=&sort=&author=&minParamsB=&maxParamsB=&onlyFits=&cursor= -> HubSearchPage

@@ -18,6 +18,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { EngineCard } from './engine-card';
 import { EngineUpdatePanel } from './engine-update';
+import { NativeEnvRow } from './native-env';
 import { ImageTagList } from './image-tags';
 
 export const VLLM_REPO = 'vllm/vllm-openai';
@@ -109,6 +110,7 @@ export function VllmNativeCard() {
     >
       {supported && status?.version && <p className="text-sm text-fg-2">{t('engines.vllm.nativeVersion', { version: status.version })}</p>}
       <EngineUpdatePanel target="vllm-native" name={t('engines.kinds.vllm-native')} enabled={supported && status?.available === true} />
+      <NativeEnvRow kind="vllm-native" name={t('engines.kinds.vllm-native')} />
       {event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'ENGINE_INSTALL_FAILED', message: key }} />}
     </EngineCard>
   );

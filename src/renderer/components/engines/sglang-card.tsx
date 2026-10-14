@@ -9,6 +9,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { EngineCard } from './engine-card';
 import { EngineUpdatePanel } from './engine-update';
+import { NativeEnvRow } from './native-env';
 import { ImageTagList } from './image-tags';
 
 export const SGLANG_REPO = 'lmsysorg/sglang';
@@ -85,6 +86,7 @@ export function SglangNativeCard() {
     >
       {status.version && <p className="text-sm text-fg-2">{t('engines.sglang.nativeVersion', { version: status.version })}</p>}
       <EngineUpdatePanel target="sglang-native" name={t('engines.sglang.nativeTitle')} enabled={status.available} />
+      <NativeEnvRow kind="sglang-native" name={t('engines.sglang.nativeTitle')} />
       {event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'ENGINE_INSTALL_FAILED', message: key }} />}
     </EngineCard>
   );

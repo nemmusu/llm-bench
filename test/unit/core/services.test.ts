@@ -154,6 +154,9 @@ describe('createServices', () => {
       expect(await configs.json()).toMatchObject({ configs: [], gpus: [], gpu: null });
       const sys = await app.request('/api/system', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(sys.status).toBe(200);
+      // LLM Bench's vLLM environment: none in this data dir, nothing running.
+      const env = await app.request('/api/engines/vllm-native/environment', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
+      expect(await env.json()).toMatchObject({ kind: 'vllm-native', supported: platform === 'linux', installed: false, busy: false });
     }
   });
 

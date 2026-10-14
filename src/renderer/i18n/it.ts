@@ -895,6 +895,7 @@ export const it = {
     DOCKER_UNSUPPORTED: { title: 'Questa versione di Docker non è supportata', what: 'Usa Docker Desktop o Docker Engine aggiornati.' },
     DOCKER_PULL_FAILED: { title: 'Download dell’immagine Docker non riuscito', what: 'Controlla la connessione e lo spazio su disco, poi riprova.' },
     DOCKER_IMAGE_IN_USE: { title: 'Questa immagine è in uso', what: 'La sta usando un server o un test: fermalo, poi rimuovi l’immagine. Può tenerla anche un contenitore fermo: «Pulisci i contenitori di LLM Bench» nella scheda Docker li toglie.' },
+    ENGINE_IN_USE: { title: '{engine} è in uso', what: 'Un test, un server o una compilazione sta usando i motori: fermalo, poi rimuovilo.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub ha limitato le richieste', what: 'Aspetta qualche minuto e riprova.' },
     RUN_NOT_FOUND: { title: 'Risultato non trovato', what: 'Forse è stato eliminato o la cartella dei risultati è cambiata. Torna all’elenco dei risultati.' },
     RUN_IN_PROGRESS: { title: 'C’è già un test in corso', what: 'Aspetta che finisca, oppure annullalo, prima di avviarne un altro.' },
@@ -3708,11 +3709,35 @@ export const it = {
       removeConfirm: 'Rimuovi',
       removeRunning: 'La sta usando un server o un test: fermalo, poi potrai rimuoverla'
     },
+    native: {
+      folder: 'Installato da LLM Bench in {folder} · {size}',
+      own: 'Questo ambiente Python è tuo ({path}): LLM Bench lo usa e non lo rimuove mai.',
+      remove: 'Rimuovi {name}',
+      removeBusy: 'Un test, un server o un’installazione sta usando {name}: fermalo, poi potrai rimuoverlo',
+      removeTitle: 'Rimuovere {name}?',
+      removeBody:
+        'Elimino la cartella {folder} ({size}, {files} file): l’ambiente Python con {name} e tutto ciò che uv ci ha installato. Risultati, modelli e impostazioni restano; puoi reinstallarlo da qui.',
+      removeConfirm: 'Rimuovi',
+    },
     external: {
       configure: 'Configura nel Benchmark',
     },
   },
   ninfer: {
+    remove: {
+      remove: 'Rimuovi',
+      forget: 'Dimentica',
+      title: 'Rimuovere {name}?',
+      forgetTitle: 'Dimenticare {name}?',
+      deleteBody: 'L’ha compilato LLM Bench: elimino la sua cartella {dir} con tutto quello che contiene, {size}. Modelli e risultati restano. Puoi riscaricarlo e ricompilarlo da qui.',
+      deleteBodyNoSize: 'L’ha compilato LLM Bench: elimino la sua cartella {dir} con tutto quello che contiene. Modelli e risultati restano. Puoi riscaricarlo e ricompilarlo da qui.',
+      forgetBody: 'È una tua compilazione: LLM Bench smette di usare quella in {dir}, i suoi file restano dove sono. Eliminali tu se non ti servono più.',
+      manualBody: 'Quella in {dir} non l’ha compilata LLM Bench, che trova NInfer-all in quella cartella da solo: per toglierlo elimina tu la cartella (il comando è qui sotto), poi premi Ricontrolla.',
+      command: 'Comando',
+      confirm: 'Elimina la cartella',
+      removed: '{name} rimosso',
+      forgotten: 'LLM Bench non usa più {name}',
+    },
     title: 'NInfer',
     badge: 'solo RTX 5090 · Linux / WSL',
     desc: 'Un motore fatto apposta per Qwen 3.6 e 3.8 su una sola RTX 5090. Legge i modelli in formato .ninfer.',

@@ -45,6 +45,8 @@ export const ERROR_CODES = [
   'DOCKER_PULL_FAILED',
   /** An image a container still uses cannot be removed; params image, reason: 'running' (a server or a test) | 'container' (a stopped container). */
   'DOCKER_IMAGE_IN_USE',
+  /** An engine cannot be removed while a benchmark, a server or a build uses the engines; params engine (its name). */
+  'ENGINE_IN_USE',
   'GITHUB_RATE_LIMITED',
   'RUN_NOT_FOUND',
   'RUN_IN_PROGRESS',

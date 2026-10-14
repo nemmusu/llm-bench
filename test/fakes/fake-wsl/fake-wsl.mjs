@@ -5,7 +5,8 @@
 //   -l -v                                        distros (UTF-16LE like the real one, UTF-8 with WSL_UTF8=1)
 //   -d <distro> --exec /bin/sh -c <script> sh …  LLM Bench's probe (##gpubench-help), prerequisite check (##home),
 //                                                update check (##nocheckout), keep / drop / restore of the build,
-//                                                the record of the commit a build was made from (##gpubench-recorded)
+//                                                the record of the commit a build was made from (##gpubench-recorded),
+//                                                a checkout's size and its removal (##gpubench-size, ##gpubench-removed)
 //   -d <distro> --exec /usr/bin/env VAR=v… [setsid -w] /bin/sh -c '<pid script>' sh <program> <args…>
 //                                                ninfer-serve (the fake), git clone / pull, rm of a CMake cache,
 //                                                cmake configure / build
@@ -266,6 +267,22 @@ function keep(cfg, script, args) {
   return 0;
 }
 
+/** du -sk of a checkout (config sizes: { dir: KiB }, else 1.8 GB); nothing for a folder that is not there. */
+function folderSize(cfg, dir) {
+  out(`##gpubench-size ${cfg.checkouts.includes(dir) ? (cfg.sizes?.[dir] ?? 1_843_200) : ''}\n`);
+  return 0;
+}
+
+/** rm -rf of a checkout: its program and LLM Bench's record go with it. */
+function removeFolder(cfg, dir) {
+  const inside = (p) => p === dir || p.startsWith(`${dir}/`);
+  const built = { ...cfg.built };
+  delete built[dir];
+  save({ checkouts: cfg.checkouts.filter((c) => !inside(c)), builds: cfg.builds.filter((b) => !inside(b)), built });
+  out('##gpubench-removed\n');
+  return 0;
+}
+
 /** git -C <dir> rev-parse HEAD > <dir>/build/.llmbench-built-commit */
 function record(cfg, dir) {
   if (!cfg.checkouts.includes(dir)) {
@@ -418,6 +435,8 @@ async function exec(cfg, distro, cmd, args) {
     if (script.includes('##nocheckout')) return updateCheck(cfg, args[3] ?? '', args[4], args[5]);
     if (script.includes('##gpubench-recorded')) return record(cfg, args[3] ?? '');
     if (script.includes('##gpubench-kept') || script.includes('##gpubench-dropped') || script.includes('##gpubench-restored')) return keep(cfg, script, args);
+    if (script.includes('##gpubench-size')) return folderSize(cfg, home(cfg, args[3] ?? ''));
+    if (script.includes('##gpubench-removed')) return removeFolder(cfg, home(cfg, args[3] ?? ''));
     err('sh: unsupported script\n');
     return 2;
   }
