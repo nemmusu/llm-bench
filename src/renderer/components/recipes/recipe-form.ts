@@ -1,16 +1,20 @@
 /**
  * The recipe editor's form ⇄ a recipe. Fields are text while the user types; empty means "not set";
  * an invalid field is reported and blocks saving. Arguments are split like a command line
- * (contract/custom-engines.ts splitCommandLine: quotes group, no shell).
+ * (contract/custom-engines.ts splitCommandLine: quotes group, no shell). Also: which engines the editor
+ * offers for a model, and the arguments it adds with one click.
  */
-import { splitCommandLine } from '../../../contract/custom-engines';
+import { customBaseReads, splitCommandLine, type CustomEngineBase } from '../../../contract/custom-engines';
 import type { RopeScaling } from '../../../contract/engines';
 import {
+  argGroups,
   DRAFT_AUTO,
   modelEntryRank,
   modelRecipeDraftSchema,
   RECIPE_ARG_TARGETS,
+  SGLANG_MTP_ARGS,
   textMatcher,
+  VLLM_MTP_ARGS,
   yarnScaling,
   YARN_TARGETS,
   type ModelRecipe,
@@ -51,7 +55,6 @@ export interface RecipeForm {
 
 export type RecipeField = 'name' | 'pattern' | 'yarnTarget' | 'yarnOriginal' | 'contextSize' | 'draftFile' | 'env' | 'notes' | 'link' | `args.${RecipeArgTarget}`;
 
-/** An argument shown back in its textarea: quoted when it holds spaces. */
 /**
  * An argument as typed back: a JSON value (double quotes inside) between single quotes, one with spaces
  * or an apostrophe between double quotes; one holding both kinds of quote cannot be written back.
@@ -193,4 +196,80 @@ export function recipeOfForm(form: RecipeForm, target: RecipeTarget): { draft?: 
     return { invalid: [...new Set(fields)] };
   }
   return { draft: out, invalid };
+}
+
+// ---- which engines the editor offers ----------------------------------------------------------------
+
+/** The engine base each target's arguments are written for (a program: an OpenAI-compatible server started from a command). */
+const TARGET_BASE: Readonly<Record<RecipeArgTarget, CustomEngineBase>> = { llamacpp: 'llamacpp', vllm: 'vllm', sglang: 'sglang', ninfer: 'ninfer', command: 'openai-server' };
+
+/**
+ * An engine base is worth offering in the editor: it reads the model's format (unknown: any). A recipe
+ * for a family offers every engine: its models can come in several formats.
+ */
+export function baseFits(base: CustomEngineBase, format: string | undefined, family: boolean): boolean {
+  return family || customBaseReads(base, format);
+}
+
+/**
+ * The engines whose own arguments the editor offers: those that can run the model, "Programma" only
+ * when a program is saved, and any that already has arguments (never hidden).
+ */
+export function argTargetsFor(form: Pick<RecipeForm, 'scope' | 'args'>, format: string | undefined, hasProgram: boolean): RecipeArgTarget[] {
+  const family = form.scope === 'pattern';
+  return RECIPE_ARG_TARGETS.filter((k) => form.args[k].trim() !== '' || ((k !== 'command' || hasProgram) && baseFits(TARGET_BASE[k], format, family)));
+}
+
+// ---- one-click arguments ----------------------------------------------------------------------------
+
+export type ArgSuggestionId = 'jinja' | 'noThinking' | 'noMmap' | 'trustRemoteCode' | 'noCudaGraph' | 'mtp' | 'vision';
+
+/**
+ * An argument the editor adds with one click. Only flags LLM Bench does not set itself: the context,
+ * the KV cache and the like stay with the tuner and expert mode (a recipe's arguments would win over them).
+ */
+export interface ArgSuggestion {
+  id: ArgSuggestionId;
+  args: readonly string[];
+}
+
+export const ARG_SUGGESTIONS: Readonly<Record<RecipeArgTarget, readonly ArgSuggestion[]>> = {
+  llamacpp: [
+    { id: 'jinja', args: ['--jinja'] },
+    { id: 'noThinking', args: ['--chat-template-kwargs', '{"enable_thinking":false}'] },
+    { id: 'noMmap', args: ['--no-mmap'] },
+  ],
+  vllm: [
+    { id: 'trustRemoteCode', args: ['--trust-remote-code'] },
+    { id: 'noCudaGraph', args: ['--enforce-eager'] },
+    { id: 'mtp', args: VLLM_MTP_ARGS },
+  ],
+  sglang: [
+    { id: 'trustRemoteCode', args: ['--trust-remote-code'] },
+    { id: 'noCudaGraph', args: ['--disable-cuda-graph'] },
+    { id: 'mtp', args: SGLANG_MTP_ARGS },
+  ],
+  ninfer: [
+    { id: 'vision', args: ['--vision'] },
+    { id: 'noThinking', args: ['--no-thinking'] },
+  ],
+  command: [],
+};
+
+/** The suggestion's flag is in the arguments (with any value); undefined while a quote is open. */
+export function argPresent(text: string, s: ArgSuggestion): boolean | undefined {
+  return splitCommandLine(text)?.includes(s.args[0] as string);
+}
+
+/**
+ * The arguments with the suggestion added after the ones typed (kept as typed), or taken out when its
+ * flag is there: the flag alone, or with the values after it when it takes some. Undefined while a
+ * quote is open.
+ */
+export function toggleArg(text: string, s: ArgSuggestion): string | undefined {
+  const list = splitCommandLine(text);
+  if (list === undefined) return undefined;
+  const flag = s.args[0] as string;
+  if (!list.includes(flag)) return [text.trimEnd(), showArgs(s.args)].filter(Boolean).join(' ');
+  return showArgs(argGroups(list).flatMap((g) => (g[0] !== flag ? g : s.args.length === 1 ? g.slice(1) : [])));
 }

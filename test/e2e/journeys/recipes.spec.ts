@@ -1,7 +1,8 @@
 /**
  * "Comandi per questo modello" like a person: a ready recipe (YaRN 300K) attached to the model, seen on
  * the Benchmark page, used by a quick test whose saved command has the RoPE flags; commands written by
- * hand used by "Avvia server"; the PrismML recipe of a Bonsai model with no fork set up yet.
+ * hand (a one-click argument) used by "Avvia server", then deleted; the PrismML recipe of a Bonsai model
+ * with no fork set up yet.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -84,7 +85,10 @@ test('commands written by hand: "Avvia server" starts the model with them', asyn
     await editor.getByLabel('Nome').fill('Qwen piccolo · jinja');
     await editor.getByRole('radio', { name: 'Un valore preciso' }).click();
     await editor.getByLabel('Contesto (token)').fill('16384');
-    await editor.getByLabel('Argomenti in più · llama.cpp').fill('--jinja');
+    // A GGUF model: llama.cpp only, its common arguments a click away.
+    await expect(editor.getByRole('radio', { name: 'vLLM' })).toHaveCount(0);
+    await editor.getByRole('button', { name: /--jinja/ }).click();
+    await expect(editor.getByLabel('Argomenti in più · llama.cpp')).toHaveValue('--jinja');
     await editor.getByLabel('Variabili d’ambiente').fill('GGML_E2E=1');
     await expect(editor.getByRole('region', { name: 'Comando completo' })).toContainText('--jinja', { timeout: 30_000 });
     await editor.getByRole('button', { name: 'Salva' }).click();
@@ -105,6 +109,14 @@ test('commands written by hand: "Avvia server" starts the model with them', asyn
     await expect(running.getByText('16.384', { exact: true })).toBeVisible();
     await running.getByRole('button', { name: /^Ferma il server / }).click();
     await expect(page.getByText('Nessun server acceso')).toBeVisible();
+
+    // "Elimina ricetta", confirmed: the model starts with the usual settings again.
+    await openPage(page, 'Modelli');
+    await page.getByRole('button', { name: 'Comandi per Qwen3-0.6B-Q4_K_M' }).click();
+    await section.getByRole('button', { name: 'Modifica' }).click();
+    await page.getByRole('dialog', { name: 'Modifica i comandi' }).getByRole('button', { name: 'Elimina ricetta' }).click();
+    await page.getByRole('alertdialog', { name: 'Eliminare la ricetta «Qwen piccolo · jinja»?' }).getByRole('button', { name: 'Elimina' }).click();
+    await expect(section.getByText('Nessun comando particolare: il modello parte con le impostazioni normali.')).toBeVisible();
   } finally {
     await gb.close();
   }

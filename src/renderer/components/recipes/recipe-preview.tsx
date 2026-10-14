@@ -39,8 +39,8 @@ export function RecipePreview({ target, recipe, live = false }: { target: Recipe
   const plan = useRecipePlan(target, kind, recipe);
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <h3 className="text-sm font-semibold text-fg">{t('recipes.preview.title')}</h3>
           <p className="text-xs text-fg-3">{t(live ? 'recipes.preview.hintLive' : 'recipes.preview.hint')}</p>
         </div>

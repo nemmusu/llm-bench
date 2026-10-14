@@ -5,7 +5,20 @@ import type { LocalModel } from '../../../../src/contract/models';
 import { modelRecipeSchema, type AppliedRecipe, type ModelRecipe } from '../../../../src/contract/recipes';
 import type { CuratedModel } from '../../../../src/contract/views';
 import type { ModelOption } from '../../../../src/renderer/components/bench/model-options';
-import { engineOfValue, engineValue, formOfRecipe, recipeOfForm, showArg, type RecipeForm } from '../../../../src/renderer/components/recipes/recipe-form';
+import {
+  ARG_SUGGESTIONS,
+  argPresent,
+  argTargetsFor,
+  baseFits,
+  engineOfValue,
+  engineValue,
+  formOfRecipe,
+  recipeOfForm,
+  showArg,
+  toggleArg,
+  type ArgSuggestion,
+  type RecipeForm,
+} from '../../../../src/renderer/components/recipes/recipe-form';
 import {
   appliedLines,
   previewEngines,
@@ -230,6 +243,35 @@ describe('the editor’s form', () => {
     const args = ['--speculative-config', '{"method":"mtp","num_speculative_tokens":1}', '--chat-template', 'a b'];
     const back = recipeOfForm(formOfRecipe(recipe({ args: { vllm: args } }), target), target).draft?.args?.vllm;
     expect(back).toEqual(args);
+  });
+
+  it('the engines offered: those that read the format, "Programma" when saved, every one for a family or an unknown format, any with arguments', () => {
+    const args = (over: Partial<RecipeForm['args']> = {}): RecipeForm['args'] => ({ llamacpp: '', vllm: '', sglang: '', ninfer: '', command: '', ...over });
+    expect(argTargetsFor({ scope: 'model', args: args() }, 'gguf', false)).toEqual(['llamacpp']);
+    expect(argTargetsFor({ scope: 'model', args: args() }, 'gguf', true)).toEqual(['llamacpp', 'command']);
+    expect(argTargetsFor({ scope: 'model', args: args() }, 'safetensors', true)).toEqual(['vllm', 'sglang', 'command']);
+    expect(argTargetsFor({ scope: 'model', args: args() }, 'ninfer', true)).toEqual(['ninfer']);
+    expect(argTargetsFor({ scope: 'model', args: args({ vllm: '--x', command: '--y' }) }, 'ninfer', false)).toEqual(['vllm', 'ninfer', 'command']);
+    expect(argTargetsFor({ scope: 'model', args: args() }, undefined, false)).toEqual(['llamacpp', 'vllm', 'sglang', 'ninfer']);
+    expect(argTargetsFor({ scope: 'pattern', args: args() }, 'ninfer', true)).toEqual(['llamacpp', 'vllm', 'sglang', 'ninfer', 'command']);
+    expect(baseFits('vllm', 'gguf', false)).toBe(false);
+    expect(baseFits('vllm', 'gguf', true)).toBe(true);
+  });
+
+  it('one-click arguments: added after what is typed, taken out with their values, never while a quote is open', () => {
+    const [jinja, noThinking] = ARG_SUGGESTIONS.llamacpp as [ArgSuggestion, ArgSuggestion];
+    expect(toggleArg('', jinja)).toBe('--jinja');
+    expect(toggleArg('-a 1\n-b  ', jinja)).toBe('-a 1\n-b --jinja');
+    expect(toggleArg('x --jinja --top-k 20', jinja)).toBe('x --top-k 20');
+    // A flag alone keeps a value written after it; one that takes values goes with them.
+    expect(toggleArg('--jinja stray', jinja)).toBe('stray');
+    expect(toggleArg('', noThinking)).toBe('--chat-template-kwargs \'{"enable_thinking":false}\'');
+    expect(toggleArg('--chat-template-kwargs \'{"x":1}\' --jinja', noThinking)).toBe('--jinja');
+    expect(argPresent('--chat-template-kwargs x', noThinking)).toBe(true);
+    expect(argPresent('--jinjax', jinja)).toBe(false);
+    expect(argPresent('"open', jinja)).toBeUndefined();
+    expect(toggleArg('"open', jinja)).toBeUndefined();
+    expect(ARG_SUGGESTIONS.command).toEqual([]);
   });
 
   it('"this model" keeps the recipe’s own models when they include it, else this one alone; a pattern names no model', () => {

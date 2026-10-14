@@ -89,7 +89,7 @@ describe('a library model’s commands', () => {
     expect(await screen.findByText('Comandi: Model m1')).toBeTruthy();
   });
 
-  it('edit, change, then remove; a recipe left empty is removed when saved', async () => {
+  it('edit, change, then remove; saving a recipe left empty asks to delete it', async () => {
     bridge();
     const api = libApi(world({ local: [M1], settings: { ...world().settings, modelRecipes: [recipe({ notes: 'Dalla scheda', link: 'https://huggingface.co/x' })] } }));
     withPlans(api);
@@ -106,29 +106,45 @@ describe('a library model’s commands', () => {
     await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
     await waitFor(() => expect(saved(api)[0]).toMatchObject({ id: 'm1-yarn', contextSize: 65_536 }));
     expect(saved(api)[0]?.ropeScaling).toBeUndefined();
-    // Nothing left: saving removes it.
+    // Nothing left: saving asks to delete it ("Annulla" keeps it), then deletes it.
     await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
     editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
     await userEvent.click(within(editor).getByRole('radio', { name: 'Automatico' }));
     await userEvent.clear(within(editor).getByLabelText('Argomenti in più · llama.cpp'));
     await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    let ask = await screen.findByRole('alertdialog', { name: 'Eliminare la ricetta «M1 YaRN»?' });
+    expect(within(ask).getByText('Non c’è più niente dentro: il modello torna a partire con le impostazioni normali.')).toBeTruthy();
+    await userEvent.click(within(ask).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(saved(api)).toHaveLength(1);
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    ask = await screen.findByRole('alertdialog', { name: 'Eliminare la ricetta «M1 YaRN»?' });
+    await userEvent.click(within(ask).getByRole('button', { name: 'Elimina' }));
     await waitFor(() => expect(saved(api)).toEqual([]));
-    expect(await screen.findByText('Comandi rimossi')).toBeTruthy();
+    expect(await screen.findByText('Ricetta eliminata')).toBeTruthy();
     expect(within(dialog).getByText('Nessun comando particolare: il modello parte con le impostazioni normali.')).toBeTruthy();
   });
 
-  it('"Rimuovi i comandi" removes it; a new empty recipe is not saved', async () => {
+  it('"Elimina ricetta" deletes it after a confirmation; a new empty recipe says what to set', async () => {
     const api = libApi(world({ local: [M1], settings: { ...world().settings, modelRecipes: [recipe()] } }));
     withPlans(api);
     renderLib('/models', api);
     const dialog = await openCommands();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
     const editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
-    await userEvent.click(within(editor).getByRole('button', { name: 'Rimuovi i comandi' }));
+    await userEvent.click(within(editor).getByRole('button', { name: 'Elimina ricetta' }));
+    const ask = await screen.findByRole('alertdialog', { name: 'Eliminare la ricetta «M1 YaRN»?' });
+    expect(within(ask).getByText('Il modello torna a partire con le impostazioni normali.')).toBeTruthy();
+    await userEvent.click(within(ask).getByRole('button', { name: 'Elimina' }));
     await waitFor(() => expect(saved(api)).toEqual([]));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Scrivi i comandi' }));
     const fresh = await screen.findByRole('dialog', { name: 'Scrivi i comandi per Model m1' });
+    // A new recipe has nothing to delete.
+    expect(within(fresh).queryByRole('button', { name: 'Elimina ricetta' })).toBeNull();
     await userEvent.click(within(fresh).getByRole('button', { name: 'Salva' }));
+    expect(within(fresh).getByText('Ancora niente da salvare: imposta il contesto, il motore o un argomento.')).toBeTruthy();
+    expect(saved(api)).toEqual([]);
+    await userEvent.click(within(fresh).getByRole('button', { name: 'Annulla' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Scrivi i comandi per Model m1' })).toBeNull());
     expect(saved(api)).toEqual([]);
   });
@@ -463,5 +479,105 @@ describe('a Hugging Face repo’s commands (the model page)', () => {
     renderLib('/models/hub/org/Docs', api);
     await screen.findByText('File del repository');
     expect(screen.queryByRole('heading', { name: 'Comandi per questo modello' })).toBeNull();
+  });
+});
+
+describe('the editor offers what can run the model, and the common arguments a click away', () => {
+  const engineOptions = async (editor: HTMLElement): Promise<string[]> => {
+    const engine = within(editor).getByRole('combobox', { name: 'Motore' });
+    engine.focus();
+    fireEvent.keyDown(engine, { key: 'Enter' });
+    const names = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
+    fireEvent.keyDown(await screen.findByRole('listbox'), { key: 'Escape' });
+    return names;
+  };
+  const fork = customEngineSchema.parse({ id: 'my-fork', name: 'Il mio fork', base: 'llamacpp', run: { mode: 'native', path: '/f' } });
+  const variant = customEngineSchema.parse({ id: 'nf-var', name: 'NInfer variante', base: 'ninfer', run: { mode: 'ninfer', path: '/home/u/nf' } });
+  const vfork = customEngineSchema.parse({ id: 'v-fork', name: 'Fork vLLM', base: 'vllm', run: { mode: 'native', path: '/v' } });
+  const program = customEngineSchema.parse({ id: 'prog', name: 'Il mio programma', base: 'openai-server', run: { mode: 'command', template: 'srv --model {model} --port {port}' } });
+
+  it('a .ninfer model: NInfer only, no YaRN, its own one-click arguments', async () => {
+    const nf = localModel('nf', { identity: { displayName: 'Qwen3.8-27B-NInfer', format: 'ninfer', file: 'q.ninfer', quant: undefined, weakKey: 'local/nf' } });
+    const nfYarn = localModel('nf2', { identity: { displayName: 'Qwen3.6-27B-NInfer', format: 'ninfer', file: 'q2.ninfer', quant: undefined, weakKey: 'local/nf2', facts: { contextLength: 262_144 } } });
+    const old = modelRecipeSchema.parse({ id: 'nf2', name: 'NF2', match: { models: [{ label: 'x', weakKey: 'local/nf2' }] }, contextSize: 524_288, ropeScaling: { type: 'yarn', factor: 2, originalContext: 262_144 } });
+    const api = libApi(world({ local: [nf, nfYarn], settings: { ...world().settings, customEngines: [fork, variant, program], modelRecipes: [old] } as Settings }));
+    withPlans(api);
+    renderLib('/models', api);
+    let dialog = await openCommands('Qwen3.8-27B-NInfer');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scrivi i comandi' }));
+    const editor = await screen.findByRole('dialog', { name: 'Scrivi i comandi per Qwen3.8-27B-NInfer' });
+    // One engine: no tabs; no YaRN (NInfer runs its models as trained); no llama.cpp choices.
+    expect(within(editor).queryByRole('radiogroup', { name: 'Argomenti in più' })).toBeNull();
+    expect(within(editor).queryByRole('radio', { name: 'Oltre il limite (YaRN)' })).toBeNull();
+    expect(within(editor).queryByText('Decodifica speculativa (llama.cpp)')).toBeNull();
+    expect(within(editor).getByLabelText('Variabili d’ambiente').getAttribute('placeholder')).toBeNull();
+    expect(await engineOptions(editor)).toEqual(['Quello scelto nella pagina', 'NInfer', 'NInfer (WSL)', 'NInfer variante']);
+    // One click adds a flag, a second takes it out; while a quote is open the chips wait.
+    const args = within(editor).getByLabelText('Argomenti in più · NInfer') as HTMLTextAreaElement;
+    const vision = within(editor).getByRole('button', { name: /--vision/ });
+    expect(vision.getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(vision);
+    expect(args.value).toBe('--vision');
+    expect(vision.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.type(args, ' --foo');
+    await userEvent.click(within(editor).getByRole('button', { name: /--no-thinking/ }));
+    expect(args.value).toBe('--vision --foo --no-thinking');
+    await userEvent.click(vision);
+    expect(args.value).toBe('--foo --no-thinking');
+    fireEvent.change(args, { target: { value: '--foo "open' } });
+    expect((within(editor).getByRole('button', { name: /--vision/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(args, { target: { value: '--foo --vision' } });
+    await userEvent.click(within(editor).getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(saved(api)[0]).toMatchObject({ args: { ninfer: ['--foo', '--vision'] } }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Chiudi' }));
+    // A recipe that already has YaRN keeps the choice.
+    dialog = await openCommands('Qwen3.6-27B-NInfer');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
+    const edit = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
+    expect(within(edit).getByRole('radio', { name: 'Oltre il limite (YaRN)' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('a GGUF model: its engines (and the one already chosen), "Programma" when one is saved, every engine for a family', async () => {
+    const m2 = localModel('m2');
+    const r1 = recipe({ engine: { type: 'builtin', kind: 'vllm-docker' } });
+    const r2 = modelRecipeSchema.parse({ id: 'm2', name: 'M2', match: { models: [{ label: 'x', weakKey: m2.identity.weakKey }] }, engine: { type: 'custom', id: 'v-fork' } });
+    const api = libApi(world({ local: [M1, m2], settings: { ...world().settings, customEngines: [fork, vfork, variant, program], modelRecipes: [r1, r2] } as Settings }));
+    withPlans(api);
+    renderLib('/models', api);
+    let dialog = await openCommands();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
+    let editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
+    expect(await engineOptions(editor)).toEqual(['Quello scelto nella pagina', 'llama.cpp', 'llama.cpp (Docker)', 'vLLM (Docker)', 'Il mio fork', 'Il mio programma']);
+    // llama.cpp and the saved program; --jinja is already there.
+    const tabs = within(editor).getByRole('radiogroup', { name: 'Argomenti in più' });
+    expect(within(tabs).getAllByRole('radio').map((r) => r.textContent)).toEqual(['llama.cpp•', 'Programma']);
+    const jinja = within(editor).getByRole('button', { name: /--jinja/ });
+    expect(jinja.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(jinja);
+    expect((within(editor).getByLabelText('Argomenti in più · llama.cpp') as HTMLTextAreaElement).value).toBe('');
+    expect(within(editor).getByLabelText('Variabili d’ambiente').getAttribute('placeholder')).toBe('GGML_CUDA_GRAPH_OPT=1');
+    // A program has no one-click arguments.
+    await userEvent.click(within(tabs).getByRole('radio', { name: 'Programma' }));
+    expect(within(editor).queryByRole('group', { name: 'Aggiungi con un clic' })).toBeNull();
+    expect(within(editor).getByLabelText('Argomenti in più · Programma').getAttribute('placeholder')).toBe('');
+    // A family can hold models of every format: every engine.
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Tutti i modelli di una famiglia' }));
+    await userEvent.click(within(editor).getByRole('radio', { name: 'vLLM' }));
+    const vllm = within(editor).getByLabelText('Argomenti in più · vLLM') as HTMLTextAreaElement;
+    expect(vllm.getAttribute('placeholder')).toBe('--enable-chunked-prefill');
+    await userEvent.click(within(editor).getByRole('button', { name: /--speculative-config/ }));
+    expect(vllm.value).toBe('--speculative-config \'{"method":"mtp","num_speculative_tokens":1}\'');
+    await userEvent.click(within(editor).getByRole('button', { name: /--speculative-config/ }));
+    expect(vllm.value).toBe('');
+    // Back to this model only: the empty vLLM tab goes, llama.cpp is shown again.
+    await userEvent.click(within(editor).getByRole('radio', { name: 'Solo Model m1' }));
+    expect(within(editor).getByLabelText('Argomenti in più · llama.cpp')).toBeTruthy();
+    await userEvent.click(within(editor).getByRole('button', { name: 'Annulla' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Chiudi' }));
+    // A saved custom engine for another format, already chosen, stays in the list.
+    dialog = await openCommands('Model m2');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Modifica' }));
+    editor = await screen.findByRole('dialog', { name: 'Modifica i comandi' });
+    expect(await engineOptions(editor)).toEqual(['Quello scelto nella pagina', 'llama.cpp', 'llama.cpp (Docker)', 'Il mio fork', 'Fork vLLM', 'Il mio programma']);
   });
 });

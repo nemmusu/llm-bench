@@ -62,7 +62,7 @@ export function useModelRecipe(model: LocalModel | RecipeTarget | RecipeModelRef
   return { recipe, label: parts.length ? parts.join(' · ') : undefined, parts, launchPatch, engine, missingTemplate, requestPart };
 }
 
-/** Saving and removing recipes (settings.modelRecipes): a recipe with nothing in it is removed. */
+/** Saving and removing recipes (settings.modelRecipes). */
 export function useRecipeStore(): { recipes: readonly ModelRecipe[]; save: (r: ModelRecipe) => void; remove: (id: string) => void } {
   const { settings, update } = useSettings();
   const recipes = settings.modelRecipes;
