@@ -1,6 +1,7 @@
 /** What a custom engine is and what its check found, in plain words (cards and the add dialog). */
 import { commandLines, commandStepsOf, customEngineKindOf, type CustomEngine, type CustomEngineCheck } from '../../../contract/custom-engines';
 import type { EngineKind } from '../../../contract/engines';
+import { forkKvTypes } from '../../../contract/kv-cache';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { ErrorCallout } from '../library/error-callout';
 import { Callout } from '../ui/callout';
@@ -97,6 +98,8 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
   const required = missing.filter((m) => m.effect === 'required');
   const optional = missing.filter((m) => m.effect === 'default');
   const title = status.version ? t('engines.custom.check.ok', { version: status.version }) : t('engines.custom.check.okNoVersion');
+  // A llama.cpp fork's own KV caches (turbo3…): the forms offer them, the search tries them.
+  const extraKv = forkKvTypes(check.kvCacheTypes);
   return (
     <div className="flex flex-col gap-2">
       <Callout tone={required.length ? 'danger' : 'success'} title={required.length ? t('engines.custom.check.requiredTitle') : title}>
@@ -111,6 +114,7 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
         )}
       </Callout>
       {check.kvDtypes && <p className="text-sm text-fg-2">{t('ninfer.variant.kvDtypes', { list: check.kvDtypes.join(', ') })}</p>}
+      {extraKv.length > 0 && <p className="text-sm text-fg-2">{t('engines.custom.check.kvExtra', { list: extraKv.join(', ') })}</p>}
       {optional.length > 0 && (
         <Callout tone="warning" title={t('engines.custom.check.missingTitle')}>
           <ul className="flex flex-col gap-0.5">

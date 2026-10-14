@@ -4,10 +4,14 @@
  * absolute thresholds. Differences within the measurement noise count as ties.
  */
 import { fullContextPoint, nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
+import { kvPrecision } from '../../../contract/kv-cache';
 import { prefillStat } from '../bench/format';
 
-/** More precise KV cache first (ties go to the more precise one). */
-export const KV_PRECISION: Record<TuneKvType, number> = { f16: 0, auto: 0, bf16: 0, q8_0: 1, fp8: 1, int8: 1, k8v4: 1.5, rk8v4: 1.5, q4_0: 2, nvfp4: 2 };
+/**
+ * More precise KV cache first (ties go to the more precise one): f16 / auto / bf16 0, 8-bit 1, k8v4 1.5,
+ * 4-bit 2, a fork's smaller types after by size (the core's rule: contract/kv-cache.ts).
+ */
+export const KV_PRECISION = (kv: TuneKvType): number => kvPrecision(kv);
 
 /** Smallest relative difference that is never noise (the core's ranking rule). */
 export const TIE_MIN = 0.02;
@@ -53,7 +57,7 @@ export function compareContenders(a: Contender, b: Contender): number {
   if (!sameWithinNoise(pa.decodeTps, pb.decodeTps)) return pb.decodeTps.median - pa.decodeTps.median;
   if (!sameWithinNoise(prefillStat(pa), prefillStat(pb))) return prefillStat(pb).median - prefillStat(pa).median;
   if (!sameWithinNoise(pa.ttftMs, pb.ttftMs)) return pa.ttftMs.median - pb.ttftMs.median;
-  return KV_PRECISION[a.kvType] - KV_PRECISION[b.kvType] || a.index - b.index;
+  return KV_PRECISION(a.kvType) - KV_PRECISION(b.kvType) || a.index - b.index;
 }
 
 /** The grid depth of a combination's deepest point ("32K" for 32 624 tokens). */
@@ -259,7 +263,7 @@ export function compareUsersRows(a: RankRow & { users: ConcurrencyPoint }, b: Ra
   const la = a.sessions?.laterTurns?.ttftMs;
   const lb = b.sessions?.laterTurns?.ttftMs;
   if (la && lb && la.n > 0 && lb.n > 0 && !sameWithinNoise(la, lb)) return la.median - lb.median;
-  return KV_PRECISION[a.combo.kvType] - KV_PRECISION[b.combo.kvType] || a.index - b.index;
+  return KV_PRECISION(a.combo.kvType) - KV_PRECISION(b.combo.kvType) || a.index - b.index;
 }
 
 /**
@@ -443,7 +447,7 @@ export function searchCut(c: Pick<Tuning['capacity'][number], 'bound'>): boolean
 export function capacityLead(tuning: Pick<Tuning, 'capacity'>): CapacityLead | undefined {
   const measured = tuning.capacity
     .filter((c): c is typeof c & { measuredMax: number } => c.measuredMax !== undefined)
-    .sort((a, b) => b.measuredMax - a.measuredMax || KV_PRECISION[a.kvType] - KV_PRECISION[b.kvType]);
+    .sort((a, b) => b.measuredMax - a.measuredMax || KV_PRECISION(a.kvType) - KV_PRECISION(b.kvType));
   const top = measured[0];
   if (!top) return undefined;
   const next = measured.find((c) => c.measuredMax < top.measuredMax);

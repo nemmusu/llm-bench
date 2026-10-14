@@ -13,6 +13,7 @@ import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
 import { ENGINE_ORDER, engineConfigOf, engineFormOf, savableEngine, type EngineForm } from '../components/bench/engine-form';
 import { ExpertPanel } from '../components/bench/expert-panel';
+import { customKvCacheTypes } from '../components/bench/kv-cache-options';
 import { formFromParams, formFromScenario, hasCustomParams, paramsFromForm, scenarioFromForm, type ParamsForm, type ScenarioForm } from '../components/bench/expert-form';
 import { MIB_PER_GB, shortGpuName } from '../components/bench/format';
 import { BenchModelPicker } from '../components/bench/model-picker';
@@ -606,6 +607,7 @@ function BenchmarkScreen() {
               {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
               customEngine={effCustom?.name}
               command={commandRun ? { name: effCustom!.name, run: commandRun } : undefined}
+              kvCacheTypes={customKvCacheTypes(customInfo.data, effCustom)}
             />
           )}
 

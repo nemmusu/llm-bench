@@ -14,6 +14,7 @@ import { YarnChoice } from '../recipes/yarn-choice';
 import { depthLabel } from '../tune/tune-format';
 import type { EngineField, EngineForm } from './engine-form';
 import { parseArgs, parseEnv, parseInteger, type ParamsField, type ParamsForm, type ScenarioField, type ScenarioForm } from './expert-form';
+import { kvCacheOptions } from './kv-cache-options';
 import { engineFamily } from './model-options';
 
 export interface ExpertPanelProps {
@@ -38,6 +39,8 @@ export interface ExpertPanelProps {
   customEngine?: string | undefined;
   /** A program with an OpenAI API is chosen: only the settings its commands take (engines/command-settings.tsx). */
   command?: { name: string; run: CommandRun } | undefined;
+  /** The -ctk values a llama.cpp fork lists (its check): its own types join the KV cache choices. */
+  kvCacheTypes?: readonly string[] | undefined;
 }
 
 interface TextProps {
@@ -251,12 +254,7 @@ export function ExpertPanel(p: ExpertPanelProps) {
                         id={id}
                         value={p.params.kvCacheType}
                         onValueChange={(v) => p.onParams({ kvCacheType: v })}
-                        options={[
-                          { value: 'default', label: t('common.auto') },
-                          { value: 'f16', label: 'f16' },
-                          { value: 'q8_0', label: 'q8_0' },
-                          { value: 'q4_0', label: 'q4_0' },
-                        ]}
+                        options={kvCacheOptions(p.kvCacheTypes, p.params.kvCacheType, f)}
                       />
                     )}
                   </Field>

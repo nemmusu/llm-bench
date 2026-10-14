@@ -16,6 +16,7 @@ import type { ServerPreset } from '../../../../contract/servers';
 import { useI18n } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import type { ParamsField, ParamsForm } from '../../bench/expert-form';
+import { kvCacheOptions } from '../../bench/kv-cache-options';
 import type { PresetProvenance } from '../../bench/run-context';
 import { CommandSettingsFields } from '../../engines/command-settings';
 import { configLabelOf, useConfigLabel } from '../../presets/config-label';
@@ -58,6 +59,8 @@ export interface SettingsStepProps {
   recipeSlot?: ReactNode;
   /** A program with an OpenAI API is chosen: its commands (the settings they take are the only fields). */
   command?: CommandRun | undefined;
+  /** The -ctk values a llama.cpp fork lists (its check): its own types join the KV cache choices. */
+  kvCacheTypes?: readonly string[] | undefined;
 }
 
 function Choice({ value, title, detail, icon, badge }: { value: string; title: ReactNode; detail?: ReactNode; icon: ReactNode; badge?: ReactNode }) {
@@ -161,7 +164,8 @@ function PresetsTab(p: SettingsStepProps) {
 
 /** The parameters each engine takes, as in the Benchmark page's expert mode. */
 function CustomTab(p: SettingsStepProps) {
-  const { t } = useI18n();
+  const f = useI18n();
+  const { t } = f;
   const base = engineBaseOf(p.engineKind);
   const bad = (k: ParamsField) => p.invalid.includes(k);
   const num = (field: 'contextSize' | 'gpuLayers' | 'batchSize' | 'ubatchSize' | 'threads' | 'parallel' | 'maxModelLen' | 'gpuMemoryUtilization', label: string, placeholder: string) => (
@@ -213,12 +217,7 @@ function CustomTab(p: SettingsStepProps) {
                 id={id}
                 value={p.form.kvCacheType}
                 onValueChange={(v) => p.onForm({ kvCacheType: v })}
-                options={[
-                  { value: 'default', label: t('common.auto') },
-                  { value: 'f16', label: 'f16' },
-                  { value: 'q8_0', label: 'q8_0' },
-                  { value: 'q4_0', label: 'q4_0' },
-                ]}
+                options={kvCacheOptions(p.kvCacheTypes, p.form.kvCacheType, f)}
               />
             )}
           </Field>

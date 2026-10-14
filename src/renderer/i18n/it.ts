@@ -191,6 +191,7 @@ export const it = {
     totalHelp: 'Il giudizio guarda la memoria totale della scheda ({total}) meno {reserve} che tengono sempre il driver e lo schermo: non cambia se hai altri programmi aperti. Quanta ne è libera adesso dipende da quei programmi: se il modello non ci sta in quello spazio te lo dico prima di partire, con quanto serve e quanto è libero.',
     ropeExtended: 'Contesto esteso con YaRN: oltre il limite del modello contano solo la velocità e la memoria.',
     approximate: 'Stima approssimativa: NInfer gestisce la memoria a modo suo.',
+    kvUnknown: 'Cache KV di un tipo che LLM Bench non conosce: stima non disponibile, la sua memoria è calcolata come con f16.',
     busy: {
       title: 'Ora altri programmi usano {used} della scheda.',
       run: 'Per provarlo così com’è chiudili, oppure il test partirà con meno memoria ({free} liberi adesso).',
@@ -1458,6 +1459,8 @@ export const it = {
       nglAll: 'Tutti',
       flashAttention: 'Flash attention',
       kvCache: 'Tipo di cache KV',
+      kvBits: '{bits} bit per valore',
+      kvNoEstimate: 'stima non disponibile',
       batch: 'Batch',
       ubatch: 'Micro-batch',
       threads: 'Thread CPU',
@@ -1979,7 +1982,7 @@ export const it = {
     help: {
       glossary: 'Cosa vogliono dire:',
       kvTerm: 'Cache KV',
-      kv: 'La memoria dove il modello tiene il testo già letto. f16 e bf16 sono le più precise; le altre (q8_0, int8, fp8, q4_0, nvfp4…) la comprimono: occupa meno memoria video, così ci sta più contesto.',
+      kv: 'La memoria dove il modello tiene il testo già letto. f16 e bf16 sono le più precise; le altre (q8_0, int8, fp8, q4_0, nvfp4…) la comprimono: occupa meno memoria video, così ci sta più contesto. I fork di llama.cpp ne aggiungono altre (turbo4, turbo3…): LLM Bench le riconosce da solo.',
       contextTerm: 'Contesto',
       context: 'Quanto testo il modello tiene a mente in una volta, domanda e risposta insieme, in token (1K = 1.024 token, circa 750 parole).',
       faTerm: 'Flash attention',
@@ -3427,6 +3430,7 @@ export const it = {
         requiredTitle: 'LLM Bench non può usarlo così',
         requiredFlag: 'Manca {flag} ({setting}): senza, LLM Bench non può avviarlo.',
         allFlags: 'Conosce tutte le impostazioni che LLM Bench usa.',
+        kvExtra: 'Cache KV in più rispetto a llama.cpp: {list}',
       },
       problems: {
         custom_engine_missing: 'Questo motore non esiste più: forse è stato eliminato.',

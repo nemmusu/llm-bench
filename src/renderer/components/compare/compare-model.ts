@@ -413,7 +413,7 @@ export function peakPoint(item: Pick<CompareItem, 'points'>, kind: 'write' | 're
  */
 export function preciseCombo(item: Pick<CompareItem, 'run'>): { index: number; combo: TuneCombination } | undefined {
   const list = item.run.tuning?.combinations.flatMap((combo, index) => (combo.sweep.length || combo.concurrency?.length ? [{ index, combo }] : [])) ?? [];
-  return list.sort((a, b) => KV_PRECISION[a.combo.kvType] - KV_PRECISION[b.combo.kvType] || b.combo.maxContext - a.combo.maxContext || a.index - b.index)[0];
+  return list.sort((a, b) => KV_PRECISION(a.combo.kvType) - KV_PRECISION(b.combo.kvType) || b.combo.maxContext - a.combo.maxContext || a.index - b.index)[0];
 }
 
 /**

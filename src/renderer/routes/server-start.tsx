@@ -16,6 +16,7 @@ import { ninferPresetOf, ninferPresetsFor } from '../../contract/ninfer';
 import type { ServerNetwork, ServerPresetInput } from '../../contract/servers';
 import { formFromParams, paramsFromForm, type ParamsForm } from '../components/bench/expert-form';
 import { MIB_PER_GB } from '../components/bench/format';
+import { customKvCacheTypes } from '../components/bench/kv-cache-options';
 import { needsFromPlan } from '../components/bench/needs';
 import { presetOf } from '../components/bench/rerun';
 import { useStartFlow } from '../components/bench/start-flow';
@@ -327,6 +328,7 @@ export function ServerStartPage() {
               preset={presetId}
               onPreset={onPreset}
               othersCount={(presets.data?.length ?? 0) - modelPresets.length}
+              kvCacheTypes={customKvCacheTypes(customList, chosenCustom)}
               form={form}
               invalid={parsed.invalid}
               onForm={(patch) => {

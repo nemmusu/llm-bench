@@ -187,6 +187,7 @@ export const en: Messages = {
     totalHelp: 'The verdict looks at the card’s total memory ({total}) minus {reserve} the driver and the screen always keep: it does not change when other programs are open. How much is free right now depends on those programs: if the model does not fit in that space, I tell you before starting, with how much it needs and how much is free.',
     ropeExtended: 'Context extended with YaRN: beyond the model’s limit only speed and memory count.',
     approximate: 'Rough estimate: NInfer manages memory its own way.',
+    kvUnknown: 'A KV cache type LLM Bench does not know: no estimate available, its memory is counted as with f16.',
     busy: {
       title: 'Other programs are using {used} of the card right now.',
       run: 'To test it as it is, close them; otherwise the test starts with less memory ({free} free right now).',
@@ -1453,6 +1454,8 @@ export const en: Messages = {
       nglAll: 'All',
       flashAttention: 'Flash attention',
       kvCache: 'KV cache type',
+      kvBits: '{bits} bits per value',
+      kvNoEstimate: 'no estimate available',
       batch: 'Batch',
       ubatch: 'Micro-batch',
       threads: 'CPU threads',
@@ -1974,7 +1977,7 @@ export const en: Messages = {
     help: {
       glossary: 'What they mean:',
       kvTerm: 'KV cache',
-      kv: 'The memory where the model keeps the text it has already read. f16 and bf16 are the most precise; the others (q8_0, int8, fp8, q4_0, nvfp4…) compress it: it takes less graphics memory, so more context fits.',
+      kv: 'The memory where the model keeps the text it has already read. f16 and bf16 are the most precise; the others (q8_0, int8, fp8, q4_0, nvfp4…) compress it: it takes less graphics memory, so more context fits. llama.cpp forks add their own (turbo4, turbo3…): LLM Bench detects them by itself.',
       contextTerm: 'Context',
       context: 'How much text the model keeps in mind at once, question and answer together, in tokens (1K = 1,024 tokens, about 750 words).',
       faTerm: 'Flash attention',
@@ -3422,6 +3425,7 @@ export const en: Messages = {
         requiredTitle: 'LLM Bench cannot use it like this',
         requiredFlag: '{flag} ({setting}) is missing: without it LLM Bench cannot start it.',
         allFlags: 'It knows every setting LLM Bench uses.',
+        kvExtra: 'KV caches beyond llama.cpp’s: {list}',
       },
       problems: {
         custom_engine_missing: 'This engine does not exist any more: maybe it was deleted.',

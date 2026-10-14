@@ -70,6 +70,7 @@ export function FitSummary({ fit }: { fit: FitEstimate }) {
       )}
       {fit.notes.includes('context.rope-extended') && <span className="basis-full text-xs text-fg-3">{t('fit.ropeExtended')}</span>}
       {fit.notes.includes('ninfer.estimate') && <span className="basis-full text-xs text-fg-3">{t('fit.approximate')}</span>}
+      {fit.notes.includes('kv.type-unknown') && <span className="basis-full text-xs text-fg-3">{t('fit.kvUnknown')}</span>}
       {cal && (
         <span className="inline-flex items-center gap-1 text-xs text-fg-3 tabular-nums">
           {t('fit.calibrated', { n: cal.samples, err: percent(cal.errorPct / 100, 1) })}

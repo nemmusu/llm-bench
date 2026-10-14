@@ -10,7 +10,8 @@ export interface ParamsForm {
   contextSize: string;
   gpuLayers: string;
   flashAttention: 'default' | 'auto' | 'on' | 'off';
-  kvCacheType: 'default' | 'f16' | 'q8_0' | 'q4_0' | 'fp8' | 'auto';
+  /** 'default', f16 / q8_0 / q4_0, or a type the fork lists (turbo3…: kv-cache-options.ts). */
+  kvCacheType: string;
   batchSize: string;
   ubatchSize: string;
   threads: string;
