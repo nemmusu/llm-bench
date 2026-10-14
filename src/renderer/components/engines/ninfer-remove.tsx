@@ -29,6 +29,8 @@ export function NinferRemove({ info, name }: { info: NinferBuildInfo; name: stri
   const forget = forgetsOnly(info);
   const p = plan.data;
   const where = p?.distro ? `${p.dir} · ${p.distro}` : (p?.dir ?? '');
+  // The command it runs (or the one to copy, by hand); none to forget a build.
+  const command = p?.command ?? '';
   const confirm = () =>
     remove.mutate(undefined, {
       onSuccess: () => {
@@ -65,14 +67,14 @@ export function NinferRemove({ info, name }: { info: NinferBuildInfo; name: stri
             {p?.mode === 'delete' && (
               <>
                 <p>{p.sizeBytes ? t('ninfer.remove.deleteBody', { dir: where, size: bytes(p.sizeBytes) }) : t('ninfer.remove.deleteBodyNoSize', { dir: where })}</p>
-                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: p.command ?? '', bash: p.command ?? '' }} />
+                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: command, bash: command }} />
               </>
             )}
             {p?.mode === 'forget' && <p>{t('ninfer.remove.forgetBody', { dir: where })}</p>}
             {p?.mode === 'manual' && (
               <>
                 <p>{t('ninfer.remove.manualBody', { dir: where })}</p>
-                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: p.command ?? '', bash: p.command ?? '' }} />
+                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: command, bash: command }} />
               </>
             )}
             {remove.isError && <ErrorCallout error={remove.error} />}
