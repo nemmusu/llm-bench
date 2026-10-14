@@ -20,7 +20,8 @@ import {
   recommendedIndex,
   sameWithinNoise,
   sortRows,
-  speedLead,
+  balanceScore,
+  briefOf,
 } from '../../../../src/renderer/components/tune/tune-logic';
 import {
   capacitySentence,
@@ -31,9 +32,10 @@ import {
   outcomeText,
   recommendedOf,
   settingsText,
-  speedSentence,
+
   stageText,
 } from '../../../../src/renderer/components/tune/tune-format';
+import { briefAnswers } from '../../../../src/renderer/components/tune/tune-brief';
 import { attempt, combo, params, point, stat, tuning } from './tune-fixtures';
 
 const f = createFormatters('it');
@@ -160,30 +162,50 @@ describe('summary from the numbers', () => {
     expect(ratioOf(1.5, 1)).toEqual({ kind: 'percent', pct: 50 });
   });
 
-  it('says the speed at the context full, among those with the largest context', () => {
+  it('"In breve": the five answers, each a number and where it was measured', () => {
     const t = tuning();
-    expect(speedLead(t)).toMatchObject({ context: 64 * K, full: { row: { index: 2 }, of: 3 } });
-    expect(speedSentence(t, 'llamacpp-native', label, f)).toBe('Al contesto massimo (64K) la più veloce a scrivere è cache KV q4_0 · ub 2048 · b 4096: 60,0 tok/s.');
-    expect(speedSentence({ combinations: [], fastestByDepth: [] }, 'llamacpp-native', label, f)).toBeUndefined();
-    // Acronyms keep their case inside a sentence ("KV cache", never "kV cache").
+    const b = briefOf(t);
+    expect([b.atMax?.index, b.read?.index, b.write?.index, b.both?.index, b.quality?.index]).toEqual([2, 2, 0, 0, 0]);
+    const rows = briefAnswers(t, 'llamacpp-native', label, f).map((a) => [a.label, a.value, a.detail]);
+    expect(rows).toEqual([
+      ['Al contesto più grande (64K)', 'legge 6.400 tok/s, scrive 60,0 tok/s', 'Cache KV q4_0 · flash attention · ub 2048 · b 4096'],
+      ['Dove legge più in fretta', 'a 1K: 9.800 tok/s', 'Cache KV q4_0 · flash attention · ub 2048 · b 4096'],
+      ['Dove scrive più in fretta', 'a 1K: 92,0 tok/s', 'Cache KV f16 · flash attention'],
+      ['Dove va meglio in tutte e due', 'a 1K: legge 9.000 tok/s, scrive 92,0 tok/s', 'Cache KV f16 · flash attention'],
+      ['Con le impostazioni più fedeli (cache f16)', 'fino a 24K: legge 7.000 tok/s, scrive 74,0 tok/s', 'Cache KV f16 · flash attention'],
+    ]);
+    // English, acronyms as written.
     const en = createFormatters('en');
     const labelEn = (p: LaunchParams, k: Parameters<typeof launchLabelOf>[1], o?: Parameters<typeof launchLabelOf>[3]) => launchLabelOf(p, k, en, o);
-    expect(speedSentence(t, 'llamacpp-native', labelEn, en)).toContain('KV cache q4_0');
-    // One combination with the largest context: nothing to compare it with, its whole settings.
-    const two = { combinations: [t.combinations[0]!, t.combinations[1]!], fastestByDepth: [] };
-    expect(speedSentence(two, 'llamacpp-native', label, f)).toBe('Al contesto massimo (32K) cache KV q8_0 scrive a 72,0 tok/s.');
-    // Never measured with the context full (the time ran out): said so, and what was measured below, with its depth.
+    expect(briefAnswers(t, 'llamacpp-native', labelEn, en)[0]).toMatchObject({ label: 'At the largest context (64K)', value: 'reads 6,400 tok/s, writes 60.0 tok/s' });
+    // Nothing measured: no answers.
+    expect(briefAnswers({ combinations: [] }, 'llamacpp-native', label, f)).toEqual([]);
+    // A point that fills its context says so.
+    const deep = { combinations: [combo('q8_0', 4 * K, [point(K, 50, 1000), point(4 * K - 144, 49, 3000)])], recommended: 0 };
+    expect(briefAnswers(deep, 'llamacpp-native', label, f)[1]!.value).toBe('a 4K, contesto pieno: 3.000 tok/s');
+  });
+
+  it('"In breve": what the search did not measure says so, never a number from elsewhere', () => {
+    // The time ran out before the contexts were full.
     const q8 = combo('q8_0', 256 * K, [point(K, 54.8, 1787), point(64 * K, 46.5, 2049)], { partial: 'budget' });
     const q4 = combo('q4_0', 256 * K, [point(K, 60, 1800), point(64 * K, 44, 1900)], { partial: 'budget' });
     const f16 = combo('f16', 208 * K, [point(K, 55.9, 1810)], { partial: 'budget' });
-    const cut = { combinations: [f16, q8, q4], fastestByDepth: [], recommended: 1 };
-    expect(speedLead(cut)).toMatchObject({ context: 256 * K, below: { depth: 64 * K, row: { index: 1 }, of: 2 } });
-    expect(speedSentence(cut, 'llamacpp-native', label, f)).toBe(
-      'Al contesto massimo (256K) la velocità non è stata misurata. Misurata solo fino a 64K: lì la più veloce a scrivere è cache KV q8_0 (46,5 tok/s a 64K).',
-    );
-    expect(speedSentence({ ...cut, combinations: [f16, q8] }, 'llamacpp-native', label, f)).toBe(
-      'Al contesto massimo (256K) la velocità non è stata misurata. Misurata solo fino a 64K: lì cache KV q8_0 scrive a 46,5 tok/s.',
-    );
+    const cut = briefAnswers({ combinations: [f16, q8, q4], recommended: 1 }, 'llamacpp-native', label, f);
+    expect(cut.map((a) => a.value ?? a.missing)).toEqual([
+      'Velocità non misurata a 256K',
+      'a 64K: 2.049 tok/s',
+      'a 1K: 60,0 tok/s',
+      'a 1K: legge 1.800 tok/s, scrive 60,0 tok/s',
+      'Arriva a 208K; lì la velocità non è stata misurata',
+    ]);
+    // Among the most precise cache's combinations: the largest context, then the one measured with it full.
+    const f16b = combo('f16', 208 * K, [point(K, 50, 1700), point(208 * K - 144, 30, 900)]);
+    expect(briefOf({ combinations: [f16, q8, f16b], recommended: 1 }).quality?.index).toBe(2);
+    // Nothing of 8 bits or more fitted: the most precise is said, with why.
+    const only = briefAnswers({ combinations: [q4], recommended: 0 }, 'llamacpp-native', label, f);
+    expect(only[4]!.detail).toBe('Cache KV q4_0 · flash attention · nessuna cache da 8 bit o più è entrata: q4_0 è la più precisa');
+    expect(balanceScore(0, 0, 1, 1)).toBe(0);
+    expect(balanceScore(1, 1, 0, 0)).toBe(0);
   });
 });
 

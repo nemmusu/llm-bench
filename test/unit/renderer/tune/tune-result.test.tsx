@@ -44,9 +44,19 @@ describe('tune result', () => {
   it('sums up from the numbers and recommends the fastest at the largest context', async () => {
     open();
     expect(await h1(/Qwen3 8B/)).toBeTruthy();
-    expect(
-      screen.getByText('Con cache q4_0 arrivi a 64K, il doppio di q8_0 (32K). Al contesto massimo (64K) la più veloce a scrivere è cache KV q4_0 · ub 2048 · b 4096: 60,0 tok/s.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Con cache q4_0 arrivi a 64K, il doppio di q8_0 (32K).')).toBeTruthy();
+    // The five answers, in order, each with where it was measured and which configuration.
+    const brief = screen.getByRole('list', { name: 'Le risposte principali' });
+    expect(within(brief).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      '1Al contesto più grande (64K)legge 6.400 tok/s, scrive 60,0 tok/sCache KV q4_0 · flash attention · ub 2048 · b 4096',
+      '2Dove legge più in frettaa 1K: 9.800 tok/sCache KV q4_0 · flash attention · ub 2048 · b 4096',
+      '3Dove scrive più in frettaa 1K: 92,0 tok/sCache KV f16 · flash attention',
+      '4Dove va meglio in tutte e duea 1K: legge 9.000 tok/s, scrive 92,0 tok/sCache KV f16 · flash attention',
+      '5Con le impostazioni più fedeli (cache f16)fino a 24K: legge 7.000 tok/s, scrive 74,0 tok/sCache KV f16 · flash attention',
+    ]);
+    expect(within(brief).getByText('legge 6.400 tok/s, scrive 60,0 tok/s').getAttribute('title')).toBe('a 65.392 token di contesto');
+    await userEvent.click(within(brief).getByRole('button', { name: 'Che cos’è «Dove va meglio in tutte e due»?' }));
+    expect((await screen.findAllByText(/conta di più la più debole delle due \(media armonica\)/)).length).toBeGreaterThan(0);
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('Cache KV q4_0 · flash attention · ub 2048 · b 4096')).toBeTruthy();
     expect(within(rec).getByText('64K')).toBeTruthy();
@@ -220,7 +230,8 @@ describe('tune result', () => {
     const { unmount } = open(sparse);
     await h1(/Qwen3 8B/);
     expect(screen.getByText('Mi sono fermato prima: tempo finito')).toBeTruthy();
-    expect(screen.getByText('Con cache q8_0 arrivi a 32K. Al contesto massimo (32K) cache KV q8_0 · flash attention scrive a 72,0 tok/s.')).toBeTruthy();
+    expect(screen.getByText('Con cache q8_0 arrivi a 32K.')).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: 'Le risposte principali' })).getAllByRole('listitem')[0]!.textContent).toContain('legge 6.600 tok/s, scrive 72,0 tok/s');
     // One combination: its own largest context and depths to compare at, no "Prove scartate".
     expect(within(screen.getByRole('radiogroup', { name: 'Confronta a' })).getAllByRole('radio')).toHaveLength(6);
     expect(screen.queryByRole('button', { name: /Prove scartate/ })).toBeNull();

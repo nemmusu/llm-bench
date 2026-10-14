@@ -79,9 +79,11 @@ describe('the real NInfer search that ran out of time (saved before the context 
   it('sums up without a speed from another depth as the headline, and says why the time ran out', async () => {
     const { router } = open(real());
     await h1();
-    expect(
-      screen.getByText(/^Con cache rk8v4 arrivi a 256K\. Al contesto massimo \(256K\) la velocità non è stata misurata\. Misurata solo fino a 64K: lì la più veloce a scrivere è cache KV rk8v4.* \(83,0 tok\/s a 64K\)\.$/),
-    ).toBeTruthy();
+    expect(screen.getByText('Con cache rk8v4 arrivi a 256K.')).toBeTruthy();
+    // Not measured with the context full: said so, never a speed from another depth in its place.
+    const brief = within(screen.getByRole('list', { name: 'Le risposte principali' })).getAllByRole('listitem');
+    expect(brief[0]!.textContent).toContain('Velocità non misurata a 256K');
+    expect(brief[0]!.textContent).not.toContain('tok/s');
     expect(screen.getByText('Mi sono fermato prima: tempo finito')).toBeTruthy();
     expect(screen.getByText('Ogni avvio del motore ha richiesto in media 1 min 36 s.')).toBeTruthy();
     expect(screen.getByText(/^Il motore \(Docker o WSL\) legge il modello da una cartella di Windows/)).toBeTruthy();
@@ -197,7 +199,11 @@ describe('a search of the new shape (the context full measured first)', () => {
   it('every view reads the speeds with the context full, the exact tokens on hover', async () => {
     open(tunedRun(fullTuning()));
     await h1();
-    expect(screen.getByText('Con cache q8_0 arrivi a 256K, il doppio di f16 (128K). Al contesto massimo (256K) la più veloce a scrivere è cache KV q8_0: 40,0 tok/s.')).toBeTruthy();
+    expect(screen.getByText('Con cache q8_0 arrivi a 256K, il doppio di f16 (128K).')).toBeTruthy();
+    const brief = within(screen.getByRole('list', { name: 'Le risposte principali' })).getAllByRole('listitem');
+    expect(brief[0]!.textContent).toContain('legge 1.500 tok/s, scrive 40,0 tok/s');
+    // The best quality (f16) at its own largest context, full.
+    expect(brief[4]!.textContent).toMatch(/^5Con le impostazioni più fedeli \(cache f16\)fino a 128K: legge/);
     expect(screen.getByText('Ogni avvio del motore ha richiesto in media 25 s; ne erano previsti 15 s.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Apri Motori' })).toBeNull();
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });

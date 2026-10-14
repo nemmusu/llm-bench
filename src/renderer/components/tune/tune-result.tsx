@@ -8,7 +8,8 @@ import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
-import { capacitySentence, comboText, depthLabel, recommendedOf, speedSentence } from './tune-format';
+import { TuneBrief } from './tune-brief';
+import { capacitySentence, comboText, depthLabel, recommendedOf } from './tune-format';
 import { AT_MAX, deepestPoint, depthOptions, rankAt, rankAtMax, withRunEnd, type CompareAt } from './tune-logic';
 import { RecheckOverview } from './tune-recheck';
 import { TuneRanking } from './tune-ranking';
@@ -57,16 +58,18 @@ function ContextOverview({ run, errorCard }: { run: TunedRun; errorCard?: ReactN
   const rows = useMemo(() => (depth === AT_MAX ? rankAtMax(tuning) : rankAt(tuning, depth)), [tuning, depth]);
   const rec = recommendedOf(tuning);
   const order = useMemo(() => rows.map((r) => r.index), [rows]);
-  const sentences = [capacitySentence(tuning, f), speedSentence(tuning, kind, label, f)].filter(Boolean);
+  const capacity = capacitySentence(tuning, f);
 
   return (
     <div className="flex flex-col gap-section">
       {errorCard}
-      <Card className="hero-wash p-7 compact:p-5">
+      <Card className="@container hero-wash p-7 compact:p-5">
         <p className="text-xs font-semibold tracking-wide text-fg-3 uppercase">{t('tune.summary.title')}</p>
+        {/* How far each cache gets, then the five answers (number and where), then the recommendation. */}
         <p className="mt-2 max-w-[72ch] text-lg leading-7 font-medium tracking-[-0.01em] text-pretty text-fg">
-          {sentences.length ? sentences.join(' ') : t(tuning.stoppedBy === 'cancelled' || tuning.stoppedBy === 'failed' ? NONE[tuning.stoppedBy] : 'tune.summary.none')}
+          {capacity ?? t(tuning.stoppedBy === 'cancelled' || tuning.stoppedBy === 'failed' ? NONE[tuning.stoppedBy] : 'tune.summary.none')}
         </p>
+        {rec && <TuneBrief tuning={tuning} engineKind={kind} />}
         {tuning.stoppedBy && <StoppedNote tuning={tuning} validity={run.validity} />}
         {rec && <RecommendedCard run={run} index={rec.index} text={comboText(rec.combo, kind, label)} />}
       </Card>

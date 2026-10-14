@@ -3,7 +3,7 @@ import type { EngineKind, LaunchParams } from '../../../contract/engines';
 import type { TuneAttempt, TuneCombination, TuneKvType, Tuning } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { useConfigLabel } from '../presets/config-label';
-import { capacityLead, measuredCombinations, ratioOf, recommendedIndex, speedLead, type SpeedWinner } from './tune-logic';
+import { capacityLead, ratioOf, recommendedIndex } from './tune-logic';
 
 type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 export type LabelFn = ReturnType<typeof useConfigLabel>;
@@ -105,46 +105,6 @@ export function capacitySentence(tuning: Pick<Tuning, 'capacity'>, f: F): string
   if (r.kind === 'triple') return f.t('tune.summary.capacityTriple', params);
   if (r.kind === 'times') return f.t('tune.summary.capacityTimes', { ...params, n: r.n });
   return f.t('tune.summary.capacityMore', { ...params, pct: r.pct });
-}
-
-/**
- * Speed at the context full, among the combinations with the largest context: "Al contesto massimo (64K)
- * la più veloce a scrivere è cache KV q4_0 (60,0 tok/s)." When none was measured that far it says so,
- * and what was measured below comes with its depth: "Misurata solo fino a 64K: lì …".
- */
-export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth' | 'recommended'>, engineKind: EngineKind, label: LabelFn, f: F): string | undefined {
-  const lead = speedLead(tuning);
-  if (!lead) return undefined;
-  const names = distinctNames(tuning, engineKind, label);
-  const ctx = depthLabel(lead.context, f);
-  // Winners are measured combinations: they all have a name.
-  const of = (w: SpeedWinner) => ({ settings: names.get(w.row.index)!, tps: f.number(w.row.point.decodeTps.median, 1) });
-  if (lead.full) return f.t(lead.full.of > 1 ? 'tune.summary.atMax' : 'tune.summary.atMaxOne', { ctx, ...of(lead.full) });
-  const below = lead.below!;
-  const params = { ctx, depth: depthLabel(below.depth, f), ...of(below) };
-  return `${f.t('tune.summary.atMaxNone', { ctx })} ${f.t(below.of > 1 ? 'tune.summary.belowMax' : 'tune.summary.belowMaxOne', params)}`;
-}
-
-/**
- * Short names that tell the measured combinations apart, for a sentence: their settings without the
- * parts every one of them shares ("cache KV q8_0" rather than "Cache KV q8_0 · flash attention · ub 2048").
- */
-export function distinctNames(tuning: Pick<Tuning, 'combinations'>, engineKind: EngineKind, label: LabelFn): Map<number, string> {
-  const parts = new Map(
-    measuredCombinations(tuning).map((i) => {
-      const c = tuning.combinations[i]!;
-      return [i, label(c.params, engineKind, { context: false, tags: c.tags, capitalize: false }).parts] as const;
-    }),
-  );
-  const lists = [...parts.values()];
-  // Called with at least one measured combination (a sentence has a winner).
-  const shared = new Set(lists[0]!.filter((p) => lists.every((l) => l.includes(p))));
-  return new Map(
-    [...parts].map(([i, list]) => {
-      const own = list.filter((p) => !shared.has(p));
-      return [i, (own.length ? own : list).join(' · ')];
-    }),
-  );
 }
 
 /** Index of the recommended combination and its words, for the card. */

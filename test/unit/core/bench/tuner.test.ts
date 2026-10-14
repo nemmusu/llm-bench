@@ -64,7 +64,8 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
     const rec = t.combinations[t.recommended!]!;
     expect(rec).toMatchObject({ kvType: 'q4_0', maxContext: 40960, params: { ubatchSize: 2048, parallel: 1, batchSize: 2048 } });
     expect(rec.sweep.map((p) => p.promptTokens)).toEqual([1024, 4096, 8192, 16384, 32768, 40816]);
-    expect(t.combinations.map((c) => `${c.kvType}@${c.maxContext}`)).toEqual(['q4_0@40960', 'q8_0@32768', 'f16@16384']);
+    // The largest context first (the recommendation), then the best quality (f16), then the rest.
+    expect(t.combinations.map((c) => `${c.kvType}@${c.maxContext}`)).toEqual(['q4_0@40960', 'f16@16384', 'q8_0@32768']);
     // Flash attention off is only tried with f16, and loses (slower with depth).
     const faOff = t.attempts.filter((a) => a.params.flashAttention === 'off');
     expect(faOff.map((a) => [a.kvType, a.screen])).toEqual([['f16', 'lost']]);

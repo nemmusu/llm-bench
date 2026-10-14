@@ -576,8 +576,7 @@ export class Tuner {
     for (const kv of space.kvLadder) await this.searchCapacity(kv);
     const fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
     if (fitting.length === 0 && this.input.offload) await this.offload(this.input.offload);
-    // Largest context first (the recommendation comes from there), then the more precise KV.
-    const order = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
+    const order = this.sweepOrder(fitting);
     const bests = new Map<TuneKvType, Variant>();
     for (const kv of order) {
       this.deps.onPhase?.('tune-variants');
@@ -596,6 +595,20 @@ export class Tuner {
     this.fidelityDone = true;
     this.addPartials();
     return this.snapshot();
+  }
+
+  /**
+   * The order the fitting KV types are searched and swept in, what the result says first coming first
+   * (the time limit cuts the last ones): the largest context (the recommendation comes from there), then
+   * the best quality (the most precise type that fits: "con le impostazioni più fedeli"), then the rest
+   * by context, the more precise first.
+   */
+  protected sweepOrder(fitting: readonly TuneKvType[]): TuneKvType[] {
+    const bySize = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
+    const precise = [...fitting].sort((a, b) => kvPrecisionRank(a) - kvPrecisionRank(b) || this.maxOf(b) - this.maxOf(a))[0];
+    const first = bySize[0];
+    if (precise === undefined || first === undefined || precise === first) return bySize;
+    return [first, precise, ...bySize.slice(1).filter((kv) => kv !== precise)];
   }
 
   protected maxOf(kv: TuneKvType): number {

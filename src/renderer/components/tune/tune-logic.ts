@@ -492,32 +492,87 @@ export function ratioOf(big: number, small: number): Ratio {
   return { kind: 'percent', pct: Math.round((r - 1) * 100) };
 }
 
-/** The fastest of a comparison and how many were compared (1 = nothing to compare it with). */
-export interface SpeedWinner {
-  row: RankRow & { point: LatencyPoint };
-  of: number;
+// ---- "In breve": the five answers of a one-user search ---------------------------------------------
+
+/** One measured point of one combination: where it was measured (its grid depth) and how fast. */
+export interface BriefPoint {
+  index: number;
+  combo: TuneCombination;
+  point: LatencyPoint;
+  /** Grid depth ("32K" for 32 624 tokens). */
+  depth: number;
+  /** It filled the combination's context. */
+  full: boolean;
+}
+
+/** A combination read at its largest context: its point with the context full, or none (not measured that far). */
+export interface BriefAtMax {
+  index: number;
+  combo: TuneCombination;
+  point?: LatencyPoint;
+}
+
+export interface Brief {
+  /** 1. The recommendation at its largest context, full. */
+  atMax?: BriefAtMax;
+  /** 2. The fastest prompt reading measured, anywhere. */
+  read?: BriefPoint;
+  /** 3. The fastest generation measured, anywhere. */
+  write?: BriefPoint;
+  /** 4. Best at both (BALANCE_RULE). */
+  both?: BriefPoint;
+  /** 5. The most precise KV cache that fits, at its largest context, full; `below8` = nothing of 8 bits or more fitted. */
+  quality?: BriefAtMax & { below8: boolean };
+}
+
+/** KV caches of 8 bits or more ("q8 o superiori"): f16 / bf16 / auto, q8_0 / int8 / fp8. */
+export const QUALITY_PRECISION = 1;
+
+/**
+ * Best at both reading and writing: each speed as a share of its best measured anywhere, then their
+ * harmonic mean (a point is only as good as the weaker of its two shares lets it be); the highest wins.
+ */
+export function balanceScore(read: number, write: number, bestRead: number, bestWrite: number): number {
+  const r = bestRead > 0 ? read / bestRead : 0;
+  const w = bestWrite > 0 ? write / bestWrite : 0;
+  return r + w > 0 ? (2 * r * w) / (r + w) : 0;
 }
 
 /**
- * What the summary says about speed, at the context full: among the combinations with the search's
- * largest context, the fastest with it full; when none was measured that far, the deepest depth they
- * reached and the fastest there (said with that depth).
+ * The five answers of "In breve" from the measured sweeps (only what was measured: an answer the
+ * search could not give is absent, or has no point when it was not measured that far).
  */
-export interface SpeedLead {
-  context: number;
-  full?: SpeedWinner;
-  below?: SpeedWinner & { depth: number };
+export function briefOf(tuning: Pick<Tuning, 'combinations' | 'recommended'>): Brief {
+  const ids = measuredCombinations(tuning);
+  const points: BriefPoint[] = ids.flatMap((index) => {
+    const combo = tuning.combinations[index]!;
+    const full = fullContextPoint(combo);
+    return combo.sweep.filter((p) => p.decodeTps.n > 0).map((point) => ({ index, combo, point, depth: nominalDepth(point.promptTokens), full: point === full }));
+  });
+  const out: Brief = {};
+  const rec = recommendedIndex(tuning);
+  if (rec !== undefined) out.atMax = atMaxOf(tuning.combinations[rec]!, rec);
+  if (!points.length) return out;
+  // Ties go to the earlier point (the recommendation's combinations come first, shallower depths first).
+  const best = (score: (p: BriefPoint) => number) => points.reduce((a, b) => (score(b) > score(a) ? b : a));
+  out.read = best((p) => prefillStat(p.point).median);
+  out.write = best((p) => p.point.decodeTps.median);
+  const bestRead = prefillStat(out.read.point).median;
+  const bestWrite = out.write.point.decodeTps.median;
+  out.both = best((p) => balanceScore(prefillStat(p.point).median, p.point.decodeTps.median, bestRead, bestWrite));
+  // The most precise KV type measured; among its combinations the largest context, then the fastest with it full.
+  const precision = Math.min(...ids.map((i) => KV_PRECISION[tuning.combinations[i]!.kvType]));
+  const own = ids.filter((i) => KV_PRECISION[tuning.combinations[i]!.kvType] === precision);
+  const top = Math.max(...own.map((i) => tuning.combinations[i]!.maxContext));
+  const candidates = own.filter((i) => tuning.combinations[i]!.maxContext === top).map((i) => atMaxOf(tuning.combinations[i]!, i));
+  const q = candidates.reduce((a, b) => (b.point && (!a.point || b.point.decodeTps.median > a.point.decodeTps.median) ? b : a));
+  out.quality = { ...q, below8: precision > QUALITY_PRECISION };
+  return out;
 }
 
-export function speedLead(tuning: Pick<Tuning, 'combinations' | 'fastestByDepth' | 'recommended'>): SpeedLead | undefined {
-  const top = sameLargestContext(rankAtMax(tuning));
-  if (!top.length) return undefined;
-  const context = top[0]!.combo.maxContext;
-  const winner = (rows: readonly RankRow[]): SpeedWinner => ({ row: rows[0] as SpeedWinner['row'], of: rows.length });
-  const full = top.filter(reaches);
-  if (full.length) return { context, full: winner(full) };
-  const depth = Math.max(...top.map((r) => reachOf(r.combo)));
-  return { context, below: { depth, ...winner(rankAt(tuning, depth).filter((r) => reaches(r) && r.combo.maxContext === context)) } };
+function atMaxOf(combo: TuneCombination, index: number): BriefAtMax {
+  const point = fullContextPoint(combo);
+  return { index, combo, ...(point ? { point } : {}) };
 }
 
 /** Launches that did not make it: out of memory, spilled to shared memory, errors, and values lost in the screening. */
