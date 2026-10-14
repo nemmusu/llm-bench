@@ -44,6 +44,12 @@ export const WHERE = WIN ? 'dentro Ubuntu-24.04' : 'su questo PC';
 /** A saved build's folder as its row shows it ("/home/user/ninfer · Ubuntu-24.04"). */
 export const folderText = (dir: string): string => (WIN ? `${dir} · Ubuntu-24.04` : dir);
 
+/** The row's "Cartella" value exactly: on Linux the bare path also shows in hints and in the commands. */
+export function folderValue(row: Locator, dir: string): Locator {
+  const text = folderText(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return row.getByRole('definition').filter({ hasText: new RegExp(`^${text}$`) });
+}
+
 /** What the exact command shows of where NInfer runs: its distro on Windows, its program on Linux. */
 export const IN_COMMAND = WIN ? 'Ubuntu-24.04' : '/home/user/ninfer/build/apps/ninfer-serve';
 

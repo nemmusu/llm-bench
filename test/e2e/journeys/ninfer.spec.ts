@@ -10,7 +10,7 @@ import path from 'node:path';
 import { expect, launchApp, test } from '../fixtures';
 import { h1, scan, skipWelcome } from './bench-helpers';
 import { openPage } from './library-helpers';
-import { chooseNinfer, folderText, IN_COMMAND, ninferCard, ninferEnv, OFFICIAL_SAVED } from './ninfer-helpers';
+import { chooseNinfer, folderValue, IN_COMMAND, ninferCard, ninferEnv, OFFICIAL_SAVED } from './ninfer-helpers';
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -55,7 +55,7 @@ test('NInfer: the user\'s own build pointed at, a Rapido benchmark with its reco
     await official.getByRole('button', { name: 'Controlla e usa' }).click();
     await expect(official.getByText('Pronto')).toBeVisible({ timeout: 20_000 });
     await expect(official.getByText('e31bc99', { exact: true })).toBeVisible();
-    await expect(official.getByText(folderText('/home/user/ninfer'))).toBeVisible();
+    await expect(folderValue(official, '/home/user/ninfer')).toBeVisible();
     await expect(card.getByText('Pronto').first()).toBeVisible();
     await scan(page, 'NInfer card');
 
@@ -161,7 +161,7 @@ test('NInfer not on the PC yet: "Scarica e compila" checks what it needs, downlo
     await official.getByRole('button', { name: 'Scarica e compila' }).click();
     await expect(page.getByText('NInfer (ufficiale) è pronto.')).toBeVisible({ timeout: 60_000 });
     await expect(official.getByText('Pronto')).toBeVisible({ timeout: 30_000 });
-    await expect(official.getByText(folderText('/home/user/ninfer'))).toBeVisible();
+    await expect(folderValue(official, '/home/user/ninfer')).toBeVisible();
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
