@@ -1,15 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileCog, ListTree, RotateCcw, Server, Trash2 } from 'lucide-react';
+import { CircleCheck, FileCog, ListTree, RefreshCw, RotateCcw, Server, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { InstalledBuild } from '../../../contract/views';
 import { useI18n } from '../../i18n';
 import { useApi } from '../../lib/api-context';
-import { libKeys, useEngineStatuses, useInstalledBuilds, useLlamaReleases, useSaveEngine, useStartInstall } from '../../lib/queries-library';
+import { activeEvent, libKeys, useEngineStatuses, useInstallEvent, useInstalledBuilds, useLlamaReleases, useSaveEngine, useStartInstall } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { ErrorCallout } from '../library/error-callout';
+import { InstallProgress } from '../setup/install-progress';
 import { LLAMA_KEY, LlamaInstall } from '../setup/llama-install';
 import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
+import { Callout } from '../ui/callout';
 import { ConfirmDialog, Dialog, DialogContent } from '../ui/dialog';
 import { Skeleton } from '../ui/skeleton';
 import { EngineCard } from './engine-card';
@@ -44,6 +46,74 @@ function ReleasesDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </ul>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * "Aggiorna" for the builds LLM Bench installed, like every other engine: the newest release against the
+ * build in use ("Aggiornamento disponibile: b10997 → b11438"), one click to install it (the old build
+ * stays, removable from the list), with its progress here.
+ */
+export function LlamaUpdate({ current, installed, pinned, onUse }: { current: string | undefined; installed: readonly string[]; pinned: boolean; onUse: (tag: string) => void }) {
+  const { t } = useI18n();
+  const releases = useLlamaReleases(true);
+  const start = useStartInstall();
+  const event = useInstallEvent(LLAMA_KEY);
+  const running = activeEvent(event);
+  const save = useSaveEngine();
+  if (running) return <InstallProgress event={running} label={t('engines.update.progress', { name: t('engines.kinds.llamacpp-native') })} className="w-full" />;
+  const latest = releases.data?.[0]?.tag;
+  const check = (
+    <Button size="sm" variant="ghost" className="self-start" disabled={releases.isFetching} onClick={() => void releases.refetch()}>
+      <RefreshCw aria-hidden />
+      {releases.isFetching ? t('engines.update.checking') : t('engines.update.check')}
+    </Button>
+  );
+  const failed = event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'ENGINE_INSTALL_FAILED', message: 'error' }} />;
+  let body;
+  if (releases.isError) {
+    body = (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-fg-3">{t('engines.update.checkFailed')}</p>
+        {check}
+      </div>
+    );
+  } else if (!latest || !current) {
+    body = null;
+  } else if (latest === current) {
+    body = (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm text-fg-2">
+          <CircleCheck aria-hidden className="size-4 text-success-text" />
+          {t('engines.update.current', { current })}
+        </p>
+        {check}
+      </div>
+    );
+  } else if (installed.includes(latest)) {
+    // The newest is already here, another one is chosen: using it is the update.
+    body = <Callout tone="info" title={t('engines.llama.newerInstalled', { current, latest })} action={{ label: t('engines.llama.useTag', { tag: latest }), onClick: () => onUse(latest) }} />;
+  } else {
+    body = (
+      <Callout
+        tone="info"
+        title={t('engines.update.available', { current, latest })}
+        action={{
+          label: t('engines.update.update'),
+          onClick: () => {
+            // A build chosen by hand would stay in use: the update means "the newest" again.
+            if (pinned) save.mutate({ kind: 'llamacpp-native' });
+            start.mutate({ key: LLAMA_KEY, path: '/api/engines/llamacpp-native/install', body: { build: latest } });
+          },
+        }}
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {body}
+      {failed}
+    </div>
   );
 }
 
@@ -97,7 +167,7 @@ export function LlamaCard({ installBytes }: { installBytes?: number | undefined 
       status={engines.isPending ? { tone: 'neutral', text: t('common.loading') } : { tone, text }}
       footer={
         <>
-          <LlamaInstall bytes={installBytes} label={list.length > 0 ? t('engines.llama.installLatest') : undefined} variant={list.length > 0 ? 'secondary' : 'primary'} />
+          {list.length === 0 && <LlamaInstall bytes={installBytes} />}
           <Button size="sm" variant="ghost" onClick={() => setReleases(true)}>
             <ListTree aria-hidden />
             {t('engines.llama.chooseRelease')}
@@ -156,6 +226,9 @@ export function LlamaCard({ installBytes }: { installBytes?: number | undefined 
             </li>
           ))}
         </ul>
+      )}
+      {list.length > 0 && !custom && (
+        <LlamaUpdate current={list.find(inUse)?.tag} installed={list.map((b) => b.tag)} pinned={last?.build !== undefined} onUse={(tag) => save.mutate({ kind: 'llamacpp-native', build: tag })} />
       )}
       {del.isError && <ErrorCallout error={del.error} />}
       {save.isError && <ErrorCallout error={save.error} />}

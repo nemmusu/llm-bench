@@ -14,7 +14,7 @@ import { HfTokenForm } from '../components/library/hf-token';
 import { ModelDetailSlots } from '../components/library/model-detail-slots';
 import { OnThisPc } from '../components/library/model-updates';
 import { QuantChooser } from '../components/library/quant-chooser';
-import { Page } from '../components/shell/page';
+import { Page, PageSplit } from '../components/shell/page';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Callout } from '../components/ui/callout';
@@ -57,6 +57,22 @@ function LicenseHelp({ repo, onRetry }: { repo: string; onRetry: () => void }) {
           </Button>
         </li>
       </ol>
+    </Callout>
+  );
+}
+
+/** The repo cannot be read (Hugging Face answers the same for a wrong name and a private model): both ways out. */
+function Unreachable({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  const { settings } = useSettings();
+  return (
+    <Callout tone="warning" title={t('models.detail.unreachableTitle')} action={{ label: t('common.retry'), onClick: onRetry }}>
+      <p>{settings.hasHfToken ? t('models.detail.unreachableBodyToken') : t('models.detail.unreachableBody')}</p>
+      {!settings.hasHfToken && (
+        <div className="mt-2">
+          <HfTokenForm onSaved={onRetry} allowClear={false} />
+        </div>
+      )}
     </Callout>
   );
 }
@@ -194,6 +210,12 @@ export function ModelDetailPage() {
   const gated = fitCode === 'HF_GATED' || fitCode === 'HF_AUTH_REQUIRED';
   const retry = () => fits.forEach((f) => f.isError && void f.refetch());
   const facts = ggufFit.data?.facts ?? stFit.data?.facts ?? ninferFit.data?.facts;
+  const filesCode = files.isError ? errorData(files.error).code : undefined;
+  // A wrong name or a private repo: nothing else on the page can load.
+  const unreachable = filesCode === 'HF_AUTH_REQUIRED' || filesCode === 'HF_NOT_FOUND';
+  const retryAll = () => {
+    for (const q of [info, files, readme]) void q.refetch();
+  };
   const nothing = layout !== undefined && layout.gguf.weights.length + layout.safetensors.length + layout.ninfer.length === 0;
 
   return (
@@ -249,49 +271,143 @@ export function ModelDetailPage() {
         </>
       }
     >
-      <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="flex min-w-0 flex-col gap-section">
-          {files.isError && <ErrorCallout error={files.error} action={{ label: t('common.retry'), onClick: () => void files.refetch() }} />}
-          {gated && <LicenseHelp repo={repo} onRetry={retry} />}
-          {failed && !gated && <ErrorCallout error={failed.error} action={{ label: t('common.retry'), onClick: retry }} />}
-          {!layout && !files.isError && (
-            <div className="flex flex-col gap-2" aria-label={t('common.loading')}>
-              <Skeleton className="h-28 rounded-xl" />
-            </div>
-          )}
-          <OnThisPc repo={repo} onDownload={setChoice} />
-          {nothing && (
-            <Card>
-              <CardContent>
-                <p className="text-sm text-fg-2">{t('models.detail.noWeights')}</p>
-              </CardContent>
-            </Card>
-          )}
-          {layout && layout.gguf.weights.length > 0 && (
-            <FormatSection format="gguf" hint={t('models.detail.sections.ggufHint')} fit={ggufFit}>
-              {(data) => <QuantChooser repo={repo} fit={data} format="gguf" extras={layout.gguf.extras} onDownload={setChoice} />}
-            </FormatSection>
-          )}
-          {layout && layout.safetensors.length > 0 && (
-            <FormatSection format="safetensors" hint={t('models.detail.sections.safetensorsHint')} fit={stFit}>
-              {(data) => <QuantChooser repo={repo} fit={data} format="safetensors" onDownload={setChoice} />}
-            </FormatSection>
-          )}
-          {layout && layout.ninfer.length > 0 && (
-            <FormatSection format="ninfer" hint={t('models.detail.sections.ninferHint')} fit={ninferFit}>
-              {(data) => (
-                <QuantChooser
-                  repo={repo}
-                  fit={data}
-                  format="ninfer"
-                  unsupported={gpu !== undefined && !ninferGpuSupported({ name: gpu.name, computeCapability: gpu.computeCapability, memTotalMiB: gpu.memoryTotalMiB })}
-                  onDownload={setChoice}
-                />
-              )}
-            </FormatSection>
-          )}
-          {layout && layout.other.length > 0 && <OtherFormats groups={layout.other} />}
-          <ModelDetailSlots repo={repo} info={m} files={files.data} layout={layout} />
+      <PageSplit
+        asideWidth={300}
+        aside={
+          <>
+            {/* Nothing to say before the repo answers. */}
+            {(m || facts) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('models.detail.facts')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                    {m?.license && (
+                      <>
+                        <dt className="text-fg-3">{t('models.detail.license')}</dt>
+                        <dd className="text-fg">{m.license}</dd>
+                      </>
+                    )}
+                    {(facts?.paramsB ?? m?.paramsB) !== undefined && (
+                      <>
+                        <dt className="text-fg-3">{t('models.detail.paramsLabel')}</dt>
+                        <dd className="text-fg tabular-nums">{t('models.params', { n: number((facts?.paramsB ?? m?.paramsB) as number, 1) })}</dd>
+                      </>
+                    )}
+                    {facts?.architecture && (
+                      <>
+                        <dt className="text-fg-3">{t('models.detail.architecture')}</dt>
+                        <dd className="font-mono text-xs text-fg">{facts.architecture}</dd>
+                      </>
+                    )}
+                    {facts?.contextLength !== undefined && (
+                      <>
+                        <dt className="text-fg-3">{t('models.detail.context')}</dt>
+                        <dd className="text-fg tabular-nums">{t('models.detail.tokens', { n: integer(facts.contextLength) })}</dd>
+                      </>
+                    )}
+                  </dl>
+                  {m && (m.formats.length > 0 || m.otherFormats.length > 0) && (
+                    <div className="mt-3 flex flex-col gap-1.5">
+                      <span className="text-xs text-fg-3">{t('models.formats.label')}</span>
+                      <FormatBadges m={m} className="flex-col items-start" />
+                    </div>
+                  )}
+                  {m && m.gated !== false && (
+                    <Badge tone="warning" className="mt-3">
+                      <Lock aria-hidden />
+                      {t('models.search.gated')}
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            {files.data && files.data.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('models.detail.files')}</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-3">
+                  <ul className="flex flex-col gap-2 text-sm">
+                    {repoFiles(files.data).root.map((g) => (
+                      <li key={`${g.kind}-${g.label}`} className="flex min-w-0 flex-col">
+                        <span className="flex justify-between gap-3">
+                          <span className="min-w-0 truncate font-medium text-fg" title={g.label}>
+                            {g.kind === 'weights' ? g.label : t(`models.fileKinds.${g.kind}`)}
+                          </span>
+                          <span className="shrink-0 text-fg-3 tabular-nums">{bytes(g.sizeBytes)}</span>
+                        </span>
+                        {g.files.map((f) => (
+                          <span key={f.path} className="truncate font-mono text-2xs text-fg-3" title={f.path}>
+                            {fileName(f.path)}
+                          </span>
+                        ))}
+                      </li>
+                    ))}
+                    {repoFiles(files.data).folders.map((d) => (
+                      <li key={d.dir} className="flex min-w-0 justify-between gap-3">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <FolderTree aria-hidden className="size-3.5 shrink-0 text-fg-3" />
+                          <span className="truncate font-mono text-xs text-fg" title={d.dir}>
+                            {d.dir}/
+                          </span>
+                          <span className="shrink-0 text-xs text-fg-3">{t(d.count === 1 ? 'models.detail.fileCount1' : 'models.detail.fileCount', { n: d.count })}</span>
+                        </span>
+                        <span className="shrink-0 text-fg-3 tabular-nums">{bytes(d.sizeBytes)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+            <Related info={info.isPending ? undefined : (m ?? null)} repo={repo} />
+          </>
+        }
+      >
+        {unreachable && <Unreachable onRetry={retryAll} />}
+        {files.isError && !unreachable && <ErrorCallout error={files.error} action={{ label: t('common.retry'), onClick: () => void files.refetch() }} />}
+        {gated && <LicenseHelp repo={repo} onRetry={retry} />}
+        {failed && !gated && <ErrorCallout error={failed.error} action={{ label: t('common.retry'), onClick: retry }} />}
+        {!layout && !files.isError && (
+          <div className="flex flex-col gap-2" aria-label={t('common.loading')}>
+            <Skeleton className="h-28 rounded-xl" />
+          </div>
+        )}
+        <OnThisPc repo={repo} onDownload={setChoice} />
+        {nothing && (
+          <Card>
+            <CardContent>
+              <p className="text-sm text-fg-2">{t('models.detail.noWeights')}</p>
+            </CardContent>
+          </Card>
+        )}
+        {layout && layout.gguf.weights.length > 0 && (
+          <FormatSection format="gguf" hint={t('models.detail.sections.ggufHint')} fit={ggufFit}>
+            {(data) => <QuantChooser repo={repo} fit={data} format="gguf" extras={layout.gguf.extras} onDownload={setChoice} />}
+          </FormatSection>
+        )}
+        {layout && layout.safetensors.length > 0 && (
+          <FormatSection format="safetensors" hint={t('models.detail.sections.safetensorsHint')} fit={stFit}>
+            {(data) => <QuantChooser repo={repo} fit={data} format="safetensors" onDownload={setChoice} />}
+          </FormatSection>
+        )}
+        {layout && layout.ninfer.length > 0 && (
+          <FormatSection format="ninfer" hint={t('models.detail.sections.ninferHint')} fit={ninferFit}>
+            {(data) => (
+              <QuantChooser
+                repo={repo}
+                fit={data}
+                format="ninfer"
+                unsupported={gpu !== undefined && !ninferGpuSupported({ name: gpu.name, computeCapability: gpu.computeCapability, memTotalMiB: gpu.memoryTotalMiB })}
+                onDownload={setChoice}
+              />
+            )}
+          </FormatSection>
+        )}
+        {layout && layout.other.length > 0 && <OtherFormats groups={layout.other} />}
+        <ModelDetailSlots repo={repo} info={m} files={files.data} layout={layout} />
+        {!unreachable && (
           <Card>
             <CardHeader>
               <CardTitle>{t('models.detail.card')}</CardTitle>
@@ -309,94 +425,8 @@ export function ModelDetailPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-        <div className="flex flex-col gap-section">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('models.detail.facts')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                {m?.license && (
-                  <>
-                    <dt className="text-fg-3">{t('models.detail.license')}</dt>
-                    <dd className="text-fg">{m.license}</dd>
-                  </>
-                )}
-                {(facts?.paramsB ?? m?.paramsB) !== undefined && (
-                  <>
-                    <dt className="text-fg-3">{t('models.detail.paramsLabel')}</dt>
-                    <dd className="text-fg tabular-nums">{t('models.params', { n: number((facts?.paramsB ?? m?.paramsB) as number, 1) })}</dd>
-                  </>
-                )}
-                {facts?.architecture && (
-                  <>
-                    <dt className="text-fg-3">{t('models.detail.architecture')}</dt>
-                    <dd className="font-mono text-xs text-fg">{facts.architecture}</dd>
-                  </>
-                )}
-                {facts?.contextLength !== undefined && (
-                  <>
-                    <dt className="text-fg-3">{t('models.detail.context')}</dt>
-                    <dd className="text-fg tabular-nums">{t('models.detail.tokens', { n: integer(facts.contextLength) })}</dd>
-                  </>
-                )}
-              </dl>
-              {m && (m.formats.length > 0 || m.otherFormats.length > 0) && (
-                <div className="mt-3 flex flex-col gap-1.5">
-                  <span className="text-xs text-fg-3">{t('models.formats.label')}</span>
-                  <FormatBadges m={m} className="flex-col items-start" />
-                </div>
-              )}
-              {m && m.gated !== false && (
-                <Badge tone="warning" className="mt-3">
-                  <Lock aria-hidden />
-                  {t('models.search.gated')}
-                </Badge>
-              )}
-            </CardContent>
-          </Card>
-          {files.data && files.data.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('models.detail.files')}</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-3">
-                <ul className="flex flex-col gap-2 text-sm">
-                  {repoFiles(files.data).root.map((g) => (
-                    <li key={`${g.kind}-${g.label}`} className="flex min-w-0 flex-col">
-                      <span className="flex justify-between gap-3">
-                        <span className="min-w-0 truncate font-medium text-fg" title={g.label}>
-                          {g.kind === 'weights' ? g.label : t(`models.fileKinds.${g.kind}`)}
-                        </span>
-                        <span className="shrink-0 text-fg-3 tabular-nums">{bytes(g.sizeBytes)}</span>
-                      </span>
-                      {g.files.map((f) => (
-                        <span key={f.path} className="truncate font-mono text-2xs text-fg-3" title={f.path}>
-                          {fileName(f.path)}
-                        </span>
-                      ))}
-                    </li>
-                  ))}
-                  {repoFiles(files.data).folders.map((d) => (
-                    <li key={d.dir} className="flex min-w-0 justify-between gap-3">
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <FolderTree aria-hidden className="size-3.5 shrink-0 text-fg-3" />
-                        <span className="truncate font-mono text-xs text-fg" title={d.dir}>
-                          {d.dir}/
-                        </span>
-                        <span className="shrink-0 text-xs text-fg-3">{t(d.count === 1 ? 'models.detail.fileCount1' : 'models.detail.fileCount', { n: d.count })}</span>
-                      </span>
-                      <span className="shrink-0 text-fg-3 tabular-nums">{bytes(d.sizeBytes)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-          <Related info={info.isPending ? undefined : (m ?? null)} repo={repo} />
-        </div>
-      </div>
+        )}
+      </PageSplit>
       <DownloadDialog choice={choice} onOpenChange={(o) => !o && setChoice(undefined)} />
     </Page>
   );

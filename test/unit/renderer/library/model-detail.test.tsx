@@ -154,10 +154,28 @@ describe('model page', () => {
     api.on('GET /api/models/hub/*/*/files', () => (missing ? fail('HF_NOT_FOUND', 404) : [{ path: 'x.bin', sizeBytes: 1, kind: 'other' }]));
     api.on('POST /api/models/hub/*/*/fit', () => ({ choices: [], facts: {} }));
     renderLib(PAGE, api);
-    expect(await screen.findByText('Modello non trovato su Hugging Face')).toBeTruthy();
+    // Hugging Face answers the same for a wrong name and a private repo: both ways out, nothing empty below.
+    expect(await screen.findByText('Non riesco ad aprire questo modello su Hugging Face')).toBeTruthy();
+    expect(screen.getByText(/O il nome è sbagliato, o il modello è privato\. Se è un tuo modello privato/)).toBeTruthy();
+    expect(screen.getByLabelText('Token di accesso')).toBeTruthy();
+    expect(screen.queryByText('Scheda del modello')).toBeNull();
     missing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
     expect(await screen.findByText('In questo repository non ci sono file di modello che LLM Bench sa usare.')).toBeTruthy();
+  });
+
+  it('a private repo with a token already saved: check the name or the token; any other error keeps its own words', async () => {
+    const api = libApi(world({ search: [], settings: { ...world().settings, hasHfToken: true } }));
+    let code: 'HF_AUTH_REQUIRED' | 'NETWORK' = 'HF_AUTH_REQUIRED';
+    api.on('GET /api/models/hub/*/*', () => fail(code, 401));
+    api.on('GET /api/models/hub/*/*/files', () => fail(code, 401));
+    renderLib(PAGE, api);
+    expect(await screen.findByText(/il tuo token di Hugging Face non può leggerlo/)).toBeTruthy();
+    expect(screen.queryByLabelText('Token di accesso')).toBeNull();
+    expect(screen.queryByText('In breve')).toBeNull();
+    code = 'NETWORK';
+    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.queryByText('Non riesco ad aprire questo modello su Hugging Face')).toBeNull());
   });
 
   it('a format whose choices are all gone, and a repo of formats LLM Bench does not run', async () => {

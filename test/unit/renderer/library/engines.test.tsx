@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bridge, ENGINES, fail, item, libApi, okItems, renderLib, report, system, world } from './fake';
+import { bridge, BUILDS, ENGINES, fail, item, libApi, okItems, renderLib, report, system, world } from './fake';
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() })) }));
 vi.mock('echarts/charts', () => ({ LineChart: {}, BarChart: {} }));
@@ -45,8 +45,10 @@ describe('engines: llama.cpp', () => {
     expect(await within(llama).findByText('Estrazione dei file')).toBeTruthy();
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_INSTALL_FAILED', message: 'x' } }));
     expect(await within(llama).findByText('Installazione del motore non riuscita')).toBeTruthy();
-    await userEvent.click(within(llama).getByRole('button', { name: 'Installa l’ultima versione' }));
-    expect(api.calls.filter((c) => c.path === '/api/engines/llamacpp-native/install').pop()?.body).toEqual({});
+    // The update: the newest release against the build in use (b10997, chosen by hand), the choice back to "the newest".
+    await userEvent.click(within(llama).getByRole('button', { name: 'Aggiorna' }));
+    expect(api.calls.filter((c) => c.path === '/api/engines/llamacpp-native/install').pop()?.body).toEqual({ build: 'b11500' });
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native' }));
 
     // A custom llama-server: validated by detecting it.
     api.w.engines = [{ ...ENGINES()[0]!, version: 'b9999', location: 'D:\\llama\\llama-server.exe' }];
@@ -57,6 +59,44 @@ describe('engines: llama.cpp', () => {
     expect(within(llama).queryByText('In uso')).toBeNull();
     await userEvent.click(within(llama).getByRole('button', { name: 'Usa la versione installata da LLM Bench' }));
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native' }));
+  });
+
+  it('updates like every engine: available, then its progress in the card', async () => {
+    const api = libApi();
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('Aggiornamento disponibile: b11438 → b11500')).toBeTruthy();
+    // No install button beside it: the update is the way to the newest.
+    expect(within(llama).queryByRole('button', { name: /^Installa/ })).toBeNull();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Aggiorna' }));
+    expect(api.calls.filter((c) => c.path === '/api/engines/llamacpp-native/install').pop()?.body).toEqual({ build: 'b11500' });
+    // Nothing chosen by hand: the choice is left alone.
+    expect(api.calls.some((c) => c.method === 'PUT' && c.path === '/api/settings')).toBe(false);
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'download', bytesDone: 1, bytesTotal: 5 }));
+    expect(await within(llama).findByRole('progressbar', { name: 'Aggiornamento di llama.cpp' })).toBeTruthy();
+  });
+
+  it('the newest already installed but another in use: "Usa" it', async () => {
+    const newest = { ...BUILDS()[0]!, id: 'b11500-cuda-13.4', tag: 'b11500' };
+    const api = libApi(world({ builds: [newest, ...BUILDS()], settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', build: 'b11438' } } }));
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('b11500 è installata, ma stai usando b11438')).toBeTruthy();
+    await userEvent.click(within(llama).getByRole('button', { name: 'Usa b11500' }));
+    await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'llamacpp-native', build: 'b11500' }));
+  });
+
+  it('up to date: says so and checks again; a failed check says so too', async () => {
+    const newest = { ...BUILDS()[0]!, id: 'b11500-cuda-13.4', tag: 'b11500' };
+    const api = libApi(world({ builds: [newest] }));
+    renderLib('/engines', api);
+    const llama = await card('llama.cpp');
+    expect(await within(llama).findByText('Hai l’ultima versione (b11500)')).toBeTruthy();
+    const before = api.calls.filter((c) => c.path === '/api/engines/llamacpp/releases').length;
+    api.on('GET /api/engines/llamacpp/releases', () => fail('GITHUB_RATE_LIMITED', 429));
+    await userEvent.click(within(llama).getByRole('button', { name: 'Controlla aggiornamenti' }));
+    expect(await within(llama).findByText('Non riesco a controllare se ci sono aggiornamenti.')).toBeTruthy();
+    expect(api.calls.filter((c) => c.path === '/api/engines/llamacpp/releases').length).toBeGreaterThan(before);
   });
 
   it('a custom executable that does not work, cancelled picks, errors', async () => {
@@ -263,7 +303,7 @@ describe('engines: vLLM and others', () => {
     expect(within(tags).getByText('Consigliato')).toBeTruthy();
     expect(within(tags).getByText('Non supporta la tua GPU')).toBeTruthy();
     expect(within(tags).getByText('CUDA 13.0 · 8,4 GB · 4 ott 2026')).toBeTruthy();
-    await userEvent.click(within(vllm).getByRole('button', { name: 'Mostra tutte (8)' }));
+    await userEvent.click(within(vllm).getByRole('button', { name: 'Tutte le versioni (8)' }));
     expect(within(tags).getAllByRole('listitem')).toHaveLength(8);
     await userEvent.click(within(vllm).getByRole('button', { name: 'Mostra meno' }));
     await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa questa' })[0]!);
