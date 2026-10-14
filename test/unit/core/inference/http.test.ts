@@ -8,9 +8,11 @@ import {
   errorFromPayload,
   errorMessageOf,
   httpError,
+  isContextExceeded,
   joinUrl,
   jsonHeaders,
   payloadError,
+  promptExceedsContext,
   readJson,
   responseError,
   send,
@@ -87,6 +89,37 @@ describe('classifyHttp', () => {
     [500, 'boom', 'ENDPOINT_INVALID', undefined],
   ])('%i %s → %s', (status, msg, code, reason) => {
     expect(classifyHttp(status, msg)).toEqual(reason ? { code, reason } : { code });
+  });
+});
+
+describe('a prompt longer than the context, in every engine\'s words', () => {
+  it.each([
+    // NInfer (the RTX 5090 tune: the 262 000-token prompt of a 262 144 context).
+    ['prepared prompt exceeds Engine max_context 262144', ''],
+    // vLLM.
+    ["This model's maximum context length is 4096 tokens. However, you requested 4200 tokens (4100 in the messages, 100 in the completion).", ''],
+    // SGLang.
+    ["The input (8300 tokens) is longer than the model's context length (8192 tokens).", ''],
+    // llama.cpp.
+    ['the request exceeds the available context size, try increasing it', ''],
+    // OpenAI and compatible servers: the code says it, wherever it is.
+    ['context_length_exceeded', ''],
+    ['Request too large', '{"error":{"code":"context_length_exceeded","message":"Request too large"}}'],
+    ['bad request', '{"error":{"code":400,"type":"exceed_context_size_error","message":"bad request"}}'],
+    ['Prompt is too long', ''],
+  ])('%s', (message, body) => {
+    expect(promptExceedsContext(message, body)).toBe(true);
+    expect(classifyHttp(400, message, body)).toEqual({ code: 'ENDPOINT_INVALID', reason: 'context_exceeded' });
+  });
+
+  it('anything else is not one; the error of such a request says so', () => {
+    expect(promptExceedsContext('max_tokens must be at least 1')).toBe(false);
+    expect(promptExceedsContext('bad request', '{"error":{"message":"bad request","context":"x"}}')).toBe(false);
+    const nInfer = httpError(400, '{"error":{"code":"context_length_exceeded","message":"prepared prompt exceeds Engine max_context 262144","param":"messages","type":"invalid_request_error"}}', '/v1/chat/completions');
+    expect(isContextExceeded(nInfer)).toBe(true);
+    expect(nInfer.params).toEqual({ status: 400, path: '/v1/chat/completions', reason: 'context_exceeded' });
+    expect(isContextExceeded(httpError(500, 'boom', '/v1/chat/completions'))).toBe(false);
+    expect(isContextExceeded(new Error('context_exceeded'))).toBe(false);
   });
 });
 

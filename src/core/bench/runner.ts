@@ -28,6 +28,7 @@ import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer
 import { capacityHintOf, parseKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
 import { toLaunchRecord, type EngineAdapter, type EngineInstance, type LaunchPlan, type ModelTarget } from '../engines/types';
+import { isContextExceeded } from '../inference/http';
 import type { GenerateRequest, InferenceClient, StreamEvent } from '../inference/types';
 import type { RunsRepo } from '../store/runs-repo';
 import { contextOf, engineLabelOf, summaryOf } from '../store/runs-repo';
@@ -59,7 +60,7 @@ import { runSessions } from './steps/sessions';
 import { cpuOffloaded, spillOf, spillPossible, type NormalDecode } from './spill';
 import { runSweep } from './sweep';
 import { createTuner } from './tune-run';
-import { nothingLoaded, type LabEngine, type LaunchGuard, type LaunchMemory, type Tuner, type TuneLab, type TunerInput } from './tuner';
+import { nothingLoaded, PROBE_DEPTH, type LabEngine, type LaunchGuard, type LaunchMemory, type Tuner, type TuneLab, type TunerInput } from './tuner';
 import { computeValidity, describeGpuUser, isVramApproximate, sharedGpuUsers, VRAM_DRIFT_MIN_MIB, vramBusy } from './validity';
 import { STALL_RULES, watchStream, type StallRules } from './watchdog';
 
@@ -176,6 +177,11 @@ const LOG_DRAIN_MS = 1000;
 const VRAM_SETTLE_SLACK_MIB = 512;
 /** First-token probe: ~16 tokens of text. */
 const FIRST_TOKEN_PROMPT_CHARS = 64;
+/**
+ * A text prompt the server refuses as longer than its context is sent again with these shares of its
+ * characters, one after the other (sendText); the last refusal is the request's error.
+ */
+export const TEXT_RETRY_SHARES = [0.997, 0.99, 0.98, 0.96, 0.92] as const;
 /** A tune run re-sends its progress and time left at least this often (on the telemetry heartbeat). */
 export const PHASE_HEARTBEAT_MS = 5000;
 /** Engines in containers: an instance PID (if any) is a docker CLI helper, never the engine. */
@@ -582,7 +588,7 @@ export class BenchRunner {
       if (i < seq.length - 1) await this.stopInstance(s);
       this.advance(s, stepSeconds({ kind: 'load', cache: load.cache, reps: 1 }, DEFAULT_EXPECTATIONS));
     }
-    if (s.instance && s.input.scenario.steps.some(needsServer)) await this.prepareCorpus(s, s.instance);
+    if (s.instance && s.input.scenario.steps.some(needsServer)) await this.prepareCorpus(s, s.instance, longestPrompt(s.input.scenario));
   }
 
   /** run.launch: the engine instance now in use (every load, every tune attempt). Ends its run.load. */
@@ -625,8 +631,11 @@ export class BenchRunner {
     if (first) s.firstTokenMs = first.t - sentAt;
   }
 
-  /** Tokenizes the corpus (cached per model); endpoints without /tokenize fall back to text prompts. */
-  private async prepareCorpus(s: RunState, inst: EngineInstance): Promise<void> {
+  /**
+   * Tokenizes the corpus (cached per model); endpoints without /tokenize fall back to text prompts,
+   * calibrated within `longest` tokens (the longest prompt the run is sure to send on this launch).
+   */
+  private async prepareCorpus(s: RunState, inst: EngineInstance, longest: number): Promise<void> {
     const key = `${inst.client.flavor}:${s.input.model.identity.sha256 ?? s.input.model.identity.weakKey}`;
     try {
       const ct = await getCorpusTokens(inst.client, key, this.deps.cacheDir, { corpus: s.corpus, signal: s.signal });
@@ -635,7 +644,7 @@ export class BenchRunner {
     } catch (e) {
       if (!(isAppError(e) && e.params?.reason === 'tokenize_unsupported')) throw e;
       s.textPrompts = true;
-      await this.calibrateText(s, inst);
+      await this.calibrateText(s, inst, longest);
     }
   }
 
@@ -644,9 +653,9 @@ export class BenchRunner {
    * make a token here and what the server adds around the text (text-scale.ts), from the prompt tokens
    * it reports. A server that reports none keeps the rough 4 characters per token (tokens_approximate).
    */
-  private async calibrateText(s: RunState, inst: EngineInstance): Promise<void> {
+  private async calibrateText(s: RunState, inst: EngineInstance, longest: number): Promise<void> {
     const seed = s.input.scenario.seed;
-    for (const n of calibrationLengths(longestPrompt(s.input.scenario))) {
+    for (const n of calibrationLengths(longest)) {
       const promptText = buildTextPrompt(s.corpus, n, 0, { seed, salt: 'calibrate' });
       const events = await this.collect(s, inst, { promptText, outputTokens: 1, seed, ...this.modelField(s) });
       const reported = events.find((e): e is Extract<StreamEvent, { kind: 'done' }> => e.kind === 'done')?.usage?.promptTokens;
@@ -964,7 +973,8 @@ export class BenchRunner {
             }
             s.marks.push({ t: tReady, label: 'ready' });
             this.publishLaunch(s, plan);
-            if (!s.tokens && !s.textPrompts) await this.prepareCorpus(s, inst);
+            // The search sizes its prompts per launch (its scenario lists none): every launch reads a probe of PROBE_DEPTH tokens first.
+            if (!s.tokens && !s.textPrompts) await this.prepareCorpus(s, inst, PROBE_DEPTH);
             return { ok: true, loadMs: tReady - inst.t0, engine: this.labEngine(s, inst, plan, info.attempt, inst.t0) };
           },
         };
@@ -1069,13 +1079,39 @@ export class BenchRunner {
       : { promptText: buildTextPrompt(s.corpus, promptTokens, rep, { seed, salt, scale: s.textScale }) };
     const req: GenerateRequest = { ...prompt, outputTokens, seed, ...this.modelField(s) };
     s.requestExample ??= exampleBody(inst.client.requestBody(req));
-    const sentAt = this.deps.clock.now();
-    const events = await this.collect(s, inst, req, timeoutMs);
-    if (prompt.promptText === undefined) return fromStream(events, { sentAt, promptTokens, expectedOutput: outputTokens });
+    if (prompt.promptText === undefined) {
+      const sentAt = this.deps.clock.now();
+      return fromStream(await this.collect(s, inst, req, timeoutMs), { sentAt, promptTokens, expectedOutput: outputTokens });
+    }
+    const { events, sentAt, chars } = await this.sendText(s, inst, req, timeoutMs);
     // Text prompts: the server's own count of what it read (the prompt reading speed uses it).
     const reported = events.find((e): e is Extract<StreamEvent, { kind: 'done' }> => e.kind === 'done')?.usage?.promptTokens;
-    this.learnText(s, prompt.promptText.length, promptTokens, reported);
+    this.learnText(s, chars, promptTokens, reported);
     return fromStream(events, { sentAt, promptTokens: reported ?? promptTokens, expectedOutput: outputTokens });
+  }
+
+  /**
+   * A text prompt, sent again shorter (TEXT_RETRY_SHARES of its characters, one after the other) while
+   * the server refuses it as longer than its context: sized on the calibrated scale, a text can miss by
+   * a few tenths of a percent, which only matters at the very end of the context (the deepest prompt of
+   * a sweep fills it but for the answer and a few tokens). The server refuses before reading anything,
+   * so a refusal costs nothing; the last one goes through as the request's error. The shorter prompt it
+   * accepts is a true count of its own (measure: learnText); the refusal only says "too long", not by how much.
+   */
+  private async sendText(s: RunState, inst: EngineInstance, req: GenerateRequest, timeoutMs?: number): Promise<{ events: StreamEvent[]; sentAt: number; chars: number }> {
+    const text = req.promptText as string;
+    const shares = [1, ...TEXT_RETRY_SHARES];
+    for (let i = 0; ; i++) {
+      const promptText = text.slice(0, Math.round(text.length * (shares[i] as number)));
+      const sentAt = this.deps.clock.now();
+      try {
+        return { events: await this.collect(s, inst, { ...req, promptText }, timeoutMs), sentAt, chars: promptText.length };
+      } catch (e) {
+        const next = shares[i + 1];
+        if (next === undefined || !isContextExceeded(e)) throw e;
+        s.notes.push(`text prompt of ${promptText.length} characters refused as longer than the context: sent again with ${Math.round(text.length * next)} characters`);
+      }
+    }
   }
 
   private record(s: RunState, m: RequestMetrics): void {

@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { AppError, type ErrorCode } from '../../contract/errors';
+import { AppError, isAppError, type ErrorCode } from '../../contract/errors';
 import type { Clock } from '../deps';
 
 /** What every inference client needs from the outside world (injected so tests can fake it). */
@@ -49,16 +49,36 @@ export function errorMessageOf(body: unknown): string | undefined {
 }
 
 /**
+ * A prompt longer than the server's context, refused before any of it is read, in each engine's words:
+ * NInfer (`context_length_exceeded`, "prepared prompt exceeds Engine max_context 262144"), vLLM ("This
+ * model's maximum context length is 4096 tokens…"), SGLang ("The input (N tokens) is longer than the
+ * model's context length (M tokens)"), llama.cpp (`exceed_context_size_error`, "the request exceeds
+ * the available context size"), OpenAI and compatible servers (`context_length_exceeded`).
+ */
+const CONTEXT_EXCEEDED = /context_length_exceeded|exceed_context_size_error|\bmax_context\b|maximum context|context (?:size|length|window)|exceeds the available context|prompt is too long/i;
+/** The codes of such a refusal, read in the whole error body too (where the message may say less). */
+const CONTEXT_EXCEEDED_CODE = /\b(?:context_length_exceeded|exceed_context_size_error)\b/;
+
+/** An error message (and its whole body, `body`) saying the prompt does not fit the server's context. */
+export function promptExceedsContext(message: string, body = ''): boolean {
+  return CONTEXT_EXCEEDED.test(message) || CONTEXT_EXCEEDED_CODE.test(body);
+}
+
+/** A request failed because the server refused its prompt as longer than the context (reason 'context_exceeded'). */
+export function isContextExceeded(e: unknown): boolean {
+  return isAppError(e) && e.params?.reason === 'context_exceeded';
+}
+
+/**
  * Maps an HTTP failure to an error code. `reason` (in params) lets the renderer pick a more
  * precise message. 503 means "reachable but not serving" (llama.cpp answers 503 "Loading model"
  * while it loads): we report ENDPOINT_UNREACHABLE because the user's remedy is the same (wait /
- * check the server); ENGINE_TIMEOUT stays reserved for the adapters' ready deadline.
+ * check the server); ENGINE_TIMEOUT stays reserved for the adapters' ready deadline. `body`: the
+ * whole error body, where some engines put the code of a refusal (`context_length_exceeded`).
  */
-export function classifyHttp(status: number, message: string): { code: ErrorCode; reason?: string } {
+export function classifyHttp(status: number, message: string, body = ''): { code: ErrorCode; reason?: string } {
   if (/out of memory|\boom\b|cudaMalloc failed/i.test(message)) return { code: 'ENGINE_OOM' };
-  if (/context (size|length|window)|maximum context|exceeds the available context|prompt is too long/i.test(message)) {
-    return { code: 'ENDPOINT_INVALID', reason: 'context_exceeded' };
-  }
+  if (promptExceedsContext(message, body)) return { code: 'ENDPOINT_INVALID', reason: 'context_exceeded' };
   if (status === 401 || status === 403) return { code: 'ENDPOINT_INVALID', reason: 'auth' };
   if (status === 404) {
     return /model/i.test(message) ? { code: 'MODEL_NOT_FOUND' } : { code: 'ENDPOINT_INVALID', reason: 'not_found' };
@@ -76,7 +96,7 @@ export function httpError(status: number, bodyText: string, path: string): AppEr
     parsed = undefined;
   }
   const message = errorMessageOf(parsed) ?? (bodyText.trim().slice(0, 300) || `HTTP ${status}`);
-  const { code, reason } = classifyHttp(status, message);
+  const { code, reason } = classifyHttp(status, message, bodyText);
   return new AppError(code, `HTTP ${status} from ${path}: ${message}`, {
     params: { status, path, ...(reason ? { reason } : {}) },
     detail: bodyText.slice(0, DETAIL_MAX),
