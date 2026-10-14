@@ -14,6 +14,9 @@ export const CREDITS = [
   { name: 'Hugging Face Hub', license: 'Apache-2.0', url: 'https://github.com/huggingface/huggingface.js' },
 ] as const;
 
+/** Where new versions of LLM Bench are: the app does not update itself, so it says where to look. */
+export const RELEASES_URL = 'https://github.com/nemmusu/llm-bench/releases/latest';
+
 export function AboutSection() {
   const { t } = useI18n();
   const health = useAppHealth();
@@ -30,6 +33,13 @@ export function AboutSection() {
             </p>
             <p className="text-fg-2">{t('about.body')}</p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="min-w-0 flex-1 text-sm text-fg-2">{t('about.updateHow')}</p>
+          <Button size="sm" onClick={() => void window.gpubench?.openExternal(RELEASES_URL)}>
+            <ExternalLink aria-hidden />
+            {t('about.releases')}
+          </Button>
         </div>
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-medium text-fg-3">{t('about.credits')}</h3>

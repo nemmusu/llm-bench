@@ -1209,6 +1209,8 @@ export const en: Messages = {
     llmfit: 'The ideas behind the graphics memory estimate come from llmfit.',
     dataDir: 'LLM Bench data folder',
     openDataDir: 'Open folder',
+    updateHow: 'New versions of LLM Bench are on its releases page: download the new one and install it over this one. Results, settings and models stay.',
+    releases: 'Releases page',
   },
   welcome: {
     title: 'Welcome to LLM Bench',

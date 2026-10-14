@@ -1214,6 +1214,8 @@ export const it = {
     llmfit: 'Le idee per la stima della memoria video vengono da llmfit.',
     dataDir: 'Cartella dei dati di LLM Bench',
     openDataDir: 'Apri la cartella',
+    updateHow: 'Le nuove versioni di LLM Bench sono nella sua pagina delle release: scarica la nuova e installala sopra questa. Risultati, impostazioni e modelli restano.',
+    releases: 'Pagina delle release',
   },
   welcome: {
     title: 'Benvenuto in LLM Bench',

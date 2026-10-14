@@ -53,6 +53,10 @@ Prefer not to install anything? Use the **portable** version, `LLM-Bench-x.y.z-p
   ./llm-bench-x.y.z-x86_64.AppImage
   ```
 
+### Update LLM Bench
+
+LLM Bench does not update itself: download the new version from the **[latest release](https://github.com/nemmusu/llm-bench/releases/latest)** (**Settings → About → Releases page** opens it) and install it over this one, or replace the portable file or the AppImage. Results, settings and models stay.
+
 ### From GPU Bench to LLM Bench
 
 Up to version 0.3 the app was called **GPU Bench**. At its first start LLM Bench takes over your data and tells you once:

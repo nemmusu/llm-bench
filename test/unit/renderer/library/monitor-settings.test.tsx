@@ -292,13 +292,19 @@ describe('settings', () => {
     expect(await screen.findByText('Risultato non trovato')).toBeTruthy();
   });
 
-  it('about: version, credits with links, data folder', async () => {
+  it('about: version, how to update, credits with links, data folder', async () => {
     const b = bridge();
     renderLib('/settings', libApi());
     expect(await screen.findByText('versione 0.1.0')).toBeTruthy();
     expect(screen.getByText('Le idee per la stima della memoria video vengono da llmfit.')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'llmfit' }));
     expect(b.openExternal).toHaveBeenCalledWith('https://github.com/AlexsJones/llmfit');
+    await userEvent.click(screen.getByRole('button', { name: 'SGLang' }));
+    expect(b.openExternal).toHaveBeenCalledWith('https://github.com/sgl-project/sglang');
+    // The app does not update itself: where the new versions are, and that nothing is lost.
+    expect(screen.getByText(/Le nuove versioni di LLM Bench sono nella sua pagina delle release/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Pagina delle release' }));
+    expect(b.openExternal).toHaveBeenCalledWith('https://github.com/nemmusu/llm-bench/releases/latest');
     await userEvent.click(screen.getByRole('button', { name: 'Apri la cartella' }));
     expect(b.revealPath).toHaveBeenCalledWith('C:\\Data\\LLM Bench');
   });

@@ -53,6 +53,10 @@ Preferisci non installare niente? Usa la versione **portable**, `LLM-Bench-x.y.z
   ./llm-bench-x.y.z-x86_64.AppImage
   ```
 
+### Aggiornare LLM Bench
+
+LLM Bench non si aggiorna da solo: scarica la nuova versione dall'**[ultima versione](https://github.com/nemmusu/llm-bench/releases/latest)** (la apre **Impostazioni → Informazioni → Pagina delle release**) e installala sopra questa, oppure sostituisci il file portatile o l'AppImage. Risultati, impostazioni e modelli restano.
+
 ### Da GPU Bench a LLM Bench
 
 Fino alla versione 0.3 il programma si chiamava **GPU Bench**. Al primo avvio LLM Bench prende i tuoi dati e te lo dice una volta:
