@@ -85,9 +85,10 @@ export class CustomEngineAdapter implements EngineAdapter {
       // remembered as LLM Bench's (CustomEngine.pulledImage): deleting the engine can remove it too.
       this.installPlan = async (cfg) => {
         const r = await resolveCustom(this.source, cfg);
+        // Asked before the plan: an image already on the PC is the user's own.
+        const fresh = r?.engine.run.mode === 'docker' && !(await inner.detect(r.cfg)).installed;
         const plan = await installPlan.call(inner, r?.cfg ?? cfg);
-        if (r?.engine.run.mode !== 'docker' || (await inner.detect(r.cfg)).installed) return plan;
-        return { ...plan, data: { ...plan.data, pulledFor: r.engine.id } };
+        return fresh ? { ...plan, data: { ...plan.data, pulledFor: r.engine.id } } : plan;
       };
       this.install = async (plan, progress, signal) => {
         await install.call(inner, plan, progress, signal);
