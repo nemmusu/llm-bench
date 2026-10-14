@@ -61,7 +61,7 @@ describe('custom engine form', () => {
     const cmd = (template: string) => draftOf(form({ base: 'openai-server', name: 'o', template })).problems.template;
     expect(cmd('')).toEqual({ key: 'templateProblems.empty' });
     expect(cmd('srv --model {model}')).toEqual({ key: 'templateProblems.port_missing' });
-    expect(cmd('srv --port {port} --x {nope}')).toEqual({ key: 'templateProblems.unknown_placeholder' });
+    expect(cmd('srv --port {port} --x {nope}')).toEqual({ key: 'templateProblems.unknown_placeholder', params: { names: '{nope}' } });
     expect(cmd('{model} --port {port}')).toEqual({ key: 'templateProblems.program_placeholder' });
   });
 

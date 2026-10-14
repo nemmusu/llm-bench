@@ -171,7 +171,8 @@ export const engineConfigSchema = z.object({
   sglangPath: z.string().optional(),
   /**
    * command: the command line that starts an OpenAI-compatible server, with placeholders
-   * {model} {modelDir} {port} {host} {ctx} {alias} (contract/custom-engines.ts expandCommandTemplate).
+   * (contract/custom-engines.ts COMMAND_PLACEHOLDERS, expandCommandTemplate). A custom engine's commands
+   * before and after the server come with it in the core (CoreEngineConfig.commandRun).
    */
   command: z.string().optional(),
   /**

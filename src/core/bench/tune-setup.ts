@@ -20,7 +20,7 @@ import { spillPossible } from './spill';
 import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
-import { llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
+import { commandSpace, llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
 import { NINFER_EXPECT, ninferTuneInput } from './tune-ninfer';
 import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput, type TuneSpace } from './tuner';
 
@@ -79,7 +79,7 @@ const sameGpu = (r: RunSummary, here: Pick<HereIdentity, 'gpuUuid' | 'gpuName'>)
 function variantOf(c: Tuning['combinations'][number], kind: EngineKind): Record<string, DimValue> {
   if (c.variant) return c.variant;
   const p = c.params;
-  if (!isLlamaCpp(kind)) return p.batchSize !== undefined ? { bt: p.batchSize } : {};
+  if (!isLlamaCpp(kind) && kind !== 'command') return p.batchSize !== undefined ? { bt: p.batchSize } : {};
   return { ...(p.ubatchSize !== undefined ? { ub: p.ubatchSize } : {}), ...(p.batchSize !== undefined ? { b: p.batchSize } : {}) };
 }
 
@@ -93,7 +93,7 @@ export async function learnedOrder(
   here: HereIdentity,
   kind: EngineKind,
 ): Promise<{ prefer: Record<string, DimValue[]>; learned: NonNullable<Tuning['learned']> } | undefined> {
-  const keys = isLlamaCpp(kind) ? ['ub', 'b'] : ['bt'];
+  const keys = isLlamaCpp(kind) || kind === 'command' ? ['ub', 'b'] : ['bt'];
   const past = (await runs.list())
     .filter((r) => r.profile === 'tune' && r.status === 'completed' && !spilledRun(r) && Number(r.tunedCombinations) > 0 && r.tuneBudget !== 'recheck' && r.engineKind === kind && sameGpu(r, here))
     .slice(0, LEARNED_RUNS);
@@ -267,6 +267,11 @@ export async function buildTuneSetup(
     return ninferTuneInput(common, { budget, params: p.params, model: p.model, gpu, kvDtypes: caps?.choices?.['--kv-dtype'], ...(users !== undefined ? { users } : {}) });
   }
   const prefer = past?.prefer;
+  // A program with an OpenAI API: what its commands' placeholders take ({ctx}, {kv}, {ubatch}…).
+  if (caps?.command) {
+    const { settings, kvTypes } = caps.command;
+    return { ...common, space: commandSpace({ budget, params: p.params, settings, kvTypes, users, prefer }) };
+  }
   if (!isLlamaCpp(kind)) {
     const util = vllmTuneUtilization(gpu);
     // SGLang's --mem-fraction-static is vLLM's memory share: the same fitting, the same search shape.

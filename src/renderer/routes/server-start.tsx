@@ -336,6 +336,7 @@ export function ServerStartPage() {
               unsupported={unsupportedWarning ? { engine: String(unsupportedWarning.params?.engine), flags: String(unsupportedWarning.params?.flags) } : undefined}
               // "Comandi per questo modello": nothing when the model has no recipe, or when its only command is the engine (preselected above).
               recipeSlot={recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
+              command={engineChoice?.kind === 'command' && chosenCustom?.run.mode === 'command' ? chosenCustom.run : undefined}
             />
           </StepCard>
           <StepCard step={4} title={t('servers.flow.step.port')} help={t('servers.flow.step.portHelp')}>

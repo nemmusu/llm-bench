@@ -1,7 +1,7 @@
 import { Boxes, Cpu, FlaskConical, FolderOpen, GitBranch, Terminal } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { CUSTOM_ENGINE_BASES, COMMAND_PLACEHOLDERS, type CustomEngine, type CustomEngineBase, type CustomEngineTemplate } from '../../../contract/custom-engines';
+import { CUSTOM_ENGINE_BASES, type CustomEngine, type CustomEngineBase, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCheckCustomEngine, useSaveCustomEngine } from '../../lib/queries-engines';
 import { useSystemInfo } from '../../lib/queries-library';
@@ -13,6 +13,7 @@ import { Field, Input, Textarea } from '../ui/input';
 import { SegmentedControl } from '../ui/segmented-control';
 import { Stepper, type StepState } from '../ui/stepper';
 import { CheckView } from './custom-engine-check';
+import { CommandFields } from './custom-engine-command';
 import { draftOf, EMPTY_FORM, formOf, formOfTemplate, modeFor, type CustomEngineForm, type FieldProblem, type FormField } from './custom-engine-form';
 import { NinferVariantWhere, useDefaultDistro } from './ninfer-variant';
 
@@ -40,7 +41,7 @@ const STEPS = ['kind', 'where', 'options'] as const;
 type Step = (typeof STEPS)[number];
 
 /** Fields checked before leaving a step. */
-const STEP_FIELDS: Record<Step, readonly FormField[]> = { kind: [], where: ['name', 'path', 'image', 'template', 'repoUrl', 'branch'], options: ['extraArgs', 'env', 'names'] };
+const STEP_FIELDS: Record<Step, readonly FormField[]> = { kind: [], where: ['name', 'path', 'image', 'template', 'before', 'after', 'kvTypes', 'repoUrl', 'branch'], options: ['extraArgs', 'env', 'names'] };
 
 /**
  * "Aggiungi motore": what kind of engine, where it is (with "Prova": its version and the LLM Bench
@@ -85,7 +86,10 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
   const problem = (f: FormField): FieldProblem | undefined => (shown.has(f) ? problems[f] : undefined);
   const hint = (f: FormField, normal: ReactNode): ReactNode => {
     const pr = problem(f);
-    return pr ? <span className="text-danger-text">{t(`engines.custom.dialog.${pr.key}` as MessageKey, { port: '{port}', ...pr.params })}</span> : normal;
+    if (!pr) return normal;
+    const text = t(`engines.custom.dialog.${pr.key}` as MessageKey, { port: '{port}', ...pr.params });
+    // A field of several commands says which line.
+    return <span className="text-danger-text">{pr.line !== undefined ? t('engines.custom.dialog.lineProblem', { line: pr.line, problem: text }) : text}</span>;
   };
   const stepOk = (s: Step) => STEP_FIELDS[s].every((f) => problems[f] === undefined);
   const next = () => {
@@ -123,10 +127,31 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
   const at = STEPS.indexOf(step);
   const stateOf = (i: number): StepState => (i < at ? 'done' : i === at ? 'current' : 'pending');
   const examples: Record<CustomEngineBase, string> = { llamacpp: 'ghcr.io/me/llama.cpp:fork', vllm: 'me/vllm-fork:latest', sglang: 'me/sglang-fork:latest', ninfer: '', 'openai-server': '' };
+  // "Prova": beside the preview for a program with an OpenAI API, under the fields for the others.
+  const checkBox = (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          onClick={() => {
+            if (draft) check.mutate(draft);
+            else setShown(new Set(STEP_FIELDS.where));
+          }}
+          disabled={check.isPending}
+        >
+          <FlaskConical aria-hidden />
+          {t('engines.custom.dialog.test')}
+        </Button>
+        <p className="min-w-0 flex-1 text-xs text-fg-3">{t(effMode === 'command' ? 'engines.custom.dialog.testCommandHint' : 'engines.custom.dialog.testHint')}</p>
+      </div>
+      {check.isPending && <p className="text-sm text-fg-2">{t('engines.custom.checking')}</p>}
+      {check.data && draft && <CheckView check={check.data} baseLabel={baseLabel} run={draft.run as CustomEngine['run']} />}
+      {check.isError && <ErrorCallout error={check.error} />}
+    </div>
+  );
 
   return (
     <DialogContent
-      size="lg"
+      size={effMode === 'command' && step === 'where' ? 'xl' : 'lg'}
       title={editing ? t('engines.custom.dialog.editTitle', { name: editing.name }) : t('engines.custom.dialog.addTitle')}
       description={forModel ? t('engines.custom.dialog.forModel', { model: forModel }) : undefined}
       footer={
@@ -255,66 +280,7 @@ function DialogBody({ editing, template, forModel, onOpenChange, onSaved }: Cust
               </Field>
             )}
 
-            {effMode === 'command' && (
-              <>
-                <Field
-                  label={t('engines.custom.dialog.template')}
-                  hint={hint(
-                    'template',
-                    t('engines.custom.dialog.templateHint', {
-                      placeholders: COMMAND_PLACEHOLDERS.map((ph) => `{${ph}} = ${t(`engines.custom.dialog.placeholders.${ph}`)}`).join(' · '),
-                      port: '{port}',
-                    }),
-                  )}
-                >
-                  {({ id, describedBy }) => (
-                    <Textarea
-                      id={id}
-                      aria-describedby={describedBy}
-                      aria-invalid={problem('template') ? true : undefined}
-                      value={form.template}
-                      maxLength={4000}
-                      placeholder="python -m my_server --model {model} --port {port} --name {alias}"
-                      onChange={(e) => set({ template: e.target.value })}
-                      className="font-mono text-xs"
-                      spellCheck={false}
-                    />
-                  )}
-                </Field>
-                <p className="text-xs text-fg-3">{t('engines.custom.dialog.aliasTip', { alias: '{alias}' })}</p>
-                <div className="flex flex-col gap-1.5">
-                  <SegmentedControl<'completions' | 'chat'>
-                    label={t('engines.custom.dialog.api')}
-                    value={form.api}
-                    onValueChange={(api) => set({ api })}
-                    options={[
-                      { value: 'completions', label: t('engines.custom.dialog.apiCompletions') },
-                      { value: 'chat', label: t('engines.custom.dialog.apiChat') },
-                    ]}
-                  />
-                  <p className="text-xs text-fg-3">{t('engines.custom.dialog.apiHint')}</p>
-                </div>
-              </>
-            )}
-
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  onClick={() => {
-                    if (draft) check.mutate(draft);
-                    else setShown(new Set(STEP_FIELDS.where));
-                  }}
-                  disabled={check.isPending}
-                >
-                  <FlaskConical aria-hidden />
-                  {t('engines.custom.dialog.test')}
-                </Button>
-                <p className="min-w-0 flex-1 text-xs text-fg-3">{t(effMode === 'command' ? 'engines.custom.dialog.testCommandHint' : 'engines.custom.dialog.testHint')}</p>
-              </div>
-              {check.isPending && <p className="text-sm text-fg-2">{t('engines.custom.checking')}</p>}
-              {check.data && draft && <CheckView check={check.data} baseLabel={baseLabel} run={draft.run as CustomEngine['run']} />}
-              {check.isError && <ErrorCallout error={check.error} />}
-            </div>
+            {effMode === 'command' ? <CommandFields form={effForm} set={set} hint={hint} problem={problem} platform={system.data?.os.platform} aside={checkBox} /> : checkBox}
           </div>
         )}
 

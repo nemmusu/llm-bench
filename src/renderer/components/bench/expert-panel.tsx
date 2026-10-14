@@ -1,6 +1,7 @@
 import { FolderOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { isDockerKind, type ApiFlavor, type EngineKind } from '../../../contract/engines';
+import type { CommandRun } from '../../../contract/custom-engines';
 import { argGroups, mergeRecipeParams, type RecipePatch } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
@@ -8,6 +9,7 @@ import { Card } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Field, Input, Textarea } from '../ui/input';
 import { Select } from '../ui/select';
+import { CommandExpertSection } from '../engines/command-settings';
 import { YarnChoice } from '../recipes/yarn-choice';
 import { depthLabel } from '../tune/tune-format';
 import type { EngineField, EngineForm } from './engine-form';
@@ -34,6 +36,8 @@ export interface ExpertPanelProps {
   recipe?: { name: string; patch: RecipePatch | undefined } | undefined;
   /** A custom engine is chosen: its executable / image / command are set on the Engines page. */
   customEngine?: string | undefined;
+  /** A program with an OpenAI API is chosen: only the settings its commands take (engines/command-settings.tsx). */
+  command?: { name: string; run: CommandRun } | undefined;
 }
 
 interface TextProps {
@@ -173,7 +177,9 @@ export function ExpertPanel(p: ExpertPanelProps) {
         <p className="text-sm text-fg-2">{t('benchmark.expert.description')}</p>
       </div>
       <div className="grid gap-x-8 gap-y-6 p-card lg:grid-cols-2">
-        {family === 'external' ? (
+        {p.command ? (
+          <CommandExpertSection {...p.command} params={p.params} invalid={p.paramsInvalid} onParams={p.onParams} />
+        ) : family === 'external' ? (
           <Section title={t('benchmark.expert.sectionEndpoint')}>
             <Text
               label={t('benchmark.expert.baseUrl')}

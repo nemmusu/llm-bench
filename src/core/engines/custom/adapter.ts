@@ -8,7 +8,7 @@
  * says which (LaunchPlan.unsupported). Labels, Configurazioni and config keys carry its name
  * (EngineIdentity.name / customEngine).
  */
-import { customEngineKindOf, type CustomEngine } from '../../../contract/custom-engines';
+import { commandParams, customEngineKindOf, type CustomEngine } from '../../../contract/custom-engines';
 import { engineBaseOf, type EngineConfig, type EngineStatus, type LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
 import type { CoreEngineConfig, EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, PlanOptions, ProgressSink } from '../types';
@@ -30,7 +30,9 @@ export function expandCustom(engine: CustomEngine, cfg: EngineConfig): CoreEngin
   const run = engine.run;
   if (run.mode === 'docker') out.image = run.image;
   else if (run.mode === 'command') {
+    // The server command, and every other: the ones before and after it, the KV types of {kv}.
     out.command = run.template;
+    out.commandRun = run;
     out.flavor = run.api === 'chat' ? 'openai-chat' : 'openai';
   } else if (run.mode === 'ninfer') {
     // A NInfer variant: its own build (and distro) instead of the one saved for NInfer.
@@ -114,8 +116,10 @@ export class CustomEngineAdapter implements EngineAdapter {
       opts.knownFlags ?? (base === 'vllm' || base === 'sglang' ? (await this.inner.capabilities(r.cfg).catch(() => undefined))?.flags : undefined);
     const plan = await this.inner.plan(r.cfg, model, withCustomSettings(r.engine, params), { ...opts, ...(known ? { knownFlags: known } : {}) });
     const { id, name, base: customBase } = r.engine;
-    // The stored params are the run's own: "Usa questo preset" adds the engine's again.
-    return { ...plan, params, engine: { ...plan.engine, name, customEngine: { id, name, base: customBase } } };
+    // The stored params are the run's own: "Usa questo preset" adds the engine's again. A program with
+    // an OpenAI API keeps only the settings its commands take (the others never reached it).
+    const own = r.engine.run.mode === 'command' ? commandParams(r.engine.run, params) : params;
+    return { ...plan, params: own, engine: { ...plan.engine, name, customEngine: { id, name, base: customBase } } };
   }
 
   start(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance> {

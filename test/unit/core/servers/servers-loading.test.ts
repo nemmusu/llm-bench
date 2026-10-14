@@ -45,7 +45,7 @@ function slowInstance(o: { logsFail?: boolean } = {}) {
   return { instance, log: (text: string) => logs.push({ t: systemClock.now(), stream: 'stderr', text }), ready: () => ready(), fail: (e: Error) => fail(e), stops: () => stops };
 }
 
-function setup(o: { startFails?: Error; logsFail?: boolean; expectedLoadMs?: number; kind?: LaunchPlan['kind'] } = {}) {
+function setup(o: { startFails?: Error; logsFail?: boolean; expectedLoadMs?: number; kind?: LaunchPlan['kind']; steps?: LaunchPlan['steps'] } = {}) {
   const made: ReturnType<typeof slowInstance>[] = [];
   let changes = 0;
   const kind = o.kind ?? 'vllm-docker';
@@ -60,6 +60,7 @@ function setup(o: { startFails?: Error; logsFail?: boolean; expectedLoadMs?: num
     modelFiles: [],
     modelBytes: 0,
     marker: 'x',
+    ...(o.steps ? { steps: o.steps } : {}),
   };
   const adapter = {
     kind,
@@ -96,6 +97,17 @@ const req = { engine: { kind: 'vllm-docker' as const }, model: { repo: 'Qwen/Qwe
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
 describe('ServeService while the engine starts', () => {
+  it('a program with commands around its server shows them all, in the order they run', async () => {
+    const { svc, made } = setup({ kind: 'command', steps: { before: [['prep', '--x']], after: [['clean']] } });
+    const started = svc.start(req, new AbortController().signal);
+    await tick();
+    made[0]!.ready();
+    const info = await started;
+    expect(info.command.bash).toBe(['# before the server', 'prep --x', '# the server', 'docker run vllm/vllm-openai', '# after the server stops', 'clean'].join('\n'));
+    expect(info.command.argv).toEqual(['docker', 'run', 'vllm/vllm-openai']);
+    await svc.stop(info.id);
+  });
+
   it('lists the server at once with what it is doing, then without it once it answers', async () => {
     const { svc, made, changes } = setup({ expectedLoadMs: 45_000 });
     const started = svc.start(req, new AbortController().signal);

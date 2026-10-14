@@ -22,10 +22,10 @@ describe('launch settings per engine', () => {
     expect(serverContextOf('sglang-native', P({ maxModelLen: 8192 }))).toBe(8192);
   });
 
-  it('a command engine only gets a context', () => {
+  it('a command engine gets a context and the users at once (for {ctx} and {parallel})', () => {
     const p = autoLaunchParams('command', buildScenario('standard'), P(), 32768);
     expect(p.contextSize).toBeGreaterThan(0);
-    expect(p.parallel).toBeUndefined();
+    expect(p.parallel).toBe(4);
     expect(autoLaunchParams('command', buildScenario('standard'), P({ contextSize: 2048 })).contextSize).toBe(2048);
     expect(autoLaunchParams('command', { profile: 'custom', seed: 1, steps: [] }, P()).contextSize).toBeUndefined();
   });

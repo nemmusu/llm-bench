@@ -102,6 +102,12 @@ describe('command templates: the program', () => {
       host: '127.0.0.1',
       ctx: '8192',
       alias: 'gpubench-x',
+      // The settings left unset: what LLM Bench passes by default (the first KV type of the engine).
+      kv: 'f16',
+      parallel: '1',
+      gpuLayers: '999',
+      batch: '2048',
+      ubatch: '512',
     });
     const st = { ...m, identity: { ...m.identity, format: 'safetensors' as const } };
     st.local = { ...(m.local as NonNullable<ModelTarget['local']>), identity: st.identity };

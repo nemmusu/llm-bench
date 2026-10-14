@@ -238,6 +238,7 @@ describe('custom engines on their base adapter', () => {
     expect(expandCustom(engine({ base: 'openai-server', run: { mode: 'command', template: 'srv --port {port}', api: 'chat' } }), { kind: 'command' })).toEqual({
       kind: 'command',
       command: 'srv --port {port}',
+      commandRun: { mode: 'command', template: 'srv --port {port}', api: 'chat' },
       flavor: 'openai-chat',
     });
     expect(expandCustom(engine({ base: 'openai-server', run: { mode: 'command', template: 'srv --port {port}', api: 'completions' } }), { kind: 'command' }).flavor).toBe('openai');
@@ -270,6 +271,14 @@ describe('custom engines on their base adapter', () => {
     await wrapped.plan({ kind: 'llamacpp-native' }, model, params, { port: 1, marker: 'm' });
     expect(calls.at(-1)?.cfg).toEqual({ kind: 'llamacpp-native' });
     expect(await wrapped.start(plan, new AbortController().signal)).toEqual({ started: true });
+  });
+
+  it('a program with an OpenAI API keeps, as its run params, only the settings its commands take', async () => {
+    const { a } = fakeAdapter('command');
+    const e = engine({ base: 'openai-server', run: { mode: 'command', template: 'srv --port {port} -c {ctx}', api: 'completions' } });
+    const wrapped = new CustomEngineAdapter(a, { list: async () => [e] });
+    const plan = await wrapped.plan({ kind: 'command', customEngineId: 'fork' }, model, P({ contextSize: 8192, kvCacheType: 'q8_0', extraArgs: ['--x'] }), { port: 1, marker: 'm' });
+    expect(plan.params).toEqual({ contextSize: 8192, extraArgs: ['--x'], env: {} });
   });
 
   it('plans vLLM / SGLang forks with the options of their own --help', async () => {

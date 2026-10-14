@@ -6,7 +6,11 @@
  * adapter with its own executable, image or Python, plus its extra arguments and environment. The
  * standard flags its `--help` does not list are left out of its commands, and said so
  * (CustomEngineCheck.missing, run note 'flag_unsupported'). An 'openai-server' engine is a command
- * template LLM Bench starts and stops (kind 'command'), measured like an external endpoint.
+ * template LLM Bench starts and stops (kind 'command'), measured like an external endpoint: optional
+ * commands before it (set-up, download, warm-up: each must end well), the server itself, optional
+ * commands after it stops (clean-up). Its placeholders carry the model, the port and the LLM Bench
+ * settings it takes ({ctx} the context, {kv} the KV cache type…): only those are asked for, passed on
+ * and read back in results (COMMAND_SETTINGS, commandParams).
  *
  * A 'ninfer' engine is a variant of NInfer (a fork with the same ninfer-serve, plus options and weight
  * formats of its own: NInfer-all, ninfer-fusion-kvmem…): it runs through the NInfer adapter, natively
@@ -24,7 +28,7 @@
  * A run or server targets one with EngineConfig { kind: customEngineKindOf(engine), customEngineId }.
  */
 import { z } from 'zod';
-import { engineKindSchema, engineStatusSchema, type EngineConfig, type EngineKind } from './engines';
+import { engineKindSchema, engineStatusSchema, type EngineConfig, type EngineKind, type LaunchParams } from './engines';
 
 export const CUSTOM_ENGINE_BASES = ['llamacpp', 'vllm', 'sglang', 'ninfer', 'openai-server'] as const;
 export const customEngineBaseSchema = z.enum(CUSTOM_ENGINE_BASES);
@@ -42,27 +46,68 @@ export const gitSourceSchema = z.object({
 });
 export type GitSource = z.infer<typeof gitSourceSchema>;
 
-/** Placeholders of a command template; {port} is required (LLM Bench picks a free port). */
-export const COMMAND_PLACEHOLDERS = ['model', 'modelDir', 'port', 'host', 'ctx', 'alias'] as const;
+/**
+ * Placeholders of a command: where the model is and where to answer ({port} is required in the server
+ * command: LLM Bench picks a free port), then the LLM Bench settings it can take (COMMAND_SETTINGS).
+ */
+export const COMMAND_PLACEHOLDERS = ['model', 'modelDir', 'port', 'host', 'alias', 'ctx', 'kv', 'parallel', 'gpuLayers', 'batch', 'ubatch'] as const;
 export type CommandPlaceholder = (typeof COMMAND_PLACEHOLDERS)[number];
+
+/** The placeholders that carry a launch setting, and which one: the Benchmark asks only for those a command uses. */
+export const COMMAND_SETTINGS = {
+  ctx: 'contextSize',
+  kv: 'kvCacheType',
+  parallel: 'parallel',
+  gpuLayers: 'gpuLayers',
+  batch: 'batchSize',
+  ubatch: 'ubatchSize',
+} as const satisfies Partial<Record<CommandPlaceholder, keyof LaunchParams>>;
+export type CommandSetting = keyof typeof COMMAND_SETTINGS;
+export const COMMAND_SETTING_NAMES = Object.keys(COMMAND_SETTINGS) as CommandSetting[];
+
+/** What a setting placeholder becomes when the run leaves it to LLM Bench ({kv}: the first of the engine's KV types). */
+export const COMMAND_DEFAULTS = { ctx: 4096, parallel: 1, gpuLayers: 999, batch: 2048, ubatch: 512 } as const;
+
+/** The values {kv} can take, written as they are in the command, the most precise first. */
+export const COMMAND_KV_TYPES = ['f16', 'auto', 'q8_0', 'fp8', 'q4_0'] as const;
+export type CommandKvType = (typeof COMMAND_KV_TYPES)[number];
+/** {kv} of an engine that does not say: llama.cpp's names. */
+export const DEFAULT_COMMAND_KV: readonly CommandKvType[] = ['f16', 'q8_0', 'q4_0'];
+/** Commands before, and after, the server: at most this many each. */
+export const COMMAND_STEPS_MAX = 10;
 
 /**
  * Where the engine is:
  *   native   llama.cpp: the llama-server executable (or its folder); vLLM: the `vllm` script or its
  *            venv folder; SGLang: the Python of an environment with SGLang, or that venv folder
  *   docker   an image:tag built on the base's official image (same entrypoint and flags)
- *   command  'openai-server' only: the command template, and which OpenAI API it is measured with:
- *            'completions' (/v1/completions) or 'chat' (/v1/chat/completions, for servers without the former)
+ *   command  'openai-server' only: the command that starts the server, and which OpenAI API it is
+ *            measured with: 'completions' (/v1/completions) or 'chat' (/v1/chat/completions, for servers
+ *            without the former). `before`: commands run in order before every start of the server, each
+ *            must end with exit code 0; `after`: commands run in order after every stop (a failure is only
+ *            written in the log). Each is its own program, run without a shell: nothing carries over from
+ *            one to the next but files. `kvTypes`: the values {kv} takes (absent: DEFAULT_COMMAND_KV).
  *   ninfer   'ninfer' only: its ninfer-serve or checkout as Linux sees it (inside `distro` on Windows,
  *            where it runs in WSL), and the repository it was (or will be) cloned from
  */
+const commandLineSchema = z.string().trim().min(1).max(4000);
+
 export const customEngineRunSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('native'), path: z.string().trim().min(1) }),
   z.object({ mode: z.literal('docker'), image: z.string().trim().min(1) }),
-  z.object({ mode: z.literal('command'), template: z.string().trim().min(1).max(4000), api: z.enum(['completions', 'chat']).default('completions') }),
+  z.object({
+    mode: z.literal('command'),
+    template: commandLineSchema,
+    api: z.enum(['completions', 'chat']).default('completions'),
+    before: z.array(commandLineSchema).max(COMMAND_STEPS_MAX).optional(),
+    after: z.array(commandLineSchema).max(COMMAND_STEPS_MAX).optional(),
+    kvTypes: z.array(z.enum(COMMAND_KV_TYPES)).min(1).max(COMMAND_KV_TYPES.length).optional(),
+  }),
   z.object({ mode: z.literal('ninfer'), path: z.string().trim().min(1), distro: z.string().trim().min(1).optional(), source: gitSourceSchema.optional() }),
 ]);
 export type CustomEngineRun = z.infer<typeof customEngineRunSchema>;
+/** An 'openai-server' engine's commands. */
+export type CommandRun = Extract<CustomEngineRun, { mode: 'command' }>;
 
 /**
  * "Usa per questi modelli": LLM Bench proposes the engine (a suggestion the user can change) for a
@@ -103,6 +148,12 @@ function refineEngine(e: { base: CustomEngineBase; run: CustomEngineRun; match?:
   if (e.run.mode === 'command') {
     const t = templateProblem(e.run.template);
     if (t !== undefined) issue(['run', 'template'], t);
+    for (const which of ['before', 'after'] as const) {
+      (e.run[which] ?? []).forEach((step, i) => {
+        const p = templateProblem(step, { server: false });
+        if (p !== undefined) issue(['run', which, i], p);
+      });
+    }
   }
   e.match?.names.forEach((n, i) => {
     if (patternOf(n) === undefined) issue(['match', 'names', i], 'bad_pattern');
@@ -113,17 +164,37 @@ function refineEngine(e: { base: CustomEngineBase; run: CustomEngineRun; match?:
 export const customEngineDraftSchema = z.object(draftShape).superRefine(refineEngine);
 export type CustomEngineDraft = z.input<typeof customEngineDraftSchema>;
 
-export const CUSTOM_ENGINE_SCHEMA_VERSION = 1;
+/**
+ * Format versions of an entry. 1: what every engine was before commands had steps and settings; 2: an
+ * 'openai-server' engine with commands before or after the server, a KV type list, or a setting
+ * placeholder other than {ctx} ({kv}, {parallel}…). A version-1 entry reads as it is (the new fields
+ * take their defaults: no steps); an entry is written with the lowest version that holds it, so an older
+ * LLM Bench keeps every engine it can run as written and drops (never runs half of) the others.
+ */
+export const CUSTOM_ENGINE_SCHEMA_VERSION = 2;
+
+/** Placeholders an engine of format version 1 could use. */
+const V1_PLACEHOLDERS: ReadonlySet<string> = new Set(['model', 'modelDir', 'port', 'host', 'ctx', 'alias']);
+
+/** The lowest format version that holds this engine. */
+export function customEngineVersionOf(e: { run: CustomEngineRun }): 1 | 2 {
+  const r = e.run;
+  if (r.mode !== 'command') return 1;
+  const steps = commandStepsOf(r);
+  const newer = steps.before.length > 0 || steps.after.length > 0 || r.kvTypes !== undefined || commandPlaceholders(r).some((p) => !V1_PLACEHOLDERS.has(p));
+  return newer ? CUSTOM_ENGINE_SCHEMA_VERSION : 1;
+}
 
 /** A saved custom engine (settings.customEngines). */
 export const customEngineSchema = z
   .object({
-    /** Format version of this entry: a newer app may migrate it, an older one drops it (never the whole settings file). */
-    schema: z.literal(CUSTOM_ENGINE_SCHEMA_VERSION).default(CUSTOM_ENGINE_SCHEMA_VERSION),
+    /** Format version of this entry (customEngineVersionOf): a newer app migrates it, an older one drops it (never the whole settings file). */
+    schema: z.union([z.literal(1), z.literal(CUSTOM_ENGINE_SCHEMA_VERSION)]).optional(),
     id: z.string().regex(CUSTOM_ENGINE_ID),
     ...draftShape,
   })
-  .superRefine(refineEngine);
+  .superRefine(refineEngine)
+  .transform((e) => ({ ...e, schema: customEngineVersionOf(e) }));
 export type CustomEngine = z.infer<typeof customEngineSchema>;
 
 /**
@@ -226,14 +297,22 @@ export function templatePlaceholders(template: string): string[] {
   return [...new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string))];
 }
 
-/** Why a command template cannot be used, or undefined: 'unbalanced_quote', 'empty', 'unknown_placeholder', 'port_missing', 'program_placeholder'. */
-export function templateProblem(template: string): string | undefined {
+/** Placeholders a template uses that LLM Bench does not know (said by name when saving). */
+export function unknownPlaceholders(template: string): string[] {
+  return templatePlaceholders(template).filter((p) => !(COMMAND_PLACEHOLDERS as readonly string[]).includes(p));
+}
+
+/**
+ * Why a command cannot be used, or undefined: 'unbalanced_quote', 'empty', 'unknown_placeholder',
+ * 'port_missing' (the server command only: `server` false for the commands before and after it),
+ * 'program_placeholder'.
+ */
+export function templateProblem(template: string, opts: { server?: boolean } = {}): string | undefined {
   const argv = splitCommandLine(template);
   if (argv === undefined) return 'unbalanced_quote';
   if (argv.length === 0 || argv[0] === '') return 'empty';
-  const used = templatePlaceholders(template);
-  if (used.some((p) => !(COMMAND_PLACEHOLDERS as readonly string[]).includes(p))) return 'unknown_placeholder';
-  if (!used.includes('port')) return 'port_missing';
+  if (unknownPlaceholders(template).length > 0) return 'unknown_placeholder';
+  if (opts.server !== false && !templatePlaceholders(template).includes('port')) return 'port_missing';
   // The program itself must be fixed: a model path can never become the executable.
   if (/\{[A-Za-z]+\}/.test(argv[0] as string)) return 'program_placeholder';
   return undefined;
@@ -241,11 +320,85 @@ export function templateProblem(template: string): string | undefined {
 
 /**
  * The argv of a command template: split first, then each argument's placeholders replaced, so a
- * value with spaces (a model path) stays one argument. The template must be valid (templateProblem).
+ * value with spaces (a model path) stays one argument and no value is ever read by a shell. A
+ * placeholder without a value stays as written. The template must be valid (templateProblem).
  */
-export function expandCommandTemplate(template: string, values: Record<CommandPlaceholder, string>): string[] {
+export function expandCommandTemplate(template: string, values: Partial<Record<CommandPlaceholder, string>>): string[] {
   const argv = splitCommandLine(template) ?? [];
-  return argv.map((a) => a.replace(PLACEHOLDER, (whole, name: string) => (name in values ? values[name as CommandPlaceholder] : whole)));
+  return argv.map((a) => a.replace(PLACEHOLDER, (whole, name: string) => values[name as CommandPlaceholder] ?? whole));
+}
+
+/** The commands before and after the server (none when the engine has none: every engine saved before steps existed). */
+export function commandStepsOf(run: Pick<CommandRun, 'before' | 'after'>): { before: string[]; after: string[] } {
+  return { before: run.before ?? [], after: run.after ?? [] };
+}
+
+/** Every command of an engine, in the order they run: the ones before, the server, the ones after. */
+export function commandLines(run: Pick<CommandRun, 'template' | 'before' | 'after'>): string[] {
+  const { before, after } = commandStepsOf(run);
+  return [...before, run.template, ...after];
+}
+
+/** Placeholders used by any of the engine's commands, in order of first use. */
+export function commandPlaceholders(run: Pick<CommandRun, 'template' | 'before' | 'after'>): string[] {
+  return [...new Set(commandLines(run).flatMap(templatePlaceholders))];
+}
+
+/** The LLM Bench settings the engine's commands take ({ctx} → context…), in COMMAND_SETTINGS order. */
+export function commandSettings(run: Pick<CommandRun, 'template' | 'before' | 'after'>): CommandSetting[] {
+  const used = new Set(commandPlaceholders(run));
+  return COMMAND_SETTING_NAMES.filter((s) => used.has(s));
+}
+
+/** The values {kv} takes for this engine, the most precise first. */
+export function commandKvTypes(run: Pick<CommandRun, 'kvTypes'>): CommandKvType[] {
+  const chosen = new Set(run.kvTypes ?? DEFAULT_COMMAND_KV);
+  return COMMAND_KV_TYPES.filter((k) => chosen.has(k));
+}
+
+/**
+ * Why "Trova le impostazioni migliori" cannot search this engine, or undefined: the search finds the
+ * largest context that fits by starting the server with several contexts, so its commands must take
+ * {ctx} ('tune_no_ctx').
+ */
+export function commandTuneProblem(run: Pick<CommandRun, 'template' | 'before' | 'after'>): 'tune_no_ctx' | undefined {
+  return commandSettings(run).includes('ctx') ? undefined : 'tune_no_ctx';
+}
+
+/**
+ * The launch settings of a run that this engine's commands take (and its extra arguments and
+ * environment): what is passed on, stored with its results and shown back. The context comes from
+ * either context field; a KV type the engine does not list is left to its default.
+ */
+export function commandParams(run: Pick<CommandRun, 'template' | 'before' | 'after' | 'kvTypes'>, params: LaunchParams): LaunchParams {
+  const out: LaunchParams = { extraArgs: [...params.extraArgs], env: { ...params.env } };
+  for (const s of commandSettings(run)) {
+    if (s === 'ctx') {
+      const ctx = params.contextSize ?? params.maxModelLen;
+      if (ctx !== undefined) out.contextSize = ctx;
+    } else if (s === 'kv') {
+      const kv = params.kvCacheType;
+      if (kv !== undefined && (commandKvTypes(run) as string[]).includes(kv)) out.kvCacheType = kv;
+    } else {
+      const key = COMMAND_SETTINGS[s];
+      const v = params[key];
+      if (v !== undefined) out[key] = v;
+    }
+  }
+  return out;
+}
+
+/** What the setting placeholders become for these launch settings (the ones left unset: COMMAND_DEFAULTS). */
+export function commandSettingValues(run: Pick<CommandRun, 'kvTypes'>, params: LaunchParams): Record<CommandSetting, string> {
+  const kv = params.kvCacheType !== undefined && (commandKvTypes(run) as string[]).includes(params.kvCacheType) ? params.kvCacheType : commandKvTypes(run)[0];
+  return {
+    ctx: String(params.contextSize ?? params.maxModelLen ?? COMMAND_DEFAULTS.ctx),
+    kv: kv as string,
+    parallel: String(params.parallel ?? COMMAND_DEFAULTS.parallel),
+    gpuLayers: String(params.gpuLayers ?? COMMAND_DEFAULTS.gpuLayers),
+    batch: String(params.batchSize ?? COMMAND_DEFAULTS.batch),
+    ubatch: String(params.ubatchSize ?? COMMAND_DEFAULTS.ubatch),
+  };
 }
 
 // ---- model rules ---------------------------------------------------------------------------------

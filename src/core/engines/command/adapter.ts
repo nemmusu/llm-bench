@@ -1,28 +1,48 @@
 /**
  * "Programma con API OpenAI" (kind 'command'): any program that serves the OpenAI API, started from
- * the user's command template (contract/custom-engines.ts). LLM Bench fills in the placeholders,
- * starts it, waits for /v1/models, measures it like an external endpoint (text prompts, usage
- * counts) and stops it. Only the process it started is ever stopped: it is recorded in the
- * ownership registry like every engine process, and verified by the marker in its command line
- * after a crash ({alias}); without {alias} a leftover is left alone rather than guessed at.
+ * the user's commands (contract/custom-engines.ts): optional commands before the server, the server,
+ * optional commands after it (steps.ts). LLM Bench fills in the placeholders, runs the commands before,
+ * starts the server, waits for /v1/models, measures it like an external endpoint (text prompts, usage
+ * counts), stops it and runs the commands after. Only the processes it started are ever stopped: the
+ * server is recorded in the ownership registry like every engine process, and verified by the marker
+ * in its command line after a crash ({alias}); without {alias} a leftover is left alone rather than
+ * guessed at.
  *
- * Nothing runs to check the program (a `--version` could start a server): the template is
- * validated and the program looked up on disk or on PATH.
+ * The placeholders of LLM Bench settings ({ctx}, {kv}, {parallel}, {gpuLayers}, {batch}, {ubatch}) take
+ * the run's values, or COMMAND_DEFAULTS when it leaves them unset; the plan keeps only the settings
+ * the commands take (commandParams), so results show back what really reached the program.
+ *
+ * Every command is split into arguments before its placeholders are filled and runs as an argv array,
+ * never through a shell: a model path with spaces stays one argument and no value can start another
+ * command. Nothing runs to check the programs (a `--version` could start a server): the commands are
+ * validated and each program looked up on disk or on PATH.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { expandCommandTemplate, splitCommandLine, templateProblem, type CommandPlaceholder } from '../../../contract/custom-engines';
-import type { EngineConfig, EngineStatus, LaunchParams } from '../../../contract/engines';
+import {
+  commandKvTypes,
+  commandParams,
+  commandSettings,
+  commandSettingValues,
+  commandStepsOf,
+  expandCommandTemplate,
+  splitCommandLine,
+  templateProblem,
+  type CommandPlaceholder,
+  type CommandRun,
+} from '../../../contract/custom-engines';
+import type { EngineStatus, LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
 import type { EngineIdentity } from '../../../contract/results';
 import type { CoreDeps, ExitInfo, ManagedProcess, Platform } from '../../deps';
 import type { InferenceClient } from '../../inference/types';
-import type { OwnershipRegistry } from '../../process/ownership';
+import type { OwnedRecord, OwnershipRegistry } from '../../process/ownership';
 import { LOOPBACK } from '../../process/ports';
 import { createProcessInstance, type ClientFactory } from '../instance';
 import { listsModel } from '../shared/probes';
-import type { EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
+import type { CoreEngineConfig, EngineAdapter, EngineCaps, EngineInstance, LaunchPlan, ModelTarget, PlanOptions } from '../types';
 import { weightFiles } from '../types';
+import { createSteppedInstance } from './steps';
 
 export type CommandDeps = Pick<CoreDeps, 'clock' | 'proc' | 'fetch' | 'platform' | 'log' | 'env'>;
 
@@ -34,14 +54,15 @@ export interface CommandAdapterOptions {
   pollMs?: number;
   /** Whether a path is a file (the real disk by default): tests check Windows' rules on any system. */
   isFile?: IsFile;
+  /** Time limits of a command before the server and of one after it (steps.ts defaults). */
+  beforeTimeoutMs?: number;
+  afterTimeoutMs?: number;
 }
 
 export type IsFile = (f: string) => Promise<boolean>;
 
 const isFileOnDisk: IsFile = async (f) => (await fs.stat(f).catch(() => undefined))?.isFile() === true;
 
-/** Context passed as {ctx} when the run sets none. */
-export const COMMAND_DEFAULT_CONTEXT = 4096;
 const PROBE_TIMEOUT_MS = 5000;
 
 /** `name` as a file: a path (relative to the working folder) or a name found on PATH (Windows: with PATHEXT). */
@@ -62,8 +83,20 @@ export async function findProgram(name: string, platform: Platform, env: Record<
   return undefined;
 }
 
-/** What the placeholders stand for in this launch. */
-export function commandValues(model: ModelTarget, params: LaunchParams, opts: Pick<PlanOptions, 'port' | 'marker' | 'apiName' | 'preview'>): Record<CommandPlaceholder, string> {
+/** The engine's commands: the custom engine's (CoreEngineConfig.commandRun), else a bare template (EngineConfig.command). */
+export function commandRunOf(cfg: CoreEngineConfig | undefined): CommandRun | undefined {
+  if (cfg?.commandRun) return cfg.commandRun;
+  if (!cfg?.command) return undefined;
+  return { mode: 'command', template: cfg.command, api: cfg.flavor === 'openai-chat' ? 'chat' : 'completions' };
+}
+
+/** What the placeholders stand for in this launch: the model, where to answer, the settings (unset ones: their defaults). */
+export function commandValues(
+  model: ModelTarget,
+  params: LaunchParams,
+  opts: Pick<PlanOptions, 'port' | 'marker' | 'apiName' | 'preview'>,
+  run: Pick<CommandRun, 'kvTypes'> = {},
+): Record<CommandPlaceholder, string> {
   const local = model.local;
   const main = weightFiles(model, opts.preview).files[0];
   // GGUF: the file; a safetensors folder: the folder; nothing local: the HF repo.
@@ -74,8 +107,8 @@ export function commandValues(model: ModelTarget, params: LaunchParams, opts: Pi
     modelDir,
     port: String(opts.port),
     host: LOOPBACK,
-    ctx: String(params.contextSize ?? params.maxModelLen ?? COMMAND_DEFAULT_CONTEXT),
     alias: opts.apiName ?? opts.marker,
+    ...commandSettingValues(run, params),
   };
 }
 
@@ -90,70 +123,122 @@ export function diagnoseCommand(lines: readonly string[], exit: ExitInfo): AppEr
   return new AppError('ENGINE_EXITED', `The program exited with ${code}`, { params: { code }, detail: tail });
 }
 
+/** The programs of every command, found on disk: the ones before the server, the server's, the ones after. */
+export interface CommandPrograms {
+  before: string[];
+  server: string;
+  after: string[];
+}
+
+/** Where a command is among the engine's: undefined for the server, else before/after and its number. */
+type StepRef = { which: 'before' | 'after'; n: number } | undefined;
+
 export class CommandAdapter implements EngineAdapter {
   readonly kind = 'command' as const;
 
   constructor(private readonly o: CommandAdapterOptions) {}
 
-  /** The template's program as a file; a template that cannot be used, or a program not found, throws. */
-  async program(cfg: EngineConfig | undefined): Promise<string> {
-    const template = cfg?.command;
-    if (!template) throw new AppError('ENGINE_NOT_INSTALLED', 'No command template', { params: { reason: 'command_missing' } });
-    const problem = templateProblem(template);
-    if (problem !== undefined) throw new AppError('VALIDATION', `Command template: ${problem}`, { params: { reason: problem } });
-    const name = (splitCommandLine(template) as string[])[0] as string;
+  /** A command's program as a file; a command that cannot be used, or a program not found, throws (naming the command). */
+  private async programOf(line: string, step: StepRef): Promise<string> {
+    const where: Record<string, string | number> = step ? { which: step.which, n: step.n } : {};
+    const problem = templateProblem(line, { server: step === undefined });
+    if (problem !== undefined) throw new AppError('VALIDATION', `Command template: ${problem}`, { params: { reason: problem, ...where } });
+    const name = (splitCommandLine(line) as string[])[0] as string;
     const { platform, env } = this.o.deps;
     const found = await findProgram(name, platform, env, this.o.isFile);
-    if (!found) throw new AppError('ENGINE_NOT_INSTALLED', `Program not found: ${name}`, { params: { path: name, reason: 'program_missing' } });
-    // Without a shell a .bat/.cmd cannot start: the template says `cmd /c script.bat …` instead.
+    if (!found) throw new AppError('ENGINE_NOT_INSTALLED', `Program not found: ${name}`, { params: { path: name, reason: 'program_missing', ...where } });
+    // Without a shell a .bat/.cmd cannot start: the command says `cmd /c script.bat …` instead.
     if (platform === 'win32' && /\.(bat|cmd)$/i.test(found)) {
-      throw new AppError('VALIDATION', 'Batch files need cmd /c', { params: { reason: 'command_batch', path: found } });
+      throw new AppError('VALIDATION', 'Batch files need cmd /c', { params: { reason: 'command_batch', path: found, ...where } });
     }
     return found;
   }
 
-  async detect(cfg?: EngineConfig): Promise<EngineStatus> {
+  /** Every command's program, in the order they run; the first that cannot be used throws. */
+  async programs(cfg: CoreEngineConfig | undefined): Promise<CommandPrograms> {
+    const run = commandRunOf(cfg);
+    if (!run) throw new AppError('ENGINE_NOT_INSTALLED', 'No command template', { params: { reason: 'command_missing' } });
+    const before: string[] = [];
+    const steps = commandStepsOf(run);
+    for (const [i, line] of steps.before.entries()) before.push(await this.programOf(line, { which: 'before', n: i + 1 }));
+    const server = await this.programOf(run.template, undefined);
+    const after: string[] = [];
+    for (const [i, line] of steps.after.entries()) after.push(await this.programOf(line, { which: 'after', n: i + 1 }));
+    return { before, server, after };
+  }
+
+  async detect(cfg?: CoreEngineConfig): Promise<EngineStatus> {
     try {
-      const program = await this.program(cfg);
-      return { kind: this.kind, available: true, installed: true, location: program, variant: 'openai', problems: [], supported: true };
+      const { server } = await this.programs(cfg);
+      return { kind: this.kind, available: true, installed: true, location: server, variant: 'openai', problems: [], supported: true };
     } catch (e) {
-      // program() only throws AppErrors that say why (reason, path).
+      // programs() only throws AppErrors that say why (reason, path, which command).
       const err = toAppErrorData(e);
       return { kind: this.kind, available: false, installed: false, problems: [err.code], problemParams: err.params as NonNullable<typeof err.params>, supported: true };
     }
   }
 
-  /** Nothing known about the program: text prompts, the counts its usage reports. */
-  capabilities(): Promise<EngineCaps> {
-    return Promise.resolve({ flags: new Set<string>(), tokenIdsInPrompt: false, timings: false, minTokens: false, fitFlag: false, variant: 'openai' });
+  /** Nothing known about the program: text prompts, the counts its usage reports; the settings its commands take. */
+  capabilities(cfg?: CoreEngineConfig): Promise<EngineCaps> {
+    const run = commandRunOf(cfg);
+    const caps: EngineCaps = { flags: new Set<string>(), tokenIdsInPrompt: false, timings: false, minTokens: false, fitFlag: false, variant: 'openai' };
+    if (run) caps.command = { settings: commandSettings(run), kvTypes: commandKvTypes(run) };
+    return Promise.resolve(caps);
   }
 
-  async plan(cfg: EngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
-    const program = await this.program(cfg);
-    const template = cfg.command as string;
-    const [, ...rest] = expandCommandTemplate(template, commandValues(model, params, opts));
+  async plan(cfg: CoreEngineConfig, model: ModelTarget, params: LaunchParams, opts: PlanOptions): Promise<LaunchPlan> {
+    const programs = await this.programs(cfg);
+    const run = commandRunOf(cfg) as CommandRun;
+    const values = commandValues(model, params, opts, run);
+    // The program found on disk replaces the name written; the arguments are filled one by one.
+    const fill = (line: string, program: string) => [program, ...expandCommandTemplate(line, values).slice(1)];
     const files = weightFiles(model, opts.preview).files;
     const sizes = await Promise.all(files.map((f) => fs.stat(f).then((s) => s.size, () => 0)));
     const bytes = sizes.reduce((a, b) => a + b, 0);
     // The API it is measured with: /v1/completions, or chat completions for servers without it.
     const variant = cfg.flavor === 'openai-chat' ? 'openai-chat' : 'openai';
-    const engine: EngineIdentity = { kind: this.kind, name: 'OpenAI server', variant, executable: program };
+    const engine: EngineIdentity = { kind: this.kind, name: 'OpenAI server', variant, executable: programs.server };
+    const { before, after } = commandStepsOf(run);
+    const hasSteps = before.length > 0 || after.length > 0;
     return {
       kind: this.kind,
-      argv: [program, ...rest, ...params.extraArgs],
+      argv: [...fill(run.template, programs.server), ...params.extraArgs],
       env: { ...params.env },
       host: LOOPBACK,
       port: opts.port,
-      params,
+      params: commandParams(run, params),
       engine,
       modelFiles: files,
       modelBytes: bytes > 0 ? bytes : (model.identity.sizeBytes ?? 0),
       marker: opts.marker,
+      ...(hasSteps
+        ? { steps: { before: before.map((l, i) => fill(l, programs.before[i] as string)), after: after.map((l, i) => fill(l, programs.after[i] as string)) } }
+        : {}),
     };
   }
 
-  async start(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance> {
-    if (signal.aborted) throw new AppError('CANCELLED', 'Engine start cancelled');
+  start(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance> {
+    if (signal.aborted) return Promise.reject(new AppError('CANCELLED', 'Engine start cancelled'));
+    const steps = plan.steps;
+    if (!steps) return this.startServer(plan, signal);
+    const flavor = plan.engine.variant === 'openai-chat' ? 'openai-chat' : 'openai';
+    return Promise.resolve(
+      createSteppedInstance({
+        plan,
+        steps,
+        signal,
+        deps: this.o.deps,
+        startServer: (s) => this.startServer(plan, s),
+        idleClient: this.o.createClient(flavor, `http://${plan.host}:${plan.port}`),
+        ...(this.o.beforeTimeoutMs !== undefined ? { beforeTimeoutMs: this.o.beforeTimeoutMs } : {}),
+        ...(this.o.afterTimeoutMs !== undefined ? { afterTimeoutMs: this.o.afterTimeoutMs } : {}),
+      }),
+    );
+  }
+
+  /** The server itself: started, recorded as ours, polled until it lists its name (or any, without {alias}). */
+  private async startServer(plan: LaunchPlan, signal: AbortSignal): Promise<EngineInstance> {
+    // A cancelled start never gets here from start(); after commands before, the readiness wait below stops it at once.
     const [cmd, ...args] = plan.argv as [string, ...string[]];
     const { clock, proc, log, fetch } = this.o.deps;
     let mp: ManagedProcess;
@@ -164,7 +249,7 @@ export class CommandAdapter implements EngineAdapter {
     }
     const ownership = this.o.ownership;
     if (ownership && mp.pid > 0) {
-      const rec = { pid: mp.pid, startedAtWall: clock.wall(), exe: cmd, marker: plan.marker, runId: plan.marker, kind: 'process' as const };
+      const rec: OwnedRecord = { pid: mp.pid, startedAtWall: clock.wall(), exe: cmd, marker: plan.marker, runId: plan.marker, kind: 'process' };
       await ownership.add(rec).catch((e: unknown) => log.warn('ownership record failed', { error: String(e) }));
     }
     const baseUrl = `http://${plan.host}:${plan.port}`;
@@ -206,4 +291,3 @@ export class CommandAdapter implements EngineAdapter {
     };
   }
 }
-

@@ -10,12 +10,14 @@ import { Bookmark, FlaskConical, Sparkles, Terminal } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import type { ReactNode } from 'react';
 import type { ServerPlan } from '../../../../contract/api';
+import type { CommandRun } from '../../../../contract/custom-engines';
 import { engineBaseOf, type EngineKind } from '../../../../contract/engines';
 import type { ServerPreset } from '../../../../contract/servers';
 import { useI18n } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import type { ParamsField, ParamsForm } from '../../bench/expert-form';
 import type { PresetProvenance } from '../../bench/run-context';
+import { CommandSettingsFields } from '../../engines/command-settings';
 import { configLabelOf, useConfigLabel } from '../../presets/config-label';
 import { provenanceText, shortDate, tokensShort } from '../../presets/format';
 import { Callout } from '../../ui/callout';
@@ -54,6 +56,8 @@ export interface SettingsStepProps {
   unsupported: { engine: string; flags: string } | undefined;
   /** "Comandi per questo modello" (the recipes): rendered under the tabs when the model has one. */
   recipeSlot?: ReactNode;
+  /** A program with an OpenAI API is chosen: its commands (the settings they take are the only fields). */
+  command?: CommandRun | undefined;
 }
 
 function Choice({ value, title, detail, icon, badge }: { value: string; title: ReactNode; detail?: ReactNode; icon: ReactNode; badge?: ReactNode }) {
@@ -231,6 +235,8 @@ function CustomTab(p: SettingsStepProps) {
           {num('parallel', t('benchmark.expert.maxSeqs'), t('common.auto'))}
         </div>
       )}
+      {/* A program with an OpenAI API: only the settings its commands take. */}
+      {p.command && <CommandSettingsFields run={p.command} form={p.form} invalid={p.invalid} onForm={p.onForm} />}
       {base === 'ninfer' && (
         <div className="grid grid-cols-2 gap-4">
           {num('contextSize', t('benchmark.expert.ctx'), t('common.auto'))}

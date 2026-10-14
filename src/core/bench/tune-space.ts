@@ -24,7 +24,10 @@
  * SGLang lists both), --chunked-prefill-size, the memory share (--mem-fraction-static) fitted to the free
  * VRAM, --max-running-requests 1 or N for goal 'multi'. Beyond the largest context: CUDA graphs only up
  * to the users at once (--cuda-graph-max-bs), then none (--disable-cuda-graph).
+ *
+ * A program with an OpenAI API: what its commands' placeholders take (commandSpace).
  */
+import type { CommandKvType, CommandSetting } from '../../contract/custom-engines';
 import type { LaunchParams } from '../../contract/engines';
 import type { TuneBudget, TuneTag } from '../../contract/results';
 import type { LocalModel } from '../../contract/models';
@@ -270,6 +273,50 @@ export function sglangSpace(o: SglangSpaceOptions): TuneSpace {
         extraArgs: extra,
       };
     },
+    tags: (v) => tagsOf(v),
+  };
+}
+
+export interface CommandSpaceOptions {
+  budget: TuneBudget;
+  params: LaunchParams;
+  /** The LLM Bench settings the program's commands take (contract COMMAND_SETTINGS keys). */
+  settings: readonly CommandSetting[];
+  /** The values {kv} takes, the most precise first. */
+  kvTypes: readonly CommandKvType[];
+  /** Goal 'multi': users at once ({parallel}). */
+  users?: number;
+  prefer?: Readonly<Record<string, readonly DimValue[]>>;
+}
+
+/**
+ * A program with an OpenAI API, through the placeholders its commands use: the context ({ctx}, always:
+ * without it there is nothing to search), the KV types {kv} takes in the user's list, the most precise
+ * first (without {kv}: one, 'auto', the program's own); {ubatch} 512 / 2048 ("Accurata" 256 … 2048) and
+ * {batch} 2048 / 8192 ("Accurata" also 16384) when it takes them; {parallel} the users of goal 'multi'.
+ * Goal 'multi' launches users × the context per user: what a program that shares its context among its
+ * users needs (one that gives each its own has room to spare).
+ */
+export function commandSpace(o: CommandSpaceOptions): TuneSpace {
+  const kept = keptParams(o.params);
+  const has = (s: CommandSetting) => o.settings.includes(s);
+  const users = o.users !== undefined && o.users > 1 ? o.users : undefined;
+  const dims: Dimension[] = [];
+  if (has('ubatch')) dims.push({ key: 'ub', values: () => preferFirst(UBATCH[o.budget], o.prefer?.ub) });
+  if (has('batch')) dims.push({ key: 'b', values: () => preferFirst(BATCHED_TOKENS[o.budget], o.prefer?.b) });
+  return {
+    kvLadder: has('kv') ? [...o.kvTypes] : ['auto'],
+    base: (kv) => ({ kv, ...(has('ubatch') ? { ub: 512 } : {}), ...(has('batch') ? { b: 2048 } : {}), ...(users ? { np: users } : {}) }),
+    dimensions: dims,
+    contextFor: (n, perUser) => n * perUser,
+    params: (v, ctx) => ({
+      ...kept,
+      contextSize: ctx,
+      ...(has('kv') ? { kvCacheType: v.kv as LaunchParams['kvCacheType'] } : {}),
+      ...(typeof v.ub === 'number' ? { ubatchSize: v.ub } : {}),
+      ...(typeof v.b === 'number' ? { batchSize: v.b } : {}),
+      ...(has('parallel') ? { parallel: typeof v.np === 'number' ? v.np : 1 } : {}),
+    }),
     tags: (v) => tagsOf(v),
   };
 }

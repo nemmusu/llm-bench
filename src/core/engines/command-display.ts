@@ -67,6 +67,31 @@ export function displayCommand(argv: readonly string[], env: Readonly<Record<str
   return { powershell, bash };
 }
 
+/** Commands around a server (LaunchPlan.steps), as argv arrays. */
+export interface DisplaySteps {
+  before: readonly (readonly string[])[];
+  after: readonly (readonly string[])[];
+}
+
+/**
+ * A server with commands before and after it (a program with an OpenAI API): one command per line in
+ * the order they run, each group under a comment line (valid in PowerShell and bash) that says which.
+ * `show` renders one command (already redacted, with its environment); without steps: `server` as it is.
+ */
+export function displayWithSteps(server: CommandDisplay, steps: DisplaySteps | undefined, show: (argv: readonly string[]) => CommandDisplay): CommandDisplay {
+  if (!steps || (steps.before.length === 0 && steps.after.length === 0)) return server;
+  const before = steps.before.map(show);
+  const after = steps.after.map(show);
+  const join = (shell: keyof CommandDisplay) =>
+    [
+      ...(before.length ? ['# before the server', ...before.map((d) => d[shell])] : []),
+      '# the server',
+      server[shell],
+      ...(after.length ? ['# after the server stops', ...after.map((d) => d[shell])] : []),
+    ].join('\n');
+  return { powershell: join('powershell'), bash: join('bash') };
+}
+
 /** Values are always quoted in PowerShell assignments (a bare `1kb` would become 1024). */
 function quotePsValue(v: string): string {
   return `'${v.replace(PS_SINGLE_QUOTES, (q) => q + q)}'`;

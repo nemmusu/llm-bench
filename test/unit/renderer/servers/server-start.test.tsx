@@ -444,6 +444,26 @@ describe('Avvia un server: model, engine, port and network', () => {
     ]);
   });
 
+  it('a program with an OpenAI API: "Comandi personalizzati" asks only for the settings its commands take', async () => {
+    const command: CustomEngineInfo = {
+      engine: { schema: 2, id: 'mine', name: 'Il mio server', base: 'openai-server', run: { mode: 'command', template: 'srv --port {port} -c {ctx} --kv {kv}', api: 'chat', kvTypes: ['f16', 'q8_0'] }, extraArgs: [], env: {}, notes: '' },
+      kind: 'command',
+      config: { kind: 'command', customEngineId: 'mine' },
+      check: { kind: 'command', status: { kind: 'command', available: true, installed: true, problems: [], supported: true }, flagCount: 0, missing: [] },
+    };
+    const api = benchApi({ custom: [command] });
+    await openFlow(api);
+    await choose('Motore', 'Programma con API OpenAI · Il mio server');
+    await userEvent.click(screen.getByRole('tab', { name: 'Comandi personalizzati' }));
+    const field = await screen.findByLabelText('Contesto (token)');
+    expect(screen.getByRole('combobox', { name: 'Tipo di cache KV' })).toBeTruthy();
+    expect(screen.queryByLabelText('Livelli in GPU')).toBeNull();
+    expect(screen.queryByLabelText('Flash attention')).toBeNull();
+    await userEvent.clear(field);
+    await userEvent.type(field, '16384');
+    await waitFor(() => expect(lastPlan(api).params).toMatchObject({ contextSize: 16384 }));
+  });
+
   it('the port: automatic, chosen, invalid, or already in use (by another program or by one of ours)', async () => {
     const api = benchApi();
     api.world.serverPlan = (body) => {

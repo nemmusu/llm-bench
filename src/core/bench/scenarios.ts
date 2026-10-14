@@ -147,12 +147,13 @@ export function autoLaunchParams(
   // Round first, then cap: the context must never exceed what the model was trained for.
   const sized = (n: number) => (modelContext ? Math.min(roundUp(n, 1024), modelContext) : roundUp(n, 1024));
   const out: LaunchParams = { ...params };
+  const users = Math.max(concurrency, sessions);
   if (kind === 'command') {
-    // A command template only takes the context ({ctx}).
+    // A program's commands take what they name ({ctx}, {parallel}): the plan keeps only those (commandParams).
     if (params.contextSize === undefined && (single > 0 || perConcurrent > 0 || perSession > 0)) out.contextSize = sized(Math.max(single, perConcurrent, perSession));
+    if (params.parallel === undefined && users > 1) out.parallel = users;
     return out;
   }
-  const users = Math.max(concurrency, sessions);
   if (isLlamaCpp(kind)) {
     // One slot per user at once; a conversation keeps its slot (and its cached context) between messages.
     const parallel = params.parallel ?? Math.max(1, users);

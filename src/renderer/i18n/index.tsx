@@ -137,7 +137,7 @@ export type PhaseCatalogIsExhaustive = Assert<Exact<Exclude<keyof Messages['phas
 /**
  * The "what to do" of an error with a reason of its own (errors.<code>.why.<reason>): a model the engine
  * cannot read (its format with a variant that reads it, its architecture, its container version), a
- * KV type the build does not have.
+ * KV type the build does not have, a command before the server of a program with an OpenAI API that failed or got stuck.
  */
 function whyKey(code: ErrorCode, params?: Params): MessageKey | undefined {
   const reason = params?.reason;
@@ -148,6 +148,9 @@ function whyKey(code: ErrorCode, params?: Params): MessageKey | undefined {
     if (params?.variant !== undefined && (reason === 'layout' || reason === 'format')) return 'errors.ENGINE_MODEL_UNSUPPORTED.why.variant';
     if (reason === 'architecture' || reason === 'container') return `errors.ENGINE_MODEL_UNSUPPORTED.why.${reason}`;
   }
+  // A command before the server of a program with an OpenAI API: which one, and how it ended.
+  if (code === 'ENGINE_START_FAILED' && reason === 'step_failed') return 'errors.ENGINE_START_FAILED.why.step';
+  if (code === 'ENGINE_TIMEOUT' && reason === 'step_timeout') return 'errors.ENGINE_TIMEOUT.why.step';
   if (code === 'ENGINE_BAD_FLAG' && reason === 'proposal_head_missing') return 'errors.ENGINE_BAD_FLAG.why.proposalHead';
   return code === 'ENGINE_BAD_FLAG' && reason === 'kv_dtype_unsupported' ? 'errors.ENGINE_BAD_FLAG.why.kvDtype' : undefined;
 }

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { RunPlan, StartRunRequest } from '../../contract/api';
 import type { Settings } from '../../contract/settings';
-import { customEngineConfigOf, customEngineKindOf } from '../../contract/custom-engines';
+import { commandTuneProblem, customEngineConfigOf, customEngineKindOf } from '../../contract/custom-engines';
 import type { EngineKind } from '../../contract/engines';
 import { customEngineLabel, customEngineWhere } from '../components/engines/custom-engine-check';
 import { EngineSuggestion, unreadableFor } from '../components/engines/engine-suggestion';
@@ -207,7 +207,10 @@ function BenchmarkScreen() {
     : (engine === 'external' && !expert) || engine === 'command' || statusOf(engine)?.supported === false
       ? 'llamacpp-native'
       : engine;
-  const effProfile: Profile = (profile === 'custom' && !expert) || (profile === 'tune' && effEngine === 'command') ? 'quick' : profile;
+  // A program with an OpenAI API is searched only when its commands take the context ({ctx}).
+  const commandRun = effCustom?.run.mode === 'command' ? effCustom.run : undefined;
+  const noTune = commandRun !== undefined && commandTuneProblem(commandRun) !== undefined;
+  const effProfile: Profile = (profile === 'custom' && !expert) || (profile === 'tune' && noTune) ? 'quick' : profile;
   const custom = effProfile === 'custom';
   const status = effCustom ? customInfo.data?.find((i) => i.engine.id === effCustom.id)?.check.status : statusOf(effEngine);
 
@@ -527,8 +530,8 @@ function BenchmarkScreen() {
                 value={effProfile}
                 onValueChange={setProfile}
                 layout="list"
-                // A program of the user's own has no settings to search.
-                options={[...PROFILES.filter((p) => p !== 'tune' || effEngine !== 'command'), ...(expert ? (['custom'] as const) : [])].map((p) => ({
+                // A program of the user's own without {ctx} has no context to search.
+                options={[...PROFILES.filter((p) => p !== 'tune' || !noTune),...(expert ? (['custom'] as const) : [])].map((p) => ({
                   value: p,
                   label: t(`benchmark.profiles.${p}`),
                   // The chosen one with the estimate for this model and card, the same as in the summary above
@@ -537,6 +540,7 @@ function BenchmarkScreen() {
                 }))}
               />
               <p className="text-sm text-fg-2">{t(`benchmark.profileDesc.${effProfile}`)}</p>
+              {noTune && <p className="text-xs text-fg-3">{t('engines.custom.tuneNotAvailable', { name: effCustom!.name, ctx: '{ctx}' })}</p>}
               {effProfile === 'tune' && <TuneOptions value={tune} onChange={setTune} expert={expert} previous={previousTune} times={planData?.tuneSeconds} recheckTime={tune.budget === 'recheck' ? planData?.estimatedSeconds : undefined} trainedContext={trainedContext} />}
             </ChoiceCard>
           </div>
@@ -601,6 +605,7 @@ function BenchmarkScreen() {
               trainedContext={trainedContext}
               {...(recipeOn && recipe.recipe ? { recipe: { name: recipe.recipe.name, patch: recipe.launchPatch(effEngine) } } : {})}
               customEngine={effCustom?.name}
+              command={commandRun ? { name: effCustom!.name, run: commandRun } : undefined}
             />
           )}
 

@@ -5,7 +5,7 @@
  * A check runs what the base would run to know a build: llama.cpp `--version` + `--help`, vLLM
  * `--version` + `serve --help`, SGLang `import sglang` + `--help` (Docker: in the image, when it is
  * there), a NInfer variant its ninfer-serve `--help` and commit (in its WSL distro on Windows). A
- * command template is only validated and its program looked up: nothing is executed.
+ * program with an OpenAI API has its commands validated and their programs looked up: nothing is executed.
  */
 import { z } from 'zod';
 import {
@@ -14,7 +14,7 @@ import {
   customEngineIdFor,
   customEngineKindOf,
   customEngineSchema,
-  templatePlaceholders,
+  commandPlaceholders,
   type CustomEngine,
   type CustomEngineCheck,
   type CustomEngineInfo,
@@ -46,7 +46,7 @@ export async function checkCustomEngine(registry: EngineRegistry, engine: Custom
   const adapter = baseAdapter(registry, engine);
   const cfg = expandCustom(engine, { kind });
   const status = { ...(await adapter.detect(cfg)), customEngineId: engine.id };
-  if (engine.run.mode === 'command') return { kind, status, flagCount: 0, missing: [], placeholders: templatePlaceholders(engine.run.template) };
+  if (engine.run.mode === 'command') return { kind, status, flagCount: 0, missing: [], placeholders: commandPlaceholders(engine.run) };
   const caps = status.available ? await adapter.capabilities(cfg).catch(() => undefined) : undefined;
   const flags = caps?.flags ?? new Set<string>();
   if (flags.size === 0) return { kind, status, flagCount: 0, missing: [] };

@@ -1,4 +1,4 @@
-import type { MissingFlag } from '../../contract/custom-engines';
+import type { CommandKvType, CommandRun, CommandSetting, MissingFlag } from '../../contract/custom-engines';
 import { engineBaseOf, type EngineConfig, type EngineKind, type EngineStatus, type LaunchParams } from '../../contract/engines';
 import type { EngineIdentity, LaunchRecord } from '../../contract/results';
 import type { LocalModel, ModelIdentity } from '../../contract/models';
@@ -39,6 +39,8 @@ export interface EngineCaps {
   fitFlag: boolean;
   /** Choices argparse lists for an option, by spelling (vLLM `--help`: "--kv-cache-dtype" → ["auto", "fp8", …]). */
   choices?: Record<string, string[]>;
+  /** A command engine: the LLM Bench settings its commands take (placeholders) and the values {kv} takes. */
+  command?: { settings: CommandSetting[]; kvTypes: CommandKvType[] };
 }
 
 /** A hub GGUF that is not downloaded yet: what its download will create in the library. */
@@ -91,9 +93,10 @@ export interface PlanOptions {
 
 /**
  * EngineConfig as the core passes it to adapters: a custom engine also brings the environment its
- * --version / --help probes need (a fork's LD_LIBRARY_PATH…).
+ * --version / --help probes need (a fork's LD_LIBRARY_PATH…), and a program with an OpenAI API all
+ * its commands (the ones before and after the server, the KV types {kv} takes).
  */
-export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string> };
+export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string>; commandRun?: CommandRun };
 
 /** The model name an LLM Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
 export function serverApiName(kind: EngineKind, model: ModelTarget): string {
@@ -142,6 +145,16 @@ export interface LaunchPlan {
    * readiness probes send it. A secret: never stored, displayed or logged (commands are redacted).
    */
   apiKey?: string;
+  /**
+   * A program with an OpenAI API: the commands run before each start of the server (each must end
+   * with exit code 0) and after each stop, as argv arrays (programs found, placeholders filled; no shell).
+   */
+  steps?: CommandSteps;
+}
+
+export interface CommandSteps {
+  before: string[][];
+  after: string[][];
 }
 
 export interface EngineInstance {

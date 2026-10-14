@@ -46,6 +46,15 @@ describe('dictionaries', () => {
     const f = createFormatters('it');
     expect(errorText(f, 'DOCKER_NOT_RUNNING')).toEqual({ title: 'Docker non è avviato', what: 'Premi «Avvia Docker» e aspetta che sia pronto.' });
   });
+
+  it('a command before the server of a program that failed or got stuck says which one', () => {
+    const f = createFormatters('it');
+    expect(errorText(f, 'ENGINE_START_FAILED', { reason: 'step_failed', which: 'before', n: 2, program: 'python.exe', code: '3' }).what).toBe(
+      'Il comando 2 prima del server (python.exe) è finito con un errore (codice 3), quindi non ho avviato il server. Apri il log per vedere cosa ha scritto, correggilo nella pagina Motori e riprova.',
+    );
+    expect(errorText(createFormatters('en'), 'ENGINE_TIMEOUT', { reason: 'step_timeout', n: 1, program: 'fetch' }).what).toMatch(/^Command 1 before the server \(fetch\) did not end in time/);
+    expect(errorText(f, 'ENGINE_TIMEOUT').what).toMatch(/^Riprova/);
+  });
 });
 
 describe('lookup / interpolate / translate', () => {

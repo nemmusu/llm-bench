@@ -71,6 +71,59 @@ describe('Benchmark with custom engines', () => {
     await waitFor(() => expect((posted(api, '/api/runs/plan').at(-1)!.body as StartRunRequest).engine).toEqual({ kind: 'llamacpp-docker' }));
   });
 
+  it('a program with an OpenAI API: only the settings its commands take, sent as typed; the search when it takes {ctx}', async () => {
+    const tuned = engine({
+      id: 'tuned',
+      name: 'Server tarato',
+      base: 'openai-server',
+      run: { mode: 'command', template: 'srv --port {port} -c {ctx} --kv {kv} -np {parallel} -ngl {gpuLayers} -b {batch} -ub {ubatch}', api: 'completions', kvTypes: ['auto', 'fp8'] },
+    });
+    const api = benchApi({}, { onboardingDone: true, expertMode: true, customEngines: [tuned, server], lastEngine: { kind: 'command', customEngineId: 'tuned' }, lastParams: { kvCacheType: 'q8_0', flashAttention: 'on', yarnTarget: undefined, extraArgs: [], env: {} } as never });
+    renderApp('/', api);
+    const section = await screen.findByRole('group', { name: 'Impostazioni di Server tarato' });
+    // Its settings with their usual names, each saying where it goes; nothing else of an engine's launch.
+    expect(within(section).getByLabelText('Contesto (token)')).toBeTruthy();
+    expect(within(section).getByText('Al posto di {ctx}')).toBeTruthy();
+    for (const label of ['Slot paralleli', 'Livelli in GPU', 'Batch', 'Micro-batch']) expect(within(section).getByLabelText(label)).toBeTruthy();
+    expect(screen.queryByLabelText('Flash attention')).toBeNull();
+    expect(screen.queryByLabelText('URL del server')).toBeNull();
+    // A KV type chosen for another engine counts as automatic (its first type).
+    const kv = within(section).getByRole('combobox', { name: 'Tipo di cache KV' });
+    expect(kv.textContent).toBe('Automatico (auto)');
+    await choose('Tipo di cache KV', 'fp8');
+    await userEvent.type(within(section).getByLabelText('Contesto (token)'), '8192');
+    await userEvent.type(within(section).getByLabelText('Slot paralleli'), 'x');
+    expect(within(section).getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeTruthy();
+    await userEvent.clear(within(section).getByLabelText('Slot paralleli'));
+    await userEvent.type(within(section).getByLabelText('Argomenti extra'), '--verbose');
+    await userEvent.type(within(section).getByLabelText('Variabili d’ambiente'), 'A=1');
+    await waitFor(() => expect((posted(api, '/api/runs/plan').at(-1)!.body as StartRunRequest).params).toMatchObject({ contextSize: 8192, kvCacheType: 'fp8', extraArgs: ['--verbose'], env: { A: '1' } }));
+    await userEvent.type(within(section).getByLabelText('Variabili d’ambiente'), '{enter}nope');
+    expect(within(section).getByText(/NOME=valore/)).toBeTruthy();
+    // It takes {ctx}: the search is offered.
+    expect(screen.getByRole('radio', { name: /Trova le impostazioni migliori/ })).toBeTruthy();
+    expect(screen.queryByText(/non è disponibile per Server tarato/)).toBeNull();
+
+    // One whose commands take nothing: said, and the search is not offered (with why).
+    await choose('Cambia motore', /Il mio server/);
+    const plain = await screen.findByRole('group', { name: 'Impostazioni di Il mio server' });
+    expect(within(plain).getByText(/I suoi comandi non usano impostazioni di LLM Bench/)).toBeTruthy();
+    expect(within(plain).queryByLabelText('Contesto (token)')).toBeNull();
+    expect(screen.getByText('«Trova le impostazioni migliori» non è disponibile per Il mio server: nessuno dei suoi comandi usa {ctx}, quindi LLM Bench non può provare altri contesti. Aggiungi {ctx} al comando del server nella pagina Motori.')).toBeTruthy();
+  });
+
+  it('the context typed for another engine is the one shown, and typing replaces it', async () => {
+    const ctxOnly = engine({ id: 'c', name: 'Solo contesto', base: 'openai-server', run: { mode: 'command', template: 'srv --port {port} -c {ctx}', api: 'completions' } });
+    const api = benchApi({}, { onboardingDone: true, expertMode: true, customEngines: [ctxOnly], lastEngine: { kind: 'command', customEngineId: 'c' }, lastParams: { maxModelLen: 2048, extraArgs: [], env: {} } as never });
+    renderApp('/', api);
+    const field = (await screen.findByLabelText('Contesto (token)')) as HTMLInputElement;
+    expect(field.value).toBe('2048');
+    await userEvent.clear(field);
+    await userEvent.type(field, '4096');
+    await waitFor(() => expect((posted(api, '/api/runs/plan').at(-1)!.body as StartRunRequest).params).toMatchObject({ contextSize: 4096 }));
+    expect((posted(api, '/api/runs/plan').at(-1)!.body as StartRunRequest).params).not.toHaveProperty('maxModelLen');
+  });
+
   it('starts from the saved custom engine', async () => {
     const api = benchApi({}, { onboardingDone: true, customEngines: [prism], lastEngine: { kind: 'llamacpp-native', customEngineId: 'prismml' } });
     renderApp('/', api);

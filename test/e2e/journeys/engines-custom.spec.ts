@@ -1,9 +1,8 @@
 /**
  * Custom engines and SGLang, as a person meets them: a llama.cpp fork added on the Engines page (the
  * fake engine in fork mode: it lacks -ub and has an extra option) and benchmarked; SGLang in Docker
- * (the fake docker CLI runs the fake engine in SGLang mode); a program with an OpenAI API started from
- * a command template, measured and stopped; a fork in a git checkout updated with "Aggiorna" (real git,
- * a fake cmake that "rebuilds" it).
+ * (the fake docker CLI runs the fake engine in SGLang mode); a fork in a git checkout updated with
+ * "Aggiorna" (real git, a fake cmake that "rebuilds" it). Programs with an OpenAI API: engines-command.spec.ts.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -129,39 +128,6 @@ test('SGLang in Docker: pulled before the run, benchmarked like vLLM', async () 
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true });
-  }
-});
-
-test('a program with an OpenAI API: started from its command, measured, stopped', async () => {
-  const gb = await launchApp({ env: world.env });
-  try {
-    const { page } = gb;
-    await skipWelcome(page);
-    await openPage(page, 'Motori');
-    await page.getByRole('button', { name: 'Aggiungi motore' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Aggiungi un motore' });
-    await dialog.getByRole('radio', { name: /Programma con API OpenAI/ }).click();
-    await dialog.getByRole('button', { name: 'Avanti' }).click();
-    await dialog.getByLabel('Nome').fill('Il mio server');
-    // The fake engine in vLLM mode stands in for the user's own program.
-    await dialog.getByLabel('Comando che avvia il server').fill(`"${process.execPath}" "${CLI}" serve {model} --port {port} --served-model-name {alias} --max-model-len {ctx}`);
-    await dialog.getByRole('button', { name: 'Prova' }).click();
-    await expect(dialog.getByText(`Programma trovato: ${process.execPath}`)).toBeVisible({ timeout: 30_000 });
-    await dialog.getByRole('button', { name: 'Avanti' }).click();
-    await dialog.getByRole('button', { name: 'Salva motore' }).click();
-    await expect(dialog).toBeHidden();
-    await page.getByRole('region', { name: 'Il mio server' }).getByRole('button', { name: 'Usa nel Benchmark' }).click();
-
-    await expect(h1(page, 'Benchmark')).toBeVisible();
-    await expect(page.getByRole('combobox', { name: 'Cambia motore' })).toContainText('Programma con API OpenAI · Il mio server');
-    // Nothing to search on a program of one's own.
-    await expect(page.getByRole('radio', { name: /Trova le impostazioni migliori/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
-    await waitForResult(page, /Qwen3-0\.6B-Q4_K_M/);
-    await expect(page.getByText(/Il mio server/).first()).toBeVisible();
-    await scan(page, 'command engine result');
-  } finally {
-    await gb.close();
   }
 });
 

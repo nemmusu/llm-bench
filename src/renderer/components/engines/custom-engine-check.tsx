@@ -1,5 +1,5 @@
 /** What a custom engine is and what its check found, in plain words (cards and the add dialog). */
-import { customEngineKindOf, type CustomEngine, type CustomEngineCheck } from '../../../contract/custom-engines';
+import { commandLines, commandStepsOf, customEngineKindOf, type CustomEngine, type CustomEngineCheck } from '../../../contract/custom-engines';
 import type { EngineKind } from '../../../contract/engines';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { ErrorCallout } from '../library/error-callout';
@@ -11,11 +11,32 @@ export function customEngineLabel(t: Formatters['t'], e: Pick<CustomEngine, 'nam
   return `${t(`benchmark.engines.${customEngineKindOf(e)}`)} · ${e.name}`;
 }
 
-/** Where it is: the executable or venv, the Docker image, the command, or a NInfer variant's build (and its WSL distro). */
+/** Where it is: the executable or venv, the Docker image, a program's server command, or a NInfer variant's build (and its WSL distro). */
 export function customEngineWhere(e: Pick<CustomEngine, 'run'>): string {
   const r = e.run;
   if (r.mode === 'ninfer') return r.distro ? `${r.path} · ${r.distro}` : r.path;
   return r.mode === 'native' ? r.path : r.mode === 'docker' ? r.image : r.template;
+}
+
+/** A program's commands in the order they run, each saying when it runs (its card, when it has commands around the server). */
+export function CommandList({ run }: { run: Extract<CustomEngine['run'], { mode: 'command' }> }) {
+  const { t } = useI18n();
+  const { before, after } = commandStepsOf(run);
+  const rows = [
+    ...before.map((c) => ({ label: t('engines.custom.dialog.previewBefore'), c })),
+    { label: t('engines.custom.dialog.previewServer'), c: run.template },
+    ...after.map((c) => ({ label: t('engines.custom.dialog.previewAfter'), c })),
+  ];
+  return (
+    <ol className="flex flex-col gap-1 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs">
+      {rows.map((r, i) => (
+        <li key={i} className="flex min-w-0 flex-col">
+          <span className="text-fg-3">{r.label}</span>
+          <span className="font-mono break-all text-fg-2">{r.c}</span>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 /** An LLM Bench setting in words ("l’ubatch"); an unknown key as it is. */
@@ -55,15 +76,23 @@ export function CheckView({ check, baseLabel, run }: CheckViewProps) {
     );
   }
   if (!status.available) {
-    const reason = status.problemParams?.reason;
+    const params = status.problemParams;
+    const reason = params?.reason;
     const known = typeof reason === 'string' ? (`engines.custom.problems.${reason}` as MessageKey) : undefined;
-    const text = known ? t(known, { path: String(status.problemParams?.path ?? ''), port: '{port}' }) : undefined;
-    // A reason LLM Bench can say in its own words, else the error catalog's text.
-    if (text !== undefined && text !== known) return <Callout tone="danger" title={text} />;
-    return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_START_FAILED', message: status.location ?? '', ...(status.problemParams ? { params: status.problemParams } : {}) }} />;
+    const text = known ? t(known, { path: String(params?.path ?? ''), port: '{port}' }) : undefined;
+    // A reason LLM Bench can say in its own words (a command before or after the server: which one), else the error catalog's text.
+    if (text !== undefined && text !== known) {
+      const which = params?.which;
+      const title = which === 'before' || which === 'after' ? t(`engines.custom.problems.inStep.${which}`, { n: Number(params?.n), problem: text }) : text;
+      return <Callout tone="danger" title={title} />;
+    }
+    return <ErrorCallout error={{ code: status.problems[0] ?? 'ENGINE_START_FAILED', message: status.location ?? '', ...(params ? { params } : {}) }} />;
   }
-  if (check.kind === 'command') {
-    return <Callout tone="success" title={t('engines.custom.check.commandOk', { path: status.location ?? '' })} />;
+  if (run.mode === 'command') {
+    // Every program was found: the server's is the one that matters most.
+    const total = commandLines(run).length;
+    const path = status.location ?? '';
+    return <Callout tone="success" title={total > 1 ? t('engines.custom.check.commandOkSteps', { n: total, path }) : t('engines.custom.check.commandOk', { path })} />;
   }
   const required = missing.filter((m) => m.effect === 'required');
   const optional = missing.filter((m) => m.effect === 'default');

@@ -486,8 +486,27 @@ function parseArgs(args: readonly string[], raw: Raw, docker = false): void {
   }
 }
 
+/**
+ * A program with an OpenAI API: its launch params hold only the settings its commands took (the
+ * custom engine's placeholders: context, KV type, users, layers, batch, ubatch). Its own arguments mean
+ * nothing LLM Bench knows: like an external endpoint's, they are not read.
+ */
+function fromCommandParams(p: LaunchParams, raw: Raw): void {
+  const ctx = p.contextSize ?? p.maxModelLen;
+  if (ctx !== undefined) raw.contextSize = ctx;
+  if (p.kvCacheType !== undefined) raw.cacheTypeK = raw.cacheTypeV = p.kvCacheType;
+  if (p.batchSize !== undefined) raw.batchSize = p.batchSize;
+  if (p.ubatchSize !== undefined) raw.ubatchSize = p.ubatchSize;
+  if (p.gpuLayers !== undefined) raw.gpuLayers = p.gpuLayers;
+  if (p.parallel !== undefined) raw.parallel = p.parallel;
+}
+
 /** The settings of the launch params themselves (what each engine family reads), then their extra arguments. */
-function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw): void {
+function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw, kind?: EngineKind): void {
+  if (kind === 'command') {
+    fromCommandParams(p, raw);
+    return;
+  }
   if (family === 'external') return;
   if (p.ropeScaling) raw.rope = { ...p.ropeScaling };
   if (family === 'vllm') {
@@ -521,7 +540,7 @@ const emptyRaw = (): Raw => ({ other: new Set() });
 export function configParamsOf(input: LaunchInput): ConfigParams {
   const family = engineFamilyOf(input.engineKind);
   const fromLaunch = emptyRaw();
-  if (input.params) fromParams(family, input.params, fromLaunch);
+  if (input.params) fromParams(family, input.params, fromLaunch, input.engineKind);
   // Params alone: LLM Bench adds --kv-unified for more than one slot. A command line without it: split
   // (llama-server shares the pool by default only when the slot count is automatic).
   if (!input.argv?.length || family === 'external') return normalize(family, fromLaunch, input, true);

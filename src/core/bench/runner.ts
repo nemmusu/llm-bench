@@ -24,6 +24,7 @@ import {
   type Tuning,
 } from '../../contract/results';
 import type { Clock, ExitInfo } from '../deps';
+import { displayWithSteps } from '../engines/command-display';
 import { LOG_HEAD_LINES, omittedCount, omittedLine } from '../engines/log-buffer';
 import { capacityHintOf, parseKvCapacity } from '../engines/shared/kv-capacity';
 import { LoadTracker } from '../engines/shared/load-progress';
@@ -66,14 +67,22 @@ import { STALL_RULES, watchStream, type StallRules } from './watchdog';
 
 export type Redactor = (argv: string[], env: Record<string, string>) => { argv: string[]; env: Record<string, string> };
 
-/** Launch record with secrets redacted (when a redactor is given) in argv, env and the display strings. */
+/**
+ * Launch record with secrets redacted (when a redactor is given) in argv, env and the display strings.
+ * A program with an OpenAI API shows its commands before and after the server too (displayWithSteps).
+ */
 export function launchRecordOf(
   plan: LaunchPlan,
   display: RunnerDeps['displayCommand'],
   redact: Redactor | undefined,
 ): LaunchRecord {
-  const shown = redact ? redact(plan.argv, plan.env) : { argv: plan.argv, env: plan.env };
-  return toLaunchRecord({ ...plan, ...shown }, display(shown.argv, shown.env));
+  const hide: Redactor = redact ?? ((argv, env) => ({ argv, env }));
+  const shown = hide(plan.argv, plan.env);
+  const show = (argv: readonly string[]) => {
+    const s = hide([...argv], plan.env);
+    return display(s.argv, s.env);
+  };
+  return toLaunchRecord({ ...plan, ...shown }, displayWithSteps(display(shown.argv, shown.env), plan.steps, show));
 }
 
 export interface LlamaBenchResult {

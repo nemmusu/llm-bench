@@ -4,7 +4,7 @@ import { Boxes, Copy, Cpu, FlaskConical, GitBranch, Hammer, Pencil, Play, Plus, 
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { customUpdateTarget } from '../../../contract/engine-updates';
-import { CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, ninferAllEngineOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
+import { commandLines, CUSTOM_ENGINE_TEMPLATES, customEngineConfigOf, ninferAllEngineOf, type CustomEngine, type CustomEngineBase, type CustomEngineInfo, type CustomEngineTemplate } from '../../../contract/custom-engines';
 import { NINFER_VARIANT_BUILD, ninferServeOf, type NinferKind } from '../../../contract/ninfer';
 import { useI18n, type MessageKey } from '../../i18n';
 import { useCustomEngines, useDeleteCustomEngine, useDuplicateCustomEngine } from '../../lib/queries-engines';
@@ -17,7 +17,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { ConfirmDialog } from '../ui/dialog';
 import { Skeleton } from '../ui/skeleton';
-import { CheckView, customEngineWhere, kindText } from './custom-engine-check';
+import { CheckView, CommandList, customEngineWhere, kindText } from './custom-engine-check';
 import { CustomEngineDialog } from './custom-engine-dialog';
 import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
@@ -201,9 +201,14 @@ function CustomEngineCard({ info, onEdit }: { info: CustomEngineInfo; onEdit: ()
         </>
       }
     >
-      <p className="truncate rounded-md bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-2" title={customEngineWhere(e)}>
-        {customEngineWhere(e)}
-      </p>
+      {/* A program with commands before or after its server: every command, in the order they run. */}
+      {e.run.mode === 'command' && commandLines(e.run).length > 1 ? (
+        <CommandList run={e.run} />
+      ) : (
+        <p className="truncate rounded-md bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-2" title={customEngineWhere(e)}>
+          {customEngineWhere(e)}
+        </p>
+      )}
       <CheckView check={info.check} baseLabel={t(`engines.custom.bases.${e.base}`)} run={e.run} />
       {ninfer && (
         <NinferBuildDialog

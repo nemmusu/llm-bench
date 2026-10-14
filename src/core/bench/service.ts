@@ -311,11 +311,11 @@ export class BenchService {
     const r = await this.recipe(req, model, preview);
     const run: StartRunRequest = { ...req, engine: r.engine, params: r.params };
     const kind = run.engine.kind;
-    // A command template only takes the context: there are no settings to search.
-    if (scenario.profile === 'tune' && kind === 'command') {
-      throw new AppError('VALIDATION', 'A command engine has no settings to search', { params: { reason: 'tune_command' } });
-    }
     const adapter = this.deps.getAdapter(kind);
+    // A program with an OpenAI API is searched only when its commands take the context ({ctx}).
+    if (scenario.profile === 'tune' && kind === 'command' && (await adapter.capabilities(run.engine).catch(() => undefined))?.command?.settings.includes('ctx') !== true) {
+      throw new AppError('VALIDATION', 'A command engine without {ctx} has no settings to search', { params: { reason: 'tune_command' } });
+    }
     const trained = trainedContextOf(model.identity);
     // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
     const modelContext = extendedContext(trained, r.params.ropeScaling);

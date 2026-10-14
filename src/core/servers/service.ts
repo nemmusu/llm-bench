@@ -3,6 +3,7 @@ import type { ServerInfo, ServerPlan, StartServerRequest } from '../../contract/
 import { AppError } from '../../contract/errors';
 import type { ServerLog, ServerNetwork, ServerNotice } from '../../contract/servers';
 import type { Clock } from '../deps';
+import { displayWithSteps } from '../engines/command-display';
 import { LoadTracker } from '../engines/shared/load-progress';
 import type { EngineAdapter, EngineInstance, LaunchPlan, ModelTarget } from '../engines/types';
 import { redactSecrets } from './lan';
@@ -181,7 +182,14 @@ export class ServeService {
       engineLabel: [plan.engine.customEngine?.name ?? plan.engine.name, plan.engine.build ?? plan.engine.version].filter(Boolean).join(' '),
       engineKind: plan.kind,
       startedAt: new Date(this.deps.clock.wall()).toISOString(),
-      command: { argv: shown.argv, ...this.deps.displayCommand(shown.argv, shown.env) },
+      // A program with an OpenAI API: its commands before and after the server too.
+      command: {
+        argv: shown.argv,
+        ...displayWithSteps(this.deps.displayCommand(shown.argv, shown.env), plan.steps, (argv) => {
+          const s = this.deps.redact([...argv], plan.env);
+          return this.deps.displayCommand(s.argv, s.env);
+        }),
+      },
       contextSize,
       params: plan.params,
       ...(model.identity.facts?.blockCount !== undefined ? { blockCount: model.identity.facts.blockCount } : {}),
