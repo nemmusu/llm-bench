@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatClient, CONTINUE_INSTRUCTION } from '../../../../src/core/inference/chat-client';
 import { createInferenceClient } from '../../../../src/core/inference/client';
+import { systemClock } from '../../../../src/core/node-deps';
+import { clientFactory } from '../../../../src/core/services';
 import type { StreamEvent } from '../../../../src/core/inference/types';
 import { sendJson, sendSse, startServer, steppingClock, type TestServer } from './helpers';
 
@@ -78,6 +80,9 @@ describe('ChatClient', () => {
     // Reasoning switched off: the template is asked not to think (only then: strict servers reject unknown fields).
     const off = new ChatClient('http://x', deps(), { chatTemplateKwargs: { enable_thinking: false } });
     expect(off.requestBody({ promptText: 't', outputTokens: 1, seed: 1 })).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
+    // The core's client factory passes it through.
+    const made = clientFactory({ fetch, clock: systemClock })('openai-chat', 'http://x', { chatTemplateKwargs: { enable_thinking: false } }) as ChatClient;
+    expect(made.requestBody({ promptText: 't', outputTokens: 1, seed: 1 })).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
     const bare = new ChatClient('http://x', deps()).requestBody({ outputTokens: 1, seed: 1 });
     expect(bare).not.toHaveProperty('model');
     expect(bare.messages).toEqual([{ role: 'user', content: CONTINUE_INSTRUCTION }]);

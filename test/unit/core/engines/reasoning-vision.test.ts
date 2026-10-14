@@ -33,6 +33,10 @@ describe('llama.cpp', () => {
     const old = gate('llamacpp', ['-m', '--host', '--port', '--alias']);
     expect(llamaReasoningArgs(P({ reasoning: false }), old)).toEqual([]);
     expect(old.missing).toEqual([{ flag: '--reasoning', setting: 'reasoning', effect: 'default' }]);
+    // Options not known (an untrusted help): nothing to say.
+    const unknown = gate('llamacpp');
+    unknown.unsupported('--reasoning', 'reasoning');
+    expect(unknown.missing).toEqual([]);
     // In the whole command, with LLM Bench's own settings, before the extra arguments.
     const args = llamaArgs(P({ reasoning: false, extraArgs: ['--metrics'] }), currentLlamaCaps(), { modelPath: 'm.gguf', host: 'h', port: 1, marker: 'gpubench-x' }, gate('llamacpp'));
     expect(args.slice(-6)).toEqual(['--reasoning', 'off', '--fit', 'off', '--no-webui', '--metrics']);

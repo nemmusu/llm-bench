@@ -71,6 +71,13 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
     expect(t.estimateSeconds!).toBeLessThan(ramp.t.estimateSeconds!);
   });
 
+  it('"solo N utenti" when the conversations measure nothing: the users alone', async () => {
+    const { t } = await tune({ ...multi(), multi: { users: 4, perUserContext: 8192, turns: 3, usersMode: 'exact' as const } }, machine({ noSessions: true }));
+    const rec = t.combinations[t.recommended!]!;
+    expect(rec.concurrency!.map((p) => p.level)).toEqual([4]);
+    expect(rec.sessions).toEqual([]);
+  });
+
   it('"solo N utenti": when N do not fit, the most that do are measured (and said), still at once only', async () => {
     const { t } = await tune({ ...multi(16), multi: { users: 16, perUserContext: 8192, turns: 3, usersMode: 'exact' as const }, space: multiSpace(16) }, machine());
     expect(t.multi).toMatchObject({ users: 16, fittingUsers: 8, usersMode: 'exact' });

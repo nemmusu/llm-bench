@@ -606,9 +606,9 @@ export class Tuner {
   protected sweepOrder(fitting: readonly TuneKvType[]): TuneKvType[] {
     const bySize = [...fitting].sort((a, b) => this.maxOf(b) - this.maxOf(a) || kvPrecisionRank(a) - kvPrecisionRank(b));
     const precise = [...fitting].sort((a, b) => kvPrecisionRank(a) - kvPrecisionRank(b) || this.maxOf(b) - this.maxOf(a))[0];
-    const first = bySize[0];
-    if (precise === undefined || first === undefined || precise === first) return bySize;
-    return [first, precise, ...bySize.slice(1).filter((kv) => kv !== precise)];
+    // Nothing fits, or the most precise type is also the one with the largest context: by context.
+    if (precise === undefined || precise === bySize[0]) return bySize;
+    return [bySize[0] as TuneKvType, precise, ...bySize.slice(1).filter((kv) => kv !== precise)];
   }
 
   protected maxOf(kv: TuneKvType): number {

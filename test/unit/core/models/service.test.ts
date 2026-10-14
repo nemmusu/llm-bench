@@ -228,6 +228,8 @@ describe('ModelsService', () => {
     expect(vision).not.toHaveProperty('draftMiB');
     // A file that is nowhere, or an engine that loads no such files: nothing added.
     expect(await fit(['-md', '/nowhere/x.gguf'])).not.toHaveProperty('draftMiB');
+    // A draft and vision switched off: the draft alone.
+    expect(await fit(['-md', draft], 'llamacpp-native', false)).not.toHaveProperty('mmprojMiB');
     expect(await fit(['--mmproj', '/models/o/eye/mmproj-eye-F16.gguf'], 'vllm-docker')).not.toHaveProperty('mmprojMiB');
   });
 
@@ -395,6 +397,8 @@ describe('ModelsService', () => {
     expect(local.identity.facts).toMatchObject({ name: 'qwen3.8-27b', components: ['text', 'mtp'] });
     const lf = await svc.fit({ localId: local.id, engine: 'llamacpp-native' });
     expect(lf.notes).toContain('ninfer.estimate');
+    // With the launch's params (vision and reasoning as NInfer would get them), the same kind of estimate.
+    expect((await svc.fit({ localId: local.id, engine: 'ninfer-wsl', params: { contextSize: 8192, vision: false, extraArgs: [], env: {} } })).notes).toContain('ninfer.estimate');
     // Without manifest facts or a known size it still answers.
     writeFileSync(path.join(lib(), 'bare.ninfer'), 'x');
     const bare = (await svc.rescan()).find((m) => m.identity.displayName === 'bare')!;

@@ -201,6 +201,10 @@ describe('summary from the numbers', () => {
     // Among the most precise cache's combinations: the largest context, then the one measured with it full.
     const f16b = combo('f16', 208 * K, [point(K, 50, 1700), point(208 * K - 144, 30, 900)]);
     expect(briefOf({ combinations: [f16, q8, f16b], recommended: 1 }).quality?.index).toBe(2);
+    expect(briefOf({ combinations: [f16b, q8, f16], recommended: 1 }).quality?.index).toBe(0);
+    // Both measured with the context full: the faster writes.
+    const f16c = combo('f16', 208 * K, [point(K, 50, 1700), point(208 * K - 144, 35, 900)]);
+    expect(briefOf({ combinations: [f16b, f16c], recommended: 0 }).quality?.index).toBe(1);
     // Nothing of 8 bits or more fitted: the most precise is said, with why.
     const only = briefAnswers({ combinations: [q4], recommended: 0 }, 'llamacpp-native', label, f);
     expect(only[4]!.detail).toBe('Cache KV q4_0 · flash attention · nessuna cache da 8 bit o più è entrata: q4_0 è la più precisa');

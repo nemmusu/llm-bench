@@ -86,7 +86,6 @@ export function TuneBrief({ tuning, engineKind }: { tuning: Tuning; engineKind: 
   const f = useI18n();
   const label = useConfigLabel();
   const answers = briefAnswers(tuning, engineKind, label, f);
-  if (!answers.length) return null;
   return (
     <ol aria-label={f.t('tune.brief.title')} className="mt-4 grid gap-3 @3xl:grid-cols-2 @6xl:grid-cols-3">
       {answers.map((a, i) => (

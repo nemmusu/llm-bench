@@ -137,6 +137,7 @@ describe('RecheckTuner: goal "Più utenti"', () => {
     expect(t).toMatchObject({ multi: { usersMode: 'exact' }, recheck: { result: 'same' } });
     expect(t.combinations[t.recommended!]!.concurrency!.map((p) => [p.level, p.promptTokens])).toEqual([[4, 8048]]);
     expect(levelsMeasured({ concurrency: [...t.combinations[0]!.concurrency!, ...t.combinations[0]!.concurrency!] })).toEqual([4]);
+    expect(levelsMeasured({})).toEqual([]);
   });
 
   it('cache reuse is carried over; a combination without prompt lengths re-uses what the run asked', async () => {
