@@ -4,6 +4,7 @@
  * absolute thresholds. Differences within the measurement noise count as ties.
  */
 import { fullContextPoint, nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunStatus, type SessionsPoint, type Stat, type TuneAttempt, type TuneCombination, type TuneKvType, type Tuning } from '../../../contract/results';
+import { tunePicks, type TunePickId } from '../../../contract/tune-picks';
 import { kvPrecision } from '../../../contract/kv-cache';
 import { prefillStat } from '../bench/format';
 
@@ -536,34 +537,46 @@ export function balanceScore(read: number, write: number, bestRead: number, best
 }
 
 /**
- * The five answers of "In breve" from the measured sweeps (only what was measured: an answer the
- * search could not give is absent, or has no point when it was not measured that far).
+ * The five answers of "In breve" (only what was measured: an answer the search could not give is
+ * absent, or has no point when it was not measured that far). Answers 1, 2, 3 and 5 are the shared
+ * picks of contract/tune-picks.ts (the same the Benchmark page and "Avvia un server" offer as presets);
+ * 4 is the best balance over every measured point.
  */
 export function briefOf(tuning: Pick<Tuning, 'combinations' | 'recommended'>): Brief {
-  const ids = measuredCombinations(tuning);
-  const points: BriefPoint[] = ids.flatMap((index) => {
+  const picks = tunePicks(tuning as Tuning);
+  const pick = (id: TunePickId) => picks.find((p) => p.ids.includes(id));
+  const out: Brief = {};
+  const rec = pick('max-context')?.combination ?? recommendedIndex(tuning);
+  if (rec !== undefined) out.atMax = atMaxOf(tuning.combinations[rec]!, rec);
+  const points: BriefPoint[] = measuredCombinations(tuning).flatMap((index) => {
     const combo = tuning.combinations[index]!;
     const full = fullContextPoint(combo);
-    return combo.sweep.filter((p) => p.decodeTps.n > 0).map((point) => ({ index, combo, point, depth: nominalDepth(point.promptTokens), full: point === full }));
+    return combo.sweep.map((point) => ({ index, combo, point, depth: nominalDepth(point.promptTokens), full: point === full }));
   });
-  const out: Brief = {};
-  const rec = recommendedIndex(tuning);
-  if (rec !== undefined) out.atMax = atMaxOf(tuning.combinations[rec]!, rec);
-  if (!points.length) return out;
-  // Ties go to the earlier point (the recommendation's combinations come first, shallower depths first).
-  const best = (score: (p: BriefPoint) => number) => points.reduce((a, b) => (score(b) > score(a) ? b : a));
-  out.read = best((p) => prefillStat(p.point).median);
-  out.write = best((p) => p.point.decodeTps.median);
-  const bestRead = prefillStat(out.read.point).median;
-  const bestWrite = out.write.point.decodeTps.median;
-  out.both = best((p) => balanceScore(prefillStat(p.point).median, p.point.decodeTps.median, bestRead, bestWrite));
-  // The most precise KV type measured; among its combinations the largest context, then the fastest with it full.
-  const precision = Math.min(...ids.map((i) => KV_PRECISION(tuning.combinations[i]!.kvType)));
-  const own = ids.filter((i) => KV_PRECISION(tuning.combinations[i]!.kvType) === precision);
-  const top = Math.max(...own.map((i) => tuning.combinations[i]!.maxContext));
-  const candidates = own.filter((i) => tuning.combinations[i]!.maxContext === top).map((i) => atMaxOf(tuning.combinations[i]!, i));
-  const q = candidates.reduce((a, b) => (b.point && (!a.point || b.point.decodeTps.median > a.point.decodeTps.median) ? b : a));
-  out.quality = { ...q, below8: precision > QUALITY_PRECISION };
+  // A peak pick names its combination (one entry when it answers several questions): the peak is its
+  // own fastest point, the first of equal ones.
+  const at = (id: 'fastest-read' | 'fastest-write', speed: (p: LatencyPoint) => number) => {
+    const p = pick(id);
+    const own = points.filter((q) => q.index === p?.combination);
+    return own.length ? own.reduce((a, b) => (speed(b.point) > speed(a.point) ? b : a)) : undefined;
+  };
+  const read = at('fastest-read', (p) => prefillStat(p).median);
+  const write = at('fastest-write', (p) => p.decodeTps.median);
+  if (read) out.read = read;
+  if (write) out.write = write;
+  if (read && write) {
+    const bestRead = prefillStat(read.point).median;
+    const bestWrite = write.point.decodeTps.median;
+    // Ties go to the earlier point (shallower depths first).
+    out.both = points.reduce((a, b) =>
+      balanceScore(prefillStat(b.point).median, b.point.decodeTps.median, bestRead, bestWrite) > balanceScore(prefillStat(a.point).median, a.point.decodeTps.median, bestRead, bestWrite) ? b : a,
+    );
+  }
+  const quality = pick('best-quality');
+  if (quality) {
+    const combo = tuning.combinations[quality.combination]!;
+    out.quality = { ...atMaxOf(combo, quality.combination), below8: KV_PRECISION(combo.kvType) > QUALITY_PRECISION };
+  }
   return out;
 }
 

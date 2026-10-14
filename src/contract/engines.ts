@@ -211,31 +211,21 @@ export const launchParamsSchema = z.object({
    * {"enable_thinking":false}; NInfer --no-thinking; chat requests of an external or command engine
    * chat_template_kwargs {"enable_thinking":false}. Engines without a way to switch it off keep their
    * default and the plan says so ('flag_unsupported'). Benchmarks that send raw prompts (llama.cpp
-   * /completion, /v1/completions) apply no chat template: there it changes nothing measured.
-   * core/engines/shared/reasoning-vision.ts.
+   * /completion, /v1/completions) apply no chat template: there it changes nothing measured; with it on
+   * a chat request's speed counts every token written, thoughts included. NInfer: unset = ninfer.thinking
+   * (the Benchmark form writes there). core/engines/shared/reasoning-vision.ts.
    */
   reasoning: z.boolean().optional(),
   /**
    * Image (and video) input: absent or true = on when the model has it (llama.cpp: the image projector
    * the library groups with the model, --mmproj; NInfer --vision when the artifact packs vision; vLLM
    * and SGLang their default), false = off (no projector; vLLM a multimodal model with
-   * --limit-mm-per-prompt {"image":0,"video":0}). It costs video memory and start time.
+   * --limit-mm-per-prompt {"image":0,"video":0}). It costs video memory and start time. NInfer: unset =
+   * ninfer.vision (the Benchmark form writes there), else on when the artifact packs vision.
    */
   vision: z.boolean().optional(),
   /** NInfer's own settings (ninfer-native / ninfer-wsl). */
   ninfer: ninferParamsSchema.optional(),
-  /**
-   * Image (and video) input, for a model that has it ("Immagini"): llama.cpp loads the model's projector
-   * (--mmproj) only when true or unset; vLLM / SGLang turn their multimodal part off with false; NInfer
-   * reads ninfer.vision (the form writes there). Unset = on when the model has it (the engine's default).
-   */
-  vision: z.boolean().optional(),
-  /**
-   * Reasoning ("Ragionamento"), for a model that thinks before it answers: false = the request asks for
-   * none (chat template enable_thinking false, gpt-oss lowest effort); NInfer reads ninfer.thinking.
-   * Unset = on when the model has it. With it on the speed counts every token written, thoughts included.
-   */
-  reasoning: z.boolean().optional(),
   /** TensorRT-LLM's own settings (trtllm-docker / trtllm-native). */
   trtllm: trtllmParamsSchema.optional(),
   /** Extra raw CLI arguments appended verbatim (expert mode). */
