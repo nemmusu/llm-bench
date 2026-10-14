@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { HelpTip } from '../ui/help-tip';
 import { ScrollX } from '../ui/scroll-x';
 
 export interface MeasureColumn {
   /** Header with its unit, e.g. "Generazione (tok/s)". */
   label: string;
   numeric?: boolean;
+  /** What the column means, behind a "?" next to its header. */
+  help?: ReactNode;
+  /** Long text (a configuration in words): the header and the cells wrap instead of widening the table. */
+  wrap?: boolean;
 }
 
 export interface MeasureRow {
@@ -34,9 +39,16 @@ export function MeasureTable({ caption, columns, rows, className, framed }: { ca
               <th
                 key={c.label}
                 scope="col"
-                className={cn('h-9 border-b border-border px-3 text-xs font-medium whitespace-nowrap text-fg-3 first:pl-card last:pr-card', c.numeric ? 'text-right' : 'text-left')}
+                className={cn('h-9 border-b border-border px-3 text-xs font-medium text-fg-3 first:pl-card last:pr-card', c.wrap ? 'py-1.5' : 'whitespace-nowrap', c.numeric ? 'text-right' : 'text-left')}
               >
-                {c.label}
+                {c.help ? (
+                  <span className={cn('inline-flex items-center gap-1', c.numeric && 'justify-end')}>
+                    {c.label}
+                    <HelpTip term={c.label}>{c.help}</HelpTip>
+                  </span>
+                ) : (
+                  c.label
+                )}
               </th>
             ))}
           </tr>
@@ -46,11 +58,11 @@ export function MeasureTable({ caption, columns, rows, className, framed }: { ca
             <tr key={r.key} aria-current={r.current ? 'step' : undefined} className={cn(r.current && 'bg-accent-soft/60', r.muted && 'text-fg-3')}>
               {r.cells.map((cell, i) =>
                 i === 0 ? (
-                  <th key={i} scope="row" className={cn('h-row border-b border-border px-3 pl-card text-left font-medium whitespace-nowrap', r.current && 'shadow-[inset_3px_0_0_var(--accent)]')}>
+                  <th key={i} scope="row" className={cn('h-row border-b border-border px-3 pl-card text-left font-medium', columns[0]?.wrap ? 'py-1.5' : 'whitespace-nowrap', r.current && 'shadow-[inset_3px_0_0_var(--accent)]')}>
                     {cell}
                   </th>
                 ) : (
-                  <td key={i} className={cn('h-row border-b border-border px-3 whitespace-nowrap last:pr-card', columns[i]!.numeric && 'text-right tabular-nums')}>
+                  <td key={i} className={cn('h-row border-b border-border px-3 last:pr-card', columns[i]!.wrap ? 'py-1.5' : 'whitespace-nowrap', columns[i]!.numeric && 'text-right tabular-nums')}>
                     {cell}
                   </td>
                 ),

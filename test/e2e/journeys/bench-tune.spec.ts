@@ -31,8 +31,25 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     const attempts = page.getByRole('table', { name: 'Prove fatte' });
     await expect(attempts.getByText('Caricato').first()).toBeVisible({ timeout: 60_000 });
     await expect(attempts.getByText('Memoria esaurita').first()).toBeVisible({ timeout: 60_000 });
-    // Every speed of an attempt says how full the context was ("a 1K di contesto", "a 40K, contesto pieno").
-    await expect(attempts.getByText(/^a [\d,]+K(?: di contesto|, contesto pieno)$/).first()).toBeVisible();
+    // The quick check after every start is said once, in the header; a speed measured elsewhere says where.
+    await expect(attempts.getByRole('columnheader', { name: /^Generazione \(tok\/s\) a 1K/ })).toBeVisible();
+    await expect(attempts.getByRole('columnheader', { name: /^Contesto all’avvio/ })).toBeVisible();
+    await expect(attempts.getByText(/^a [\d,]+K, contesto pieno$/).first()).toBeVisible({ timeout: 60_000 });
+    // The page uses the window: the table never scrolls sideways; the caches go below it on a normal
+    // window and beside it on a big one.
+    const region = page.getByRole('region', { name: 'Prove fatte' });
+    const capacity = page.getByRole('heading', { name: 'Contesto massimo per cache' });
+    for (const [width, beside] of [
+      [1024, false],
+      [1366, false],
+      [1920, true],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(() => region.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      const table = (await region.boundingBox())!;
+      const side = (await capacity.boundingBox())!;
+      expect({ width, beside: side.x > table.x + table.width, below: side.y > table.y + table.height }).toEqual({ width, beside, below: !beside });
+    }
     await expect(page.getByRole('heading', { name: 'Configurazione del server' })).toBeVisible();
     await expect(page.getByText(/cache KV (f16|q8_0|q4_0)/).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Misure finora' })).toBeVisible();

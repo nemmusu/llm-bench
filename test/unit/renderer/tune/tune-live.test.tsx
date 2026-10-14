@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StartRunRequest } from '../../../../src/contract/api';
 import type { RunLaunch } from '../../../../src/contract/events';
-import type { Scenario } from '../../../../src/contract/results';
+import type { Scenario, TuneAttempt } from '../../../../src/contract/results';
+import { commonDepth, TuneLive } from '../../../../src/renderer/components/tune/tune-live';
 import { DEFAULT_TUNE, TuneOptions } from '../../../../src/renderer/components/tune/tune-options';
 import { renderApp, renderUi } from '../helpers';
 import { activeRun, benchApi, planFor } from '../bench/world';
@@ -132,7 +133,11 @@ describe('live screen of a tune run', () => {
     expect(rows[0]!.getAttribute('aria-current')).toBe('step');
     expect(rows[1]!.textContent).toContain('Usa la RAM condivisa (lento)');
     expect(rows[5]!.textContent).toContain('Memoria esaurita');
-    expect(rows[6]!.textContent).toMatch(/Caricato.*4K.*f16.*Cache KV f16 · flash attention.*17,6.*88,0/);
+    // The configuration says the cache (no column of its own); a speed at the context full says so.
+    expect(rows[6]!.textContent).toBe('Caricato4KCache KV f16 · flash attention17,688,0a 4K, contesto pieno');
+    // The one speed short of its context full sets the header: its cell is the number alone.
+    expect(within(attempts).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Esito', 'Contesto all’avvio', 'Configurazione', 'VRAM picco (GB)', 'Generazione (tok/s) a 4K']);
+    expect(rows[3]!.textContent).toMatch(/48K.*31,0$/);
     expect(screen.getByText('6 di 24 al massimo')).toBeTruthy();
     const capacity = screen.getByRole('heading', { name: 'Contesto massimo per cache' }).closest('div')!.parentElement!;
     expect(within(capacity).getByText('provo 48K…')).toBeTruthy();
@@ -268,5 +273,65 @@ describe('live screen of any run', () => {
     expect(within(screen.getByRole('table', { name: 'Per lunghezza del prompt' })).getAllByRole('row')[1]!.textContent).toBe('128900142' + '50,0' + '2');
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'context-sweep' } }));
     expect(screen.queryByRole('table', { name: 'Contesto per gradi' })).toBeNull();
+  });
+});
+
+describe('the attempts table of the live screen', () => {
+  const probe = (decode: number) => [point(K, decode, 9000)];
+  const show = (attempts: TuneAttempt[]) => {
+    const view = renderUi(<TuneLive tuning={{ ...tuning(), attempts, combinations: [] }} current={undefined} engineKind="llamacpp-native" />);
+    return { table: screen.getByRole('table', { name: 'Prove fatte' }), view };
+  };
+  const headers = (table: HTMLElement) => within(table).getAllByRole('columnheader').map((h) => h.textContent);
+  const cells = (table: HTMLElement) => within(table).getAllByRole('row').slice(1).map((r) => r.lastElementChild!.textContent);
+
+  it('the quick check after every start is said once, in the header; the context column is the one the engine started with', async () => {
+    // As a real NInfer search: launches of 96K, 104K… measured at the 1K check, then a screening with the context full.
+    const { table } = show([
+      attempt('reference', 'q8_0', 32 * K, 'ok', { points: probe(61) }),
+      attempt('capacity', 'q8_0', 96 * K, 'ok', { points: probe(60) }),
+      attempt('capacity', 'q8_0', 104 * K, 'spill', { spill: 'decode-collapse', points: probe(4) }),
+      attempt('variant', 'q8_0', 96 * K, 'ok', { screen: 'kept', points: [point(K, 59, 9000), point(48 * K, 50, 7000), point(96 * K - 160, 44, 6000)] }),
+      attempt('capacity', 'q4_0', 128 * K, 'oom'),
+    ]);
+    expect(headers(table)).toEqual(['Esito', 'Contesto all’avvio', 'Configurazione', 'VRAM picco (GB)', 'Generazione (tok/s) a 1K']);
+    // Newest first: every 1K cell is the number alone, the one measured elsewhere says where.
+    expect(cells(table)).toEqual(['–', '44,0a 96K, contesto pieno', '4,0', '60,0', '61,0']);
+    expect(table.textContent).not.toContain('di contesto');
+    await userEvent.click(within(table).getByRole('button', { name: 'Che cos’è «Generazione (tok/s) a 1K»?' }));
+    expect((await screen.findAllByText(/La prova rapida fatta subito dopo ogni avvio del motore, con 1K di contesto/)).length).toBeGreaterThan(0);
+    await userEvent.click(within(table).getByRole('button', { name: 'Che cos’è «Contesto all’avvio»?' }));
+    expect((await screen.findAllByText(/Il contesto con cui è stato avviato il motore in quella prova/)).length).toBeGreaterThan(0);
+  });
+
+  it('a speed at another depth short of the context full says its depth; every speed at the context full: a plain header', async () => {
+    const mixed = show([
+      attempt('capacity', 'f16', 32 * K, 'ok', { points: probe(70) }),
+      attempt('capacity', 'f16', 48 * K, 'ok', { points: probe(68) }),
+      attempt('variant', 'f16', 48 * K, 'ok', { points: [point(8 * K, 66, 9000)] }),
+    ]);
+    expect(cells(mixed.table)).toEqual(['66,0a 8K di contesto', '68,0', '70,0']);
+    await userEvent.click(within(mixed.table).getByRole('button', { name: 'Che cos’è «Generazione (tok/s) a 1K»?' }));
+    expect((await screen.findAllByText(/La prova rapida fatta subito dopo ogni avvio del motore/)).length).toBeGreaterThan(0);
+    mixed.view.unmount();
+    // A header at another depth than the quick check's.
+    const deeper = show([attempt('variant', 'f16', 48 * K, 'ok', { points: [point(8 * K, 66, 9000)] })]);
+    expect(headers(deeper.table).at(-1)).toBe('Generazione (tok/s) a 8K');
+    await userEvent.click(within(deeper.table).getByRole('button', { name: 'Che cos’è «Generazione (tok/s) a 8K»?' }));
+    expect((await screen.findAllByText(/Velocità di generazione con 8K di contesto/)).length).toBeGreaterThan(0);
+    deeper.view.unmount();
+    // "Ricontrollo rapido": every launch read at its context full.
+    const full = show([attempt('recheck', 'q4_0', 64 * K, 'ok', { points: [point(K, 80, 9000), point(64 * K - 144, 60, 6000)] })]);
+    expect(headers(full.table).at(-1)).toBe('Generazione (tok/s)');
+    expect(cells(full.table)).toEqual(['60,0a 64K, contesto pieno']);
+    await userEvent.click(within(full.table).getByRole('button', { name: 'Che cos’è «Generazione (tok/s)»?' }));
+    expect((await screen.findAllByText(/L’ultima velocità di generazione misurata in ogni prova/)).length).toBeGreaterThan(0);
+  });
+
+  it('commonDepth: the most frequent depth short of the context full, the shallower in a tie', () => {
+    const a = (contextSize: number, depth: number) => ({ contextSize, points: [point(depth, 1, 1)] });
+    expect(commonDepth([a(32 * K, 4 * K), a(32 * K, K)])).toBe(K);
+    expect(commonDepth([a(32 * K, 4 * K), a(32 * K, 4 * K), a(32 * K, K)])).toBe(4 * K);
+    expect(commonDepth([a(4 * K, 4 * K), { contextSize: 8 * K, points: [] }])).toBeUndefined();
   });
 });

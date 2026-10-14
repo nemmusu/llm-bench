@@ -48,6 +48,12 @@ export const contextSweepStepSchema = z.object({
 export type ContextSweepStep = z.infer<typeof contextSweepStepSchema>;
 
 /**
+ * Prompt of the quick check a tune search makes right after every start (the same for every launch,
+ * so they compare): the live screen says it once in the header of its speeds.
+ */
+export const TUNE_PROBE_DEPTH = 1024;
+
+/**
  * The grid depth a measured depth stands for, so sweeps of different contexts line up (core and
  * renderer use the same rule): the deepest prompt of a 32K context (32 624 tokens with 128 to
  * generate) is "32K". A depth within max(256, 1 %) below a multiple of 1024 counts as that multiple;

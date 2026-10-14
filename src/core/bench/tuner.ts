@@ -68,6 +68,7 @@ import type { RunPhase } from '../../contract/events';
 import type { FitEstimate } from '../../contract/models';
 import {
   nominalDepth,
+  TUNE_PROBE_DEPTH,
   type ConcurrencyPoint,
   type LatencyPoint,
   type SessionsPoint,
@@ -221,7 +222,7 @@ export const CAPACITY_STEP = 8192;
 /** The search between the largest context that loaded and the smallest that did not stops within this share. */
 export const CAPACITY_PRECISION = 1 / 8;
 /** Quick check after every load, at the same depth as the reference's: a 1K prompt and a few tokens (also warms the engine up). */
-export const PROBE_DEPTH = 1024;
+export const PROBE_DEPTH = TUNE_PROBE_DEPTH;
 export const PROBE_OUTPUT = 32;
 /** Shallow screening depth. */
 export const SCREEN_SHALLOW = 1024;
