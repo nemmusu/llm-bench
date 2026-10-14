@@ -5,7 +5,7 @@ import { itemOf } from '../../../../src/renderer/components/compare/compare-mode
 import { EMPTY_ENGINE_FORM, engineConfigOf, engineFormOf } from '../../../../src/renderer/components/bench/engine-form';
 import { engineKindOfLabel } from '../../../../src/renderer/components/bench/live-now';
 import { engineName } from '../../../../src/renderer/components/bench/load-progress';
-import { engineFamily, modelOptions } from '../../../../src/renderer/components/bench/model-options';
+import { modelOptions } from '../../../../src/renderer/components/bench/model-options';
 import { guessNeeds } from '../../../../src/renderer/components/bench/needs';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
 import { presetOf } from '../../../../src/renderer/components/bench/rerun';
@@ -28,8 +28,6 @@ describe('engine helpers for SGLang, command engines and forks', () => {
   it('models: SGLang like vLLM, a command engine any local model', () => {
     const gguf = localModel('g');
     const st = localModel('s', { format: 'safetensors' });
-    expect(engineFamily('sglang-docker')).toBe('vllm');
-    expect(engineFamily('command')).toBe('external');
     expect(modelOptions('command', [gguf, st], []).map((o) => o.key)).toEqual(['local:g', 'local:s']);
     expect(modelOptions('sglang-docker', [gguf, st], []).map((o) => o.key)).toEqual(['local:s']);
   });

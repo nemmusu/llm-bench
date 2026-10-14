@@ -1,34 +1,15 @@
 /**
  * Expert mode form ⇄ LaunchParams / Scenario. Fields are kept as text while the user types;
- * an empty field means "let LLM Bench decide" (undefined), an invalid one is reported and ignored.
+ * an empty field means "let LLM Bench decide" (undefined), an invalid one is reported and stops the start until fixed.
  */
-import type { LaunchParams } from '../../../contract/engines';
+import type { EngineBase, LaunchParams, NinferParams, NinferSpec } from '../../../contract/engines';
+import { NINFER_MAX_CONCURRENCY } from '../../../contract/ninfer';
 import { yarnScaling } from '../../../contract/recipes';
 import type { Scenario, Step } from '../../../contract/results';
+import { fieldsOf } from './launch-fields';
+import type { ParamsField, ParamsForm, Tri } from './params-form';
 
-export interface ParamsForm {
-  contextSize: string;
-  gpuLayers: string;
-  flashAttention: 'default' | 'auto' | 'on' | 'off';
-  /** 'default', f16 / q8_0 / q4_0, or a type the fork lists (turbo3…: kv-cache-options.ts). */
-  kvCacheType: string;
-  batchSize: string;
-  ubatchSize: string;
-  threads: string;
-  parallel: string;
-  gpuMemoryUtilization: string;
-  maxModelLen: string;
-  dtype: string;
-  quantization: string;
-  extraArgs: string;
-  env: string;
-  /**
-   * "Contesto oltre il limite del modello (YaRN)": the context to reach, tokens ('' = no), and the
-   * trained context it starts from ('' = the model's own).
-   */
-  yarnTarget: string;
-  yarnOriginal: string;
-}
+export type { ParamsField, ParamsForm, Tri } from './params-form';
 
 export const EMPTY_PARAMS_FORM: ParamsForm = {
   contextSize: '',
@@ -47,9 +28,45 @@ export const EMPTY_PARAMS_FORM: ParamsForm = {
   env: '',
   yarnTarget: '',
   yarnOriginal: '',
+  ninferKvCapacity: '',
+  ninferKvDtype: '',
+  ninferSpec: 'default',
+  ninferDraftTokens: '',
+  ninferLmHeadDraft: 'default',
+  ninferVision: 'default',
+  ninferPrefixReuse: 'default',
+  ninferDeviceStateSlots: '',
+  ninferHostStateSlots: '',
+  ninferHostKvMib: '',
+  ninferThinking: 'default',
+  ninferPreserveThinking: 'default',
+  vision: 'default',
+  reasoning: 'default',
 };
 
-export type ParamsField = keyof ParamsForm;
+/** The fields of NInfer's own settings (LaunchParams.ninfer). */
+export const NINFER_FORM_FIELDS = [
+  'ninferKvCapacity',
+  'ninferKvDtype',
+  'ninferSpec',
+  'ninferDraftTokens',
+  'ninferLmHeadDraft',
+  'ninferVision',
+  'ninferPrefixReuse',
+  'ninferDeviceStateSlots',
+  'ninferHostStateSlots',
+  'ninferHostKvMib',
+  'ninferThinking',
+  'ninferPreserveThinking',
+] as const satisfies readonly (keyof ParamsForm)[];
+export type NinferFormField = (typeof NINFER_FORM_FIELDS)[number];
+
+/** What a NInfer preset sets: context, users and every NInfer field (a preset replaces all of them). */
+export const NINFER_PRESET_FIELDS = ['contextSize', 'parallel', ...NINFER_FORM_FIELDS] as const;
+
+/** Draft tokens NInfer takes per speculative backend (--draft-tokens: MTP 1..5, DFlash / DFlash2 1..15). */
+export const NINFER_DRAFT_MAX: Record<Exclude<NinferSpec, 'off'>, number> = { mtp: 5, dflash: 15, dflash2: 15 };
+
 
 /** Positive integer (thousand separators and spaces allowed), or null when invalid. */
 export function parseInteger(text: string, min = 1): number | null {
@@ -99,15 +116,24 @@ export interface ParsedParams {
 /**
  * The launch params of the form. YaRN sets the context (llama.cpp ctx-size and vLLM max-model-len) to
  * its target, and RoPE scaling at factor target / trained context (`trainedContext` = the model's).
+ * With `base`, only the fields that engine takes are read (launch-fields.ts): a value typed for another
+ * engine is neither sent nor reported, so what the panel shows is exactly what runs.
  */
-export function paramsFromForm(form: ParamsForm, opts: { trainedContext?: number | undefined } = {}): ParsedParams {
+export function paramsFromForm(
+  form: ParamsForm,
+  /** `fields`: exactly these (a program with an OpenAI API: those its commands take, launch-fields.ts commandFields). */
+  opts: { trainedContext?: number | undefined; base?: EngineBase | undefined; fields?: readonly ParamsField[] | undefined } = {},
+): ParsedParams {
   const params: LaunchParams = { extraArgs: parseArgs(form.extraArgs), env: {} };
   const invalid: ParamsField[] = [];
+  const ids = opts.fields ? new Set<string>(opts.fields) : opts.base === undefined ? undefined : new Set<string>(fieldsOf(opts.base).map((x) => x.field));
+  const takes = (field: ParamsField): boolean => ids === undefined || ids.has(field);
   const int = (field: 'contextSize' | 'batchSize' | 'ubatchSize' | 'threads' | 'parallel' | 'maxModelLen', min = 1) => {
     const text = form[field].trim();
-    if (!text) return;
+    if (!text || !takes(field)) return;
     const n = parseInteger(text, min);
-    if (n === null) invalid.push(field);
+    // NInfer serves at most 8 requests at once (--max-concurrency 1..8).
+    if (n === null || (field === 'parallel' && opts.base === 'ninfer' && n > NINFER_MAX_CONCURRENCY)) invalid.push(field);
     else params[field] = n;
   };
   int('contextSize');
@@ -117,25 +143,25 @@ export function paramsFromForm(form: ParamsForm, opts: { trainedContext?: number
   int('parallel');
   int('maxModelLen');
   const ngl = form.gpuLayers.trim();
-  if (ngl) {
+  if (ngl && takes('gpuLayers')) {
     const n = parseInteger(ngl, 0);
     if (n === null) invalid.push('gpuLayers');
     else params.gpuLayers = n;
   }
-  if (form.flashAttention !== 'default') params.flashAttention = form.flashAttention;
-  if (form.kvCacheType !== 'default') params.kvCacheType = form.kvCacheType;
+  if (form.flashAttention !== 'default' && takes('flashAttention')) params.flashAttention = form.flashAttention;
+  if (form.kvCacheType !== 'default' && takes('kvCacheType')) params.kvCacheType = form.kvCacheType;
   const util = form.gpuMemoryUtilization.trim();
-  if (util) {
+  if (util && takes('gpuMemoryUtilization')) {
     const r = parseRatio(util);
     if (r === null) invalid.push('gpuMemoryUtilization');
     else params.gpuMemoryUtilization = r;
   }
-  if (form.dtype.trim()) params.dtype = form.dtype.trim();
-  if (form.quantization.trim()) params.quantization = form.quantization.trim();
+  if (form.dtype.trim() && takes('dtype')) params.dtype = form.dtype.trim();
+  if (form.quantization.trim() && takes('quantization')) params.quantization = form.quantization.trim();
   const env = parseEnv(form.env);
   params.env = env.env;
   if (env.invalid.length) invalid.push('env');
-  if (form.yarnTarget.trim()) {
+  if (form.yarnTarget.trim() && takes('yarnTarget')) {
     const target = parseInteger(form.yarnTarget);
     const original = form.yarnOriginal.trim() ? parseInteger(form.yarnOriginal) : (opts.trainedContext ?? null);
     const rope = target !== null && original !== null ? yarnScaling(target, original) : undefined;
@@ -146,7 +172,51 @@ export function paramsFromForm(form: ParamsForm, opts: { trainedContext?: number
       params.maxModelLen = target as number;
     }
   }
+  if (form.vision !== 'default' && takes('vision')) params.vision = form.vision === 'on';
+  if (form.reasoning !== 'default' && takes('reasoning')) params.reasoning = form.reasoning === 'on';
+  const ninfer = ninferFromForm(form, takes, invalid);
+  if (ninfer) params.ninfer = ninfer;
   return { params, invalid };
+}
+
+/** NInfer's own fields (those `takes` lets through); undefined when none is set. */
+function ninferFromForm(form: ParamsForm, takes: (f: ParamsField) => boolean, invalid: ParamsField[]): NinferParams | undefined {
+  const n: NinferParams = {};
+  const count = (field: 'ninferDeviceStateSlots' | 'ninferHostStateSlots' | 'ninferHostKvMib', key: 'deviceStateSlots' | 'hostStateSlots' | 'hostKvMib') => {
+    const text = form[field].trim();
+    if (!text || !takes(field)) return;
+    const v = parseInteger(text, 0);
+    if (v === null) invalid.push(field);
+    else n[key] = v;
+  };
+  const tri = (field: 'ninferLmHeadDraft' | 'ninferVision' | 'ninferPrefixReuse' | 'ninferThinking' | 'ninferPreserveThinking', key: 'lmHeadDraft' | 'vision' | 'prefixReuse' | 'thinking' | 'preserveThinking') => {
+    if (form[field] !== 'default' && takes(field)) n[key] = form[field] === 'on';
+  };
+  const cap = form.ninferKvCapacity.trim();
+  if (cap && takes('ninferKvCapacity')) {
+    const v = /^auto$/i.test(cap) ? 'auto' : parseInteger(cap);
+    if (v === null) invalid.push('ninferKvCapacity');
+    else n.kvCapacity = v;
+  }
+  const dtype = form.ninferKvDtype.trim();
+  if (dtype && takes('ninferKvDtype')) n.kvDtype = dtype;
+  if (form.ninferSpec !== 'default' && takes('ninferSpec')) n.spec = form.ninferSpec;
+  const draft = form.ninferDraftTokens.trim();
+  if (draft && takes('ninferDraftTokens')) {
+    const v = parseInteger(draft);
+    const max = n.spec === undefined || n.spec === 'off' ? NINFER_DRAFT_MAX.dflash : NINFER_DRAFT_MAX[n.spec];
+    if (v === null || v > max) invalid.push('ninferDraftTokens');
+    else n.draftTokens = v;
+  }
+  tri('ninferLmHeadDraft', 'lmHeadDraft');
+  tri('ninferVision', 'vision');
+  tri('ninferPrefixReuse', 'prefixReuse');
+  count('ninferDeviceStateSlots', 'deviceStateSlots');
+  count('ninferHostStateSlots', 'hostStateSlots');
+  count('ninferHostKvMib', 'hostKvMib');
+  tri('ninferThinking', 'thinking');
+  tri('ninferPreserveThinking', 'preserveThinking');
+  return Object.keys(n).length > 0 ? n : undefined;
 }
 
 /** Shows an argument back in the textarea, quoting it when it contains spaces. */
@@ -176,13 +246,45 @@ export function formFromParams(p: LaunchParams | undefined): ParamsForm {
       .join('\n'),
     yarnTarget: s(yarn),
     yarnOriginal: yarn === undefined ? '' : s(p.ropeScaling?.originalContext),
+    ...ninferForm(p.ninfer),
+    vision: triOf(p.vision),
+    reasoning: triOf(p.reasoning),
   };
+}
+
+const triOf = (v: boolean | undefined): Tri => (v === undefined ? 'default' : v ? 'on' : 'off');
+
+/** NInfer's own settings as the form's fields (all empty without them). */
+export function ninferForm(n: NinferParams | undefined): Pick<ParamsForm, NinferFormField> {
+  const s = (v: number | string | undefined) => (v === undefined ? '' : String(v));
+  return {
+    ninferKvCapacity: s(n?.kvCapacity),
+    ninferKvDtype: n?.kvDtype ?? '',
+    ninferSpec: n?.spec ?? 'default',
+    ninferDraftTokens: s(n?.draftTokens),
+    ninferLmHeadDraft: triOf(n?.lmHeadDraft),
+    ninferVision: triOf(n?.vision),
+    ninferPrefixReuse: triOf(n?.prefixReuse),
+    ninferDeviceStateSlots: s(n?.deviceStateSlots),
+    ninferHostStateSlots: s(n?.hostStateSlots),
+    ninferHostKvMib: s(n?.hostKvMib),
+    ninferThinking: triOf(n?.thinking),
+    ninferPreserveThinking: triOf(n?.preserveThinking),
+  };
+}
+
+/** The form with only the image and reasoning switches kept (what is sent without expert mode). */
+export function switchesOnly(form: ParamsForm): ParamsForm {
+  return { ...EMPTY_PARAMS_FORM, vision: form.vision, reasoning: form.reasoning, ninferVision: form.ninferVision, ninferThinking: form.ninferThinking };
 }
 
 /** True when the parameters say anything beyond the defaults (expert mode is needed to show them). */
 export function hasCustomParams(p: LaunchParams | undefined): boolean {
   if (!p) return false;
-  return Object.entries(p).some(([k, v]) => (k === 'extraArgs' ? (v as string[]).length > 0 : k === 'env' ? Object.keys(v as object).length > 0 : v !== undefined));
+  // An empty environment or NInfer object says nothing.
+  const said = (k: string, v: unknown) =>
+    k === 'extraArgs' ? (v as string[]).length > 0 : k === 'env' || k === 'ninfer' ? v !== undefined && Object.values(v as object).some((x) => x !== undefined) : v !== undefined;
+  return Object.entries(p).some(([k, v]) => said(k, v));
 }
 
 // ---- custom scenario ----------------------------------------------------------------------------
@@ -201,6 +303,9 @@ export interface ScenarioForm {
   sessionsDepth: string;
   sessionsTurns: string;
   llamaBench: boolean;
+  /** One number N above 1: only N at once ("Solo N utenti insieme") instead of every step from 1 to N. */
+  concurrencyExact: boolean;
+  sessionsExact: boolean;
 }
 
 export type ScenarioField = keyof ScenarioForm;
@@ -218,6 +323,8 @@ export const DEFAULT_SCENARIO_FORM: ScenarioForm = {
   sessionsDepth: '',
   sessionsTurns: '4',
   llamaBench: false,
+  concurrencyExact: false,
+  sessionsExact: false,
 };
 
 /** New text of every later message and answer length of the long conversations made by the form. */
@@ -230,19 +337,23 @@ export function parseList(text: string): number[] | null {
   return nums.some((n) => n === null) ? null : [...new Set(nums as number[])].sort((a, b) => a - b);
 }
 
-/** "4" → 1, 2, 3, 4 (every step up to that many users); a list is taken as written. */
-export function parseUsers(text: string): number[] | null {
+/** "4" → 1, 2, 3, 4 (every step up to that many users), or only 4 when `exact`; a list is taken as written. */
+export function parseUsers(text: string, exact = false): number[] | null {
   const l = parseList(text);
-  return l?.length === 1 ? Array.from({ length: l[0]! }, (_, i) => i + 1) : l;
+  return l?.length === 1 && !exact ? Array.from({ length: l[0]! }, (_, i) => i + 1) : l;
 }
 
-/** 1, 2, 3, 4 shows back as "4"; any other set of levels as a list. */
+/** 1, 2, 3, 4 shows back as "4" (and a lone level as itself, exact: usersExact); any other set of levels as a list. */
 export function showUsers(levels: readonly number[]): string {
   const upTo = levels.length > 1 && levels.every((l, i) => l === i + 1);
   return upTo ? String(levels.length) : levels.join(', ');
 }
 
-export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Scenario; invalid: ScenarioField[] } {
+/** True when levels are only one count above 1 ("Solo 2 utenti insieme"). */
+export const usersExact = (levels: readonly number[]): boolean => levels.length === 1 && (levels[0] as number) > 1;
+
+/** The custom plan of the form; llama-bench only for llama.cpp (`llamaCpp` false leaves it out: it is llama.cpp's own tool). */
+export function scenarioFromForm(form: ScenarioForm, seed = 42, opts: { llamaCpp?: boolean } = {}): { scenario: Scenario; invalid: ScenarioField[] } {
   const invalid: ScenarioField[] = [];
   const int = (field: ScenarioField, min: number): number | undefined => {
     const text = (form[field] as string).trim();
@@ -254,7 +365,7 @@ export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Sce
   const list = (field: 'promptTokens' | 'concurrency' | 'sessions'): number[] => {
     const text = form[field].trim();
     if (!text) return [];
-    const l = field === 'promptTokens' ? parseList(text) : parseUsers(text);
+    const l = field === 'promptTokens' ? parseList(text) : parseUsers(text, field === 'concurrency' ? form.concurrencyExact : form.sessionsExact);
     if (!l) invalid.push(field);
     return l ?? [];
   };
@@ -275,7 +386,7 @@ export function scenarioFromForm(form: ScenarioForm, seed = 42): { scenario: Sce
   const depth = int('sessionsDepth', 1) ?? 0;
   const turns = int('sessionsTurns', 1) ?? 4;
   if (sessions.length) steps.push({ kind: 'sessions', depth, levels: sessions, turns, ...FORM_SESSIONS });
-  if (form.llamaBench) steps.push({ kind: 'llama-bench', pp: 512, tg: 128, reps: 5 });
+  if (form.llamaBench && opts.llamaCpp !== false) steps.push({ kind: 'llama-bench', pp: 512, tg: 128, reps: 5 });
   return { scenario: { profile: 'custom', seed, steps }, invalid };
 }
 
@@ -291,9 +402,11 @@ export function formFromScenario(s: Scenario | undefined): ScenarioForm {
       form.reps = String(step.reps);
     } else if (step.kind === 'concurrency') {
       form.concurrency = showUsers(step.levels);
+      form.concurrencyExact = usersExact(step.levels);
       form.requestsPerWorker = String(step.requestsPerWorker);
     } else if (step.kind === 'sessions') {
       form.sessions = showUsers(step.levels);
+      form.sessionsExact = usersExact(step.levels);
       form.sessionsDepth = step.depth > 0 ? String(step.depth) : '';
       form.sessionsTurns = String(step.turns);
     } else if (step.kind === 'llama-bench') form.llamaBench = true;

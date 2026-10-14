@@ -15,7 +15,7 @@ describe('settings of a program', () => {
     renderUi(<CommandSettingsFields run={run} form={{ ...EMPTY_PARAMS_FORM, yarnTarget: '65536', contextSize: '' }} invalid={['contextSize']} onForm={onForm} />);
     const ctx = screen.getByLabelText('Contesto (token)') as HTMLInputElement;
     expect(ctx.value).toBe('65536');
-    expect(screen.getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeTruthy();
+    expect(screen.getByText('Valore non valido: correggilo per poter avviare.')).toBeTruthy();
     await userEvent.type(ctx, '1');
     expect(onForm).toHaveBeenLastCalledWith({ contextSize: '655361', maxModelLen: '', yarnTarget: '', yarnOriginal: '' });
   });

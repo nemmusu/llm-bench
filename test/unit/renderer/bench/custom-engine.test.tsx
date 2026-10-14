@@ -93,7 +93,7 @@ describe('Benchmark with custom engines', () => {
     await choose('Tipo di cache KV', 'fp8');
     await userEvent.type(within(section).getByLabelText('Contesto (token)'), '8192');
     await userEvent.type(within(section).getByLabelText('Slot paralleli'), 'x');
-    expect(within(section).getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeTruthy();
+    expect(within(section).getByText('Valore non valido: correggilo per poter avviare.')).toBeTruthy();
     await userEvent.clear(within(section).getByLabelText('Slot paralleli'));
     await userEvent.type(within(section).getByLabelText('Argomenti extra'), '--verbose');
     await userEvent.type(within(section).getByLabelText('Variabili d’ambiente'), 'A=1');

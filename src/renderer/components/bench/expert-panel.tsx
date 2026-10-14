@@ -1,21 +1,23 @@
 import { FolderOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { isDockerKind, type ApiFlavor, type EngineKind } from '../../../contract/engines';
-import type { CommandRun } from '../../../contract/custom-engines';
+import type { CommandRun, MissingFlag } from '../../../contract/custom-engines';
+import { engineBaseOf, isDockerKind, type EngineKind, type LaunchParams, type NinferParams } from '../../../contract/engines';
 import { argGroups, mergeRecipeParams, type RecipePatch } from '../../../contract/recipes';
 import { useI18n } from '../../i18n';
+import { cn } from '../../lib/cn';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Field, Input, Textarea } from '../ui/input';
-import { Select } from '../ui/select';
-import { CommandExpertSection } from '../engines/command-settings';
-import { YarnChoice } from '../recipes/yarn-choice';
+import { SegmentedControl } from '../ui/segmented-control';
 import { depthLabel } from '../tune/tune-format';
 import type { EngineField, EngineForm } from './engine-form';
 import { parseArgs, parseEnv, parseInteger, type ParamsField, type ParamsForm, type ScenarioField, type ScenarioForm } from './expert-form';
-import { kvCacheOptions } from './kv-cache-options';
-import { engineFamily } from './model-options';
+import { CommandExpertSection } from '../engines/command-settings';
+import { ExternalFields } from './external-fields';
+import type { LaunchBase } from './launch-fields';
+import { LaunchFields } from './launch-fields-panel';
+import type { NinferSupport } from './ninfer-support';
 
 export interface ExpertPanelProps {
   engine: EngineKind;
@@ -37,6 +39,12 @@ export interface ExpertPanelProps {
   recipe?: { name: string; patch: RecipePatch | undefined } | undefined;
   /** A custom engine is chosen: its executable / image / command are set on the Engines page. */
   customEngine?: string | undefined;
+  /** The flags the chosen build lacks (a fork's check): those fields are disabled with the reason. */
+  missing?: readonly MissingFlag[] | undefined;
+  /** NInfer: what the model and build take. */
+  ninfer?: NinferSupport | undefined;
+  /** NInfer: the settings chosen in "Impostazioni di NInfer" (the empty fields take their values). */
+  ninferPreset?: { name: string; params: Pick<LaunchParams, 'contextSize' | 'parallel'> & { ninfer: NinferParams } } | undefined;
   /** A program with an OpenAI API is chosen: only the settings its commands take (engines/command-settings.tsx). */
   command?: { name: string; run: CommandRun } | undefined;
   /** The -ctk values a llama.cpp fork lists (its check): its own types join the KV cache choices. */
@@ -51,27 +59,21 @@ interface TextProps {
   hint?: ReactNode;
   invalid?: boolean;
   mono?: boolean;
-  type?: 'text' | 'password' | 'url';
-  inputMode?: 'numeric' | 'decimal' | 'text';
-  disabled?: boolean;
 }
 
-function Text({ label, value, onChange, placeholder, hint, invalid, mono, type = 'text', inputMode, disabled }: TextProps) {
+function Text({ label, value, onChange, placeholder, hint, invalid, mono }: TextProps) {
   const { t } = useI18n();
   return (
     <Field label={label} hint={invalid ? <span className="text-danger-text">{t('benchmark.expert.invalid')}</span> : hint}>
       {({ id, describedBy }) => (
         <Input
           id={id}
-          type={type}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           className={mono ? 'font-mono text-xs' : 'tabular-nums'}
-          {...(inputMode ? { inputMode } : {})}
-          {...(disabled ? { disabled } : {})}
           autoComplete="off"
           spellCheck={false}
         />
@@ -140,29 +142,19 @@ export function ExpertPanel(p: ExpertPanelProps) {
   const recipe = p.recipe?.patch ? { name: p.recipe.name, patch: p.recipe.patch } : undefined;
   const recipeCtx = recipe?.patch.params.contextSize ?? recipe?.patch.params.maxModelLen;
   const yarnOn = p.params.yarnTarget.trim() !== '';
-  /** The context field: the recipe's value as its placeholder, and a line when the user's replaces it. */
-  const ctxField = (field: 'contextSize' | 'maxModelLen', label: string) => {
-    const typed = parseInteger(p.params[field]);
-    const hint = recipe === undefined || recipeCtx === undefined || yarnOn ? undefined : typed !== null && typed !== recipeCtx ? t('recipes.expert.replaced', { value: integer(recipeCtx) }) : t('recipes.expert.fromRecipe', { name: recipe.name });
-    return (
-      <Text
-        label={label}
-        value={yarnOn ? '' : p.params[field]}
-        onChange={(v) => p.onParams({ [field]: v })}
-        placeholder={yarnOn ? `${integer(Number(p.params.yarnTarget))} · YaRN` : recipeCtx !== undefined ? t('recipes.expert.recipeValue', { value: integer(recipeCtx) }) : t('common.auto')}
-        invalid={bad(field)}
-        inputMode="numeric"
-        disabled={yarnOn}
-        {...(hint ? { hint } : {})}
-      />
-    );
-  };
-  const family = engineFamily(p.engine);
+  const base = engineBaseOf(p.engine);
   const bad = (f: ParamsField) => p.paramsInvalid.includes(f);
-  const num = (field: ParamsField & keyof ParamsForm, label: string, placeholder: string) => (
-    <Text label={label} value={p.params[field] as string} onChange={(v) => p.onParams({ [field]: v })} placeholder={placeholder} invalid={bad(field)} inputMode="numeric" />
-  );
-  const sc = (field: Exclude<ScenarioField, 'llamaBench'>, label: string, placeholder: string, hint?: string) => (
+  // The context field: the recipe's value as its placeholder, and a line when the user's replaces it.
+  const ctxText = base === 'vllm' || base === 'sglang' ? p.params.maxModelLen : p.params.contextSize;
+  const typedCtx = parseInteger(ctxText);
+  const context =
+    recipe !== undefined && recipeCtx !== undefined && !yarnOn
+      ? {
+          placeholder: t('recipes.expert.recipeValue', { value: integer(recipeCtx) }),
+          hint: typedCtx !== null && typedCtx !== recipeCtx ? t('recipes.expert.replaced', { value: integer(recipeCtx) }) : t('recipes.expert.fromRecipe', { name: recipe.name }),
+        }
+      : undefined;
+  const sc = (field: Exclude<ScenarioField, 'llamaBench' | 'concurrencyExact' | 'sessionsExact'>, label: string, placeholder: string, hint?: string) => (
     <Text
       label={label}
       value={p.scenario[field]}
@@ -179,115 +171,34 @@ export function ExpertPanel(p: ExpertPanelProps) {
         <h2 className="text-md font-semibold tracking-[-0.01em]">{t('benchmark.expert.title')}</h2>
         <p className="text-sm text-fg-2">{t('benchmark.expert.description')}</p>
       </div>
-      <div className="grid gap-x-8 gap-y-6 p-card lg:grid-cols-2">
+      {/* Side by side only when there is a custom plan to fill; otherwise the settings take the whole width. */}
+      <div className={cn('grid gap-x-8 gap-y-6 p-card', p.custom && '2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
         {p.command ? (
           <CommandExpertSection {...p.command} params={p.params} invalid={p.paramsInvalid} onParams={p.onParams} />
-        ) : family === 'external' ? (
+        ) : p.engine === 'external' ? (
           <Section title={t('benchmark.expert.sectionEndpoint')}>
-            <Text
-              label={t('benchmark.expert.baseUrl')}
-              value={p.engineForm.baseUrl}
-              onChange={(v) => p.onEngine({ baseUrl: v })}
-              placeholder="http://127.0.0.1:8080"
-              hint={t('benchmark.expert.baseUrlHint')}
-              invalid={p.engineInvalid.includes('baseUrl') && p.engineForm.baseUrl !== ''}
-              type="url"
-              mono
-            />
-            <Text
-              label={t('benchmark.expert.modelName')}
-              value={p.engineForm.modelName}
-              onChange={(v) => p.onEngine({ modelName: v })}
-              placeholder="qwen3-8b"
-              hint={t('benchmark.expert.modelNameHint')}
-              mono
-            />
-            <Text
-              label={t('benchmark.expert.apiKey')}
-              value={p.engineForm.apiKey}
-              onChange={(v) => p.onEngine({ apiKey: v })}
-              hint={t('benchmark.expert.apiKeyHint')}
-              type="password"
-              mono
-            />
-            <Field label={t('benchmark.expert.flavor')} hint={t('benchmark.expert.flavorHint')}>
-              {({ id, describedBy }) => (
-                <Select<ApiFlavor>
-                  id={id}
-                  // The field has a hint, so it is always described.
-                  aria-describedby={describedBy!}
-                  value={p.engineForm.flavor}
-                  onValueChange={(v) => p.onEngine({ flavor: v })}
-                  options={[
-                    { value: 'openai', label: t('benchmark.expert.flavors.openai') },
-                    { value: 'llamacpp', label: 'llama.cpp' },
-                    { value: 'vllm', label: 'vLLM' },
-                  ]}
-                />
-              )}
-            </Field>
+            <ExternalFields engineForm={p.engineForm} engineInvalid={p.engineInvalid} onEngine={p.onEngine} />
+          </Section>
+        ) : p.engine === 'command' ? (
+          // A program of the user's own: its command template says what it takes (set on the Engines page).
+          <Section title={t('benchmark.expert.sectionLaunch')}>
+            {p.customEngine !== undefined && <p className="text-sm text-fg-2">{t('engines.custom.expertNote', { name: p.customEngine })}</p>}
           </Section>
         ) : (
           <Section title={t('benchmark.expert.sectionLaunch')}>
-            <div className="grid grid-cols-2 gap-4">
-              {family === 'llamacpp' ? (
-                <>
-                  {ctxField('contextSize', t('benchmark.expert.ctx'))}
-                  {num('gpuLayers', t('benchmark.expert.ngl'), t('benchmark.expert.nglAll'))}
-                  <Field label={t('benchmark.expert.flashAttention')}>
-                    {({ id }) => (
-                      <Select<ParamsForm['flashAttention']>
-                        id={id}
-                        value={p.params.flashAttention}
-                        onValueChange={(v) => p.onParams({ flashAttention: v })}
-                        options={[
-                          { value: 'default', label: t('common.auto') },
-                          { value: 'on', label: t('common.on') },
-                          { value: 'off', label: t('common.off') },
-                        ]}
-                      />
-                    )}
-                  </Field>
-                  <Field label={t('benchmark.expert.kvCache')}>
-                    {({ id }) => (
-                      <Select<ParamsForm['kvCacheType']>
-                        id={id}
-                        value={p.params.kvCacheType}
-                        onValueChange={(v) => p.onParams({ kvCacheType: v })}
-                        options={kvCacheOptions(p.kvCacheTypes, p.params.kvCacheType, f)}
-                      />
-                    )}
-                  </Field>
-                  {num('batchSize', t('benchmark.expert.batch'), '2048')}
-                  {num('ubatchSize', t('benchmark.expert.ubatch'), '512')}
-                  {num('threads', t('benchmark.expert.threads'), t('common.auto'))}
-                  {num('parallel', t('benchmark.expert.parallel'), t('common.auto'))}
-                </>
-              ) : (
-                <>
-                  {ctxField('maxModelLen', t('benchmark.expert.maxModelLen'))}
-                  <Text
-                    label={t('benchmark.expert.gpuMemory')}
-                    value={p.params.gpuMemoryUtilization}
-                    onChange={(v) => p.onParams({ gpuMemoryUtilization: v })}
-                    placeholder="0,90"
-                    hint={t('benchmark.expert.gpuMemoryHint')}
-                    invalid={bad('gpuMemoryUtilization')}
-                    inputMode="decimal"
-                  />
-                  {num('parallel', t('benchmark.expert.maxSeqs'), t('common.auto'))}
-                  <Text label={t('benchmark.expert.dtype')} value={p.params.dtype} onChange={(v) => p.onParams({ dtype: v })} placeholder="auto" mono />
-                  <Text
-                    label={t('benchmark.expert.quantization')}
-                    value={p.params.quantization}
-                    onChange={(v) => p.onParams({ quantization: v })}
-                    placeholder={t('common.auto')}
-                    mono
-                  />
-                </>
-              )}
-            </div>
-            <YarnChoice value={p.params.yarnTarget} onChange={(yarnTarget) => p.onParams({ yarnTarget, yarnOriginal: '' })} trained={parseInteger(p.params.yarnOriginal) ?? p.trainedContext} allowOff invalid={bad('yarnTarget')} title />
+            <LaunchFields
+              base={base as LaunchBase}
+              form={p.params}
+              invalid={p.paramsInvalid}
+              onForm={p.onParams}
+              use="test"
+              missing={p.missing}
+              ninfer={p.ninfer}
+              kvCacheTypes={p.kvCacheTypes}
+              preset={p.ninferPreset}
+              context={context}
+              trainedContext={p.trainedContext}
+            />
             {recipe?.patch.params.ropeScaling && !yarnOn && (
               <p className="-mt-2 text-xs text-accent-text">
                 {t('recipes.expert.fromRecipe', { name: recipe.name })}: {recipeCtx !== undefined ? t('recipes.parts.yarn', { ctx: depthLabel(recipeCtx, f) }) : t('recipes.parts.ropeOnly', { factor: f.number(recipe.patch.params.ropeScaling.factor, 2) })}
@@ -358,35 +269,37 @@ export function ExpertPanel(p: ExpertPanelProps) {
 
         <Section title={t('benchmark.expert.sectionTest')}>
           {p.custom ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               {sc('coldReps', t('benchmark.expert.coldReps'), '1')}
               {sc('warmReps', t('benchmark.expert.warmReps'), '3')}
               {sc('promptTokens', t('benchmark.expert.promptLengths'), '512, 4096', t('benchmark.expert.listHint'))}
               {sc('outputTokens', t('benchmark.expert.outputTokens'), '256')}
               {sc('warmup', t('benchmark.expert.warmup'), '1')}
               {sc('reps', t('benchmark.expert.repetitions'), '5')}
-              {sc('concurrency', t('benchmark.expert.concurrency'), '4', t('benchmark.expert.usersHint'))}
+              <UsersField which="concurrency" scenario={p.scenario} invalid={p.scenarioInvalid.includes('concurrency')} onScenario={p.onScenario} />
               {sc('requestsPerWorker', t('benchmark.expert.requestsPerWorker'), '4')}
-              <div className="col-span-2">{sc('sessions', t('benchmark.expert.sessions'), '2', t('benchmark.expert.sessionsHint'))}</div>
+              <div className="sm:col-span-2">
+                <UsersField which="sessions" scenario={p.scenario} invalid={p.scenarioInvalid.includes('sessions')} onScenario={p.onScenario} />
+              </div>
               {sc('sessionsDepth', t('benchmark.expert.sessionsDepth'), t('common.auto'), t('benchmark.expert.sessionsDepthHint'))}
               {sc('sessionsTurns', t('benchmark.expert.sessionsTurns'), '4', t('benchmark.expert.sessionsTurnsHint'))}
-              <label className="col-span-2 flex items-center gap-2.5 text-sm font-medium text-fg">
-                <Checkbox checked={p.scenario.llamaBench} onCheckedChange={(v) => p.onScenario({ llamaBench: v === true })} />
-                {t('benchmark.expert.llamaBench')}
-              </label>
+              {/* llama-bench is llama.cpp's own tool: only offered there. */}
+              {base === 'llamacpp' && (
+                <label className="flex items-center gap-2.5 text-sm font-medium text-fg sm:col-span-2">
+                  <Checkbox checked={p.scenario.llamaBench} onCheckedChange={(v) => p.onScenario({ llamaBench: v === true })} />
+                  {t('benchmark.expert.llamaBench')}
+                </label>
+              )}
             </div>
           ) : (
             <p className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm text-fg-2">{t('benchmark.expert.customHint')}</p>
           )}
         </Section>
 
-        {family !== 'external' && (
-          <>
+        {base !== 'external' && (
+          <div className={cn('grid gap-x-8 gap-y-6 lg:grid-cols-2', p.custom && '2xl:col-span-2')}>
             {recipe && <RecipeExtras recipe={recipe} params={p.params} />}
-            <Field
-              label={t('benchmark.expert.extraArgs')}
-              hint={t('benchmark.expert.extraArgsHint')}
-            >
+            <Field label={t('benchmark.expert.extraArgs')} hint={t('benchmark.expert.extraArgsHint')}>
               {({ id, describedBy }) => (
                 <Textarea
                   id={id}
@@ -416,9 +329,46 @@ export function ExpertPanel(p: ExpertPanelProps) {
                 />
               )}
             </Field>
-          </>
+          </div>
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * "Utenti contemporanei" / "Conversazioni lunghe insieme": a number, and whether it means every step from 1
+ * up to it or only that many at once ("Solo 2 utenti insieme"); a list (1, 4, 8) is taken as written.
+ */
+function UsersField({ which, scenario, invalid, onScenario }: { which: 'concurrency' | 'sessions'; scenario: ScenarioForm; invalid: boolean; onScenario: (patch: Partial<ScenarioForm>) => void }) {
+  const { t } = useI18n();
+  const text = scenario[which];
+  const exactKey = which === 'concurrency' ? 'concurrencyExact' : 'sessionsExact';
+  const n = parseInteger(text.trim());
+  const label = t(which === 'concurrency' ? 'benchmark.expert.concurrency' : 'benchmark.expert.sessions');
+  return (
+    <div className="flex flex-col gap-2">
+      <Text
+        label={label}
+        value={text}
+        onChange={(v) => onScenario({ [which]: v })}
+        placeholder={which === 'concurrency' ? '4' : '2'}
+        invalid={invalid}
+        hint={t(which === 'concurrency' ? 'benchmark.expert.usersHint' : 'benchmark.expert.sessionsHint')}
+      />
+      {/* One number above 1: from 1 up to it, or only that many at once. */}
+      {n !== null && n > 1 && (
+        <SegmentedControl<'upTo' | 'exact'>
+          size="sm"
+          label={t(`benchmark.expert.usersMode.${which}`)}
+          value={scenario[exactKey] ? 'exact' : 'upTo'}
+          onValueChange={(v) => onScenario({ [exactKey]: v === 'exact' })}
+          options={[
+            { value: 'upTo', label: t('benchmark.expert.usersUpTo', { n }) },
+            { value: 'exact', label: t(which === 'concurrency' ? 'benchmark.expert.usersExact' : 'benchmark.expert.sessionsExact', { n }) },
+          ]}
+        />
+      )}
+    </div>
   );
 }

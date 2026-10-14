@@ -3,8 +3,8 @@ import { launchParamsSchema, type LaunchParams, type NinferParams } from '../../
 import type { NinferPreset, NinferPresetId } from '../../../contract/ninfer';
 import type { Formatters } from '../../i18n';
 
-/** The user's pick: a built-in preset, the settings of the result a preset came from ('run'), or LLM Bench's own choice. */
-export type NinferChoice = NinferPresetId | 'run' | 'auto';
+/** The user's pick: a built-in preset, the settings of the result a preset came from ('run'), LLM Bench's own choice ('auto'), or the user's own in the expert fields ('custom'). */
+export type NinferChoice = NinferPresetId | 'run' | 'auto' | 'custom';
 
 /** What a choice sets on the launch: context, users and NInfer's own settings. */
 export type NinferOverlay = Pick<LaunchParams, 'contextSize' | 'parallel'> & { ninfer: NinferParams };

@@ -70,13 +70,13 @@ test('a llama.cpp fork: added with its check, the flag it lacks said in words, t
     await scan(page, 'custom engines');
     await card.getByRole('button', { name: 'Usa nel Benchmark' }).click();
 
-    // The Benchmark: the fork is chosen, nothing to install; ubatch asked in expert mode is left out and said.
+    // The Benchmark: the fork is chosen, nothing to install; the setting it lacks (ubatch) cannot be asked, and says why.
     await expect(h1(page, 'Benchmark')).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Cambia motore' })).toContainText('llama.cpp · PrismML');
     await page.getByRole('switch', { name: 'Modalità esperto' }).click();
     await expect(page.getByText('Usi il motore personalizzato PrismML: eseguibile, immagine e argomenti si cambiano nella pagina Motori.')).toBeVisible();
-    await page.getByLabel('Micro-batch').fill('1024');
-    await expect(page.getByText('Il motore non conosce alcune impostazioni').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel('Micro-batch')).toBeDisabled();
+    await expect(page.getByText('Questa versione non ha -ub: vale il suo valore predefinito.')).toBeVisible();
     // Expert mode shows the exact command already.
     const command = page.getByRole('region', { name: 'Anteprima comando' });
     await expect(command).toContainText('--ternary-kernels on');

@@ -6,7 +6,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import type { EngineKind } from '../../../contract/engines';
 import type { CuratedModel } from '../../../contract/views';
-import { engineFamily, type ModelOption } from '../bench/model-options';
+import { engineRunsFormat } from '../../../contract/ninfer';
+import type { ModelOption } from '../bench/model-options';
 import { takeDraft, type BenchDraft, type DraftHubModel, type PresetProvenance } from '../bench/run-context';
 
 export interface PresetDraft {
@@ -49,7 +50,8 @@ export function usePresetDraft(): PresetDraft {
   // Stable for the page's memoized model list: the draft never changes once read.
   const withModel = useCallback(
     (options: ModelOption[], engine: EngineKind) => {
-      if (!hub || engineFamily(engine) !== (hub.file === undefined ? 'vllm' : 'llamacpp') || options.some((o) => sameHub(o, hub))) return options;
+      // A GGUF for an engine that reads GGUF, a safetensors repo for one that reads those (never NInfer, nor a command engine: no downloads).
+      if (!hub || engine === 'command' || !engineRunsFormat(engine, hub.file === undefined ? 'safetensors' : 'gguf') || options.some((o) => sameHub(o, hub))) return options;
       return [...options, hubOption(hub)];
     },
     [hub],

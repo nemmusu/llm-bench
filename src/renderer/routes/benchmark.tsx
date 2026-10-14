@@ -5,7 +5,11 @@ import { toast } from 'sonner';
 import type { RunPlan, StartRunRequest } from '../../contract/api';
 import type { Settings } from '../../contract/settings';
 import { commandTuneProblem, customEngineConfigOf, customEngineKindOf } from '../../contract/custom-engines';
-import type { EngineKind } from '../../contract/engines';
+import { customKvCacheTypes } from '../components/bench/kv-cache-options';
+import { commandFields } from '../components/bench/launch-fields';
+import { engineBaseOf, launchParamsSchema, type EngineKind, type LaunchParams } from '../../contract/engines';
+import { TunePresetList, useTunePresets } from '../components/presets/tune-presets';
+import { serverNinfer } from '../components/engines/ninfer-format';
 import { customEngineLabel, customEngineWhere } from '../components/engines/custom-engine-check';
 import { EngineSuggestion, unreadableFor } from '../components/engines/engine-suggestion';
 import { useCustomEngines } from '../lib/queries-engines';
@@ -13,8 +17,12 @@ import type { FitEstimate } from '../../contract/models';
 import type { Profile } from '../../contract/results';
 import { ENGINE_ORDER, engineConfigOf, engineFormOf, savableEngine, type EngineForm } from '../components/bench/engine-form';
 import { ExpertPanel } from '../components/bench/expert-panel';
-import { customKvCacheTypes } from '../components/bench/kv-cache-options';
-import { formFromParams, formFromScenario, hasCustomParams, paramsFromForm, scenarioFromForm, type ParamsForm, type ScenarioForm } from '../components/bench/expert-form';
+import { formFromParams, formFromScenario, hasCustomParams, paramsFromForm, scenarioFromForm, switchesOnly, type ParamsForm, type ScenarioForm } from '../components/bench/expert-form';
+import { ModelSwitches, abilitiesOf, withSwitches } from '../components/bench/model-switches';
+import { clearNinferFields, ninferPickOf, overNinfer } from '../components/bench/ninfer-choice';
+import { ninferSupportOf, presetsWithin } from '../components/bench/ninfer-support';
+import { useNinferBuild } from '../lib/queries-ninfer';
+import { ninferParamsText } from '../../contract/ninfer';
 import { MIB_PER_GB, shortGpuName } from '../components/bench/format';
 import { BenchModelPicker } from '../components/bench/model-picker';
 import { initialModelKey, modelOptions, newestTried, requestModel, savedModelId, triedHere, type ModelOption } from '../components/bench/model-options';
@@ -27,7 +35,7 @@ import { useModelRecipe } from '../components/recipes/use-model-recipe';
 import { guessNeeds, needsFromPlan } from '../components/bench/needs';
 import { useStartFlow } from '../components/bench/start-flow';
 import { GpuCard } from '../components/domain/gpu-card';
-import { serverNinfer, withNinferPreset, type NinferChoice } from '../components/engines/ninfer-format';
+import type { NinferChoice } from '../components/engines/ninfer-format';
 import { NinferPresetPicker } from '../components/engines/ninfer-presets';
 import { NinferAllCallout, useNinferAllNeed, withNinferAll } from '../components/engines/ninfer-all-note';
 import { isNinferKind, ninferPresetsFor } from '../../contract/ninfer';
@@ -68,7 +76,7 @@ function ChoiceCard({ step, title, help, badge, children, footer }: { step: numb
   return (
     <Card className="flex min-w-0 flex-col">
       <div className="flex items-center gap-2.5 px-card pt-card">
-        <span aria-hidden className="grid size-6 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">
+        <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">
           {step}
         </span>
         <h2 className="text-md font-semibold tracking-[-0.01em]">{title}</h2>
@@ -226,15 +234,25 @@ function BenchmarkScreen() {
   // A .ninfer model only NInfer-all reads (its manifest, else its name, else what a run could not read): NInfer-all runs it.
   const localIdentity = option?.source === 'local' ? option.local.identity : undefined;
   const ninferAll = useNinferAllNeed(effEngine, effCustom, localIdentity ? { ...localIdentity, unreadable: unreadableFor(runs.data, localIdentity.weakKey) } : undefined);
-  // NInfer: the built-in settings of a .ninfer model (its model card's, NInfer's README quick start, one tested on an RTX 5090), those the build that runs it has.
+  const engineBase = engineBaseOf(effEngine);
+  // "Preparati da LLM Bench": the latest tune of this model with this engine here.
+  const tunePresets = useTunePresets(localIdentity, effEngine, gpu?.name);
+  // A custom engine's check: the flags its build lacks, and (a NInfer variant) the KV types it lists.
+  const customCheck = effCustom ? customInfo.data?.find((i) => i.engine.id === effCustom.id)?.check : undefined;
+  const officialNinfer = useNinferBuild('official', isNinferKind(effEngine) && !effCustom && !ninferAll.needed);
+  const kvDtypes = customCheck?.kvDtypes ?? (ninferAll.needed ? ninferAll.kvDtypes : officialNinfer?.kvDtypes);
+  // What NInfer can do with this model and build (KV types, prediction heads, vision, the proposal head).
+  const ninferSupport = ninferSupportOf(localIdentity, kvDtypes);
+  const abilities = abilitiesOf(engineBase, option?.source === 'local' ? option.local : undefined);
+  // NInfer: the built-in settings of a .ninfer model (its model card's, NInfer's README quick start, one tested on an RTX 5090), as this model and build run them.
   const ninferPresets =
     isNinferKind(effEngine) && localIdentity
-      ? ninferPresetsFor({ name: localIdentity.facts?.name, label: localIdentity.displayName, repo: localIdentity.repo, file: localIdentity.file }, ninferAll.kvDtypes)
+      ? presetsWithin(ninferPresetsFor({ name: localIdentity.facts?.name, label: localIdentity.displayName, repo: localIdentity.repo, file: localIdentity.file }, kvDtypes), ninferSupport)
       : [];
   // A variant of NInfer (NInfer-all among them) runs its model card's settings by default (they may need its own KV type); NInfer itself its recommended ones.
-  const ninferChoice: NinferChoice = ninferPicked ?? ((effCustom?.base === 'ninfer' || ninferAll.needed) && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended');
-  const ninferRun = ninferChoice === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
-  const ninferPreset = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChoice)?.params ?? ninferRun) : undefined;
+  const ninferChosen: NinferChoice = ninferPicked ?? ((effCustom?.base === 'ninfer' || ninferAll.needed) && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended');
+  const ninferRun = ninferChosen === 'run' && draftNinfer ? { ninfer: draftNinfer } : undefined;
+  const ninferOverlay = ninferPresets.length > 0 ? (ninferPresets.find((p) => p.id === ninferChosen)?.params ?? ninferRun) : undefined;
 
   const plainEngine = engineConfigOf(effEngine, engineForm, expert);
   // A custom engine brings its own executable, image or command: the request only names it.
@@ -245,15 +263,24 @@ function BenchmarkScreen() {
   const recipe = useModelRecipe(recipeTarget);
   const [recipeOn, setRecipeOn] = useState(true);
   const trainedContext = option?.source === 'local' ? option.local.identity.facts?.contextLength : undefined;
-  const parsedParams = paramsFromForm(paramsForm, { trainedContext });
-  const parsedScenario = scenarioFromForm(scenarioForm);
-  const sendParams = expert && effEngine !== 'external' && hasCustomParams(parsedParams.params);
-  const runParams = withNinferPreset(sendParams ? parsedParams.params : undefined, ninferPreset);
+  // Only the fields this engine takes (launch-fields.ts): what the panel shows is what is sent.
+  // A program with an OpenAI API: the settings its commands take.
+  const formFields = commandRun ? commandFields(commandRun) : undefined;
+  const parsedParams = paramsFromForm(paramsForm, { trainedContext, base: engineBase, fields: formFields });
+  const parsedScenario = scenarioFromForm(scenarioForm, 42, { llamaCpp: engineBase === 'llamacpp' });
+  // Expert mode sends every field; otherwise only the image and reasoning switches.
+  const formParams = expert ? parsedParams.params : paramsFromForm(switchesOnly(paramsForm), { base: engineBase }).params;
+  const sendParams = effEngine !== 'external' && hasCustomParams(formParams);
+  // NInfer: the pick's settings, the fields over them, and the two switches said explicitly.
+  const ninferMerged = engineBase === 'ninfer' ? overNinfer(ninferOverlay, sendParams ? formParams : undefined) : sendParams ? formParams : undefined;
+  const runParams = engineBase === 'ninfer' && option ? withSwitches(ninferMerged ?? launchParamsSchema.parse({}), engineBase, paramsForm, abilities, ninferOverlay?.ninfer) : ninferMerged;
+  // The card says the pick the settings still are, or "Personalizzate" once a field differs.
+  const ninferChoice = ninferPickOf({ chosen: ninferChosen, form: sendParams ? formParams : undefined, overlay: ninferOverlay, presets: ninferPresets, run: draftNinfer, abilities });
   const external = effEngine === 'external';
   const model: StartRunRequest['model'] | undefined = external ? (engineForm.modelName.trim() ? { name: engineForm.modelName.trim() } : {}) : option ? requestModel(option) : undefined;
   const valid =
     engineInvalid.length === 0 &&
-    !(sendParams && parsedParams.invalid.length) &&
+    !(expert && effEngine !== 'external' && parsedParams.invalid.length) &&
     !(custom && (parsedScenario.invalid.length > 0 || parsedScenario.scenario.steps.length === 0)) &&
     (external || option !== undefined);
   const base: StartRunRequest = {
@@ -315,6 +342,15 @@ function BenchmarkScreen() {
    * "Usa cache q4_0" / "Contesto massimo che entra" of a "does not fit" warning: into the advanced
    * parameters (turned on: only they are sent), the preview follows.
    */
+  /** "Preparati da LLM Bench": the search's settings into the advanced parameters (shown), the switches kept. */
+  const applyTunePreset = (params: LaunchParams) => {
+    setParamsForm((cur) => ({ ...formFromParams(serverNinfer(params)), vision: cur.vision, reasoning: cur.reasoning, ninferVision: cur.ninferVision, ninferThinking: cur.ninferThinking }));
+    // NInfer: the search's own settings, not a preset under them.
+    setNinferChoice('auto');
+    if (!expert) update({ expertMode: true });
+    toast.success(t('presets.tune.applied'));
+  };
+
   const applyFix = (patch: FitPatch) => {
     setParamsForm((cur) => ({
       ...cur,
@@ -334,7 +370,7 @@ function BenchmarkScreen() {
     openServer({
       engine: base.engine,
       model: base.model,
-      ...(base.params ? { params: serverNinfer(base.params) } : {}),
+      ...(base.params ? { params: base.params } : {}),
       ...(option?.source === 'curated' && option.preset && draft?.hub ? { hub: draft.hub } : {}),
       // The model's recipe stays off when the chip turned it off here.
       ...(recipe.recipe && !recipeOn ? { recipeOff: true } : {}),
@@ -403,8 +439,8 @@ function BenchmarkScreen() {
 
   return (
     <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="wide">
-      <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-w-0 flex-col gap-section">
+      <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-[auto_1fr]">
+        <div className="order-1 flex min-w-0 flex-col gap-section xl:order-none xl:col-start-1 xl:row-span-2 xl:row-start-1">
           <PresetBanner preset={preset} />
           {/* Hero: the one obvious thing to do. */}
           <Card className="hero-wash relative overflow-hidden">
@@ -514,7 +550,7 @@ function BenchmarkScreen() {
               ) : modelsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : option ? (
-                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={sendParams ? parsedParams.params : undefined} planFit={currentPlan?.fit} />
+                <SelectedModel option={option} engine={effEngine} onOpen={() => setPickerOpen(true)} params={runParams} planFit={currentPlan?.fit} />
               ) : (
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-sm text-fg-2">{t('benchmark.noModelBody')}</p>
@@ -531,8 +567,9 @@ function BenchmarkScreen() {
                 value={effProfile}
                 onValueChange={setProfile}
                 layout="list"
+                // A program of the user's own has no settings to search.
                 // A program of the user's own without {ctx} has no context to search.
-                options={[...PROFILES.filter((p) => p !== 'tune' || !noTune),...(expert ? (['custom'] as const) : [])].map((p) => ({
+                options={[...PROFILES.filter((p) => p !== 'tune' || !noTune), ...(expert ? (['custom'] as const) : [])].map((p) => ({
                   value: p,
                   label: t(`benchmark.profiles.${p}`),
                   // The chosen one with the estimate for this model and card, the same as in the summary above
@@ -575,18 +612,39 @@ function BenchmarkScreen() {
             }}
           />
           {ninferAll.needed && !ninferAll.ready && <NinferAllCallout />}
-          {ninferPresets.length > 0 && <NinferPresetPicker presets={ninferPresets} run={draftNinfer} value={ninferChoice} onChange={setNinferChoice} />}
-
-          <div className="flex items-center gap-3 self-start px-1 py-1">
-            <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
-            <div className="flex flex-col">
-              <label htmlFor="expert-switch" className="cursor-pointer text-sm font-semibold text-fg">
-                {t('benchmark.expert.label')}
-              </label>
-              <span id="expert-hint" className="text-xs text-fg-3">
-                {t('benchmark.expert.hint')}
-              </span>
+          {tunePresets && (
+            <Card className="p-card">
+              <TunePresetList presets={tunePresets} currentBuild={status?.version} onUse={applyTunePreset} />
+            </Card>
+          )}
+          {ninferPresets.length > 0 && (
+            <NinferPresetPicker
+              presets={ninferPresets}
+              run={draftNinfer}
+              value={ninferChoice}
+              auto={currentPlan?.ninferAuto}
+              custom={ninferParamsText(runParams?.ninfer)}
+              onChange={(v) => {
+                setNinferChoice(v);
+                // A pick replaces every NInfer setting: the fields empty again, showing the pick's values.
+                setParamsForm(clearNinferFields);
+              }}
+            />
+          )}
+          {/* The model's switches (images, reasoning) and expert mode, on one line. */}
+          <div className="flex flex-wrap items-start gap-x-8 gap-y-3 px-1 py-1">
+            <div className="flex items-center gap-3">
+              <Switch id="expert-switch" checked={expert} onCheckedChange={(v) => update({ expertMode: v })} aria-describedby="expert-hint" />
+              <div className="flex flex-col">
+                <label htmlFor="expert-switch" className="cursor-pointer text-sm font-semibold text-fg">
+                  {t('benchmark.expert.label')}
+                </label>
+                <span id="expert-hint" className="text-xs text-fg-3">
+                  {t('benchmark.expert.hint')}
+                </span>
+              </div>
             </div>
+            {option && !external && <ModelSwitches base={engineBase} form={paramsForm} onForm={(p) => setParamsForm((cur) => ({ ...cur, ...p }))} abilities={abilities} preset={ninferOverlay?.ninfer} />}
           </div>
 
           {expert && (
@@ -608,16 +666,31 @@ function BenchmarkScreen() {
               customEngine={effCustom?.name}
               command={commandRun ? { name: effCustom!.name, run: commandRun } : undefined}
               kvCacheTypes={customKvCacheTypes(customInfo.data, effCustom)}
+              missing={customCheck?.missing}
+              ninfer={ninferSupport}
+              ninferPreset={(() => {
+                const picked = ninferPresets.find((p) => p.id === ninferChosen);
+                if (picked) return { name: t(`ninfer.presets.short.${picked.id}`), params: picked.params };
+                return ninferRun ? { name: t('ninfer.presets.runShort'), params: ninferRun } : undefined;
+              })()}
             />
           )}
-
-          <PlanCard plan={planData} loading={planJson !== '' && plan.isFetching} error={planError} needs={needs} expert={expert} onFix={applyFix} />
         </div>
 
-        <section className="flex flex-col gap-section" aria-label={t('benchmark.gpu.title')}>
+        <section className="order-3 flex flex-col gap-section xl:order-none xl:col-start-2 xl:row-start-1" aria-label={t('benchmark.gpu.title')}>
           <GpuCard />
           <RecentRuns />
         </section>
+        {/* Beside the settings on a wide window (it follows the scroll), under them otherwise. */}
+        <PlanCard
+          plan={planData}
+          loading={planJson !== '' && plan.isFetching}
+          error={planError}
+          needs={needs}
+          expert={expert}
+          onFix={applyFix}
+          className="order-2 min-w-0 xl:sticky xl:top-6 xl:order-none xl:col-start-2 xl:row-start-2 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto"
+        />
       </div>
 
       <BenchModelPicker

@@ -146,7 +146,7 @@ describe('expert mode with the model’s commands', () => {
     const st = localModel('st', { format: 'safetensors', repo: 'Qwen/Qwen3-8B-FP8', file: undefined, facts: { contextLength: 40_960 } });
     const api = benchApi({ local: [st] }, { onboardingDone: true, expertMode: true, lastEngine: { kind: 'vllm-docker' }, modelRecipes: [recipe({ match: { name: 'qwen3-8b-fp8' }, args: {}, ropeScaling: undefined })] });
     renderApp('/', api);
-    const max = (await screen.findByLabelText('Contesto massimo (token)')) as HTMLInputElement;
+    const max = (await screen.findByLabelText('Contesto per richiesta (token)')) as HTMLInputElement;
     await waitFor(() => expect(max.placeholder).toBe('307.200 dalla ricetta'));
     const box = screen.getByLabelText('Dalla ricetta «Qwen YaRN»');
     expect(within(box).queryByText('Prima dei tuoi argomenti', { exact: false })).toBeNull();

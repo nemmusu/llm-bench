@@ -71,7 +71,7 @@ test('expert mode: custom plan and launch parameters, exact command, settings re
     await page.getByLabel('Caricamenti a freddo').fill('0');
     await page.getByLabel('Caricamenti a caldo').fill('1');
     await page.getByLabel('Lunghezze dei prompt').fill('256, abc');
-    await expect(page.getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeVisible();
+    await expect(page.getByText('Valore non valido: correggilo per poter avviare.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Avvia benchmark' })).toBeDisabled();
     await page.getByLabel('Lunghezze dei prompt').fill('256');
     await page.getByLabel('Token generati').fill('64');

@@ -34,6 +34,8 @@ export interface PlanCardProps {
   expert: boolean;
   /** "Usa cache q4_0" / "Contesto massimo che entra" of a "does not fit" warning. */
   onFix: (patch: FitPatch) => void;
+  /** Placement on the page (the Benchmark puts it beside the settings on a wide window). */
+  className?: string;
 }
 
 const NEED_ICONS = { engine: Box, image: Container, model: Download } as const;
@@ -132,7 +134,7 @@ export function PlanWarnings({ warnings, onFix }: { warnings: RunPlan['warnings'
  * command. It is complete before anything is downloaded: a missing llama.cpp or model already has
  * its final path in the command, marked as prepared before the test.
  */
-export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCardProps) {
+export function PlanCard({ plan, loading, error, needs, expert, onFix, className }: PlanCardProps) {
   const f = useI18n();
   const { t, bytes, duration } = f;
   const [open, setOpen] = useState(expert);
@@ -146,7 +148,7 @@ export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCar
   const pending = plan?.pending ?? [];
   const titleId = useId();
   return (
-    <Card role="region" aria-labelledby={titleId} className="flex flex-col" aria-busy={loading}>
+    <Card role="region" aria-labelledby={titleId} className={cn('@container flex flex-col', className)} aria-busy={loading}>
       <div className="flex items-center gap-2 px-card pt-card">
         <ListChecks aria-hidden className="size-4 text-accent-text" />
         <h2 id={titleId} className="text-md font-semibold tracking-[-0.01em]">
@@ -167,7 +169,7 @@ export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCar
             <Skeleton className="h-5 w-1/2" />
           </div>
         ) : (
-          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+          <dl className="grid gap-x-8 gap-y-3 text-sm @md:grid-cols-2">
             {plan && (
               <div className="flex flex-col gap-1">
                 <dt className="inline-flex items-center gap-1.5 text-xs text-fg-3">
@@ -186,13 +188,13 @@ export function PlanCard({ plan, loading, error, needs, expert, onFix }: PlanCar
               </div>
             )}
             {plan && (
-              <div className="flex flex-col gap-1 sm:col-span-2">
+              <div className="flex flex-col gap-1 @md:col-span-2">
                 <dt className="text-xs text-fg-3">{t('benchmark.plan.steps')}</dt>
                 <dd className="text-fg-2">{scenarioLines(plan.scenario, f).join(' · ')}</dd>
               </div>
             )}
             {needs.length > 0 && (
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <div className="flex flex-col gap-1.5 @md:col-span-2">
                 <dt className="inline-flex items-center gap-1.5 text-xs text-fg-3">
                   <Download aria-hidden className="size-3.5" />
                   {t('benchmark.plan.needs')}

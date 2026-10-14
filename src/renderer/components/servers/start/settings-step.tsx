@@ -10,20 +10,20 @@ import { Bookmark, FlaskConical, Sparkles, Terminal } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import type { ReactNode } from 'react';
 import type { ServerPlan } from '../../../../contract/api';
-import type { CommandRun } from '../../../../contract/custom-engines';
 import { engineBaseOf, type EngineKind } from '../../../../contract/engines';
 import type { ServerPreset } from '../../../../contract/servers';
 import { useI18n } from '../../../i18n';
 import { cn } from '../../../lib/cn';
+import type { CommandRun, MissingFlag } from '../../../../contract/custom-engines';
 import type { ParamsField, ParamsForm } from '../../bench/expert-form';
-import { kvCacheOptions } from '../../bench/kv-cache-options';
-import type { PresetProvenance } from '../../bench/run-context';
+import { LaunchFields } from '../../bench/launch-fields-panel';
 import { CommandSettingsFields } from '../../engines/command-settings';
+import type { NinferSupport } from '../../bench/ninfer-support';
+import type { PresetProvenance } from '../../bench/run-context';
 import { configLabelOf, useConfigLabel } from '../../presets/config-label';
 import { provenanceText, shortDate, tokensShort } from '../../presets/format';
 import { Callout } from '../../ui/callout';
-import { Field, Input, Textarea } from '../../ui/input';
-import { Select } from '../../ui/select';
+import { Field, Textarea } from '../../ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { depthLabel, kvName } from '../../tune/tune-format';
 import type { TestedConfig } from '../server-flow';
@@ -46,6 +46,8 @@ export interface SettingsStepProps {
   presets: readonly ServerPreset[];
   /** An engine's own presets, above the user's (NInfer's picker for a .ninfer model). */
   builtins?: ReactNode;
+  /** "Preparati da LLM Bench" (presets/tune-presets.tsx), under the user's own presets. */
+  fromTune?: ReactNode;
   /** The chosen preset of the user's. */
   preset: string | undefined;
   onPreset: (id: string) => void;
@@ -55,12 +57,20 @@ export interface SettingsStepProps {
   onForm: (patch: Partial<ParamsForm>) => void;
   /** The plan's 'flag_unsupported' warning: the flags a fork does not take. */
   unsupported: { engine: string; flags: string } | undefined;
-  /** "Comandi per questo modello" (the recipes): rendered under the tabs when the model has one. */
-  recipeSlot?: ReactNode;
+  /** The flags the chosen build lacks (a fork's check): those fields are disabled with the reason. */
+  missing?: readonly MissingFlag[] | undefined;
+  /** NInfer: what the model and build take. */
+  ninfer?: NinferSupport | undefined;
+  /** The model's trained context (YaRN). */
+  trainedContext?: number | undefined;
+  /** The image and reasoning switches (model-switches.tsx), above the tabs: they apply to every source. */
+  switches?: ReactNode;
   /** A program with an OpenAI API is chosen: its commands (the settings they take are the only fields). */
   command?: CommandRun | undefined;
   /** The -ctk values a llama.cpp fork lists (its check): its own types join the KV cache choices. */
   kvCacheTypes?: readonly string[] | undefined;
+  /** "Comandi per questo modello" (the recipes): rendered under the tabs when the model has one. */
+  recipeSlot?: ReactNode;
 }
 
 function Choice({ value, title, detail, icon, badge }: { value: string; title: ReactNode; detail?: ReactNode; icon: ReactNode; badge?: ReactNode }) {
@@ -158,33 +168,16 @@ function PresetsTab(p: SettingsStepProps) {
         </RadioGroup.Root>
       )}
       {p.othersCount > 0 && <p className="text-xs text-fg-3">{t('servers.flow.presetsTab.others')}</p>}
+      {p.fromTune && <div className="border-t border-border pt-3">{p.fromTune}</div>}
     </div>
   );
 }
 
-/** The parameters each engine takes, as in the Benchmark page's expert mode. */
+/** The parameters each engine takes, the same fields as the Benchmark page's expert mode (launch-fields-panel.tsx). */
 function CustomTab(p: SettingsStepProps) {
-  const f = useI18n();
-  const { t } = f;
+  const { t } = useI18n();
   const base = engineBaseOf(p.engineKind);
   const bad = (k: ParamsField) => p.invalid.includes(k);
-  const num = (field: 'contextSize' | 'gpuLayers' | 'batchSize' | 'ubatchSize' | 'threads' | 'parallel' | 'maxModelLen' | 'gpuMemoryUtilization', label: string, placeholder: string) => (
-    <Field label={label} hint={bad(field) ? <span className="text-danger-text">{t('benchmark.expert.invalid')}</span> : undefined}>
-      {({ id, describedBy }) => (
-        <Input
-          id={id}
-          aria-describedby={describedBy}
-          aria-invalid={bad(field) || undefined}
-          value={p.form[field]}
-          placeholder={placeholder}
-          inputMode="numeric"
-          onChange={(e) => p.onForm({ [field]: e.target.value })}
-          className="tabular-nums"
-          autoComplete="off"
-        />
-      )}
-    </Field>
-  );
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-fg-2">{t('servers.flow.custom.intro')}</p>
@@ -193,55 +186,11 @@ function CustomTab(p: SettingsStepProps) {
           {t('servers.flow.custom.flagsBody', { flags: p.unsupported.flags })}
         </Callout>
       )}
-      {base === 'llamacpp' && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {num('contextSize', t('benchmark.expert.ctx'), t('common.auto'))}
-          {num('gpuLayers', t('benchmark.expert.ngl'), t('benchmark.expert.nglAll'))}
-          <Field label={t('benchmark.expert.flashAttention')}>
-            {({ id }) => (
-              <Select<ParamsForm['flashAttention']>
-                id={id}
-                value={p.form.flashAttention}
-                onValueChange={(v) => p.onForm({ flashAttention: v })}
-                options={[
-                  { value: 'default', label: t('common.auto') },
-                  { value: 'on', label: t('common.on') },
-                  { value: 'off', label: t('common.off') },
-                ]}
-              />
-            )}
-          </Field>
-          <Field label={t('benchmark.expert.kvCache')}>
-            {({ id }) => (
-              <Select<ParamsForm['kvCacheType']>
-                id={id}
-                value={p.form.kvCacheType}
-                onValueChange={(v) => p.onForm({ kvCacheType: v })}
-                options={kvCacheOptions(p.kvCacheTypes, p.form.kvCacheType, f)}
-              />
-            )}
-          </Field>
-          {num('batchSize', t('benchmark.expert.batch'), '2048')}
-          {num('ubatchSize', t('benchmark.expert.ubatch'), '512')}
-          {num('threads', t('benchmark.expert.threads'), t('common.auto'))}
-          {num('parallel', t('benchmark.expert.parallel'), t('common.auto'))}
-        </div>
-      )}
-      {(base === 'vllm' || base === 'sglang') && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-          {num('maxModelLen', t('benchmark.expert.maxModelLen'), t('common.auto'))}
-          {num('gpuMemoryUtilization', t('benchmark.expert.gpuMemory'), '0,90')}
-          {num('parallel', t('benchmark.expert.maxSeqs'), t('common.auto'))}
-        </div>
+      {base !== 'external' && (
+        <LaunchFields base={base} form={p.form} invalid={p.invalid} onForm={p.onForm} use="server" missing={p.missing} ninfer={p.ninfer} kvCacheTypes={p.kvCacheTypes} trainedContext={p.trainedContext} />
       )}
       {/* A program with an OpenAI API: only the settings its commands take. */}
       {p.command && <CommandSettingsFields run={p.command} form={p.form} invalid={p.invalid} onForm={p.onForm} />}
-      {base === 'ninfer' && (
-        <div className="grid grid-cols-2 gap-4">
-          {num('contextSize', t('benchmark.expert.ctx'), t('common.auto'))}
-          {num('parallel', t('benchmark.expert.parallel'), t('common.auto'))}
-        </div>
-      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <Field label={t('servers.flow.custom.extraArgs')} hint={t('servers.flow.custom.extraArgsHint')}>
           {({ id, describedBy }) => (
@@ -294,6 +243,7 @@ export function SettingsStep(p: SettingsStepProps) {
       <TabsContent value="custom" className="pt-4">
         <CustomTab {...p} />
       </TabsContent>
+      {p.switches && <div className="mt-4 border-t border-border pt-4">{p.switches}</div>}
       {p.recipeSlot}
     </Tabs>
   );

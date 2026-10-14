@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { ActiveRun, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
-import { engineBaseOf, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
+import type { ActiveRun, NinferAuto, RunPlan, ServerPlan, StartRunRequest, StartServerRequest } from '../../contract/api';
+import { ninferArtifactInfo } from '../engines/ninfer/adapter';
+import { ninferTestDefaults } from '../engines/ninfer/defaults';
+import { ninferBackends } from './tune-ninfer';
+import { engineBaseOf, launchParamsSchema, type EngineConfig, type EngineKind, type LaunchParams } from '../../contract/engines';
 import { AppError } from '../../contract/errors';
 import type { LivePoint, RunPhase, ServerEvent } from '../../contract/events';
 import type { HardwareFingerprint } from '../../contract/hardware';
@@ -150,6 +153,8 @@ function withNinferPending(launch: LaunchPlan, choice: NinferBuildChoice | undef
 interface Prepared extends Launched {
   request: StartRunRequest;
   scenario: Scenario;
+  /** NInfer: what LLM Bench chose for the settings left unset. */
+  ninferAuto?: NinferAuto;
 }
 
 /** A server ready to start ("Avvia solo il server"): the command plus the context it will offer. */
@@ -319,7 +324,10 @@ export class BenchService {
     const trained = trainedContextOf(model.identity);
     // RoPE scaling (YaRN) extends what the model can read: the automatic sizes may go that far.
     const modelContext = extendedContext(trained, r.params.ropeScaling);
-    const params = autoLaunchParams(kind, scenario, r.params, modelContext);
+    const sized = autoLaunchParams(kind, scenario, r.params, modelContext);
+    // NInfer: LLM Bench's own choice for the NInfer settings left unset ("Scelte da LLM Bench"); a tune searches them itself.
+    const ninferAuto = engineBaseOf(kind) === 'ninfer' && scenario.profile !== 'tune' ? await this.ninferTestDefaults(run, model, adapter, sized) : undefined;
+    const params = ninferAuto?.params ?? sized;
     const memWarning = await this.fitVllmMemory(kind, params);
     const c = await this.command(run, model, adapter, params, { preview, marker: () => this.deps.newMarker?.() ?? `gpubench-${randomUUID()}` });
     c.launch = withNinferPending(c.launch, r.ninferBuild);
@@ -331,7 +339,44 @@ export class BenchService {
     // Beyond the trained context the sweep measures up to the launch, whatever the profile's time budget.
     const swept = beyond && scenario.profile !== 'tune' ? sweepWithoutBudget(fitted.scenario) : fitted.scenario;
     const warnings = [...(memWarning ? [memWarning] : []), ...launchWarnings(c.launch), ...fitted.warnings, ...recipeWarnings(r.applied), ...(beyond ? [beyond] : []), ...(r.ninferNotes ?? [])];
-    return { request: run, model, adapter, params, ...c, scenario: swept, warnings, ...(r.applied ? { recipe: r.applied } : {}), ...(r.ninferBuild ? { ninferBuild: r.ninferBuild } : {}) };
+    return {
+      request: run,
+      model,
+      adapter,
+      params,
+      ...c,
+      scenario: swept,
+      warnings,
+      ...(r.applied ? { recipe: r.applied } : {}),
+      ...(r.ninferBuild ? { ninferBuild: r.ninferBuild } : {}),
+      ...(ninferAuto?.auto ? { ninferAuto: ninferAuto.auto } : {}),
+    };
+  }
+
+  /**
+   * "Scelte da LLM Bench" for a NInfer test (core/engines/ninfer/defaults.ts): the latest tune's settings
+   * here, else the artifact's own token prediction and the most precise KV type that fits this card.
+   */
+  private async ninferTestDefaults(run: StartRunRequest, model: ModelTarget, adapter: EngineAdapter, params: LaunchParams): ReturnType<typeof ninferTestDefaults> {
+    const info = await ninferArtifactInfo(model).catch(() => undefined);
+    const caps = await adapter.capabilities(run.engine).catch(() => undefined);
+    const user = run.params?.ninfer;
+    const server = { engine: run.engine, model: run.model, params } as StartServerRequest & { params: LaunchParams };
+    // Only when the user left both open: a tune's KV type goes with its own prediction settings.
+    // Asked with the users only (one user or "Più utenti"), so the tune's own NInfer settings come back whole.
+    const question = { ...server, params: launchParamsSchema.parse({ ...(params.parallel !== undefined ? { parallel: params.parallel } : {}) }) };
+    const tuned = user?.spec === undefined && user?.kvDtype === undefined ? await this.tunedServer(question, model, adapter) : undefined;
+    return ninferTestDefaults({
+      params,
+      user,
+      heads: ninferBackends(info?.manifest),
+      kvDtypes: caps?.choices?.['--kv-dtype'],
+      fits: async (kvDtype) => {
+        const fit = await this.deps.fit?.(server, model, { params: { ...params, ninfer: { ...params.ninfer, kvDtype } } });
+        return fit === undefined || fit.level !== 'no';
+      },
+      ...(tuned ? { tuned: { ninfer: tuned.params.ninfer, createdAt: tuned.tuned.createdAt } } : {}),
+    });
   }
 
   /**
@@ -546,7 +591,7 @@ export class BenchService {
     const p = await this.prepare(req, true);
     const run = p.request;
     const preview = await this.preview(run, p);
-    const recipe = { ...(p.recipe ? { recipe: p.recipe } : {}), ...(p.ninferBuild ? { ninferBuild: p.ninferBuild } : {}) };
+    const recipe = { ...(p.recipe ? { recipe: p.recipe } : {}), ...(p.ninferBuild ? { ninferBuild: p.ninferBuild } : {}), ...(p.ninferAuto ? { ninferAuto: p.ninferAuto } : {}) };
     if (p.scenario.profile !== 'tune') return { scenario: p.scenario, ...preview, estimatedSeconds: estimateSeconds(p.scenario, await this.expectations(p.model)), ...recipe };
     const previousTune = await this.previousTune(run, p);
     const tuneSeconds = { fast: await this.tuneDuration(run, p, 'fast'), thorough: await this.tuneDuration(run, p, 'thorough') };

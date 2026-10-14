@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { dockerStateSchema } from './docker';
-import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsSchema } from './engines';
+import { engineConfigSchema, engineKindSchema, engineStatusSchema, launchParamsSchema, NINFER_SPECS } from './engines';
 import { currentStepSchema, livePointSchema, liveSpillSchema, loadProgressSchema, runLaunchSchema, runPhaseSchema } from './events';
 import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
@@ -137,6 +137,22 @@ export const startRunRequestSchema = z.object({
 });
 export type StartRunRequest = z.infer<typeof startRunRequestSchema>;
 
+/**
+ * NInfer: what LLM Bench chose for the NInfer settings a test left unset ("Scelte da LLM Bench",
+ * core/engines/ninfer/defaults.ts): from the latest "Trova le impostazioni migliori" here ('tuned', its
+ * date), else token prediction with the artifact's own head and the most precise KV type that fits
+ * ('fit'; `fits` false: none fits, the most compact one). Only what it chose is there.
+ */
+export const ninferAutoSchema = z.object({
+  source: z.enum(['tuned', 'fit']),
+  createdAt: z.string().optional(),
+  spec: z.enum(NINFER_SPECS).optional(),
+  draftTokens: z.number().int().positive().optional(),
+  kvDtype: z.string().optional(),
+  fits: z.boolean().optional(),
+});
+export type NinferAuto = z.infer<typeof ninferAutoSchema>;
+
 export const runPlanSchema = z.object({
   scenario: scenarioSchema,
   /** The exact command that will be executed, ready to show in "Anteprima comando". */
@@ -189,6 +205,8 @@ export const runPlanSchema = z.object({
    * /api/runs fails with ENGINE_NOT_INSTALLED, reason 'ninfer_all_missing').
    */
   ninferBuild: ninferBuildChoiceSchema.optional(),
+  /** NInfer: what LLM Bench chose for the settings left unset (absent when the user set them all). */
+  ninferAuto: ninferAutoSchema.optional(),
 });
 export type RunPlan = z.infer<typeof runPlanSchema>;
 

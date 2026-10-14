@@ -11,10 +11,16 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { StartServerRequest } from '../../contract/api';
 import { customEngineConfigOf, customEngineForModel } from '../../contract/custom-engines';
-import type { EngineConfig } from '../../contract/engines';
-import { ninferPresetOf, ninferPresetsFor } from '../../contract/ninfer';
+import { engineBaseOf, type EngineConfig } from '../../contract/engines';
+import { ninferPresetsFor } from '../../contract/ninfer';
+import { matchingPreset } from '../components/bench/ninfer-choice';
 import type { ServerNetwork, ServerPresetInput } from '../../contract/servers';
 import { formFromParams, paramsFromForm, type ParamsForm } from '../components/bench/expert-form';
+import { commandFields } from '../components/bench/launch-fields';
+import { TunePresetList, useTunePresets } from '../components/presets/tune-presets';
+import { abilitiesOf, ModelSwitches, NO_SWITCHES, withServerSwitches, type SwitchesForm } from '../components/bench/model-switches';
+import { ninferSupportOf, presetsWithin } from '../components/bench/ninfer-support';
+import { useNinferBuild } from '../lib/queries-ninfer';
 import { MIB_PER_GB } from '../components/bench/format';
 import { customKvCacheTypes } from '../components/bench/kv-cache-options';
 import { needsFromPlan } from '../components/bench/needs';
@@ -61,7 +67,7 @@ function StepCard({ step, title, help, children }: { step: number; title: string
   return (
     <Card className="flex min-w-0 flex-col">
       <div className="flex items-center gap-2.5 px-card pt-card">
-        <span aria-hidden className="grid size-6 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">
+        <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">
           {step}
         </span>
         <h2 className="text-md font-semibold tracking-[-0.01em]">{title}</h2>
@@ -135,6 +141,12 @@ export function ServerStartPage() {
   const [presetId, setPresetId] = useState<string | undefined>(draft?.presetId);
   const [form, setForm] = useState<ParamsForm>(() => formFromParams(draft?.params));
   const [formTouched, setFormTouched] = useState(draft?.params !== undefined && !draft.provenance);
+  // "Immagini" / "Ragionamento": the Benchmark page's own switches come along; a test's recorded ones do not (tests used to turn thinking off).
+  const [switches, setSwitches] = useState<SwitchesForm>(() => {
+    if (!draft?.params || draft.provenance) return NO_SWITCHES;
+    const f = formFromParams(draft.params);
+    return { vision: f.vision, reasoning: f.reasoning, ninferVision: f.ninferVision, ninferThinking: f.ninferThinking };
+  });
 
   // 4. Port and network (a preset being changed brings its own once it is read).
   const [portText, setPortText] = useState('');
@@ -158,19 +170,29 @@ export function ServerStartPage() {
   const chosenCustom = customList.find((c) => c.engine.id === engineChoice?.config.customEngineId)?.engine;
   const ninferAll = useNinferAllNeed(engineChoice?.kind ?? 'llamacpp-native', chosenCustom, identity);
   // A .ninfer model: NInfer's own presets ("Consigliata da NInfer", "Provata su RTX 5090"), those the build that runs it has, a test's own NInfer settings, or LLM Bench's choice.
+  const engineBase = engineBaseOf(engineChoice?.kind ?? 'llamacpp-native');
+  const customCheck = customList.find((c) => c.engine.id === engineChoice?.config.customEngineId)?.check;
+  const officialNinfer = useNinferBuild('official', format === 'ninfer' && engineBase === 'ninfer' && !chosenCustom && !ninferAll.needed);
+  const kvDtypes = customCheck?.kvDtypes ?? (ninferAll.needed ? ninferAll.kvDtypes : officialNinfer?.kvDtypes);
+  const ninferSupport = ninferSupportOf(identity, kvDtypes);
+  const abilities = abilitiesOf(engineBase, option?.source === 'local' ? option.local : undefined);
   const ninferPresets =
     option?.source === 'local' && format === 'ninfer'
-      ? ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name, repo: option.local.identity.repo, file: option.local.identity.file }, ninferAll.kvDtypes)
+      ? presetsWithin(ninferPresetsFor({ name: option.local.identity.facts?.name, label: option.name, repo: option.local.identity.repo, file: option.local.identity.file }, kvDtypes), ninferSupport)
       : [];
   // Handed-over NInfer settings are the preset they match, else offered as they are ('run').
   const [ninferPicked, setNinferChoice] = useState<NinferChoice | undefined>(undefined);
   // A variant of NInfer (NInfer-all among them) starts with its model card's settings (they may need its own KV type); NInfer with its recommended ones.
   const firstChoice: NinferChoice = (engineChoice?.base === 'ninfer' || ninferAll.needed) && ninferPresets[0]?.id === 'model-card' ? 'model-card' : 'ninfer-recommended';
-  const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (ninferPresetOf(draft!.params!, ninferPresets) ?? 'run') : firstChoice);
+  const ninferChoice: NinferChoice = ninferPicked ?? (draftNinfer ? (matchingPreset(draft!.params!, ninferPresets, abilities) ?? 'run') : firstChoice);
   const ninferParams = ninferChoice === 'run' ? draft!.params : withNinferPreset(undefined, ninferPresets.find((p) => p.id === ninferChoice)?.params);
   const modelPresets = option ? presetsForModel(presets.data ?? [], optionModel(option)) : [];
   const pickedPreset = modelPresets.find((p) => p.id === presetId);
-  const parsed = paramsFromForm(form);
+  const trainedContext = identity?.facts?.contextLength;
+  const tunePresets = useTunePresets(identity, engineChoice?.kind ?? 'llamacpp-native', gpu?.name);
+  // A program with an OpenAI API: the settings its commands take.
+  const commandRun = engineChoice?.kind === 'command' && chosenCustom?.run.mode === 'command' ? chosenCustom.run : undefined;
+  const parsed = paramsFromForm(form, { base: engineBase, trainedContext, fields: commandRun ? commandFields(commandRun) : undefined });
 
   let params: StartServerRequest['params'];
   let paramsReady = true;
@@ -188,8 +210,11 @@ export function ServerStartPage() {
     params = parsed.params;
     paramsReady = parsed.invalid.length === 0;
   }
-  // A server keeps NInfer's own defaults for what only a benchmark sets (every prompt in full, no thinking).
-  if (params) params = serverNinfer(params);
+  // A server keeps NInfer's own defaults for what only a benchmark set (every prompt in full, no thinking); the user's own fields are kept.
+  if (params && tab !== 'custom') params = serverNinfer(params);
+  // The image and reasoning switches, whatever the settings came from.
+  const sourceNinfer = params?.ninfer;
+  if (option && paramsReady) params = withServerSwitches(params, engineBase, switches, abilities);
   const port = parsePort(portText);
   const lanUnsupported = engineChoice?.kind === 'command';
   const effNetwork: ServerNetwork = lanUnsupported ? 'local' : network;
@@ -316,11 +341,26 @@ export function ServerStartPage() {
                   <NinferPresetPicker
                     presets={ninferPresets}
                     run={draftNinfer}
+                    use="server"
                     // Nothing checked here while one of the user's presets is chosen.
                     value={pickedPreset ? ('' as NinferChoice) : ninferChoice}
                     onChange={(v) => {
                       setNinferChoice(v);
                       setPresetId(undefined);
+                    }}
+                  />
+                ) : undefined
+              }
+              fromTune={
+                tunePresets ? (
+                  <TunePresetList
+                    presets={tunePresets}
+                    currentBuild={engines.data?.find((e) => e.kind === engineChoice?.kind)?.version}
+                    onUse={(p) => {
+                      // Into "Comandi personalizzati", exactly: the plan and the command follow.
+                      setForm(formFromParams(serverNinfer(p)));
+                      setFormTouched(true);
+                      setTab('custom');
                     }}
                   />
                 ) : undefined
@@ -335,10 +375,18 @@ export function ServerStartPage() {
                 setFormTouched(true);
                 setForm((cur) => ({ ...cur, ...patch }));
               }}
+              missing={engineChoice?.missing}
+              ninfer={ninferSupport}
+              trainedContext={trainedContext}
+              switches={
+                option && (abilities.vision === true || abilities.reasoning !== false) ? (
+                  <ModelSwitches base={engineBase} form={switches} onForm={(patch) => setSwitches((cur) => ({ ...cur, ...patch }))} abilities={abilities} preset={sourceNinfer} />
+                ) : undefined
+              }
               unsupported={unsupportedWarning ? { engine: String(unsupportedWarning.params?.engine), flags: String(unsupportedWarning.params?.flags) } : undefined}
               // "Comandi per questo modello": nothing when the model has no recipe, or when its only command is the engine (preselected above).
               recipeSlot={recipeTarget && <RecipeChip target={recipeTarget} use={recipeOn} onUseChange={setRecipeOn} />}
-              command={engineChoice?.kind === 'command' && chosenCustom?.run.mode === 'command' ? chosenCustom.run : undefined}
+              command={commandRun}
             />
           </StepCard>
           <StepCard step={4} title={t('servers.flow.step.port')} help={t('servers.flow.step.portHelp')}>

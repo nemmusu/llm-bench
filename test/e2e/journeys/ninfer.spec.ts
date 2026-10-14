@@ -73,6 +73,17 @@ test('NInfer: the user\'s own build pointed at, a Rapido benchmark with its reco
     await expect(preview).toContainText('--spec mtp --draft-tokens 3');
     await expect(preview).toContainText('--no-prefix-reuse');
     await expect(preview).toContainText(IN_COMMAND);
+    // Its vision part is on (the model has it); the expert fields start from the preset and the card follows them.
+    await expect(preview).toContainText('--vision');
+    await page.getByRole('switch', { name: 'Modalità esperto' }).click();
+    await expect(page.getByLabel('Contesto per richiesta (token)')).toHaveAttribute('placeholder', '240.000');
+    await page.getByLabel('Richieste servite insieme').fill('1');
+    await expect(settings.getByRole('radio', { name: /^Personalizzate:/ })).toBeChecked();
+    await expect(preview).toContainText('--max-concurrency 1', { timeout: 20_000 });
+    await settings.getByRole('radio', { name: /Consigliata da NInfer/ }).click();
+    await expect(page.getByLabel('Richieste servite insieme')).toHaveValue('');
+    await expect(preview).toContainText('--max-concurrency 2', { timeout: 20_000 });
+    await page.getByRole('switch', { name: 'Modalità esperto' }).click();
     await scan(page, 'benchmark with NInfer settings');
 
     await page.getByRole('button', { name: 'Avvia benchmark' }).click();

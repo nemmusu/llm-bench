@@ -305,7 +305,7 @@ describe('Avvia un server: where the settings come from', () => {
     expect(screen.getByRole('radio', { name: /Mio NInfer/ }).getAttribute('aria-checked')).toBe('false');
   });
 
-  it('NInfer settings handed over: the preset they match, else as they are; never the benchmark-only ones', async () => {
+  it('NInfer settings handed over: the preset they match, else as they are; never the benchmark-only prefix setting (the Benchmark’s reasoning switch comes along)', async () => {
     const ninfer = localModel('qwen38', { format: 'ninfer', displayName: 'Qwen3.8-27B-nvfp4', file: 'qwen.ninfer', quant: 'NVFP4', facts: { name: 'qwen3.8-27b' } });
     const open = (params: LaunchParams) => {
       const qc = newQueryClient();
@@ -324,9 +324,9 @@ describe('Avvia un server: where the settings come from', () => {
     render(<App api={api} router={createAppRouter(createMemoryHistory({ initialEntries: ['/servers/new'] }))} queryClient={qc} />);
     const run = await screen.findByRole('radio', { name: /^Come nel test da cui viene il preset/ });
     expect(run.getAttribute('aria-checked')).toBe('true');
-    await waitFor(() => expect(lastPlan(api).params).toEqual({ contextSize: 8192, extraArgs: [], env: {}, ninfer: { kvDtype: 'bf16' } }));
+    await waitFor(() => expect(lastPlan(api).params).toEqual({ contextSize: 8192, extraArgs: [], env: {}, ninfer: { kvDtype: 'bf16', thinking: false } }));
     await userEvent.click(screen.getByRole('tab', { name: 'Comandi personalizzati' }));
-    expect(screen.getByLabelText('Contesto (token)')).toBeTruthy();
+    expect(screen.getByLabelText('Contesto per richiesta (token)')).toBeTruthy();
     expect(screen.queryByLabelText('Livelli in GPU')).toBeNull();
   });
 
@@ -346,7 +346,7 @@ describe('Avvia un server: where the settings come from', () => {
     expect(screen.getByText('Lascio fuori dal comando -ub: vale il valore predefinito del motore.')).toBeTruthy();
     await userEvent.clear(screen.getByLabelText('Contesto (token)'));
     await userEvent.type(screen.getByLabelText('Contesto (token)'), 'tanto');
-    expect(screen.getAllByText('Valore non valido: lo ignoro finché non lo correggi.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Valore non valido: correggilo per poter avviare.').length).toBeGreaterThan(0);
     expect((avvia() as HTMLButtonElement).disabled).toBe(true);
     await userEvent.clear(screen.getByLabelText('Contesto (token)'));
     await userEvent.type(screen.getByLabelText('Contesto (token)'), '8192');
@@ -357,7 +357,7 @@ describe('Avvia un server: where the settings come from', () => {
     await userEvent.type(screen.getByLabelText('Argomenti extra'), '--metrics');
     await choose('Tipo di cache KV', 'q4_0');
     await choose('Flash attention', 'Attivo');
-    await userEvent.type(screen.getByLabelText('Batch'), '1024');
+    await userEvent.type(screen.getByLabelText('Batch (token)'), '1024');
     await waitFor(() => expect(lastPlan(api).params).toMatchObject({ contextSize: 8192, kvCacheType: 'q4_0', flashAttention: 'on', batchSize: 1024, extraArgs: ['--metrics'], env: { A: '1' } }));
     // Back to "Le migliori dai tuoi test" and to the form again: what was typed stays.
     await userEvent.click(screen.getByRole('tab', { name: 'Le migliori dai tuoi test' }));
@@ -370,7 +370,7 @@ describe('Avvia un server: where the settings come from', () => {
     await openFlow(api);
     expect(screen.getByRole('combobox', { name: 'Motore' }).textContent).toContain('vLLM (Docker)');
     await userEvent.click(screen.getByRole('tab', { name: 'Comandi personalizzati' }));
-    await userEvent.type(screen.getByLabelText('Contesto massimo (token)'), '8192');
+    await userEvent.type(screen.getByLabelText('Contesto per richiesta (token)'), '8192');
     await userEvent.type(screen.getByLabelText('Memoria GPU da usare'), '0,8');
     await waitFor(() => expect(lastPlan(api).params).toMatchObject({ maxModelLen: 8192, gpuMemoryUtilization: 0.8 }));
   });

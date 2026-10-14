@@ -30,13 +30,6 @@ export type ModelOption =
       preset?: true;
     };
 
-const LLAMA: ReadonlySet<EngineKind> = new Set<EngineKind>(['llamacpp-native', 'llamacpp-docker']);
-
-/** SGLang reads models like vLLM; a command engine takes no launch settings, like an external server. */
-export function engineFamily(kind: EngineKind): 'llamacpp' | 'vllm' | 'external' {
-  return kind === 'external' || kind === 'command' ? 'external' : LLAMA.has(kind) ? 'llamacpp' : 'vllm';
-}
-
 /** What the picker's note says about the formats an engine reads ("llama.cpp usa i modelli GGUF…"). */
 export function formatNoteOf(kind: EngineKind): 'llamacpp' | 'vllm' | 'ninfer' | undefined {
   if (engineRunsFormat(kind, 'ninfer')) return 'ninfer';

@@ -41,7 +41,7 @@ import {
 import { ALL, decodeHistory, distinct, filterRuns, NO_FILTERS } from '../../../../src/renderer/components/bench/history';
 import { kpisOf, sentenceKey } from '../../../../src/renderer/components/bench/kpis';
 import { initialLive, liveReducer, MAX_LOG_LINES } from '../../../../src/renderer/components/bench/live-state';
-import { engineFamily, formatNoteOf, initialModelKey, modelOptions, requestModel, savedModelId, triedOn } from '../../../../src/renderer/components/bench/model-options';
+import { formatNoteOf, initialModelKey, modelOptions, requestModel, savedModelId, triedOn } from '../../../../src/renderer/components/bench/model-options';
 import { guessNeeds, needsFromPlan } from '../../../../src/renderer/components/bench/needs';
 import { noteText } from '../../../../src/renderer/components/bench/notes';
 import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../../../../src/renderer/components/bench/phases';
@@ -331,9 +331,6 @@ describe('model options', () => {
   const st = local('s', { format: 'safetensors', repo: 'org/s' });
   it('offers local models first, then suggestions not already on the PC', () => {
     const list = [curated('a', { sha256: 'aa' }), curated('b'), curated('a2', { file: 'a.gguf' }), curated('v', { engine: 'vllm', file: undefined, repo: 'org/s' }), curated('w', { engine: 'vllm', file: undefined })];
-    expect(engineFamily('external')).toBe('external');
-    expect(engineFamily('llamacpp-docker')).toBe('llamacpp');
-    expect(engineFamily('vllm-native')).toBe('vllm');
     expect(modelOptions('external', [gguf], list)).toEqual([]);
     const llama = modelOptions('llamacpp-native', [gguf, st], list);
     expect(llama.map((o) => o.key)).toEqual(['local:a', 'curated:b']);

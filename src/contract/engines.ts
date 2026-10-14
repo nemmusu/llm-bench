@@ -148,6 +148,18 @@ export const launchParamsSchema = z.object({
   ropeScaling: ropeScalingSchema.optional(),
   /** NInfer's own settings (ninfer-native / ninfer-wsl). */
   ninfer: ninferParamsSchema.optional(),
+  /**
+   * Image (and video) input, for a model that has it ("Immagini"): llama.cpp loads the model's projector
+   * (--mmproj) only when true or unset; vLLM / SGLang turn their multimodal part off with false; NInfer
+   * reads ninfer.vision (the form writes there). Unset = on when the model has it (the engine's default).
+   */
+  vision: z.boolean().optional(),
+  /**
+   * Reasoning ("Ragionamento"), for a model that thinks before it answers: false = the request asks for
+   * none (chat template enable_thinking false, gpt-oss lowest effort); NInfer reads ninfer.thinking.
+   * Unset = on when the model has it. With it on the speed counts every token written, thoughts included.
+   */
+  reasoning: z.boolean().optional(),
   /** Extra raw CLI arguments appended verbatim (expert mode). */
   extraArgs: z.array(z.string()).default([]),
   /** Extra environment variables (expert mode). */

@@ -438,14 +438,14 @@ describe('expert mode', () => {
 
     await userEvent.type(screen.getByLabelText('Contesto (token)'), '8192');
     await userEvent.type(screen.getByLabelText('Livelli in GPU'), 'x');
-    expect(screen.getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeTruthy();
+    expect(screen.getByText('Valore non valido: correggilo per poter avviare.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Avvia benchmark' }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.clear(screen.getByLabelText('Livelli in GPU'));
     await choose('Flash attention', 'Attivo');
     await choose('Tipo di cache KV', 'q8_0');
     for (const [label, value] of [
-      ['Batch', '2048'],
-      ['Micro-batch', '512'],
+      ['Batch (token)', '2048'],
+      ['Micro-batch (token)', '512'],
       ['Thread CPU', '8'],
       ['Slot paralleli', '2'],
     ] as const) {
@@ -480,9 +480,9 @@ describe('expert mode', () => {
     await choose('Cambia motore', /llama\.cpp \(Docker\)/);
     expect((screen.getByLabelText('Immagine Docker') as HTMLInputElement).placeholder).toBe('ghcr.io/ggml-org/llama.cpp:server-cuda');
     await choose('Cambia motore', /vLLM \(Docker\)/);
-    await userEvent.type(screen.getByLabelText('Contesto massimo (token)'), '4096');
+    await userEvent.type(screen.getByLabelText('Contesto per richiesta (token)'), '4096');
     await userEvent.type(screen.getByLabelText('Memoria GPU da usare'), '2');
-    expect(screen.getAllByText('Valore non valido: lo ignoro finché non lo correggi.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Valore non valido: correggilo per poter avviare.').length).toBeGreaterThan(0);
     await userEvent.clear(screen.getByLabelText('Memoria GPU da usare'));
     await userEvent.type(screen.getByLabelText('Memoria GPU da usare'), '0,8');
     await userEvent.type(screen.getByLabelText('Richieste contemporanee'), '4');
@@ -508,7 +508,7 @@ describe('expert mode', () => {
     expect(screen.getByText('Il modello già caricato sul server.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Avvia benchmark' }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.type(screen.getByLabelText('Indirizzo del server'), 'nope');
-    expect(screen.getByText('Valore non valido: lo ignoro finché non lo correggi.')).toBeTruthy();
+    expect(screen.getByText('Valore non valido: correggilo per poter avviare.')).toBeTruthy();
     await userEvent.clear(screen.getByLabelText('Indirizzo del server'));
     await userEvent.type(screen.getByLabelText('Indirizzo del server'), 'http://127.0.0.1:8080');
     await userEvent.type(screen.getByLabelText('Nome del modello'), 'demo');

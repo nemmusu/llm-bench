@@ -20,6 +20,8 @@ export interface DiffRow {
 const PARAM_LABELS: Record<keyof LaunchParams, MessageKey> = {
   contextSize: 'benchmark.expert.ctx',
   gpuLayers: 'benchmark.expert.ngl',
+  vision: 'benchmark.switches.vision.label',
+  reasoning: 'benchmark.switches.reasoning.label',
   flashAttention: 'benchmark.expert.flashAttention',
   kvCacheType: 'benchmark.expert.kvCache',
   batchSize: 'benchmark.expert.batch',
