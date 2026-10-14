@@ -310,7 +310,7 @@ export function ServerStartPage() {
       }
       title={editing ? t('servers.flow.editTitle', { name: editing.name }) : t('servers.flow.title')}
       subtitle={t('servers.flow.subtitle')}
-      width="wide"
+      width="full"
     >
       <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_460px]">
         <div className="flex min-w-0 flex-col gap-section">

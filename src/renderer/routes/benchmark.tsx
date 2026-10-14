@@ -438,7 +438,7 @@ function BenchmarkScreen() {
   const modelsLoading = local.isPending || (vramGB !== undefined && curated.isPending);
 
   return (
-    <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="wide">
+    <Page title={t('benchmark.title')} subtitle={t('benchmark.subtitle')} width="full">
       <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-[auto_1fr]">
         <div className="order-1 flex min-w-0 flex-col gap-section xl:order-none xl:col-start-1 xl:row-span-2 xl:row-start-1">
           <PresetBanner preset={preset} />

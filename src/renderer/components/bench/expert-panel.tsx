@@ -15,7 +15,6 @@ import type { EngineField, EngineForm } from './engine-form';
 import { parseArgs, parseEnv, parseInteger, type ParamsField, type ParamsForm, type ScenarioField, type ScenarioForm } from './expert-form';
 import { CommandExpertSection } from '../engines/command-settings';
 import { ExternalFields } from './external-fields';
-import type { LaunchBase } from './launch-fields';
 import { LaunchFields } from './launch-fields-panel';
 import type { NinferSupport } from './ninfer-support';
 
@@ -175,19 +174,15 @@ export function ExpertPanel(p: ExpertPanelProps) {
       <div className={cn('grid gap-x-8 gap-y-6 p-card', p.custom && '2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
         {p.command ? (
           <CommandExpertSection {...p.command} params={p.params} invalid={p.paramsInvalid} onParams={p.onParams} />
-        ) : p.engine === 'external' ? (
+        ) : base === 'external' ? (
+          // An external server (a program of the user's own always comes with its commands, above).
           <Section title={t('benchmark.expert.sectionEndpoint')}>
             <ExternalFields engineForm={p.engineForm} engineInvalid={p.engineInvalid} onEngine={p.onEngine} />
-          </Section>
-        ) : p.engine === 'command' ? (
-          // A program of the user's own: its command template says what it takes (set on the Engines page).
-          <Section title={t('benchmark.expert.sectionLaunch')}>
-            {p.customEngine !== undefined && <p className="text-sm text-fg-2">{t('engines.custom.expertNote', { name: p.customEngine })}</p>}
           </Section>
         ) : (
           <Section title={t('benchmark.expert.sectionLaunch')}>
             <LaunchFields
-              base={base as LaunchBase}
+              base={base}
               form={p.params}
               invalid={p.paramsInvalid}
               onForm={p.onParams}

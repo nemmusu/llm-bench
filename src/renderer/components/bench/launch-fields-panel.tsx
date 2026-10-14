@@ -294,7 +294,9 @@ export function LaunchFields(p: LaunchFieldsProps) {
         (yarnLacking ? (
           <p className="text-xs text-fg-3">{t('benchmark.expert.f.yarnMissing', { flag: yarnLacking })}</p>
         ) : (
-          <YarnChoice value={p.form.yarnTarget} onChange={(yarnTarget) => p.onForm({ yarnTarget, yarnOriginal: '' })} trained={parseInteger(p.form.yarnOriginal) ?? p.trainedContext} allowOff invalid={bad('yarnTarget')} title />
+          <div className="max-w-2xl">
+            <YarnChoice value={p.form.yarnTarget} onChange={(yarnTarget) => p.onForm({ yarnTarget, yarnOriginal: '' })} trained={parseInteger(p.form.yarnOriginal) ?? p.trainedContext} allowOff invalid={bad('yarnTarget')} title />
+          </div>
         ))}
     </div>
   );
