@@ -3656,7 +3656,7 @@ export const it = {
       desc: 'Serve per vLLM, SGLang e per llama.cpp dentro un contenitore.',
       install: 'Installa Docker',
       howToStart: 'Come avviarlo',
-      pullLlama: 'Scarica l’immagine di llama.cpp',
+      pullLlama: 'Scarica o aggiorna l’immagine di llama.cpp',
       cleanup: 'Pulisci i contenitori di LLM Bench',
       cleaned: 'Contenitori rimossi: {n}',
       gpuOk: 'Docker vede la scheda video',

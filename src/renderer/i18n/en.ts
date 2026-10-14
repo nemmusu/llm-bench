@@ -3651,7 +3651,7 @@ export const en: Messages = {
       desc: 'Needed for vLLM, SGLang and for llama.cpp inside a container.',
       install: 'Install Docker',
       howToStart: 'How to start it',
-      pullLlama: 'Download the llama.cpp image',
+      pullLlama: 'Download or update the llama.cpp image',
       cleanup: 'Clean up LLM Bench containers',
       cleaned: 'Containers removed: {n}',
       gpuOk: 'Docker can see the graphics card',

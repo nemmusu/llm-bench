@@ -200,7 +200,7 @@ describe('engines: Docker', () => {
     const docker = await card('Docker');
     await userEvent.click(await within(docker).findByRole('button', { name: 'Verifica la GPU in Docker' }));
     expect(await within(docker).findByText('GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)')).toBeTruthy();
-    await userEvent.click(within(docker).getByRole('button', { name: 'Scarica l’immagine di llama.cpp' }));
+    await userEvent.click(within(docker).getByRole('button', { name: 'Scarica o aggiorna l’immagine di llama.cpp' }));
     expect(api.calls.find((c) => c.path === '/api/engines/llamacpp-docker/install')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' });
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'download', bytesDone: 1e9, bytesTotal: 3e9 }));
     expect(await within(docker).findByText('954 MB di 2,8 GB · 33%')).toBeTruthy();
