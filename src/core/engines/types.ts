@@ -98,10 +98,10 @@ export interface PlanOptions {
  */
 export type CoreEngineConfig = EngineConfig & { probeEnv?: Record<string, string>; commandRun?: CommandRun };
 
-/** The model name an LLM Bench server shows to other programs: the HF repo for vLLM / SGLang, else the model's own name. */
+/** The model name an LLM Bench server shows to other programs: the HF repo for vLLM / SGLang / TensorRT-LLM, else the model's own name. */
 export function serverApiName(kind: EngineKind, model: ModelTarget): string {
   const base = engineBaseOf(kind);
-  const repoNamed = base === 'vllm' || base === 'sglang';
+  const repoNamed = base === 'vllm' || base === 'sglang' || base === 'trtllm';
   const name = (repoNamed ? (model.repo ?? model.identity.repo) : undefined) ?? model.identity.displayName;
   // llama.cpp splits --alias at commas; spaces are awkward in client settings.
   return name.replace(/[,\s]+/g, '-');
@@ -190,6 +190,11 @@ export interface EngineAdapter {
    * kernel): drops the model's pages there. Absent, or undefined returned = the core's own evictor.
    */
   evict?(plan: LaunchPlan, signal?: AbortSignal): Promise<EvictResult | undefined>;
+  /**
+   * "Rimuovi": deletes what install() put on this PC (a Docker image, LLM Bench's own Python environment).
+   * Absent = not removable from the app.
+   */
+  remove?(cfg: EngineConfig): Promise<void>;
 }
 
 export function toLaunchRecord(plan: LaunchPlan, display: { powershell: string; bash: string }): LaunchRecord {

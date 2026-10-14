@@ -47,7 +47,7 @@ const installDataSchema = z.object({ image: z.string() });
 
 /** Detection, image install (pull with progress) and image checks shared by the Docker engines. */
 export abstract class DockerEngineAdapter implements EngineAdapter {
-  abstract readonly kind: 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker';
+  abstract readonly kind: 'llamacpp-docker' | 'vllm-docker' | 'sglang-docker' | 'trtllm-docker';
   private compatP: Promise<EngineCompat> | undefined;
 
   constructor(protected readonly o: DockerEngineOptions) {}

@@ -40,6 +40,14 @@ const f = (field: ParamsField, flag: string, setting: string = field): LaunchFie
 const SWITCHES: readonly LaunchField[] = [f('vision', ''), f('reasoning', '')];
 
 export const LAUNCH_FIELDS: Record<LaunchBase, readonly LaunchField[]> = {
+  // TensorRT-LLM (core/engines/shared/trtllm.ts trtllmServeArgs): its shared fields; its own (LaunchParams.trtllm) are the UI's to add.
+  trtllm: [
+    f('maxModelLen', '--max_seq_len', 'contextSize'),
+    f('parallel', '--max_batch_size'),
+    f('kvCacheType', '--kv_cache_dtype'),
+    f('batchSize', '--max_num_tokens'),
+    ...SWITCHES,
+  ],
   llamacpp: [
     f('contextSize', '-c'),
     f('gpuLayers', '-ngl'),

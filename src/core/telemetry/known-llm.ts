@@ -20,6 +20,7 @@ const KNOWN_LLM_NAMES: ReadonlySet<string> = new Set([
   'tabbyapi',
   'sglang',
   'vllm',
+  'trtllm-serve',
 ]);
 
 /**

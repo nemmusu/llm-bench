@@ -46,12 +46,44 @@
       "v0.5.21 was the newest stable release (2026-10-01, about 15.2 GB) when this file was updated; not yet run on the RTX 5090 here."
     ]
   },
+  "trtllm": {
+    "image": "nvcr.io/nvidia/tensorrt-llm/release",
+    "recommendedTag": "1.4.0rc0",
+    "notes": [
+      "Release tags on NGC: X.Y.Z (stable), X.Y.ZrcN and X.Y.ZrcN.postM (release candidates); X.Y.ZrcN.devYYYYMMDDHH are nightly builds and are left out.",
+      "The image runs any command given after it: LLM Bench runs 'trtllm-serve serve <model> --host 0.0.0.0 --port 8000 ...' (the OpenAI server, PyTorch backend). The docs ask for --ipc=host and --ulimit memlock=-1 --ulimit stack=67108864.",
+      "trtllm-serve loads Hugging Face checkpoints directly, NVFP4 / FP8 ModelOpt ones included (nvidia/*-FP8, nvidia/*-NVFP4); FP8 needs Ada/Hopper/Blackwell, NVFP4 Blackwell.",
+      "TensorRT-LLM is Linux only: on Windows it runs in Docker Desktop with the WSL2 GPU, or natively inside a WSL distro.",
+      "1.4.0rc0's image (linux/amd64, about 17.6 GB compressed): entrypoint /opt/nvidia/nvidia_entrypoint.sh, runs as root, CUDA 13.4 (NGC PyTorch 26.08 base): it needs an NVIDIA driver for CUDA 13 (>= 580).",
+      "GeForce RTX 50 (sm_120) is not listed in the support matrix (Blackwell datacenter, Hopper, Ada, Ampere are); community reports show some sm_120 kernels missing (e.g. TRTLLMGenFusedMoE in 1.2.0rc8). 1.4.0rc0 was the tag the container docs install on 2026-10-14 (newest stable: 1.2.1); not yet run on the RTX 5090 here."
+    ]
+  },
   "minDriverByCuda": {
     "12.8": { "linux": "570.26", "windows": "570.65" },
     "12.9": { "linux": "575.51.03", "windows": "576.02" },
     "13.0": { "linux": "580", "windows": "580" }
   },
   "sources": [
+    {
+      "url": "https://nvcr.io/v2/nvidia/tensorrt-llm/release/tags/list",
+      "fact": "1.4.0rc0 image config: Entrypoint /opt/nvidia/nvidia_entrypoint.sh, no User, CUDA_VERSION=13.4.1.012, NVIDIA_PYTORCH_VERSION=26.08, TRT_LLM_VERSION=1.4.0rc0; amd64 layers 17.57 GB. Tags: ... 1.2.0, 1.2.1, 1.3.0rc0 ... 1.3.0rc29, 1.4.0rc0, plus rcN.devYYYYMMDDHH nightlies (anonymous token from nvcr.io/proxy_auth)",
+      "checked": "2026-10-14"
+    },
+    {
+      "url": "https://nvidia.github.io/TensorRT-LLM/installation/containers.html",
+      "fact": "docker pull nvcr.io/nvidia/tensorrt-llm/release:1.4.0rc0; --ipc=host avoids 'Bus error (core dumped)'",
+      "checked": "2026-10-14"
+    },
+    {
+      "url": "https://nvidia.github.io/TensorRT-LLM/commands/trtllm-serve/trtllm-serve.html",
+      "fact": "trtllm-serve serve [OPTIONS] MODEL; --host (localhost), --port (8000), --max_seq_len, --max_batch_size, --max_num_tokens, --kv_cache_free_gpu_memory_fraction (0.9), --kv_cache_dtype auto|fp8|nvfp4, --tp_size, --served_model_name, --config/--extra_llm_api_options YAML; /health, /v1/models, /v1/completions",
+      "checked": "2026-10-14"
+    },
+    {
+      "url": "https://nvidia.github.io/TensorRT-LLM/reference/support-matrix.html",
+      "fact": "Linux x86_64 / aarch64 only; Blackwell, Hopper (FP8), Ada (FP8), Ampere listed; GeForce / sm_120 not listed",
+      "checked": "2026-10-14"
+    },
     {
       "url": "https://github.com/vllm-project/vllm/pull/19794",
       "fact": "[CI] Add SM120 to the Dockerfile, merged 2025-06-25, milestone v0.9.2",

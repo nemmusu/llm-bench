@@ -25,6 +25,10 @@ import { VllmDockerAdapter } from './engines/vllm-docker/adapter';
 import { VllmNativeAdapter } from './engines/vllm-native/adapter';
 import { SglangDockerAdapter } from './engines/sglang-docker/adapter';
 import { SglangNativeAdapter } from './engines/sglang-native/adapter';
+import { TrtllmDockerAdapter } from './engines/trtllm-docker/adapter';
+import { NgcRegistry } from './engines/trtllm-docker/ngc';
+import { TrtllmNativeAdapter } from './engines/trtllm-native/adapter';
+import { wslUv } from './engines/trtllm-native/wsl-uv';
 import { CommandAdapter } from './engines/command/adapter';
 import { withCustomEngines, type CustomEngineAdapter, type CustomEngineSource } from './engines/custom/adapter';
 import { createCustomEngineRoutes } from './engines/custom/routes';
@@ -97,7 +101,9 @@ export interface CoreServices {
   dockerControl: DockerControl;
   vllmDocker: VllmDockerAdapter;
   sglangDocker: SglangDockerAdapter;
-  /** "Aggiorna" on the engine cards (vLLM, SGLang, custom engines). */
+  /** TensorRT-LLM's NGC image (its tags for the Engines card). */
+  trtllmDocker: TrtllmDockerAdapter;
+  /** "Aggiorna" on the engine cards (vLLM, SGLang, TensorRT-LLM, custom engines). */
   updates: EngineUpdates;
   /** NInfer: both adapters, its WSL processes, the guided build (engines/ninfer). */
   ninfer: NinferServices;
@@ -336,6 +342,20 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     // The library is set up below; it is only read when an update is checked.
     models: () => modelServices?.models.list() ?? Promise.resolve([]),
   });
+  // TensorRT-LLM: NVIDIA's image (tags and sizes from NGC), or a Python environment on Linux or inside WSL.
+  const ngc = new NgcRegistry({ fetch: deps.fetch, baseUrl: deps.endpoints.ngcRegistry ?? 'https://nvcr.io', clock: deps.clock });
+  const trtllmDocker = new TrtllmDockerAdapter({ ...dockerEngine, ngc, api: docker.api, hfToken: () => ctx.secrets.hfToken });
+  const wslArgv = deps.endpoints.wsl ?? ['wsl.exe'];
+  const trtllmNative = new TrtllmNativeAdapter({
+    deps,
+    createClient,
+    ownership,
+    hfToken: () => ctx.secrets.hfToken,
+    uv: uvArgv,
+    // Its WSL servers share NInfer's records: one start-up cleanup stops what a crash left in a distro.
+    ...(deps.platform === 'win32' ? { wsl: { argv: wslArgv, processes: ninfer.processes, linuxUv: wslUv({ deps, wsl: wslArgv, githubApi: deps.endpoints.githubApi }) } } : {}),
+    ...(deps.endpoints.trtllmHost ? { launcherPrefix: deps.endpoints.trtllmHost } : {}),
+  });
   // NInfer servers a crashed session left in WSL (checked by their marker); no record = WSL is not even asked.
   void ninfer.cleanupOrphans().catch((e: unknown) => deps.log.warn('NInfer WSL cleanup failed', { error: String(e) }));
   const registry = new EngineRegistry(
@@ -352,6 +372,8 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
         new CommandAdapter({ deps, createClient, ownership }),
         ninfer.native,
         ninfer.wsl,
+        trtllmDocker,
+        trtllmNative,
       ],
       customEngines,
     ),
@@ -361,7 +383,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     settings: ctx.settings,
     images: docker.images,
     hub: docker.hub,
-    tags: { 'vllm-docker': vllmDocker, 'sglang-docker': sglangDocker },
+    tags: { 'vllm-docker': vllmDocker, 'sglang-docker': sglangDocker, 'trtllm-docker': trtllmDocker },
     tools: { proc: deps.proc, git: deps.endpoints.git ?? ['git'], cmake: deps.endpoints.cmake ?? ['cmake'] },
     fetch: deps.fetch,
     pypi: deps.endpoints.pypi ?? 'https://pypi.org',
@@ -423,7 +445,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     // A hub GGUF not downloaded yet (resolved for the preview as its pending download).
     if (model?.pending) out.push({ kind: 'model', label: `${model.pending.repo}/${model.pending.file}`, bytes: model.pending.bytes });
     const base = engineBaseOf(req.engine.kind);
-    if ((base === 'vllm' || base === 'sglang') && req.model.repo && modelServices) {
+    if ((base === 'vllm' || base === 'sglang' || base === 'trtllm') && req.model.repo && modelServices) {
       const local = await models?.findByRepo?.(req.model.repo);
       if (!local) {
         const files = await modelServices.models.hubFiles(req.model.repo, req.model.revision).catch(() => []);
@@ -612,6 +634,7 @@ export async function createServices(ctx: CoreContext, opts: ServicesOptions = {
     dockerControl,
     vllmDocker,
     sglangDocker,
+    trtllmDocker,
     updates,
     ninfer,
     modelVolumes,
@@ -669,6 +692,8 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         registry: s.registry,
         llama: s.llama,
         sglang: s.sglangDocker,
+        trtllm: s.trtllmDocker,
+        busy: () => s.bench.active() !== undefined || s.serve.busy(),
         publish: (e) => ctx.hub.publish(e),
         configs: async () => {
           const last = (await ctx.settings.get()).lastEngine;

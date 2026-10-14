@@ -44,11 +44,14 @@ export const RECIPE_ARG_TARGETS = ['llamacpp', 'vllm', 'sglang', 'ninfer', 'comm
 export const recipeArgTargetSchema = z.enum(RECIPE_ARG_TARGETS);
 export type RecipeArgTarget = z.infer<typeof recipeArgTargetSchema>;
 
-/** The arguments of a recipe an engine kind takes; undefined for external endpoints (never launched). */
+/**
+ * The arguments of a recipe an engine kind takes; undefined for external endpoints (never launched) and
+ * TensorRT-LLM (recipes have no arguments written for trtllm-serve yet).
+ */
 export function recipeArgTargetOf(kind: EngineKind): RecipeArgTarget | undefined {
   if (kind === 'command') return 'command';
   const base = engineBaseOf(kind);
-  return base === 'external' ? undefined : base;
+  return base === 'external' || base === 'trtllm' ? undefined : base;
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;

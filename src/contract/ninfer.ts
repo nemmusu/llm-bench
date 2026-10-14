@@ -172,10 +172,10 @@ export const NINFER_OFFICIAL_REPOS = [
 /** Model formats (ModelIdentity.format). */
 export type ModelFormatId = 'gguf' | 'safetensors' | 'ninfer' | 'remote';
 
-/** Which engines read a model format: GGUF llama.cpp, safetensors vLLM and SGLang, .ninfer NInfer only. */
+/** Which engines read a model format: GGUF llama.cpp, safetensors vLLM, SGLang and TensorRT-LLM, .ninfer NInfer only. */
 export const FORMAT_ENGINE_BASES = {
   gguf: ['llamacpp'],
-  safetensors: ['vllm', 'sglang'],
+  safetensors: ['vllm', 'sglang', 'trtllm'],
   ninfer: ['ninfer'],
 } as const satisfies Record<Exclude<ModelFormatId, 'remote'>, readonly string[]>;
 

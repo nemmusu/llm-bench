@@ -15,6 +15,8 @@
  *  - vLLM follows its own rule (the KV budget inside gpu_memory_utilization × total must hold at
  *    least one sequence of max_model_len; right now that share must also be free) and reports the
  *    concurrency it allows;
+ *  - TensorRT-LLM gives its KV cache a share of the memory still free once the weights are in
+ *    (kv_cache_free_gpu_memory_fraction): that pool must hold one sequence of max_seq_len;
  *  - llama.cpp partial offload reports the largest -ngl that fits;
  *  - llama.cpp estimates can be calibrated with the VRAM peaks measured on this GPU (calibration.ts):
  *    the KV cache + compute buffer part is scaled (and, for the very same model, offset) to match.
@@ -36,6 +38,8 @@ export const DEFAULT_UBATCH = 512;
 export const VLLM_DEFAULT_GPU_UTIL = 0.9;
 /** vLLM memory outside torch's profiled peak: CUDA context, CUDA graphs, NCCL buffers. */
 export const VLLM_NON_TORCH_MIB = 512;
+/** TensorRT-LLM's --kv_cache_free_gpu_memory_fraction default (contract TRTLLM_DEFAULT_KV_FRACTION). */
+export const TRTLLM_DEFAULT_FREE_FRACTION = 0.9;
 /** llama.cpp pads the KV cache to multiples of 256 cells. */
 const KV_PAD = 256;
 /** Fallbacks when metadata is missing: typical 7–8B GQA shapes and a large-ish vocabulary. */
@@ -86,6 +90,8 @@ export interface FitParams {
   maxModelLen?: number;
   /** YaRN / linear RoPE scaling: a context up to originalContext × factor is extended on purpose. */
   ropeScaling?: Pick<NonNullable<LaunchParams['ropeScaling']>, 'factor' | 'originalContext'>;
+  /** TensorRT-LLM: --kv_cache_free_gpu_memory_fraction (default 0.9). */
+  kvFreeFraction?: number;
 }
 
 /**
@@ -161,27 +167,37 @@ export function fitParamsFrom(p: LaunchParams | undefined): FitParams {
   if (p.gpuMemoryUtilization !== undefined) out.gpuMemoryUtilization = p.gpuMemoryUtilization;
   if (p.maxModelLen !== undefined) out.maxModelLen = p.maxModelLen;
   if (p.ropeScaling !== undefined) out.ropeScaling = { factor: p.ropeScaling.factor, originalContext: p.ropeScaling.originalContext };
+  if (p.trtllm?.kvCacheFreeMemoryFraction !== undefined) out.kvFreeFraction = p.trtllm.kvCacheFreeMemoryFraction;
+  if (p.trtllm?.kvCacheDtype !== undefined) out.kvCacheType = p.trtllm.kvCacheDtype;
   return out;
 }
 
-/** vLLM and SGLang reserve a share of the card up front (gpu_memory_utilization / mem-fraction-static); the rest grow as llama.cpp does. */
-function family(engine: EngineKind): 'llamacpp' | 'vllm' {
+/**
+ * vLLM and SGLang reserve a share of the card up front (gpu_memory_utilization / mem-fraction-static);
+ * TensorRT-LLM a share of what is free after the weights; the rest grow as llama.cpp does.
+ */
+function family(engine: EngineKind): 'llamacpp' | 'vllm' | 'trtllm' {
+  if (engine === 'trtllm-docker' || engine === 'trtllm-native') return 'trtllm';
   return engine === 'vllm-docker' || engine === 'vllm-native' || engine === 'sglang-docker' || engine === 'sglang-native' ? 'vllm' : 'llamacpp';
 }
 
-/** Engines that run safetensors folders: vLLM and SGLang. */
+/** Engines that run safetensors folders: vLLM, SGLang and TensorRT-LLM. */
 export function runsSafetensors(engine: EngineKind): boolean {
-  return family(engine) === 'vllm';
+  return family(engine) !== 'llamacpp';
 }
 
+/** NVFP4 KV cache: 4-bit values with one 8-bit scale per 16 (TensorRT-LLM --kv_cache_dtype nvfp4). */
+export const NVFP4_KV_BYTES = 9 / 16;
+
 /**
- * KV cache bytes per element. vLLM has no q8_0/q4_0: both map to its fp8 cache (1 byte). llama.cpp:
- * the type's bits per value (q8_0 8.5, q4_0 4.5, a fork's turbo3 3.125…); a type of unknown size
- * counts as f16 (2 bytes, the safe side).
+ * KV cache bytes per element. vLLM, SGLang and TensorRT-LLM have no q8_0/q4_0: both map to their fp8
+ * cache (1 byte); TensorRT-LLM's nvfp4 is NVFP4_KV_BYTES. llama.cpp: the type's bits per value (q8_0 8.5,
+ * q4_0 4.5, a fork's turbo3 3.125…); a type of unknown size counts as f16 (2 bytes, the safe side).
  */
-export function kvElementBytes(fam: 'llamacpp' | 'vllm', type: FitParams['kvCacheType']): number {
+export function kvElementBytes(fam: 'llamacpp' | 'vllm' | 'trtllm', type: FitParams['kvCacheType']): number {
   if (type === 'fp8') return 1;
-  if (fam === 'vllm') return type === 'q8_0' || type === 'q4_0' ? 1 : 2;
+  if (fam === 'trtllm' && type === 'nvfp4') return NVFP4_KV_BYTES;
+  if (fam !== 'llamacpp') return type === 'q8_0' || type === 'q4_0' ? 1 : 2;
   const bits = type === undefined ? undefined : llamaKvBits(type);
   return bits === undefined ? 2 : bits / 8;
 }
@@ -282,7 +298,7 @@ export function estimateFit(input: FitInput): FitEstimate {
   // Context and KV layout.
   const modelMax = facts.contextLength;
   const defaultCtx = Math.min(modelMax ?? DEFAULT_FIT_CONTEXT, DEFAULT_FIT_CONTEXT);
-  const ctx = Math.max(1, Math.floor((fam === 'vllm' ? (p.maxModelLen ?? p.contextSize) : p.contextSize) ?? defaultCtx));
+  const ctx = Math.max(1, Math.floor((fam === 'llamacpp' ? p.contextSize : (p.maxModelLen ?? p.contextSize)) ?? defaultCtx));
   if (modelMax !== undefined && ctx > modelMax) {
     // With RoPE scaling a longer context is the point: the estimate (linear KV) still holds.
     const extended = p.ropeScaling ? p.ropeScaling.originalContext * p.ropeScaling.factor : 0;
@@ -332,6 +348,40 @@ export function estimateFit(input: FitInput): FitEstimate {
       levelNow: overFree ? 'no' : level,
     };
     if (kvPerSeqMiB > 0) est.maxConcurrency = Math.max(0, Math.floor(kvBudgetMiB / kvPerSeqMiB));
+    return est;
+  }
+
+  if (fam === 'trtllm') {
+    // TensorRT-LLM: weights + buffers, then its KV pool takes "fraction" of what is still free. vLLM's
+    // per-sequence KV size (its paged cache holds whole sequences the same way); the same activation figure.
+    const fraction = p.kvFreeFraction ?? TRTLLM_DEFAULT_FREE_FRACTION;
+    const usable = usableMiB(gpu);
+    const kvPerSeqMiB = vllmKvBytesPerSeq(layout, ctx, elem) / MIB;
+    const kvMiB = Math.round(kvPerSeqMiB * seqs);
+    const overheadMiB = vllmActivationMiB(facts.paramsB) + VLLM_NON_TORCH_MIB;
+    const pool = (room: number) => fraction * (room - weightsMiB - overheadMiB);
+    const judge = (room: number): FitLevel => {
+      // Every user's whole context must fit in the pool (the tuner's goal 'multi' asks for that many at once).
+      if (pool(room) <= 0 || pool(room) < kvPerSeqMiB * seqs) return 'no';
+      return levelFor((weightsMiB + kvMiB + overheadMiB) / room, false) as FitLevel;
+    };
+    const level = judge(usable);
+    if (level === 'no') notes.push(FIT_NOTES.kvTooSmall);
+    const est: FitEstimate = {
+      level,
+      needMiB: weightsMiB + kvMiB + overheadMiB,
+      weightsMiB,
+      kvMiB,
+      overheadMiB,
+      availableMiB: usable,
+      utilization: (weightsMiB + kvMiB + overheadMiB) / usable,
+      contextSize: ctx,
+      basis: fromFile ? 'file-size' : 'params-heuristic',
+      notes,
+      ...nowOf(gpu),
+      levelNow: judge(Math.max(1, Math.min(gpu.freeMiB, usable))),
+    };
+    if (kvPerSeqMiB > 0) est.maxConcurrency = Math.max(0, Math.floor(pool(usable) / kvPerSeqMiB));
     return est;
   }
 

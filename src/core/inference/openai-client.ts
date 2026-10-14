@@ -28,8 +28,13 @@ export function toUsage(u: z.infer<typeof usageSchema>): Usage {
   };
 }
 
-/** Flavors served by this client: vLLM, SGLang and any other OpenAI-compatible server. */
-export type OpenAiFlavor = 'vllm' | 'sglang' | 'openai';
+/** Flavors served by this client: vLLM, SGLang, TensorRT-LLM and any other OpenAI-compatible server. */
+export type OpenAiFlavor = 'vllm' | 'sglang' | 'openai' | 'trtllm';
+
+/** trtllm-serve's tokenizer: `{ model?, prompt }` → `{ count, tokens }`, always with the tokenizer's own special tokens. */
+export const TRTLLM_TOKENIZE_PATH = '/_internal/tokenize';
+/** Two texts that never begin with the same token: a first id they share is a special token the tokenizer adds (BOS). */
+const SPECIAL_PROBES = ['A', 'z'] as const;
 
 /**
  * Client for OpenAI-compatible `/v1/completions` servers: vLLM (flavor "vllm"), SGLang ("sglang")
@@ -61,7 +66,7 @@ export class OpenAiClient implements InferenceClient {
     };
   }
 
-  /** vLLM and SGLang: the engine extensions (exact lengths, token ids, /health, /tokenize). */
+  /** vLLM, SGLang and TensorRT-LLM: the engine extensions (exact lengths, token ids, /health, a tokenizer). */
   private get engine(): boolean {
     return this.flavor !== 'openai';
   }
@@ -95,6 +100,12 @@ export class OpenAiClient implements InferenceClient {
   async tokenize(text: string, opts: { addSpecial?: boolean; signal?: AbortSignal } = {}): Promise<number[]> {
     const unsupported = () => new AppError('ENDPOINT_INVALID', 'tokenize unsupported', { params: { reason: 'tokenize_unsupported' } });
     if (!this.engine) throw unsupported();
+    if (this.flavor === 'trtllm') {
+      const ids = await this.trtllmTokenize(text, opts.signal, unsupported);
+      if (opts.addSpecial ?? false) return ids;
+      const lead = await this.leadingSpecial(opts.signal, unsupported);
+      return lead !== undefined && ids[0] === lead ? ids.slice(1) : ids;
+    }
     const body = { model: this.opts.model, prompt: text, add_special_tokens: opts.addSpecial ?? false };
     const res = await send(this.deps, joinUrl(this.baseUrl, '/tokenize'), this.init('POST', body, opts.signal));
     if (this.flavor === 'sglang' && (res.status === 404 || res.status === 405)) {
@@ -103,6 +114,34 @@ export class OpenAiClient implements InferenceClient {
     }
     if (!res.ok) throw await responseError(res, '/tokenize');
     return (await readJson(res, tokenizeSchema, '/tokenize')).tokens;
+  }
+
+  /** trtllm-serve's /_internal/tokenize (builds without it, 404/405: no tokenizer, the runner sends text). */
+  private async trtllmTokenize(text: string, signal: AbortSignal | undefined, unsupported: () => AppError): Promise<number[]> {
+    // Its request model forbids unknown fields: only these two.
+    const body = { ...(this.opts.model !== undefined ? { model: this.opts.model } : {}), prompt: text };
+    const res = await send(this.deps, joinUrl(this.baseUrl, TRTLLM_TOKENIZE_PATH), this.init('POST', body, signal));
+    if (res.status === 404 || res.status === 405) {
+      await discard(res);
+      throw unsupported();
+    }
+    if (!res.ok) throw await responseError(res, TRTLLM_TOKENIZE_PATH);
+    return (await readJson(res, tokenizeSchema, TRTLLM_TOKENIZE_PATH)).tokens;
+  }
+
+  private special: Promise<number | undefined> | undefined;
+
+  /**
+   * The special token trtllm-serve's tokenizer puts first (BOS), found once: it always adds its special
+   * tokens, so a text asked for without them has it taken off.
+   */
+  private leadingSpecial(signal: AbortSignal | undefined, unsupported: () => AppError): Promise<number | undefined> {
+    this.special ??= Promise.all(SPECIAL_PROBES.map((t) => this.trtllmTokenize(t, signal, unsupported))).then((r) => {
+      const [a, b] = r as [number[], number[]];
+      return a.length > 1 && b.length > 1 && a[0] === b[0] ? a[0] : undefined;
+    });
+    this.special.catch(() => (this.special = undefined));
+    return this.special;
   }
 
   /**

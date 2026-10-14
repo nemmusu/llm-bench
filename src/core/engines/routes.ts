@@ -22,6 +22,10 @@ export interface EnginesRouteDeps {
   llama: LlamaInstallService;
   /** lmsysorg/sglang release tags (Docker Hub). */
   sglang?: { tags(opts?: { refresh?: boolean }): Promise<unknown[]> };
+  /** TensorRT-LLM's release tags (NGC). */
+  trtllm?: { tags(opts?: { refresh?: boolean }): Promise<unknown[]> };
+  /** A benchmark or a server is running: nothing it uses may be removed. */
+  busy?: () => boolean;
   /** EventHub.publish of the core. */
   publish(e: ServerEvent): void;
   /** Saved per-kind configuration (custom executable, endpoint URL, Docker image…) used for detection and installs. */
@@ -47,6 +51,9 @@ function installerOf(a: EngineAdapter | undefined): Installer | undefined {
  *   GET    /api/engines/llamacpp/installed      -> InstalledBuild[]
  *   DELETE /api/engines/llamacpp/installed/:id  -> { ok: true }
  *   GET    /api/engines/sglang/tags?refresh=1   -> SglangTagInfo[] (lmsysorg/sglang releases, the recommended one marked)
+ *   GET    /api/engines/trtllm/tags?refresh=1   -> TrtllmTagInfo[] (nvcr.io/nvidia/tensorrt-llm/release releases, newest first)
+ *   DELETE /api/engines/:kind/install           -> { ok: true }: "Rimuovi" (trtllm-docker: the image; trtllm-native: LLM Bench's
+ *            own Python environment), with the saved configuration of that kind
  */
 export function createEnginesRoutes(svc: EnginesRouteDeps): RouteModule {
   let running: Promise<void> | undefined;
@@ -113,6 +120,21 @@ export function createEnginesRoutes(svc: EnginesRouteDeps): RouteModule {
       return c.json(await svc.sglang.tags({ refresh: c.req.query('refresh') === '1' }));
     });
 
+    app.get('/api/engines/trtllm/tags', async (c) => {
+      if (!svc.trtllm) throw new AppError('VALIDATION', 'TensorRT-LLM tags are not available', { params: { reason: 'trtllm_tags' } });
+      return c.json(await svc.trtllm.tags({ refresh: c.req.query('refresh') === '1' }));
+    });
+
+    app.delete('/api/engines/:kind/install', async (c) => {
+      const param = c.req.param('kind');
+      const kind = engineKindSchema.safeParse(param);
+      const adapter = kind.success ? svc.registry.get(kind.data) : undefined;
+      if (!kind.success || !adapter?.remove) throw new AppError('VALIDATION', `Engine ${param} cannot be removed from the app`, { params: { kind: param } });
+      if (running || svc.busy?.()) throw new AppError('VALIDATION', 'An install, a benchmark or a server is using the engines', { params: { reason: 'busy' } });
+      const cfg: EngineConfig = { ...(svc.configs ? (await svc.configs())[kind.data] : undefined), kind: kind.data };
+      await adapter.remove(cfg);
+      return c.json({ ok: true as const });
+    });
     app.delete('/api/engines/llamacpp/installed/:id', async (c) => {
       await svc.llama.removeBuild(c.req.param('id'));
       return c.json({ ok: true as const });

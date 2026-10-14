@@ -90,6 +90,20 @@ export const STANDARD_FLAGS: Record<FlagBase, readonly StandardFlag[]> = {
     { spellings: ['--no-prefix-reuse'], setting: 'ninfer.prefixReuse' },
     { spellings: ['--no-thinking'], setting: 'ninfer.thinking' },
   ],
+  // trtllm-serve serve <model> [options] (the model is positional; click options with underscores).
+  trtllm: [
+    { spellings: ['--host'], setting: 'host', required: true },
+    { spellings: ['--port'], setting: 'port', required: true },
+    { spellings: ['--served_model_name'], setting: 'alias', required: true },
+    { spellings: ['--max_seq_len'], setting: 'contextSize' },
+    { spellings: ['--max_batch_size'], setting: 'parallel' },
+    { spellings: ['--max_num_tokens'], setting: 'batchSize' },
+    { spellings: ['--kv_cache_free_gpu_memory_fraction', '--free_gpu_memory_fraction'], setting: 'trtllm.kvCacheFreeMemoryFraction' },
+    { spellings: ['--kv_cache_dtype'], setting: 'kvCacheType' },
+    { spellings: ['--tp_size', '--tensor_parallel_size'], setting: 'trtllm.tensorParallel' },
+    { spellings: ['--enable_chunked_prefill'], setting: 'trtllm.chunkedPrefill' },
+    { spellings: ['--trust_remote_code'], setting: 'trtllm.trustRemoteCode' },
+  ],
 };
 
 const specOf = (base: FlagBase, flag: string): StandardFlag | undefined => STANDARD_FLAGS[base].find((s) => s.spellings.includes(flag));

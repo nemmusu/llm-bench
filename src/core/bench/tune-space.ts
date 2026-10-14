@@ -27,6 +27,11 @@
  * to the users at once (--cuda-graph-max-bs), then none (--disable-cuda-graph).
  *
  * A program with an OpenAI API: what its commands' placeholders take (commandSpace).
+ *
+ * TensorRT-LLM: KV auto / fp8 (fp8 when the installed trtllm-serve lists it; "Accurata" also nvfp4 when listed), --max_num_tokens (prompt
+ * tokens per step, chunked prefill on), --max_batch_size 1 or N for goal 'multi'. Its KV pool takes its share
+ * of whatever memory is free after the weights by itself (--kv_cache_free_gpu_memory_fraction, left at the
+ * user's value or 0.9): no memory share to fit, and no CUDA graph flag to trade for context.
  */
 import type { CommandKvType, CommandSetting } from '../../contract/custom-engines';
 import type { LaunchParams } from '../../contract/engines';
@@ -321,6 +326,46 @@ export function commandSpace(o: CommandSpaceOptions): TuneSpace {
       ...(typeof v.b === 'number' ? { batchSize: v.b } : {}),
       ...(has('parallel') ? { parallel: typeof v.np === 'number' ? v.np : 1 } : {}),
     }),
+    tags: (v) => tagsOf(v),
+  };
+}
+
+export interface TrtllmSpaceOptions {
+  budget: TuneBudget;
+  params: LaunchParams;
+  /** Goal 'multi': users at once (--max_batch_size). */
+  users?: number | undefined;
+  /** The choices trtllm-serve's --help lists (--kv_cache_dtype). */
+  choices?: Readonly<Record<string, readonly string[]>> | undefined;
+  prefer?: Readonly<Record<string, readonly DimValue[]>> | undefined;
+}
+
+export function trtllmSpace(o: TrtllmSpaceOptions): TuneSpace {
+  const kept = keptParams(o.params);
+  // The search chooses the KV type: a KV type of the user's own would override every combination.
+  const { kvCacheDtype: _kv, ...own } = kept.trtllm ?? {};
+  const trtllm = Object.keys(own).length > 0 ? { trtllm: own } : {};
+  const users = o.users !== undefined && o.users > 1 ? o.users : undefined;
+  const dtypes = o.choices?.['--kv_cache_dtype'];
+  // NVFP4 (a prototype, Blackwell only) is tried by "Accurata" alone, when the installed trtllm-serve lists it.
+  const ladder = ['auto', ...(!dtypes || dtypes.includes('fp8') ? ['fp8'] : []), ...(o.budget === 'thorough' && dtypes?.includes('nvfp4') ? ['nvfp4'] : [])];
+  return {
+    kvLadder: ladder,
+    base: (kv) => ({ kv, bt: 2048, ...(users ? { np: users } : {}) }),
+    dimensions: [{ key: 'bt', values: () => preferFirst(BATCHED_TOKENS[o.budget], o.prefer?.bt) }],
+    contextFor: (_users, perUser) => perUser,
+    params: (v, ctx) => {
+      const { trtllm: _t, ...rest } = kept;
+      return {
+        ...rest,
+        ...trtllm,
+        contextSize: ctx,
+        kvCacheType: v.kv as string,
+        batchSize: v.bt as number,
+        parallel: typeof v.np === 'number' ? v.np : 1,
+        extraArgs: [...kept.extraArgs],
+      };
+    },
     tags: (v) => tagsOf(v),
   };
 }

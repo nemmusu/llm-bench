@@ -2,6 +2,10 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
+/** TensorRT-LLM's release image on NVIDIA's registry (NGC), and the tag its docs install (checked 2026-10-14). */
+export const TRTLLM_IMAGE = 'nvcr.io/nvidia/tensorrt-llm/release';
+export const TRTLLM_RECOMMENDED_TAG = '1.4.0rc0';
+
 /** resources/engine-compat.json: which engine images work on which GPUs (facts with sources). */
 export const engineCompatSchema = z.object({
   schema: z.literal(1),
@@ -31,6 +35,17 @@ export const engineCompatSchema = z.object({
       notes: z.array(z.string()).default([]),
     })
     .default({ image: 'lmsysorg/sglang', recommendedTag: 'v0.5.21', notes: [] }),
+  /**
+   * NVIDIA TensorRT-LLM's NGC image (nvcr.io/nvidia/tensorrt-llm/release): the tag offered by default
+   * (files without the section get the built-in one).
+   */
+  trtllm: z
+    .object({
+      image: z.string(),
+      recommendedTag: z.string(),
+      notes: z.array(z.string()).default([]),
+    })
+    .default({ image: TRTLLM_IMAGE, recommendedTag: TRTLLM_RECOMMENDED_TAG, notes: [] }),
   minDriverByCuda: z.record(z.string(), z.object({ linux: z.string(), windows: z.string() })).default({}),
   sources: z.array(z.object({ url: z.string(), fact: z.string(), checked: z.string() })).default([]),
 });
@@ -51,6 +66,7 @@ export const BUILTIN_COMPAT: EngineCompat = {
   },
   llamacpp: { dockerImage: 'ghcr.io/ggml-org/llama.cpp:server-cuda', notes: [] },
   sglang: { image: 'lmsysorg/sglang', recommendedTag: 'v0.5.21', notes: [] },
+  trtllm: { image: TRTLLM_IMAGE, recommendedTag: TRTLLM_RECOMMENDED_TAG, notes: [] },
   minDriverByCuda: {},
   sources: [],
 };

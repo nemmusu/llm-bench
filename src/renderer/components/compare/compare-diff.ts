@@ -1,5 +1,5 @@
 /** "Cosa cambia tra loro": every setting of the compared items side by side, the different ones marked. */
-import type { LaunchParams } from '../../../contract/engines';
+import { trtllmParamsText, type LaunchParams } from '../../../contract/engines';
 import { ninferParamsText } from '../../../contract/ninfer';
 import { runAppLabel } from '../../../contract/results';
 import type { Formatters, MessageKey } from '../../i18n';
@@ -34,6 +34,7 @@ const PARAM_LABELS: Record<keyof LaunchParams, MessageKey> = {
   quantization: 'benchmark.expert.quantization',
   ropeScaling: 'benchmark.expert.ropeScaling',
   ninfer: 'benchmark.expert.ninfer',
+  trtllm: 'benchmark.expert.trtllm',
   extraArgs: 'benchmark.expert.extraArgs',
   env: 'benchmark.expert.env',
 };
@@ -43,6 +44,7 @@ export function paramText(key: keyof LaunchParams, p: LaunchParams, auto: string
   if (key === 'extraArgs') return p.extraArgs.length ? p.extraArgs.join(' ') : auto;
   if (key === 'ropeScaling') return p.ropeScaling ? `${p.ropeScaling.type} ×${p.ropeScaling.factor} (${p.ropeScaling.originalContext})` : auto;
   if (key === 'ninfer') return ninferParamsText(p.ninfer) || auto;
+  if (key === 'trtllm') return trtllmParamsText(p.trtllm) || auto;
   if (key === 'env') {
     const e = Object.entries(p.env);
     return e.length ? e.map(([k, x]) => `${k}=${x}`).join(' ') : auto;

@@ -15,6 +15,7 @@ import { CustomEngineAdapter, expandCustom } from '../custom/adapter';
 import type { EngineRegistry } from '../registry';
 import type { EngineAdapter, InstallPlan, ProgressSink } from '../types';
 import { findCheckout, gitState, gitUpdate, updateCommands, type GitTools } from './git';
+import { newerTrtllmTag } from '../trtllm-docker/tags';
 import { compareVersions, newerTag, packageOf, parseVersion, pypiLatest, type PypiRelease } from './versions';
 
 /** A tag as the update check reads it (Docker Hub, or an engine's own list with its GPU advice). */
@@ -36,10 +37,12 @@ export interface EngineUpdatesDeps {
   settings: { get(): Promise<Pick<Settings, 'lastEngine' | 'customEngines'>>; update(patch: Partial<Settings>): Promise<unknown> };
   images: { inspect(ref: string): Promise<{ repoDigests: string[] } | undefined> };
   hub: { listTags(repo: string, nameFilter?: string, opts?: { refresh?: boolean }): Promise<HubTag[]>; tagInfo(ref: string): Promise<HubTag | undefined> };
-  /** Release tags of the built-in Docker engines (vLLM's say which ones run on this GPU). */
-  tags: Record<'vllm-docker' | 'sglang-docker', { tags(opts: { refresh?: boolean }): Promise<UpdateTag[]> }>;
-  /** `uv pip install` requirement of the managed environments (default "vllm", "sglang"). */
-  packages?: Partial<Record<'vllm-native' | 'sglang-native', string>>;
+  /** Release tags of the built-in Docker engines (vLLM's say which ones run on this GPU; TensorRT-LLM's come from NGC). */
+  tags: Record<'vllm-docker' | 'sglang-docker', { tags(opts: { refresh?: boolean }): Promise<UpdateTag[]> }> & {
+    'trtllm-docker'?: { tags(opts: { refresh?: boolean }): Promise<UpdateTag[]>; remoteTag(image: string): Promise<UpdateTag | undefined> };
+  };
+  /** `uv pip install` requirement of the managed environments (default "vllm", "sglang", "tensorrt-llm"). */
+  packages?: Partial<Record<UvKind, string>>;
   tools: GitTools;
   fetch: typeof globalThis.fetch;
   /** PyPI base URL. */
@@ -51,6 +54,23 @@ export interface EngineUpdatesDeps {
   ninfer?: Record<'ninfer-native' | 'ninfer-wsl', NinferPlanner>;
   /** The same for a NInfer variant (a custom engine of base 'ninfer'): its own checkout. */
   ninferVariant?: (engine: CustomEngine) => NinferPlanner;
+}
+
+/** The engines in a managed uv environment. */
+type UvKind = 'vllm-native' | 'sglang-native' | 'trtllm-native';
+/** Their PyPI package, and the setting that names a Python of the user's own instead. */
+const UV_PACKAGES: Record<UvKind, { spec: string; own: 'vllmPath' | 'sglangPath' | 'trtllmPath' }> = {
+  'vllm-native': { spec: 'vllm', own: 'vllmPath' },
+  'sglang-native': { spec: 'sglang', own: 'sglangPath' },
+  'trtllm-native': { spec: 'tensorrt-llm', own: 'trtllmPath' },
+};
+
+/** How a Docker engine's update reads its registry, when it is not Docker Hub's way. */
+interface RegistryRead {
+  /** The newer tag to offer (default: newerTag, stable releases of the same family). */
+  newer?: (current: string, tags: readonly UpdateTag[]) => UpdateTag | undefined;
+  /** The current tag's digest and size on its registry (an image outside Docker Hub: else "unknown"). */
+  info?: (image: string) => Promise<UpdateTag | undefined>;
 }
 
 type NinferPlanner = { plan(opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> };
@@ -90,7 +110,16 @@ export class EngineUpdates {
   async labelOf(target: string): Promise<string> {
     const t = parseTarget(target);
     if (t.kind === 'custom') return (await this.custom(t.id)).name;
-    return { 'vllm-docker': 'vLLM (Docker)', 'sglang-docker': 'SGLang (Docker)', 'vllm-native': 'vLLM', 'sglang-native': 'SGLang', 'ninfer-native': 'NInfer', 'ninfer-wsl': 'NInfer (WSL)' }[t.engine];
+    return {
+      'vllm-docker': 'vLLM (Docker)',
+      'sglang-docker': 'SGLang (Docker)',
+      'trtllm-docker': 'TensorRT-LLM (Docker)',
+      'vllm-native': 'vLLM',
+      'sglang-native': 'SGLang',
+      'trtllm-native': 'TensorRT-LLM',
+      'ninfer-native': 'NInfer',
+      'ninfer-wsl': 'NInfer (WSL)',
+    }[t.engine];
   }
 
   async check(target: string, opts: { fetch?: boolean } = {}): Promise<EngineUpdateCheck> {
@@ -125,13 +154,25 @@ export class EngineUpdates {
         const ninfer = this.d.ninfer?.[t.engine];
         return ninfer ? ninfer.plan(opts) : { check: { ...this.base(target, 'none'), state: 'none', reason: 'tools' } };
       }
-      if (t.engine === 'vllm-docker' || t.engine === 'sglang-docker') {
+      if (t.engine === 'vllm-docker' || t.engine === 'sglang-docker' || t.engine === 'trtllm-docker') {
         const last = (await this.d.settings.get()).lastEngine;
         const kind = t.engine;
         const cfg: EngineConfig = last?.kind === kind && last.customEngineId === undefined ? last : { kind };
-        return this.docker(target, installer(baseOf(this.d.registry, kind)), cfg, opts, (o) => this.d.tags[kind].tags(o), async (image) => {
-          await this.d.settings.update({ lastEngine: { kind, image } });
-        });
+        const own = this.d.tags[kind];
+        const trt = this.d.tags['trtllm-docker'];
+        // TensorRT-LLM: NGC's tags (a release candidate is followed by newer candidates too) and digests.
+        const read: RegistryRead = kind === 'trtllm-docker' && trt ? { newer: newerTrtllmTag, info: (image) => trt.remoteTag(image) } : {};
+        return this.docker(
+          target,
+          installer(baseOf(this.d.registry, kind)),
+          cfg,
+          opts,
+          own ? (o) => own.tags(o) : undefined,
+          async (image) => {
+            await this.d.settings.update({ lastEngine: { kind, image } });
+          },
+          read,
+        );
       }
       return this.uv(target, t.engine, opts);
     }
@@ -157,6 +198,7 @@ export class EngineUpdates {
     opts: { fetch?: boolean },
     ownTags: ((o: { refresh?: boolean }) => Promise<UpdateTag[]>) | undefined,
     switchTo: (image: string) => Promise<void>,
+    read: RegistryRead = {},
   ): Promise<{ check: EngineUpdateCheck; run?: Run }> {
     const status: EngineStatus = await adapter.detect(cfg);
     const blocked = (reason: EngineUpdateCheck['reason']) => ({ check: { ...this.base(target, 'docker-pull'), state: 'blocked' as const, reason } });
@@ -177,7 +219,7 @@ export class EngineUpdates {
         if (next !== image) await switchTo(next);
         return version;
       };
-    const newer = newerTag(tag, tags.filter((x) => x.supportsGpu !== false));
+    const newer = (read.newer ?? newerTag)(tag, tags.filter((x) => x.supportsGpu !== false));
     if (newer) {
       const next = `${displayRepo(ref)}:${newer.name}`;
       return {
@@ -187,8 +229,8 @@ export class EngineUpdates {
     }
     const again = { ...this.base(target, 'docker-pull'), current: tag, latest: tag, image, commands: [['docker', 'pull', image]] };
     // Another registry: no tag list to read without signing in. It can always be pulled again.
-    if (!hub) return { check: { ...again, state: 'unknown' }, run: pull(image, tag) };
-    const remote = tags.find((x) => x.name === tag) ?? (await this.d.hub.tagInfo(image));
+    if (!hub && !read.info) return { check: { ...again, state: 'unknown' }, run: pull(image, tag) };
+    const remote = read.info ? await read.info(image).catch(() => undefined) : (tags.find((x) => x.name === tag) ?? (await this.d.hub.tagInfo(image)));
     const local = digestFor(image, (await this.d.images.inspect(image))?.repoDigests ?? []);
     if (remote?.digest !== undefined && local !== undefined && remote.digest !== local) {
       return { check: { ...again, state: 'available', ...(remote.sizeBytes !== undefined ? { sizeBytes: remote.sizeBytes } : {}) }, run: pull(image, tag) };
@@ -205,17 +247,18 @@ export class EngineUpdates {
     return value;
   }
 
-  /** The managed uv environment of vLLM or SGLang (Linux), against PyPI's newest release. */
-  private async uv(target: string, kind: 'vllm-native' | 'sglang-native', opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> {
-    const base = this.base(target, 'uv');
+  /** The managed uv environment of vLLM, SGLang (Linux) or TensorRT-LLM (Linux, or WSL), against PyPI's newest release. */
+  private async uv(target: string, kind: UvKind, opts: { fetch?: boolean }): Promise<{ check: EngineUpdateCheck; run?: Run }> {
     const adapter = installer(baseOf(this.d.registry, kind));
     const last = (await this.d.settings.get()).lastEngine;
-    const own = last?.kind === kind && last.customEngineId === undefined && (kind === 'vllm-native' ? last.vllmPath : last.sglangPath);
+    const own = last?.kind === kind && last.customEngineId === undefined && last[UV_PACKAGES[kind].own];
     if (own) return { check: { ...this.base(target, 'none'), state: 'none', reason: 'own-environment' } };
     const status = await adapter.detect({ kind });
     if (status.supported === false) return { check: { ...this.base(target, 'none'), state: 'none', reason: 'tools' } };
+    // TensorRT-LLM in WSL: the commands run in the distro.
+    const base = { ...this.base(target, 'uv'), ...(kind === 'trtllm-native' && status.variant !== undefined ? { distro: status.variant } : {}) };
     if (!status.installed || status.version === undefined) return { check: { ...base, state: 'blocked', reason: 'not-installed' } };
-    const spec = this.d.packages?.[kind] ?? (kind === 'vllm-native' ? 'vllm' : 'sglang');
+    const spec = this.d.packages?.[kind] ?? UV_PACKAGES[kind].spec;
     const pkg = packageOf(spec);
     const release = await this.pypiRelease(pkg.name, opts.fetch === true);
     const have = parseVersion(status.version);

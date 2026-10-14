@@ -98,6 +98,14 @@ function specsOf(base: LaunchBase, memory: string): Partial<Record<ParamsField, 
         ninferHostKvMib: fx('hostKv'),
         ninferPreserveThinking: fx('preserveThinking'),
       };
+    // TensorRT-LLM: its shared fields in vLLM's words until its own panel (the UI's work) words them.
+    case 'trtllm':
+      return {
+        maxModelLen: fx('ctxRequest', CONTEXT),
+        parallel: fx('requests', USERS),
+        kvCacheType: fx('kvVllm'),
+        batchSize: fx('batchVllm'),
+      };
   }
 }
 

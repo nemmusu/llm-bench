@@ -114,6 +114,8 @@ export function buildDeps(b: BootEnv): CoreDeps {
       cmake: toolOverride(env.GPUBENCH_CMAKE),
       wsl: toolOverride(env.GPUBENCH_WSL),
       ninferHost: toolOverride(env.GPUBENCH_NINFER_HOST),
+      ngcRegistry: env.GPUBENCH_NGC_REGISTRY ?? 'https://nvcr.io',
+      trtllmHost: toolOverride(env.GPUBENCH_TRTLLM_HOST),
     },
     platform,
     arch: b.arch,

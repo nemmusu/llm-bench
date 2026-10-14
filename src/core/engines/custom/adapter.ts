@@ -11,6 +11,7 @@
 import { commandParams, customEngineKindOf, type CustomEngine } from '../../../contract/custom-engines';
 import { engineBaseOf, type EngineConfig, type EngineStatus, type LaunchParams } from '../../../contract/engines';
 import { AppError, toAppErrorData } from '../../../contract/errors';
+import type { EvictResult } from '../../cache/evictor';
 import type { CoreEngineConfig, EngineAdapter, EngineCaps, EngineInstance, InstallPlan, LaunchPlan, ModelTarget, PlanOptions, ProgressSink } from '../types';
 
 /** Where the saved engines come from (settings, read on every use: edits apply at once). */
@@ -68,18 +69,23 @@ export class CustomEngineAdapter implements EngineAdapter {
   readonly kind: EngineAdapter['kind'];
   readonly installPlan?: (cfg: EngineConfig) => Promise<InstallPlan>;
   readonly install?: (plan: InstallPlan, progress: ProgressSink, signal: AbortSignal) => Promise<void>;
+  readonly evict?: (plan: LaunchPlan, signal?: AbortSignal) => Promise<EvictResult | undefined>;
+  readonly remove?: (cfg: EngineConfig) => Promise<void>;
 
   constructor(
     readonly inner: EngineAdapter,
     private readonly source: CustomEngineSource,
   ) {
     this.kind = inner.kind;
-    const { installPlan, install } = inner;
+    const { installPlan, install, evict, remove } = inner;
     if (installPlan && install) {
       // A fork's Docker image is pulled like the base's ("Scarica").
       this.installPlan = async (cfg) => installPlan.call(inner, (await resolveCustom(this.source, cfg))?.cfg ?? cfg);
       this.install = (plan, progress, signal) => install.call(inner, plan, progress, signal);
     }
+    // Cold loads of an engine with its own page cache (WSL), and "Rimuovi": the base's own.
+    if (evict) this.evict = (plan, signal) => evict.call(inner, plan, signal);
+    if (remove) this.remove = async (cfg) => remove.call(inner, (await resolveCustom(this.source, cfg))?.cfg ?? cfg);
   }
 
   resolve(cfg: EngineConfig | undefined): Promise<ResolvedCustom | undefined> {

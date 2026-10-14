@@ -20,7 +20,7 @@ import { spillPossible } from './spill';
 import { anchorOf } from './sweep';
 import { MULTI_TURNS } from './tune-multi';
 import { runnerUp, usersOf } from './tune-rank';
-import { commandSpace, llamaSpace, sglangSpace, speculativeArgs, vllmSpace, vllmUtilizations } from './tune-space';
+import { commandSpace, llamaSpace, sglangSpace, speculativeArgs, trtllmSpace, vllmSpace, vllmUtilizations } from './tune-space';
 import { NINFER_EXPECT, ninferTuneInput } from './tune-ninfer';
 import { DEFAULT_LOAD_MS, DEFAULT_SPEED, type DimValue, type RecheckInput, type TuneExpect, type TunerInput, type TuneSpace } from './tuner';
 
@@ -271,6 +271,11 @@ export async function buildTuneSetup(
   if (caps?.command) {
     const { settings, kvTypes } = caps.command;
     return { ...common, space: commandSpace({ budget, params: p.params, settings, kvTypes, users, prefer }) };
+  }
+  if (engineBaseOf(kind) === 'trtllm') {
+    const space = trtllmSpace({ budget, params: p.params, users, choices: caps?.choices, prefer });
+    // trtllm-serve has no RoPE scaling option: no YaRN launches.
+    return { ...common, space };
   }
   if (!isLlamaCpp(kind)) {
     const util = vllmTuneUtilization(gpu);

@@ -1328,6 +1328,8 @@ export const en: Messages = {
       command: 'Program with an OpenAI API',
       'ninfer-native': 'NInfer',
       'ninfer-wsl': 'NInfer (WSL)',
+      'trtllm-docker': 'TensorRT-LLM (Docker)',
+      'trtllm-native': 'TensorRT-LLM',
     },
     engineDesc: {
       'llamacpp-native': 'The simplest: installs itself, no Docker.',
@@ -1340,6 +1342,8 @@ export const en: Messages = {
       command: 'Your own program with an OpenAI API: LLM Bench starts and stops it.',
       'ninfer-native': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only (Linux).',
       'ninfer-wsl': 'Made for Qwen 3.6 and 3.8, on an RTX 5090 only: runs inside WSL.',
+      'trtllm-docker': "NVIDIA's own engine, fast on recent cards. Needs Docker.",
+      'trtllm-native': "NVIDIA's own engine, installed on Linux or inside WSL on Windows.",
     },
     profiles: {
       quick: 'Quick',
@@ -1477,6 +1481,7 @@ export const en: Messages = {
       quantization: 'Quantization',
       ropeScaling: 'Context extension (RoPE)',
       ninfer: 'NInfer settings',
+      trtllm: 'TensorRT-LLM settings',
       promptLengths: 'Prompt lengths',
       outputTokens: 'Generated tokens',
       repetitions: 'Repetitions',

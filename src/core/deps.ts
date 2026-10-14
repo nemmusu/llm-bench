@@ -119,6 +119,10 @@ export interface CoreEndpoints {
    * (its checks, its builds, ninfer-serve), so a fake Linux host stands in for this one.
    */
   ninferHost?: string[];
+  /** NVIDIA's container registry (https://nvcr.io): TensorRT-LLM's image tags, sizes and digests. */
+  ngcRegistry?: string;
+  /** Native TensorRT-LLM (Linux), tests and E2E only: an argv placed before its Python (a fake engine through node). */
+  trtllmHost?: string[];
 }
 
 export type Platform = 'win32' | 'linux' | 'darwin';

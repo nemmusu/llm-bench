@@ -3,8 +3,10 @@
  * with its progress ('engine.install' events of kind `update:<target>`).
  *
  * Targets: 'vllm-docker', 'sglang-docker' (the image in use, against the newest release tag of the
- * same kind, or the same tag's newer digest), 'vllm-native', 'sglang-native' (the managed uv
- * environment, against PyPI) and `custom:<id>` for a custom engine: its Docker image (a newer tag
+ * same kind, or the same tag's newer digest), 'trtllm-docker' (TensorRT-LLM's NGC image: a newer release
+ * tag on NGC, a release candidate followed by newer candidates too, else the same tag's newer digest),
+ * 'vllm-native', 'sglang-native', 'trtllm-native' (the managed uv environment, against PyPI; TensorRT-LLM's
+ * inside WSL on Windows) and `custom:<id>` for a custom engine: its Docker image (a newer tag
  * on Docker Hub, else the same tag pulled again) or a llama.cpp fork built from a git checkout
  * (`git pull --ff-only`, then `cmake --build`); 'ninfer-native' / 'ninfer-wsl', NInfer's git checkout
  * (on Linux, or inside the chosen WSL distro), the same way, its previous build kept aside until the
@@ -49,7 +51,7 @@ export const ENGINE_UPDATE_REASONS = [
 export type EngineUpdateReason = (typeof ENGINE_UPDATE_REASONS)[number];
 
 export const engineUpdateCheckSchema = z.object({
-  /** 'vllm-docker' | 'sglang-docker' | 'vllm-native' | 'sglang-native' | 'custom:<id>'. */
+  /** 'vllm-docker' | 'sglang-docker' | 'trtllm-docker' | 'vllm-native' | 'sglang-native' | 'trtllm-native' | 'custom:<id>'. */
   target: z.string(),
   method: z.enum(ENGINE_UPDATE_METHODS),
   state: z.enum(ENGINE_UPDATE_STATES),
@@ -96,7 +98,7 @@ export const engineUpdateCheckSchema = z.object({
 export type EngineUpdateCheck = z.infer<typeof engineUpdateCheckSchema>;
 
 /** Built-in engines with an update check. */
-export const UPDATABLE_KINDS = ['vllm-docker', 'sglang-docker', 'vllm-native', 'sglang-native', 'ninfer-native', 'ninfer-wsl'] as const;
+export const UPDATABLE_KINDS = ['vllm-docker', 'sglang-docker', 'vllm-native', 'sglang-native', 'ninfer-native', 'ninfer-wsl', 'trtllm-docker', 'trtllm-native'] as const;
 export type UpdatableKind = (typeof UPDATABLE_KINDS)[number];
 
 export const customUpdateTarget = (id: string): string => `custom:${id}`;

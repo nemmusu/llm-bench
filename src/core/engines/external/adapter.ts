@@ -26,6 +26,7 @@ const FLAVOR_NAMES: Record<ApiFlavor, string> = {
   sglang: 'SGLang',
   openai: 'OpenAI-compatible',
   'openai-chat': 'OpenAI-compatible (chat)',
+  trtllm: 'TensorRT-LLM',
 };
 
 interface Endpoint {
@@ -68,7 +69,7 @@ export class ExternalAdapter implements EngineAdapter {
   }
 
   /**
-   * Reachability + flavour: `owned_by` in /v1/models ("llamacpp", "vllm"), else llama.cpp's
+   * Reachability + flavour: `owned_by` in /v1/models ("llamacpp", "vllm", "tensorrt_llm"), else llama.cpp's
    * /props or vLLM's /version, else plain OpenAI. An explicit cfg.flavor wins.
    */
   async probe(cfg: EngineConfig, signal?: AbortSignal): Promise<EndpointProbe> {
@@ -89,6 +90,8 @@ export class ExternalAdapter implements EngineAdapter {
     let version: string | undefined;
     if (flavor === undefined && owners.includes('llamacpp')) flavor = 'llamacpp';
     if (flavor === undefined && owners.includes('vllm')) flavor = 'vllm';
+    // trtllm-serve's model card: owned_by "tensorrt_llm".
+    if (flavor === undefined && owners.includes('tensorrt_llm')) flavor = 'trtllm';
     if (flavor === undefined || flavor === 'llamacpp') {
       const props = await this.request(baseUrl, '/props', cfg.apiKey, signal);
       if (props.ok && isRecord(props.body) && ('default_generation_settings' in props.body || 'build_info' in props.body)) {
@@ -96,10 +99,11 @@ export class ExternalAdapter implements EngineAdapter {
         if (typeof props.body.build_info === 'string') version = props.body.build_info;
       }
     }
-    if (flavor === undefined || flavor === 'vllm') {
+    // vLLM and trtllm-serve both answer /version with { version }.
+    if (flavor === undefined || flavor === 'vllm' || flavor === 'trtllm') {
       const v = await this.request(baseUrl, '/version', cfg.apiKey, signal);
       if (v.ok && isRecord(v.body) && typeof v.body.version === 'string') {
-        flavor = 'vllm';
+        flavor ??= 'vllm';
         version = v.body.version;
       }
     }
@@ -114,7 +118,7 @@ export class ExternalAdapter implements EngineAdapter {
       flags: new Set(),
       tokenIdsInPrompt: p.flavor !== 'openai' && p.flavor !== 'openai-chat',
       timings: p.flavor === 'llamacpp',
-      minTokens: p.flavor === 'vllm',
+      minTokens: p.flavor === 'vllm' || p.flavor === 'trtllm',
       fitFlag: false,
       variant: p.flavor,
     };

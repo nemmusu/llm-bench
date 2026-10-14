@@ -12,6 +12,7 @@ import { engineBaseOf, type EngineKind } from '../../../contract/engines';
 import type { KvCapacity } from '../../../contract/results';
 import { ninferKvCapacity, ninferMemoryReport } from '../ninfer/logs';
 import { sglangKvCapacity } from './sglang';
+import { trtllmKvCapacity } from './trtllm';
 import { parseVllmLoadReport } from './vllm-logs';
 
 const num = (s: string): number => Number(s.replace(/,/g, ''));
@@ -67,12 +68,13 @@ export function parseKvCapacity(lines: readonly string[], kind: EngineKind): KvC
   if (base === 'vllm') return vllmKvCapacity(lines);
   if (base === 'sglang') return sglangKvCapacity(lines);
   if (base === 'ninfer') return ninferKvCapacity(lines);
+  if (base === 'trtllm') return trtllmKvCapacity(lines);
   return base === 'llamacpp' ? llamaKvCapacity(lines) : undefined;
 }
 
 /**
  * What the start log says about the largest context a launch could hold (the tuner's capacity hint):
- * vLLM / SGLang size their KV pool from the memory, whatever the context asked; NInfer only with
+ * vLLM / SGLang / TensorRT-LLM size their KV pool from the memory, whatever the context asked; NInfer only with
  * --kv-capacity auto (an explicit capacity is just what was asked); llama.cpp echoes -c.
  */
 export function capacityHintOf(lines: readonly string[], kind: EngineKind): number | undefined {
