@@ -2296,6 +2296,8 @@ export const it = {
     shortContext: 'a {tokens} di contesto',
     shortPrompt: 'prompt da {tokens}',
     header: '{label} a {tokens}',
+    headerMax: '{label} al contesto massimo',
+    notMeasuredAt: 'non misurata a {tokens}',
     axisDepth: 'Token già nel contesto',
     axisPrompt: 'Lunghezza del prompt (token)',
     tooltipDepth: 'a {tokens} token di contesto',

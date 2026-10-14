@@ -71,6 +71,16 @@ export function headerAt(label: string, tokens: number, f: F): string {
   return f.t('speedAt.header', { label, tokens: tokensK(tokens, f) });
 }
 
+/** A column header where every row is read at its own largest context, full: "Generazione (tok/s) al contesto massimo". */
+export function headerAtMax(label: string, f: Pick<Formatters, 't'>): string {
+  return f.t('speedAt.headerMax', { label });
+}
+
+/** A cell with no number where one was looked for: "non misurata a 256K" (the context or depth it was not measured at). */
+export function notMeasuredAt(tokens: number, f: F): string {
+  return f.t('speedAt.notMeasuredAt', { tokens: tokensK(tokens, f) });
+}
+
 /** The x axis of a speed chart: "Token già nel contesto" or "Lunghezza del prompt (token)". */
 export function axisName(basis: ContextBasis, f: Pick<Formatters, 't'>): string {
   return f.t(basis === 'depth' ? 'speedAt.axisDepth' : 'speedAt.axisPrompt');

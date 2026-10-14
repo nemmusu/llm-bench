@@ -2293,6 +2293,8 @@ export const en: Messages = {
     shortContext: 'at {tokens} of context',
     shortPrompt: 'prompt of {tokens}',
     header: '{label} at {tokens}',
+    headerMax: '{label} at the largest context',
+    notMeasuredAt: 'not measured at {tokens}',
     axisDepth: 'Tokens already in context',
     axisPrompt: 'Prompt length (tokens)',
     tooltipDepth: 'at {tokens} tokens of context',

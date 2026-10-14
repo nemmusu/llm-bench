@@ -53,6 +53,8 @@ import {
   contextWords,
   firstTokenWords,
   headerAt,
+  headerAtMax,
+  notMeasuredAt,
   liveCaption,
   pointTooltip,
   speedAt,
@@ -91,6 +93,10 @@ describe('speed ↔ context words (speed-at)', () => {
     expect(contextShort({ kind: 'read', tokens: 32 * K, basis: 'depth' }, it_)).toBe('a 32K di contesto');
     expect(headerAt('Generazione (tok/s)', 32 * K, it_)).toBe('Generazione (tok/s) a 32K');
     expect(headerAt('Generation (tok/s)', 512, en)).toBe('Generation (tok/s) at 512 tokens');
+    expect(headerAtMax('Generazione (tok/s)', it_)).toBe('Generazione (tok/s) al contesto massimo');
+    expect(headerAtMax('Generation (tok/s)', en)).toBe('Generation (tok/s) at the largest context');
+    expect(notMeasuredAt(256 * K, it_)).toBe('non misurata a 256K');
+    expect(notMeasuredAt(64 * K, en)).toBe('not measured at 64K');
     expect(axisName('depth', it_)).toBe('Token già nel contesto');
     expect(axisName('prompt', it_)).toBe('Lunghezza del prompt (token)');
     expect(tooltipHead(32_768, 'depth', it_)).toBe('a 32.768 token di contesto');
