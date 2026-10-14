@@ -254,7 +254,7 @@ describe('SettingsProvider', () => {
     const api = fakeApi({}, { failSettings: true });
     const { result } = renderHook(() => useSettings(), { wrapper: wrapper(api) });
     await waitFor(() => expect(result.current.ready).toBe(true), { timeout: 4000 });
-    expect(result.current.settings.language).toBe('it');
+    expect(result.current.settings.language).toBe('en');
     expect(result.current.resolvedTheme).toBe('light');
     act(() => mm.fire(true));
     expect(result.current.resolvedTheme).toBe('dark');

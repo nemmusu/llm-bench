@@ -9,9 +9,14 @@ import { ApiProvider, EventsProvider } from './lib/api-context';
 import { SettingsProvider, useSettings } from './lib/settings';
 import { createAppRouter, type AppRouter } from './routes/router';
 
-/** Language and toasts depend on settings, so they sit inside the settings provider. */
+/**
+ * Language and toasts depend on settings, so they sit inside the settings provider. Nothing shows
+ * until the settings are read (a moment): the first frame is already in the user's language, never
+ * English flashing by for someone who picked Italian, and texts shown once at start are in it too.
+ */
 function Themed({ children }: { children: ReactNode }) {
-  const { settings, resolvedTheme } = useSettings();
+  const { settings, ready, resolvedTheme } = useSettings();
+  if (!ready) return null;
   return (
     <I18nProvider lang={settings.language}>
       <TooltipProvider delayDuration={250} skipDelayDuration={150}>

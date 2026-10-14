@@ -14,7 +14,10 @@ export interface LaunchOptions {
   env?: Record<string, string>;
   /** Put a small synthetic GGUF in the library (default true). */
   seedModel?: boolean;
-  /** Initial settings.json content (default: known locations off, so the real C:\models is never scanned). */
+  /**
+   * Initial settings.json content (default: known locations off, so the real C:\models is never scanned;
+   * Italian, the language the specs read, though the app's own default is English).
+   */
   settings?: Record<string, unknown>;
   /** Reuse an existing userData dir (to test persistence across restarts). */
   userData?: string;
@@ -41,7 +44,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const fakes = existsSync(E2E_ENV_FILE) ? (JSON.parse(readFileSync(E2E_ENV_FILE, 'utf8')) as Record<string, string>) : {};
   // Deterministic library: one tiny model, and never the real folders of this PC.
   const settingsFile = path.join(userData, 'settings.json');
-  if (!opts.legacyUserData && !existsSync(settingsFile)) writeFileSync(settingsFile, JSON.stringify({ scanKnownLocations: false, ...opts.settings }));
+  if (!opts.legacyUserData && !existsSync(settingsFile)) writeFileSync(settingsFile, JSON.stringify({ scanKnownLocations: false, language: 'it', ...opts.settings }));
   const seeded = path.join(userData, 'models', 'local', 'Qwen3-0.6B-Q4_K_M.gguf');
   if (!opts.legacyUserData && (opts.seedModel ?? true) && !existsSync(seeded)) {
     mkdirSync(path.dirname(seeded), { recursive: true });

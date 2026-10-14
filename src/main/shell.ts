@@ -198,7 +198,8 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
   const prefsFile = () => path.join(dataDir(), 'shell.json');
   const resources = () => (app.isPackaged ? path.join(h.resourcesPath, 'app-resources') : path.resolve(h.dirname, '../../resources'));
   const appIcon = () => path.join(resources(), 'icons', 'icon.png');
-  const lang = (): TrayLang => s.app?.language ?? 'it';
+  // Until the core tells (the first moments after start-up): English, the app's default language.
+  const lang = (): TrayLang => s.app?.language ?? 'en';
   const t = (k: TrayTextKey, p?: Record<string, string | number>) => trayText(lang(), k, p);
   const warn = (msg: string) => h.write('stderr', Buffer.from(`${msg}\n`));
 

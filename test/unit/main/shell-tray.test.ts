@@ -11,7 +11,8 @@ describe('tray icon', () => {
     const tray = t.tray!;
     expect(tray.images).toEqual([{ path: path.join(trayDir, 'idle.png') }]);
     expect(tray.tooltip).toBe('LLM Bench');
-    expect(tray.labels()).toEqual(['Apri LLM Bench', '---', 'Avvia preset', 'Ferma tutti i server', '---', 'Esci']);
+    // Before the core tells the language: English, the app's default.
+    expect(tray.labels()).toEqual(['Open LLM Bench', '---', 'Start preset', 'Stop all servers', '---', 'Quit']);
     t.proc.emit('message', { type: 'shell-state', state: oneServer });
     expect(tray.image).toEqual({ path: path.join(trayDir, 'running.png') });
     expect(tray.tooltip).toBe('LLM Bench · 1 server attivo: Qwen3 8B (8080)');
@@ -65,7 +66,7 @@ describe('tray icon', () => {
 
   it('"Esci": straight away with nothing running; with servers only after the confirmation', async () => {
     const idle = await started();
-    idle.tray!.click('Esci');
+    idle.tray!.click('Quit');
     await tick();
     expect(idle.calls.quit).toBe(1);
     expect(idle.boxes).toEqual([]);
@@ -89,7 +90,7 @@ describe('tray icon', () => {
     const t = await started();
     t.proc.emit('message', { type: 'shell-notice', notice: { kind: 'start-failed', name: 'Chat veloce' } });
     t.proc.emit('message', { type: 'shell-notice', notice: {} });
-    expect(t.shown).toEqual([{ title: 'Un server non è partito', body: '«Chat veloce» non è partito. Apri LLM Bench per vedere perché.', icon: path.resolve('/app/out/main', '../../resources/icons/icon.png') }]);
+    expect(t.shown).toEqual([{ title: 'A server did not start', body: '“Chat veloce” did not start. Open LLM Bench to see why.', icon: path.resolve('/app/out/main', '../../resources/icons/icon.png') }]);
   });
 });
 

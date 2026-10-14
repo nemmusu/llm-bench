@@ -9,7 +9,8 @@ export const SETTINGS_SCHEMA_VERSION = 1;
 
 export const settingsSchema = z.object({
   schema: z.literal(SETTINGS_SCHEMA_VERSION).default(SETTINGS_SCHEMA_VERSION),
-  language: z.enum(['it', 'en']).default('it'),
+  /** English unless the user picked Italian (a stored choice is kept as it is). */
+  language: z.enum(['it', 'en']).default('en'),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
   density: z.enum(['comfortable', 'compact']).default('comfortable'),
   expertMode: z.boolean().default(false),

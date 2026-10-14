@@ -69,7 +69,7 @@ describe('Engines → Docker', () => {
     const api = libApi(world({ system: linux, docker: { state: 'not-responding', reason: 'version-timeout' } }));
     renderLib('/engines', api);
     const docker = await card('Docker');
-    expect(within(docker).getByText(/Su Linux è un servizio del sistema: premi «Perché e come evitarlo»/)).toBeTruthy();
+    expect(await within(docker).findByText(/Su Linux è un servizio del sistema: premi «Perché e come evitarlo»/)).toBeTruthy();
     await userEvent.click(await within(docker).findByRole('button', { name: 'Perché e come evitarlo' }));
     const dialog = await screen.findByRole('dialog', { name: 'Docker non risponde' });
     expect(within(dialog).getByText(/riavvialo con questo comando/)).toBeTruthy();

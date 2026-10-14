@@ -68,15 +68,15 @@ describe('createApp', () => {
   it('reads and updates settings, rejecting invalid values', async () => {
     const { app } = makeApp();
     const get = await app.request('/api/settings', { headers: auth });
-    expect(await get.json()).toMatchObject({ language: 'it', theme: 'system' });
+    expect(await get.json()).toMatchObject({ language: 'en', theme: 'system' });
 
     const put = await app.request('/api/settings', {
       method: 'PUT',
       headers: { ...auth, 'content-type': 'application/json' },
-      body: JSON.stringify({ language: 'en', expertMode: true }),
+      body: JSON.stringify({ language: 'it', expertMode: true }),
     });
     expect(put.status).toBe(200);
-    expect(await put.json()).toMatchObject({ language: 'en', expertMode: true });
+    expect(await put.json()).toMatchObject({ language: 'it', expertMode: true });
 
     const bad = await app.request('/api/settings', {
       method: 'PUT',
@@ -92,7 +92,7 @@ describe('createApp', () => {
     // A partial patch keeps every other setting (zod would otherwise refill defaults).
     await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ onboardingDone: true }) });
     const themed = await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ theme: 'dark' }) });
-    expect(await themed.json()).toMatchObject({ theme: 'dark', onboardingDone: true, language: 'en', expertMode: true });
+    expect(await themed.json()).toMatchObject({ theme: 'dark', onboardingDone: true, language: 'it', expertMode: true });
     // Unknown keys and non-objects are rejected.
     const unknownKey = await app.request('/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ nope: 1 }) });
     expect(unknownKey.status).toBe(400);

@@ -89,8 +89,9 @@ describe('NInfer card', () => {
     api.on('GET /api/engines/ninfer/builds', () => (broken ? fail('INTERNAL', 500, 'no answer') : api.w.ninferBuilds));
     renderLib('/engines', api);
     const c = await card();
+    const retry = await within(c).findByRole('button', { name: 'Riprova' });
     broken = false;
-    await userEvent.click(await within(c).findByRole('button', { name: 'Riprova' }));
+    await userEvent.click(retry);
     expect(await within(c).findByRole('region', { name: 'NInfer (ufficiale)' })).toBeTruthy();
   });
 

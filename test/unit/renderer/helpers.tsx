@@ -37,12 +37,15 @@ export interface FakeApi extends ApiClient {
   calls: { method: string; path: string; body?: unknown }[];
 }
 
-/** In-memory ApiClient: settings round-trip, health, and a controllable event stream. */
+/**
+ * In-memory ApiClient: settings round-trip, health, and a controllable event stream. The settings speak
+ * Italian (the tests read Italian words) unless a test picks English.
+ */
 export function fakeApi(initial: Partial<Settings> = {}, opts: { failSettings?: boolean } = {}): FakeApi {
   let onEvent: ((e: ServerEvent) => void) | undefined;
   let onStatus: ((ok: boolean) => void) | undefined;
   const api: FakeApi = {
-    settings: { ...defaultSettings(), ...initial },
+    settings: { ...defaultSettings(), language: 'it', ...initial },
     notices: [],
     calls: [],
     get: vi.fn(async <T,>(path: string) => {
@@ -89,20 +92,23 @@ export function renderApp(path: string, api: FakeApi = fakeApi({ onboardingDone:
   return Object.assign(result, { api, router });
 }
 
-/** Providers for isolated component tests (i18n + tooltips, optionally settings). */
+/** Providers for isolated component tests (i18n + tooltips, optionally settings); `rerender` keeps them. */
 export function renderUi(ui: ReactNode, opts: { lang?: Lang; withSettings?: boolean; api?: FakeApi } = {}): RenderResult {
-  const inner = (
+  const inner = ({ children }: { children: ReactNode }) => (
     <I18nProvider lang={opts.lang ?? 'it'}>
-      <TooltipProvider delayDuration={0}>{ui}</TooltipProvider>
+      <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
     </I18nProvider>
   );
-  if (!opts.withSettings) return render(inner);
+  if (!opts.withSettings) return render(ui, { wrapper: inner });
   const api = opts.api ?? fakeApi();
-  return render(
-    <ApiProvider api={api}>
-      <QueryClientProvider client={newQueryClient()}>
-        <SettingsProvider>{inner}</SettingsProvider>
-      </QueryClientProvider>
-    </ApiProvider>,
-  );
+  const client = newQueryClient();
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <ApiProvider api={api}>
+        <QueryClientProvider client={client}>
+          <SettingsProvider>{inner({ children })}</SettingsProvider>
+        </QueryClientProvider>
+      </ApiProvider>
+    ),
+  });
 }

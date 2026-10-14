@@ -16,9 +16,9 @@ test('GPU Bench’s data at the first start of LLM Bench: moved, results and set
   const legacy = path.join(root, 'GPU Bench');
   const userData = path.join(root, 'LLM Bench');
   const stateDir = path.join(root, 'state');
-  // GPU Bench 0.3.0's folder: settings (welcome done, compact layout) and nine results.
+  // GPU Bench 0.3.0's folder: settings (Italian, welcome done, compact layout) and nine results.
   mkdirSync(legacy, { recursive: true });
-  writeFileSync(path.join(legacy, 'settings.json'), JSON.stringify({ scanKnownLocations: false, onboardingDone: true, density: 'compact' }));
+  writeFileSync(path.join(legacy, 'settings.json'), JSON.stringify({ scanKnownLocations: false, language: 'it', onboardingDone: true, density: 'compact' }));
   seedRuns(path.join(legacy, 'results'));
   try {
     const first = await launchApp({ userData, legacyUserData: legacy, stateDir });

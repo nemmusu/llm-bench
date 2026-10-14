@@ -110,7 +110,7 @@ export function createFormatters(lang: Lang): Formatters {
   };
 }
 
-const I18nContext = createContext<Formatters>(createFormatters('it'));
+const I18nContext = createContext<Formatters>(createFormatters('en'));
 
 export function I18nProvider({ lang, children }: { lang: Lang; children: ReactNode }) {
   const value = useMemo(() => createFormatters(lang), [lang]);

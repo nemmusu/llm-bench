@@ -415,7 +415,10 @@ describe('benchmark choices', () => {
     const get = api.get;
     api.get = vi.fn(<T,>(path: string) => (path === '/api/settings' ? gate.promise.then(() => get<T>(path)) : get<T>(path))) as typeof api.get;
     const { router, container } = renderApp('/', api);
-    await waitFor(() => expect(container.querySelectorAll('.skeleton-shimmer').length).toBeGreaterThan(0));
+    // Nothing shows before the settings are read (not the Benchmark screen, not a wrong redirect).
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/settings'));
+    expect(container.childElementCount).toBe(0);
+    expect(router.state.location.pathname).toBe('/');
     await act(async () => gate.resolve());
     await waitFor(() => expect(router.state.location.pathname).toBe('/welcome'));
   });

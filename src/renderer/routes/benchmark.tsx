@@ -97,21 +97,11 @@ function Note({ icon, tone = 'muted', children }: { icon: ReactNode; tone?: 'mut
   );
 }
 
-/** Home: waits for settings (last choices are restored from them), then shows the screen. */
+/** Home: the welcome for a first-time user, else the screen (the settings are read before any page shows, app.tsx). */
 export function BenchmarkPage() {
-  const { settings, ready } = useSettings();
-  if (!ready) return <BenchmarkSkeleton />;
+  const { settings } = useSettings();
   if (!settings.onboardingDone) return <Navigate to="/welcome" replace />;
   return <BenchmarkScreen />;
-}
-
-function BenchmarkSkeleton() {
-  return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-section px-8 pt-7">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-56 w-full" />
-    </div>
-  );
 }
 
 /** Model card body: the picker button and the verdicts for the selected model (a suggestion's fit comes from the plan). */

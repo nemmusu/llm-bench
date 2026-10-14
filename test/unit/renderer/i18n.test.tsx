@@ -127,8 +127,8 @@ describe('I18nProvider', () => {
     expect(screen.getByText('en:Settings')).toBeTruthy();
   });
 
-  it('defaults to Italian without a provider', () => {
+  it('defaults to English without a provider', () => {
     render(<Probe />);
-    expect(screen.getByText('it:Impostazioni')).toBeTruthy();
+    expect(screen.getByText('en:Settings')).toBeTruthy();
   });
 });

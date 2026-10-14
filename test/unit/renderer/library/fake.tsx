@@ -321,7 +321,8 @@ export function ninferBuild(over: Partial<NinferBuildInfo> = {}): NinferBuildInf
 
 export function world(over: Partial<World> = {}): World {
   return {
-    settings: { ...defaultSettings(), onboardingDone: true },
+    // Italian: the tests read Italian words (the app's own default is English).
+    settings: { ...defaultSettings(), language: 'it', onboardingDone: true },
     system: system(),
     snapshot: [sample(1000)],
     check: report(okItems()),
