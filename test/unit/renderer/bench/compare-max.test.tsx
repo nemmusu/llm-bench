@@ -210,6 +210,9 @@ describe('"Contesto massimo": each at its own largest context, full', () => {
     expect(decode).toEqual(['Generazione (tok/s) · con il contesto pieno, ognuno al suo contesto massimo', '45,5 tok/s (208K, contesto più piccolo: non si confronta)', '33,6 tok/s (256K)', '34,5 tok/s (256K)', 'C: +2,6%']);
     const kv = table.rows.find((r) => (r[0] as string).startsWith('Contesto tenuto'))!;
     expect(kv.slice(1)).toEqual(['214.491 token', 'il motore non lo dice', 'il motore non lo dice', '–']);
+    // Each one at its best says where; two with the best number are both named.
+    expect(table.rows.find((r) => (r[0] as string).startsWith('Scrittura più veloce'))!.slice(1, 3)).toEqual(['55,8 tok/s (a 1K di contesto)', '67,0 tok/s (a 1K di contesto)']);
+    expect(table.rows.find((r) => (r[0] as string).startsWith('Contesto massimo'))!.at(-1)).toBe('B, C: +23%');
   });
 });
 

@@ -179,10 +179,13 @@ function comparisonSection(c: SheetCompare, f: Formatters): ReportSection {
   const { t, dateTime } = f;
   const rows = compareRows(c.items, c.at, f).map((r) => {
     const lead = rowLead(r, f);
-    const where = (i: number) => (r.compared ? ` (${tokensK(c.items[i]!.full!.depth, f)}${r.compared[i] ? '' : `, ${t('compare.smallerContext')}`})` : '');
+    // Where each number was measured: its own context at "Contesto massimo", or the row's note ("a 1K di contesto").
+    const where = (i: number) =>
+      r.compared ? ` (${tokensK(c.items[i]!.full!.depth, f)}${r.compared[i] ? '' : `, ${t('compare.smallerContext')}`})` : r.notes?.[i] ? ` (${r.notes[i]})` : '';
     const cell = (v: number | undefined, i: number) =>
       v === undefined ? (r.missing?.[i] ?? '–') : r.reread?.[i] ? `${t('longConversations.compare.reread')} (${r.format(v)})` : `${r.format(v)}${where(i)}`;
-    const who = !lead ? '–' : lead.tie ? t('compare.same') : t('sheet.compare.lead', { name: c.names[lead.winner]!, diff: lead.diff });
+    // Several with the best number (two 256K contexts): all of them.
+    const who = !lead ? '–' : lead.tie ? t('compare.same') : t('sheet.compare.lead', { name: r.best.map((i) => c.names[i]!).join(', '), diff: lead.diff });
     return [r.context ? `${r.label} · ${r.context}` : r.label, ...r.values.map(cell), who];
   });
   const same = c.items.every((it) => it.run.hardware.hostId === c.items[0]!.run.hardware.hostId && it.run.model.weakKey === c.items[0]!.run.model.weakKey);
