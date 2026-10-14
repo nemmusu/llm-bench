@@ -76,7 +76,7 @@ export function LlamaImageActions() {
   if (!mine) return <PullButton engine="llamacpp-docker" image={LLAMA_IMAGE} label={t('engines.docker.pullLlama')} />;
   const ref = removalRef(repo, tag, mine);
   return (
-    <span className="flex flex-wrap items-center gap-2">
+    <span className="flex w-full flex-wrap items-center gap-2">
       <Badge size="sm" tone="outline">
         <HardDrive aria-hidden />
         {t('engines.docker.llamaOnPc', { size: bytes(mine.sizeBytes) })}
