@@ -19,6 +19,7 @@ export interface FakeContainer {
   Id: string;
   Names?: string[];
   Image?: string;
+  ImageID?: string;
   Labels?: Record<string, string>;
   State: string;
   Status?: string;

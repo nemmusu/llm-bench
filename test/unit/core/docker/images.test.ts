@@ -113,6 +113,12 @@ describe('DockerHubClient', () => {
       lastUpdated: '2026-10-04T01:11:23.53217Z',
       sizeBytes: 9035211086,
       digest: 'sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3',
+      // The index and each platform's manifest: whichever a local image is listed by.
+      digests: [
+        'sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3',
+        'sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b',
+        'sha256:3f7dd5b777d34d1724456ce71f87385dca288c3bb23029ab27dee358f5d2b971',
+      ],
     });
     await hub.listTags('vllm/vllm-openai', 'v');
     expect(fetch.urls).toHaveLength(1);
@@ -242,6 +248,91 @@ describe('ImageService', () => {
     ac.abort();
     await expect(p2).rejects.toMatchObject({ code: 'CANCELLED' });
     expect(slow.stopped()).toBe(1);
+  });
+
+  // The containerd image store (Docker 29, API 1.56): the id is the multi-platform index digest, the
+  // same one Docker Hub lists for the tag; an image pulled by digest has no tag at all.
+  const INDEX = 'sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3';
+  const AMD64 = 'sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b';
+  const containerd = {
+    'vllm/vllm-openai:v0.31.0': { Id: INDEX, RepoTags: ['vllm/vllm-openai:v0.31.0'], RepoDigests: [`vllm/vllm-openai@${INDEX}`], Size: 32_300_000_000 },
+    'docker.io/vllm/vllm-openai@sha256:a4a4': { Id: 'sha256:d1', RepoTags: [], RepoDigests: [`docker.io/vllm/vllm-openai@${AMD64}`], Size: 9_000_000_000 },
+    'lmsysorg/sglang:v0.5.21': { Id: 'sha256:e1', RepoTags: ['lmsysorg/sglang:v0.5.21'], RepoDigests: [], Size: 14_000_000_000 },
+    '<none>': { Id: 'sha256:f1' },
+  };
+
+  it('lists the images of one repository, by tag and by digest, and which a running container uses', async () => {
+    api = await startFakeDockerApi({
+      images: containerd,
+      containers: [
+        { Id: 'c1', Image: 'vllm/vllm-openai:v0.31.0', State: 'running' },
+        { Id: 'c2', Image: 'sha256:e1', State: 'exited' },
+      ],
+    });
+    const svc = new ImageService({ api: new DockerApiProvider({ resolve: async () => [sock(api!.socketPath)] }), cli: {} as DockerCli });
+    expect(await svc.local('vllm/vllm-openai')).toEqual([
+      { id: INDEX, tags: ['v0.31.0'], digests: [INDEX], sizeBytes: 32_300_000_000, running: true },
+      { id: 'sha256:d1', tags: [], digests: [AMD64], sizeBytes: 9_000_000_000, running: false },
+    ]);
+    expect(await svc.local('docker.io/lmsysorg/sglang')).toEqual([{ id: 'sha256:e1', tags: ['v0.5.21'], digests: [], sizeBytes: 14_000_000_000, running: false }]);
+    expect(await svc.local('ghcr.io/ggml-org/llama.cpp')).toEqual([]);
+    await expect(svc.local('-x')).rejects.toMatchObject({ code: 'VALIDATION' });
+
+    // In use by a running server: refused before Docker is asked; by a stopped container: Docker refuses.
+    await expect(svc.remove('vllm/vllm-openai:v0.31.0')).rejects.toMatchObject({ code: 'DOCKER_IMAGE_IN_USE', params: { reason: 'running' } });
+    await expect(svc.remove('lmsysorg/sglang:v0.5.21')).rejects.toMatchObject({ code: 'DOCKER_IMAGE_IN_USE', params: { reason: 'container' } });
+    await svc.remove('sha256:d1');
+    expect(await svc.local('vllm/vllm-openai')).toHaveLength(1);
+    // Gone already: nothing to do.
+    await svc.remove('vllm/vllm-openai:v0.29.0');
+    api.state.containers = [];
+    await svc.remove('lmsysorg/sglang:v0.5.21');
+    expect(await svc.local('lmsysorg/sglang')).toEqual([]);
+    expect(api.requests.filter((r) => r.method === 'DELETE').map((r) => r.query)).toContain('?force=false');
+  });
+
+  it('the API client reports a failed list or removal', async () => {
+    api = await startFakeDockerApi({ mode: 'starting' });
+    const c = new DockerApi({ kind: 'socket', path: api.socketPath, source: 'default' });
+    await expect(c.listImages()).rejects.toThrow(AppError);
+    await expect(c.removeImage('a/b:c')).rejects.toThrow(AppError);
+  });
+
+  it('lists and removes through the CLI when the API cannot be used', async () => {
+    const calls: string[][] = [];
+    const proc = scriptedProc((args) => {
+      calls.push([...args]);
+      if (args[0] === 'image' && args[1] === 'ls') return ok([INDEX, INDEX, 'sha256:d1', ''].join('\n'));
+      if (args[0] === 'image' && args[1] === 'inspect') {
+        return ok(JSON.stringify([{ Id: INDEX, RepoTags: ['vllm/vllm-openai:v0.31.0'], RepoDigests: [`vllm/vllm-openai@${INDEX}`], Size: 5 }, { Id: 'sha256:d1' }, null]));
+      }
+      if (args[0] === 'ps') return ok(JSON.stringify({ ID: 'c1', Names: 'x', Image: 'vllm/vllm-openai:v0.31.0', State: 'exited', Labels: '' }));
+      if (args[0] === 'image' && args[1] === 'rm') {
+        if (args[2] === 'busy/one:1') return fail(1, 'Error response from daemon: conflict: unable to remove repository reference "busy/one:1" (must force) - container 1 is using its referenced image 2');
+        if (args[2] === 'gone/one:1') return fail(1, 'Error response from daemon: No such image: gone/one:1');
+        if (args[2] === 'down/one:1') return fail(1, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?');
+        return ok('Untagged: x');
+      }
+      return ok();
+    });
+    const cli = new DockerCli({ proc, platform: 'linux', env: {}, override: ['docker'] });
+    const svc = new ImageService({ api: brokenApi('DOCKER_NOT_RUNNING'), cli });
+    expect(await svc.local('vllm/vllm-openai')).toEqual([{ id: INDEX, tags: ['v0.31.0'], digests: [INDEX], sizeBytes: 5, running: false }]);
+    expect(calls.find((a) => a[1] === 'inspect')).toEqual(['image', 'inspect', INDEX, 'sha256:d1']);
+    await svc.remove('vllm/vllm-openai:v0.31.0');
+    await svc.remove('gone/one:1');
+    await expect(svc.remove('busy/one:1')).rejects.toMatchObject({ code: 'DOCKER_IMAGE_IN_USE', params: { reason: 'container' } });
+    await expect(svc.remove('down/one:1')).rejects.toMatchObject({ code: 'DOCKER_NOT_RUNNING' });
+    // Nothing on this Docker, a failed list or inspect, unreadable JSON.
+    expect(await new DockerCli({ proc: scriptedProc(() => ok('')), platform: 'linux', env: {}, override: ['docker'] }).listImages()).toEqual([]);
+    const denied = scriptedProc((a) => (a[1] === 'ls' ? fail(1, 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock') : ok()));
+    await expect(new DockerCli({ proc: denied, platform: 'linux', env: {}, override: ['docker'] }).listImages()).rejects.toMatchObject({ code: 'DOCKER_PERMISSION' });
+    const garbled = scriptedProc((a) => (a[1] === 'ls' ? ok('sha256:abc123abc123') : ok('not json')));
+    expect(await new DockerCli({ proc: garbled, platform: 'linux', env: {}, override: ['docker'] }).listImages()).toEqual([]);
+    const notArray = scriptedProc((a) => (a[1] === 'ls' ? ok('sha256:abc123abc123') : ok('{}')));
+    expect(await new DockerCli({ proc: notArray, platform: 'linux', env: {}, override: ['docker'] }).listImages()).toEqual([]);
+    const down = scriptedProc((a) => (a[1] === 'ls' ? ok('sha256:abc123abc123') : fail(1, 'Cannot connect to the Docker daemon at unix:///x. Is the docker daemon running?')));
+    await expect(new DockerCli({ proc: down, platform: 'linux', env: {}, override: ['docker'] }).listImages()).rejects.toMatchObject({ code: 'DOCKER_NOT_RUNNING' });
   });
 
   it('asks Docker Hub for sizes, tolerating failures', async () => {

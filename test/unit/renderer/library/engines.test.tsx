@@ -200,7 +200,7 @@ describe('engines: Docker', () => {
     const docker = await card('Docker');
     await userEvent.click(await within(docker).findByRole('button', { name: 'Verifica la GPU in Docker' }));
     expect(await within(docker).findByText('GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)')).toBeTruthy();
-    await userEvent.click(within(docker).getByRole('button', { name: 'Scarica o aggiorna l’immagine di llama.cpp' }));
+    await userEvent.click(within(docker).getByRole('button', { name: 'Scarica l’immagine di llama.cpp' }));
     expect(api.calls.find((c) => c.path === '/api/engines/llamacpp-docker/install')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' });
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'download', bytesDone: 1e9, bytesTotal: 3e9 }));
     expect(await within(docker).findByText('954 MB di 2,8 GB · 33%')).toBeTruthy();
@@ -210,6 +210,34 @@ describe('engines: Docker', () => {
     expect(await within(docker).findByText('Download dell’immagine Docker non riuscito')).toBeTruthy();
     await userEvent.click(within(docker).getByRole('button', { name: 'Pulisci i contenitori di LLM Bench' }));
     expect(await screen.findByText('Contenitori rimossi: 1')).toBeTruthy();
+  });
+
+  it('the llama.cpp image on the PC: its size, "Aggiorna" pulls its tag again, removed after a confirmation, not while in use', async () => {
+    const image = { id: 'sha256:llama', tags: ['server-cuda', 'latest'], digests: [], sizeBytes: 2.9e9, running: false };
+    const api = libApi(world({ images: { 'ghcr.io/ggml-org/llama.cpp': [image] } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    expect(await within(docker).findByText('Immagine di llama.cpp sul PC · 2,7 GB')).toBeTruthy();
+    expect(within(docker).queryByRole('button', { name: 'Scarica l’immagine di llama.cpp' })).toBeNull();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Aggiorna l’immagine di llama.cpp' }));
+    expect(api.calls.find((c) => c.path === '/api/engines/llamacpp-docker/install')?.body).toEqual({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' });
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'error', bytesDone: 0 }));
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Rimuovi ghcr.io/ggml-org/llama.cpp:server-cuda' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Rimuovere ghcr.io/ggml-org/llama.cpp:server-cuda?' });
+    expect(within(confirm).getByText(/Eseguo: docker image rm ghcr\.io\/ggml-org\/llama\.cpp:server-cuda/)).toBeTruthy();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(docker).findByRole('button', { name: 'Scarica l’immagine di llama.cpp' })).toBeTruthy();
+
+    api.w.images = { 'ghcr.io/ggml-org/llama.cpp': [{ ...image, running: true }] };
+    api.on('POST /api/docker/images/remove', () => fail('DOCKER_PERMISSION', 500));
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'done', bytesDone: 1 }));
+    await userEvent.click(await within(docker).findByRole('button', { name: 'La sta usando un server o un test: fermalo, poi potrai rimuoverla' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    api.w.images = { 'ghcr.io/ggml-org/llama.cpp': [image] };
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-docker', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', stage: 'done', bytesDone: 2 }));
+    await userEvent.click(await within(docker).findByRole('button', { name: 'Rimuovi ghcr.io/ggml-org/llama.cpp:server-cuda' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(docker).findByText('Non ho i permessi per usare Docker')).toBeTruthy();
   });
 
   it('GPU check and cleanup errors; a reason is shown when not running', async () => {
@@ -302,15 +330,64 @@ describe('engines: vLLM and others', () => {
     expect(within(tags).getAllByRole('listitem')).toHaveLength(6);
     expect(within(tags).getByText('Consigliato')).toBeTruthy();
     expect(within(tags).getByText('Non supporta la tua GPU')).toBeTruthy();
-    expect(within(tags).getByText('CUDA 13.0 · 8,4 GB · 4 ott 2026')).toBeTruthy();
+    // On the PC: its own size in the badge, not the download's.
+    expect(within(tags).getByText('CUDA 13.0 · 4 ott 2026')).toBeTruthy();
     await userEvent.click(within(vllm).getByRole('button', { name: 'Tutte le versioni (8)' }));
     expect(within(tags).getAllByRole('listitem')).toHaveLength(8);
     await userEvent.click(within(vllm).getByRole('button', { name: 'Mostra meno' }));
-    await userEvent.click(within(tags).getAllByRole('button', { name: 'Usa questa' })[0]!);
+    // v0.31.0 is on the PC (found by its digest): "Sul PC" with its size, one thing to do: use it.
+    const v031 = within(tags).getAllByRole('listitem')[0]!;
+    expect(within(v031).getByText('v0.31.0')).toBeTruthy();
+    expect(within(v031).getByText('Sul PC · 30,1 GB')).toBeTruthy();
+    expect(within(v031).queryByRole('button', { name: 'Scarica' })).toBeNull();
+    // The others are not: "Scarica" only.
+    const v090 = within(tags).getAllByRole('listitem')[1]!;
+    expect(within(v090).queryByRole('button', { name: 'Usa questa' })).toBeNull();
+    await userEvent.click(within(v031).getByRole('button', { name: 'Usa questa' }));
     await waitFor(() => expect(api.w.settings.lastEngine).toEqual({ kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.31.0' }));
     expect(await within(tags).findByText('In uso')).toBeTruthy();
-    await userEvent.click(within(tags).getAllByRole('button', { name: 'Scarica' })[0]!);
-    expect(api.calls.find((c) => c.path === '/api/engines/vllm-docker/install')?.body).toEqual({ image: 'vllm/vllm-openai:v0.31.0' });
+    expect(within(v031).queryByRole('button', { name: 'Usa questa' })).toBeNull();
+    await userEvent.click(within(v090).getByRole('button', { name: 'Scarica' }));
+    expect(api.calls.find((c) => c.path === '/api/engines/vllm-docker/install')?.body).toEqual({ image: 'vllm/vllm-openai:v0.9.0' });
+    // Downloaded: read again, it is on the PC now.
+    api.w.images = { 'vllm/vllm-openai': [...api.w.images['vllm/vllm-openai']!, { id: 'sha256:v090', tags: ['v0.9.0'], digests: [], sizeBytes: 8e9, running: false }] };
+    act(() => api.emit({ type: 'engine.install', kind: 'vllm-docker', image: 'vllm/vllm-openai:v0.9.0', stage: 'done', bytesDone: 1 }));
+    expect(await within(tags).findByText('Sul PC · 7,5 GB')).toBeTruthy();
+
+    // Removed after a confirmation that says how much it frees and the command.
+    await userEvent.click(within(tags).getByRole('button', { name: 'Rimuovi vllm/vllm-openai:v0.9.0' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Rimuovere vllm/vllm-openai:v0.9.0?' });
+    expect(within(confirm).getByText(/Libera 7,5 GB sul disco di Docker.*Eseguo: docker image rm vllm\/vllm-openai:v0\.9\.0/)).toBeTruthy();
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Rimuovi' }));
+    await waitFor(() => expect(within(tags).queryByText('Sul PC · 7,5 GB')).toBeNull());
+    // Pulled by digest only: removed by its id.
+    await userEvent.click(within(tags).getByRole('button', { name: 'Rimuovi vllm/vllm-openai:v0.31.0' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rimuovi' }));
+    await waitFor(() => expect(api.calls.filter((c) => c.path === '/api/docker/images/remove').map((c) => c.body)).toEqual([{ image: 'vllm/vllm-openai:v0.9.0' }, { image: 'sha256:idx031' }]));
+  });
+
+  it('a version a server uses cannot be removed, and says why; one Docker Hub no longer lists stays usable; a failed removal is explained', async () => {
+    const api = libApi(
+      world({
+        images: {
+          'vllm/vllm-openai': [{ id: 'sha256:idx031', tags: ['v0.31.0'], digests: [], sizeBytes: 32.3e9, running: true }],
+          'lmsysorg/sglang': [{ id: 'sha256:old', tags: ['v0.4.0'], digests: [], sizeBytes: 12e9, running: false }],
+        },
+      }),
+    );
+    api.on('POST /api/docker/images/remove', () => fail('DOCKER_IMAGE_IN_USE', 409));
+    renderLib('/engines', api);
+    const vllm = await card('vLLM (Docker)');
+    const busy = await within(vllm).findByRole('button', { name: 'La sta usando un server o un test: fermalo, poi potrai rimuoverla' });
+    await userEvent.click(busy);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    const sglang = await card('SGLang (Docker)');
+    const list = await within(sglang).findByRole('list', { name: 'Versioni di SGLang' });
+    expect(await within(list).findByText('v0.4.0')).toBeTruthy();
+    expect(within(sglang).getByRole('button', { name: 'Tutte le versioni (9)' })).toBeTruthy();
+    await userEvent.click(within(list).getByRole('button', { name: 'Rimuovi lmsysorg/sglang:v0.4.0' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rimuovi' }));
+    expect(await within(sglang).findByText('Questa immagine è in uso')).toBeTruthy();
   });
 
   it('tags errors; Docker stopped disables pulls; save errors', async () => {
@@ -441,7 +518,7 @@ describe('system check actions', () => {
     expect(await within(panel).findByText('Questa versione di Docker non è supportata')).toBeTruthy();
   });
 
-  it('a working custom executable that reports no version; vLLM save errors; plan for an unsupported PC; panel re-check', async () => {
+  it('a working custom executable that reports no version; save errors; plan for an unsupported PC; panel re-check', async () => {
     const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'llamacpp-native', executable: 'D:\\x.exe' } }, docker: { state: 'not-installed' } }));
     api.w.engines = [{ ...ENGINES()[0]!, version: undefined }, ...ENGINES().slice(1)];
     let n = 0;
@@ -459,8 +536,8 @@ describe('system check actions', () => {
     await userEvent.click(within(panel).getAllByRole('button', { name: 'Ricontrolla' })[0]!);
     await waitFor(() => expect(api.calls.some((c) => c.path === '/api/setup/check?fresh=1')).toBe(true));
     api.on('PUT /api/settings', () => fail('VALIDATION'));
-    const vllm = await card('vLLM (Docker)');
-    await userEvent.click((await within(vllm).findAllByRole('button', { name: 'Usa questa' }))[0]!);
-    expect(await within(vllm).findByText('Alcuni valori non sono validi')).toBeTruthy();
+    const llama = await card('llama.cpp');
+    await userEvent.click((await within(llama).findAllByRole('button', { name: 'Usa questa' }))[0]!);
+    expect(await within(llama).findByText('Alcuni valori non sono validi')).toBeTruthy();
   });
 });

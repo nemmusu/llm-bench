@@ -272,6 +272,37 @@ export class DockerCli {
     };
   }
 
+  /** Every image (`docker image ls -q`, then one `docker image inspect` for all): the API's list, through the CLI. */
+  async listImages(): Promise<ImageInfo[]> {
+    const ls = await this.exec(['image', 'ls', '-q', '--no-trunc']);
+    if (ls.code !== 0) throw classifyDockerError(ls);
+    const ids = [...new Set(ls.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^sha256:[0-9a-f]+$|^[0-9a-f]{12,}$/.test(l)))];
+    if (!ids.length) return [];
+    const out = await this.exec(['image', 'inspect', ...ids]);
+    if (out.code !== 0) throw classifyDockerError(out);
+    let all: unknown;
+    try {
+      all = JSON.parse(out.stdout);
+    } catch {
+      all = [];
+    }
+    const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    return (Array.isArray(all) ? all : []).map((x) => {
+      const d = (x ?? {}) as Record<string, unknown>;
+      return { id: typeof d.Id === 'string' ? d.Id : '', repoTags: strs(d.RepoTags), repoDigests: strs(d.RepoDigests), size: typeof d.Size === 'number' ? d.Size : 0 };
+    });
+  }
+
+  /** `docker image rm ref` (never forced); gone already is fine, one a container uses is DOCKER_IMAGE_IN_USE. */
+  async removeImage(ref: string): Promise<void> {
+    const out = await this.exec(['image', 'rm', ref]);
+    if (out.code === 0 || /No such image/i.test(out.stderr)) return;
+    if (/conflict|is using its referenced image|image is being used/i.test(out.stderr)) {
+      throw new AppError('DOCKER_IMAGE_IN_USE', `A container uses ${ref}`, { params: { image: ref, reason: 'container' }, detail: out.stderr.slice(-2000) });
+    }
+    throw classifyDockerError(out);
+  }
+
   /** `docker ps -a` filtered by labels (`{{json .}}` works on every CLI version, unlike `--format json`). */
   async ps(labelFilters: readonly string[]): Promise<PsEntry[]> {
     const args = ['ps', '-a', '--no-trunc'];

@@ -1,37 +1,32 @@
-import { Check, FlaskConical } from 'lucide-react';
-import { useState } from 'react';
+import { FlaskConical } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useSglangTags } from '../../lib/queries-engines';
 import { activeEvent, useDockerStatus, useEngineStatuses, useInstallEvent, useSaveEngine, useStartInstall, useSystemCheck } from '../../lib/queries-library';
 import { useSettings } from '../../lib/settings';
 import { ErrorCallout } from '../library/error-callout';
 import { InstallProgress } from '../setup/install-progress';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
-import { PullButton } from './docker-card';
 import { EngineCard } from './engine-card';
 import { EngineUpdatePanel } from './engine-update';
+import { ImageTagList } from './image-tags';
 
 export const SGLANG_REPO = 'lmsysorg/sglang';
-const PREVIEW = 6;
 
 /**
  * SGLang in Docker (Windows through Docker Desktop's WSL2 GPU, Linux with the NVIDIA toolkit): the
- * release tags from Docker Hub, the recommended one marked, each with its size and a download button.
+ * release tags from Docker Hub, the recommended one marked; each one downloaded, used or removed (ImageTagList).
  */
 export function SglangDockerCard() {
-  const { t, bytes, date } = useI18n();
+  const { t } = useI18n();
   const { settings } = useSettings();
   const docker = useDockerStatus();
   const tags = useSglangTags(true);
   const save = useSaveEngine();
-  const [all, setAll] = useState(false);
   const running = docker.data?.state === 'running';
   const last = settings.lastEngine;
   const current = last?.kind === 'sglang-docker' && last.customEngineId === undefined ? last.image : undefined;
   const list = tags.data ?? [];
-  const shown = all ? list : list.slice(0, PREVIEW);
   return (
     <EngineCard
       icon={<FlaskConical />}
@@ -42,45 +37,16 @@ export function SglangDockerCard() {
       {tags.isError && <ErrorCallout error={tags.error} />}
       {tags.isPending && <Skeleton className="h-24" />}
       {list.length > 0 && (
-        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border" aria-label={t('engines.sglang.tags')}>
-          {shown.map((tag) => {
-            const image = `${SGLANG_REPO}:${tag.name}`;
-            return (
-              <li key={tag.name} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-fg">{tag.name}</span>
-                    {tag.recommended && (
-                      <Badge size="sm" tone="accent">
-                        {t('common.recommended')}
-                      </Badge>
-                    )}
-                    {current === image && (
-                      <Badge size="sm" tone="success">
-                        <Check aria-hidden />
-                        {t('engines.llama.inUse')}
-                      </Badge>
-                    )}
-                  </span>
-                  <span className="text-xs text-fg-3 tabular-nums">
-                    {[tag.cuda ? `CUDA ${tag.cuda}` : undefined, tag.sizeBytes ? bytes(tag.sizeBytes) : undefined, tag.lastUpdated ? date(tag.lastUpdated) : undefined].filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                {current !== image && (
-                  <Button size="sm" variant="ghost" onClick={() => save.mutate({ kind: 'sglang-docker', image })}>
-                    {t('engines.sglang.use')}
-                  </Button>
-                )}
-                <PullButton engine="sglang-docker" image={image} label={t('engines.sglang.pull')} disabled={!running} />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {list.length > PREVIEW && (
-        <Button variant="link" className="self-start" onClick={() => setAll((a) => !a)}>
-          {all ? t('models.curated.less') : t('engines.sglang.allTags', { n: list.length })}
-        </Button>
+        <ImageTagList
+          repo={SGLANG_REPO}
+          engine="sglang-docker"
+          tags={list}
+          current={current}
+          dockerUp={running}
+          label={t('engines.sglang.tags')}
+          allLabel={(n) => t('engines.sglang.allTags', { n })}
+          onUse={(image) => save.mutate({ kind: 'sglang-docker', image })}
+        />
       )}
       <EngineUpdatePanel target="sglang-docker" name={t('engines.sglang.dockerTitle')} enabled={running} />
       {save.isError && <ErrorCallout error={save.error} />}

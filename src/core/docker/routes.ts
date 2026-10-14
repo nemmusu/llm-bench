@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dockerRestartRequestSchema, type DockerDiagnosis } from '../../contract/docker';
+import { dockerRestartRequestSchema, removeImageRequestSchema, type DockerDiagnosis } from '../../contract/docker';
 import { AppError, toAppErrorData, type AppErrorData } from '../../contract/errors';
 import type { ServerEvent } from '../../contract/events';
 import type { CoreContext } from '../context';
@@ -59,6 +59,8 @@ const UP = new Set(['running', 'no-gpu', 'unsupported']);
  *   POST /api/docker/pull          ({ image, kind? }) -> { ok: true }; progress as 'engine.install'
  *                                     events { kind, image, stage: 'download' | 'extract' | 'done' | 'error' }
  *   POST /api/docker/cleanup       -> { removed: { id, name }[] } (label gpubench=1 only)
+ *   GET  /api/docker/images?repo=R -> LocalImage[] (contract/docker.ts): R's images on this Docker
+ *   POST /api/docker/images/remove ({ image }) -> { ok: true } (DOCKER_IMAGE_IN_USE while a container uses it)
  *   GET  /api/engines/vllm/tags?refresh=1 -> VllmTagInfo[]
  */
 export function createDockerRoutes(svc: DockerRoutesDeps | ((ctx: CoreContext) => DockerRoutesDeps)): RouteModule {
@@ -151,6 +153,20 @@ export function createDockerRoutes(svc: DockerRoutesDeps | ((ctx: CoreContext) =
     });
 
     app.post('/api/docker/cleanup', async (c) => c.json(await s.env.cleanupOrphans(s.activeMarkers?.() ?? [])));
+
+    app.get('/api/docker/images', async (c) => {
+      const repo = c.req.query('repo') ?? '';
+      parseImageRef(repo);
+      return c.json(await s.images.local(repo));
+    });
+
+    app.post('/api/docker/images/remove', async (c) => {
+      const body = await parseBody(c, removeImageRequestSchema);
+      if (!/^sha256:[0-9a-f]{12,}$/.test(body.image)) parseImageRef(body.image);
+      if (pulls.has(body.image)) throw new AppError('VALIDATION', 'This image is being downloaded', { params: { reason: 'busy', image: body.image } });
+      await s.images.remove(body.image);
+      return c.json({ ok: true as const });
+    });
 
     app.get('/api/engines/vllm/tags', async (c) => c.json(await s.vllm.tags({ refresh: c.req.query('refresh') === '1' })));
   };

@@ -145,6 +145,23 @@ export async function startFakeDockerApi(opts = {}) {
       });
     }
     if (pathname === '/images/create' && req.method === 'POST') return pull(req, res, url);
+    if (pathname === '/images/json' && req.method === 'GET') {
+      // Like the daemon: one entry per image (two refs of one image are one entry).
+      const seen = new Map();
+      for (const v of state.images.values()) if (!seen.has(v.Id)) seen.set(v.Id, { RepoTags: [], RepoDigests: [], Size: 0, Containers: -1, ...v });
+      return json(res, 200, [...seen.values()]);
+    }
+    const del = /^\/images\/(.+)$/.exec(pathname);
+    if (del && req.method === 'DELETE') {
+      const ref = decodeURIComponent(del[1]);
+      const keys = [...state.images.entries()].filter(([k, v]) => k === ref || v.Id === ref || (v.RepoTags ?? []).includes(ref)).map(([k]) => k);
+      if (!keys.length) return json(res, 404, { message: `No such image: ${ref}` });
+      const ids = new Set(keys.map((k) => state.images.get(k).Id));
+      const user = state.containers.find((c) => keys.includes(c.Image) || ids.has(c.Image) || ids.has(c.ImageID));
+      if (user) return json(res, 409, { message: `conflict: unable to remove repository reference "${ref}" (must force) - container ${user.Id.slice(0, 12)} is using its referenced image ${[...ids][0].slice(7, 19)}` });
+      for (const k of keys) state.images.delete(k);
+      return json(res, 200, keys.map((k) => ({ Untagged: k })));
+    }
     const img = /^\/images\/(.+)\/json$/.exec(pathname);
     if (img && req.method === 'GET') {
       const ref = decodeURIComponent(img[1]);

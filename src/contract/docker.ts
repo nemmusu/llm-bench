@@ -18,6 +18,23 @@
 import { z } from 'zod';
 
 /**
+ * An image of one repository on this Docker (GET /api/docker/images?repo=vllm/vllm-openai): its tags and
+ * digests in that repository, so a Docker Hub tag is "on the PC" when its name is among `tags` or one of
+ * its digests (the multi-platform index or a platform's manifest) is among `digests` or is the `id` (the
+ * containerd image store names images by their index digest). `running`: a running container uses it.
+ * POST /api/docker/images/remove ({ image }) -> { ok: true } (DOCKER_IMAGE_IN_USE while one does).
+ */
+export const localImageSchema = z.object({
+  id: z.string(),
+  tags: z.array(z.string()),
+  digests: z.array(z.string()),
+  sizeBytes: z.number(),
+  running: z.boolean(),
+});
+export type LocalImage = z.infer<typeof localImageSchema>;
+export const removeImageRequestSchema = z.object({ image: z.string().min(1) });
+
+/**
  * 'not-responding': Docker Desktop is there, but its engine does not answer (stuck starting or
  * stopping, calls that time out): only a restart brings it back ("Riavvia Docker").
  */

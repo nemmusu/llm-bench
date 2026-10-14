@@ -43,6 +43,8 @@ export const ERROR_CODES = [
   'DOCKER_PERMISSION',
   'DOCKER_UNSUPPORTED',
   'DOCKER_PULL_FAILED',
+  /** An image a container still uses cannot be removed; params image, reason: 'running' (a server or a test) | 'container' (a stopped container). */
+  'DOCKER_IMAGE_IN_USE',
   'GITHUB_RATE_LIMITED',
   'RUN_NOT_FOUND',
   'RUN_IN_PROGRESS',

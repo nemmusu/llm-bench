@@ -7,6 +7,11 @@ export interface HubTag {
   lastUpdated?: string;
   sizeBytes?: number;
   digest?: string;
+  /**
+   * Every digest the tag is known by: the multi-platform index (`digest`) and each platform's manifest.
+   * A local image matches the tag when Docker lists one of them (RepoDigests, or its id on the containerd store).
+   */
+  digests?: string[];
 }
 
 export interface DockerHubOptions {
@@ -37,6 +42,8 @@ function toTag(r: HubTagJson): HubTag | undefined {
   const size = typeof amd64?.size === 'number' ? amd64.size : typeof r.full_size === 'number' ? r.full_size : undefined;
   if (size !== undefined) out.sizeBytes = size;
   if (typeof r.digest === 'string') out.digest = r.digest;
+  const all = [r.digest, ...(Array.isArray(r.images) ? r.images.map((i) => i.digest) : [])].filter((d): d is string => typeof d === 'string' && d !== '');
+  if (all.length) out.digests = [...new Set(all)];
   return out;
 }
 

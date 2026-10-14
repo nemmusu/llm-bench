@@ -7,6 +7,7 @@ import { render, type RenderResult } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
 import { vi } from 'vitest';
 import type { DownloadRequest, SystemResponse } from '../../../../src/contract/api';
+import type { LocalImage } from '../../../../src/contract/docker';
 import { customEngineIdFor, customEngineKindOf, customEngineSchema, type CustomEngine, type CustomEngineCheck, type CustomEngineDraft, type CustomEngineInfo } from '../../../../src/contract/custom-engines';
 import type { EngineUpdateCheck } from '../../../../src/contract/engine-updates';
 import type { EngineStatus } from '../../../../src/contract/engines';
@@ -303,6 +304,8 @@ export interface World {
   checks: unknown[];
   /** GET /api/engines/ninfer/builds: NInfer's two builds (default: neither set up, in WSL). */
   ninferBuilds: NinferBuilds;
+  /** GET /api/docker/images?repo=…: the images of each repository on this Docker. */
+  images: Record<string, LocalImage[]>;
 }
 
 /** One of NInfer's builds as the card lists it (default: the official one, not set up, in WSL). */
@@ -347,6 +350,8 @@ export function world(over: Partial<World> = {}): World {
     modelUpdates: { checking: false, models: [] },
     checks: [],
     ninferBuilds: { kind: 'ninfer-wsl', builds: [ninferBuild(), ninferBuild({ build: 'all' })] },
+    // v0.31.0 as the containerd image store lists it (its id is the tag's index digest, no tag of its own).
+    images: { 'vllm/vllm-openai': [{ id: 'sha256:idx031', tags: [], digests: [], sizeBytes: 32.3e9, running: false }] },
     ...over,
   };
 }
@@ -496,7 +501,7 @@ export function libApi(w: World = world()): LibApi {
     'POST /api/docker/gpu-check': () => ({ image: 'x', gpus: ['GPU 0: NVIDIA GeForce RTX 5090 (UUID: GPU-5090)'] }),
     'POST /api/docker/cleanup': () => ({ removed: [{ id: 'a', name: 'gpubench-1' }] }),
     'GET /api/engines/vllm/tags': () => [
-      { name: 'v0.31.0', recommended: true, cuda: '13.0', sizeBytes: 9e9, lastUpdated: '2026-10-04T00:00:00Z' },
+      { name: 'v0.31.0', recommended: true, cuda: '13.0', sizeBytes: 9e9, lastUpdated: '2026-10-04T00:00:00Z', digest: 'sha256:idx031', digests: ['sha256:idx031', 'sha256:amd031'] },
       { name: 'v0.9.0', supportsGpu: false },
       ...Array.from({ length: 6 }, (_, i) => ({ name: `v0.2${i}.0` })),
     ],
@@ -505,6 +510,12 @@ export function libApi(w: World = world()): LibApi {
       { name: 'v0.5.21', recommended: true, sizeBytes: 15e9 },
       ...Array.from({ length: 6 }, (_, i) => ({ name: `v0.5.${i}` })),
     ],
+    'GET /api/docker/images': (_b, q) => structuredClone(w.images[q.get('repo') ?? ''] ?? []),
+    'POST /api/docker/images/remove': (b) => {
+      const ref = (b as { image: string }).image;
+      for (const [repo, list] of Object.entries(w.images)) w.images[repo] = list.filter((i) => i.id !== ref && !i.tags.some((tg) => `${repo}:${tg}` === ref));
+      return { ok: true };
+    },
     'GET /api/engines/ninfer/builds': () => w.ninferBuilds,
     'PUT /api/engines/ninfer/builds/*': (b) => ({ saved: true, status: { kind: 'ninfer-wsl', available: true, installed: true, location: (b as { path: string }).path, problems: [], supported: true } }),
     'POST /api/engines/ninfer/build/cancel': () => ({ ok: true, cancelled: true }),

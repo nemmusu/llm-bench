@@ -890,6 +890,7 @@ export const en: Messages = {
     DOCKER_PERMISSION: { title: 'No permission to use Docker', what: 'Add your user to the docker group and sign in again.' },
     DOCKER_UNSUPPORTED: { title: 'This Docker version is not supported', what: 'Use an up-to-date Docker Desktop or Docker Engine.' },
     DOCKER_PULL_FAILED: { title: 'Docker image download failed', what: 'Check the connection and disk space, then try again.' },
+    DOCKER_IMAGE_IN_USE: { title: 'This image is in use', what: 'A server or a test is using it: stop it first, then remove the image. A stopped container may hold it too: “Clean up LLM Bench containers” on the Docker card removes those.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub is limiting requests', what: 'Wait a few minutes and try again.' },
     RUN_NOT_FOUND: { title: 'Result not found', what: 'It may have been deleted, or the results folder changed. Go back to the results list.' },
     RUN_IN_PROGRESS: { title: 'A test is already running', what: 'Wait for it to finish, or cancel it, before starting another one.' },
@@ -3651,7 +3652,9 @@ export const en: Messages = {
       desc: 'Needed for vLLM, SGLang and for llama.cpp inside a container.',
       install: 'Install Docker',
       howToStart: 'How to start it',
-      pullLlama: 'Download or update the llama.cpp image',
+      pullLlama: 'Download the llama.cpp image',
+      updateLlama: 'Update the llama.cpp image',
+      llamaOnPc: 'llama.cpp image on the PC · {size}',
       cleanup: 'Clean up LLM Bench containers',
       cleaned: 'Containers removed: {n}',
       gpuOk: 'Docker can see the graphics card',
@@ -3690,6 +3693,14 @@ export const en: Messages = {
       noGpuSupport: 'Does not support your GPU',
       allTags: 'All versions ({n})',
       nativeVersion: 'Installed version: {version}',
+    },
+    images: {
+      onPc: 'On the PC · {size}',
+      remove: 'Remove {image}',
+      removeTitle: 'Remove {image}?',
+      removeBody: 'It frees {size} of Docker’s disk; you can download it again from here. I run: {command}',
+      removeConfirm: 'Remove',
+      removeRunning: 'A server or a test is using it: stop it first, then you can remove it'
     },
     external: {
       configure: 'Set it up in Benchmark',

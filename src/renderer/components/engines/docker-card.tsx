@@ -1,15 +1,19 @@
-import { Container, Download, Eraser, Play, RefreshCw, RotateCcw, ScanSearch, SquareTerminal } from 'lucide-react';
-import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Container, Download, Eraser, HardDrive, Play, RefreshCw, RotateCcw, ScanSearch, SquareTerminal, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n';
 import { useDockerActions } from '../../lib/queries-docker';
+import { IMAGES_KEY, removalRef, useLocalImages, useRemoveImage } from '../../lib/queries-images';
 import { DockerCause } from '../docker/docker-cause';
 import { DockerGateDialog, RestartProgress } from '../docker/docker-gate';
 import { activeEvent, useDockerCleanup, useDockerStatus, useGpuCheck, useInstallEvent, useStartInstall, useSystemInfo } from '../../lib/queries-library';
 import { ErrorCallout } from '../library/error-callout';
 import { DockerInstallDialog } from '../setup/docker-install-dialog';
 import { InstallProgress } from '../setup/install-progress';
-import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { Button, IconButton } from '../ui/button';
+import { ConfirmDialog } from '../ui/dialog';
 import { Callout } from '../ui/callout';
 import type { StatusDotProps } from '../ui/status-dot';
 import { EngineCard } from './engine-card';
@@ -38,6 +42,12 @@ export function PullButton({ engine, image, label, disabled }: { engine: 'llamac
   const event = useInstallEvent(key);
   const start = useStartInstall();
   const running = activeEvent(event);
+  const qc = useQueryClient();
+  const done = event?.stage === 'done';
+  // Downloaded: the version is on the PC now ("Sul PC", "Usa questa").
+  useEffect(() => {
+    if (done) void qc.invalidateQueries({ queryKey: IMAGES_KEY });
+  }, [done, qc]);
   if (running) return <InstallProgress event={running} label={label} className="w-full" />;
   return (
     <div className="flex flex-col items-start gap-2">
@@ -48,6 +58,46 @@ export function PullButton({ engine, image, label, disabled }: { engine: 'llamac
       {event?.stage === 'done' && <p className="text-xs text-success-text">{t('docker.pulled', { image })}</p>}
       {event?.stage === 'error' && <ErrorCallout error={event.error ?? { code: 'DOCKER_PULL_FAILED', message: image }} />}
     </div>
+  );
+}
+
+/**
+ * The llama.cpp image (its tag moves with every release): "Scarica" when it is not on the PC; when it
+ * is, its size, "Aggiorna" (pulls the tag again) and its removal, like the vLLM and SGLang versions.
+ */
+export function LlamaImageActions() {
+  const { t, bytes } = useI18n();
+  const repo = LLAMA_IMAGE.slice(0, LLAMA_IMAGE.lastIndexOf(':'));
+  const tag = LLAMA_IMAGE.slice(LLAMA_IMAGE.lastIndexOf(':') + 1);
+  const local = useLocalImages(repo, true);
+  const remove = useRemoveImage();
+  const [confirm, setConfirm] = useState(false);
+  const mine = local.data?.find((i) => i.tags.includes(tag));
+  if (!mine) return <PullButton engine="llamacpp-docker" image={LLAMA_IMAGE} label={t('engines.docker.pullLlama')} />;
+  const ref = removalRef(repo, tag, mine);
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Badge size="sm" tone="outline">
+        <HardDrive aria-hidden />
+        {t('engines.docker.llamaOnPc', { size: bytes(mine.sizeBytes) })}
+      </Badge>
+      <PullButton engine="llamacpp-docker" image={LLAMA_IMAGE} label={t('engines.docker.updateLlama')} />
+      {mine.running ? (
+        <IconButton label={t('engines.images.removeRunning')} icon={<Trash2 />} size="sm" aria-disabled className="cursor-not-allowed opacity-50" onClick={() => undefined} />
+      ) : (
+        <IconButton label={t('engines.images.remove', { image: LLAMA_IMAGE })} icon={<Trash2 />} size="sm" onClick={() => setConfirm(true)} />
+      )}
+      {remove.isError && <ErrorCallout error={remove.error} />}
+      <ConfirmDialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={t('engines.images.removeTitle', { image: ref })}
+        description={t('engines.images.removeBody', { size: bytes(mine.sizeBytes), command: `docker image rm ${ref}` })}
+        confirmLabel={t('engines.images.removeConfirm')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => remove.mutate(ref)}
+      />
+    </span>
   );
 }
 
@@ -108,7 +158,7 @@ export function DockerCard() {
           <ScanSearch aria-hidden />
           {t('engines.actions.testGpu')}
         </Button>
-        <PullButton engine="llamacpp-docker" image={LLAMA_IMAGE} label={t('engines.docker.pullLlama')} />
+        <LlamaImageActions />
         <Button
           size="sm"
           variant="ghost"

@@ -345,6 +345,27 @@ export class DockerApi {
     };
   }
 
+  /** Every image on this Docker (GET /images/json): the caller picks its repository's, by tag or digest. */
+  async listImages(): Promise<ImageInfo[]> {
+    const { status, data, res } = await this.json<unknown[]>('GET', '/images/json');
+    if (status !== 200 || !Array.isArray(data)) throw this.fail('image list', res);
+    return data.map((x) => {
+      const d = (x ?? {}) as Record<string, unknown>;
+      return { id: str(d.Id) ?? '', repoTags: asStrings(d.RepoTags), repoDigests: asStrings(d.RepoDigests), size: num(d.Size) ?? 0 };
+    });
+  }
+
+  /**
+   * DELETE /images/:ref (never forced): a tag of an image with others only loses that name. Gone
+   * already is fine; one a container still uses is DOCKER_IMAGE_IN_USE (reason 'container').
+   */
+  async removeImage(ref: string): Promise<void> {
+    const res = await this.request('DELETE', `/images/${encodeURIComponent(ref)}?force=false`);
+    if (res.status === 404) return;
+    if (res.status === 409) throw new AppError('DOCKER_IMAGE_IN_USE', `A container uses ${ref}`, { params: { image: ref, reason: 'container' }, detail: errorMessage(res) });
+    if (res.status >= 300) throw this.fail('image remove', res);
+  }
+
   /**
    * POST /images/create with streamed progress. Errors inside the stream (auth, manifest unknown,
    * disk full) and HTTP errors both become DOCKER_PULL_FAILED (or DISK_FULL) with a reason param.

@@ -894,6 +894,7 @@ export const it = {
     DOCKER_PERMISSION: { title: 'Non ho i permessi per usare Docker', what: 'Aggiungi il tuo utente al gruppo docker e riavvia la sessione.' },
     DOCKER_UNSUPPORTED: { title: 'Questa versione di Docker non è supportata', what: 'Usa Docker Desktop o Docker Engine aggiornati.' },
     DOCKER_PULL_FAILED: { title: 'Download dell’immagine Docker non riuscito', what: 'Controlla la connessione e lo spazio su disco, poi riprova.' },
+    DOCKER_IMAGE_IN_USE: { title: 'Questa immagine è in uso', what: 'La sta usando un server o un test: fermalo, poi rimuovi l’immagine. Può tenerla anche un contenitore fermo: «Pulisci i contenitori di LLM Bench» nella scheda Docker li toglie.' },
     GITHUB_RATE_LIMITED: { title: 'GitHub ha limitato le richieste', what: 'Aspetta qualche minuto e riprova.' },
     RUN_NOT_FOUND: { title: 'Risultato non trovato', what: 'Forse è stato eliminato o la cartella dei risultati è cambiata. Torna all’elenco dei risultati.' },
     RUN_IN_PROGRESS: { title: 'C’è già un test in corso', what: 'Aspetta che finisca, oppure annullalo, prima di avviarne un altro.' },
@@ -3656,7 +3657,9 @@ export const it = {
       desc: 'Serve per vLLM, SGLang e per llama.cpp dentro un contenitore.',
       install: 'Installa Docker',
       howToStart: 'Come avviarlo',
-      pullLlama: 'Scarica o aggiorna l’immagine di llama.cpp',
+      pullLlama: 'Scarica l’immagine di llama.cpp',
+      updateLlama: 'Aggiorna l’immagine di llama.cpp',
+      llamaOnPc: 'Immagine di llama.cpp sul PC · {size}',
       cleanup: 'Pulisci i contenitori di LLM Bench',
       cleaned: 'Contenitori rimossi: {n}',
       gpuOk: 'Docker vede la scheda video',
@@ -3696,6 +3699,14 @@ export const it = {
       noGpuSupport: 'Non supporta la tua GPU',
       allTags: 'Tutte le versioni ({n})',
       nativeVersion: 'Versione installata: {version}',
+    },
+    images: {
+      onPc: 'Sul PC · {size}',
+      remove: 'Rimuovi {image}',
+      removeTitle: 'Rimuovere {image}?',
+      removeBody: 'Libera {size} sul disco di Docker; puoi riscaricarla da qui. Eseguo: {command}',
+      removeConfirm: 'Rimuovi',
+      removeRunning: 'La sta usando un server o un test: fermalo, poi potrai rimuoverla'
     },
     external: {
       configure: 'Configura nel Benchmark',

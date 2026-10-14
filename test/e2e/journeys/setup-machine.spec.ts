@@ -89,7 +89,8 @@ test('Docker stopped: started from here (Windows) or with its command (Linux); t
 
     await docker.getByRole('button', { name: 'Verifica la GPU in Docker' }).click();
     await expect(docker.getByText('Docker vede la scheda video')).toBeVisible({ timeout: 30_000 });
-    await docker.getByRole('button', { name: 'Scarica o aggiorna l’immagine di llama.cpp' }).click();
+    // Downloaded, or already on the PC (then pulled again to update it).
+    await docker.getByRole('button', { name: /^(Scarica|Aggiorna) l’immagine di llama\.cpp$/ }).click();
     await expect(docker.getByText('Immagine pronta: ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeVisible({ timeout: 30_000 });
     await docker.getByRole('button', { name: 'Pulisci i contenitori di LLM Bench' }).click();
     await expect(page.getByText(/^Contenitori rimossi: \d+$/)).toBeVisible();
@@ -98,8 +99,14 @@ test('Docker stopped: started from here (Windows) or with its command (Linux); t
     // vLLM: tags from Docker Hub with the one recommended for this GPU.
     const tags = page.getByRole('list', { name: 'Versioni di vLLM (immagini Docker)' });
     await expect(tags.getByText('Consigliato')).toBeVisible({ timeout: 20_000 });
-    await tags.getByRole('button', { name: 'Usa questa' }).first().click();
-    await expect(tags.getByText('In uso')).toBeVisible();
+    // One thing to do per version: download it, then it is on the PC and can be used.
+    const recommended = tags.getByRole('listitem').filter({ hasText: 'Consigliato' });
+    await expect(recommended.getByRole('button', { name: 'Usa questa' })).toHaveCount(0);
+    await recommended.getByRole('button', { name: 'Scarica' }).click();
+    await expect(recommended.getByText(/^Sul PC · /)).toBeVisible({ timeout: 30_000 });
+    await recommended.getByRole('button', { name: 'Usa questa' }).click();
+    await expect(recommended.getByText('In uso')).toBeVisible();
+    await scan(page, 'vllm versions on the PC');
   } finally {
     await gb.close();
   }

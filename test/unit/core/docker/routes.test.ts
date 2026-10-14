@@ -240,6 +240,33 @@ describe('docker routes', () => {
     expect(await (await b.post('/api/docker/cleanup')).json()).toEqual({ removed: [{ id: 'a', name: 'kept:' }] });
   });
 
+  it('GET /api/docker/images and POST /api/docker/images/remove (not while it downloads)', async () => {
+    const removed: string[] = [];
+    const gate = deferred<{ digest?: string }>();
+    const { app, post } = setup(
+      {},
+      {},
+      {
+        local: async (repo: string) => [{ id: `sha256:${repo.length}`, tags: ['v1'], digests: [], sizeBytes: 1, running: false }],
+        remove: async (ref: string) => {
+          removed.push(ref);
+        },
+        pull: async () => gate.promise,
+      },
+    );
+    expect(await (await app.request('/api/docker/images?repo=vllm/vllm-openai')).json()).toEqual([{ id: 'sha256:16', tags: ['v1'], digests: [], sizeBytes: 1, running: false }]);
+    expect((await app.request('/api/docker/images')).status).toBe(400);
+    expect(await (await post('/api/docker/images/remove', { image: 'vllm/vllm-openai:v1' })).json()).toEqual({ ok: true });
+    expect((await post('/api/docker/images/remove', { image: 'sha256:0123456789abcdef' })).status).toBe(200);
+    expect(removed).toEqual(['vllm/vllm-openai:v1', 'sha256:0123456789abcdef']);
+    expect((await post('/api/docker/images/remove', { image: '-rf' })).status).toBe(400);
+    expect((await post('/api/docker/images/remove', {})).status).toBe(400);
+    await post('/api/docker/pull', { image: 'a/b:c' });
+    const busy = await post('/api/docker/images/remove', { image: 'a/b:c' });
+    expect(await busy.json()).toMatchObject({ error: { code: 'VALIDATION', params: { reason: 'busy' } } });
+    gate.resolve({});
+  });
+
   it('GET /api/engines/vllm/tags', async () => {
     const { app } = setup();
     expect(await (await app.request('/api/engines/vllm/tags')).json()).toEqual([{ name: 'v0.31.0', refresh: false }]);
