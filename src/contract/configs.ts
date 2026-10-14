@@ -134,6 +134,8 @@ type Raw = Omit<ConfigParams, 'other' | 'gpuLayers' | 'cpuMoe' | 'contextSize' |
   /** NInfer: --spec (mtp, dflash, dflash2; off = none) and --lm-head-draft; its --draft-tokens is speculativeTokens. */
   specMethod?: string;
   lmHeadDraft?: boolean;
+  /** NInfer --kv-capacity: the KV pool, in tokens (see normalize). */
+  kvCapacity?: number;
   other: Set<string>;
 };
 
@@ -321,6 +323,11 @@ add(['--spec'], (r, v) => {
 add(['--draft-tokens'], (r, v) => {
   const n = positive(v[0]);
   if (n !== undefined) r.speculativeTokens = n;
+});
+add(['--kv-capacity'], (r, v) => {
+  const n = positive(v[0]);
+  if (n !== undefined) r.kvCapacity = n;
+  else r.other.add(['--kv-capacity', ...v].join(' '));
 });
 
 /** Switches without a value. */
@@ -530,9 +537,14 @@ function definedOnly<T extends object>(o: T): Partial<T> {
 }
 
 function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedByDefault: boolean): ConfigParams {
-  const out: ConfigParams = { other: [...raw.other].sort() };
   let ctx = raw.contextSize;
   if (ctx === 0) ctx = input.modelContext;
+  // NInfer's KV pool holds every user's whole context: --kv-capacity = --max-context × --max-concurrency
+  // is implied by them (one user: the context itself), any other pool is a setting of its own.
+  const pool = raw.kvCapacity;
+  const implied = ctx !== undefined && pool === ctx * (raw.parallel ?? 1);
+  const other = pool === undefined || implied ? [...raw.other] : [...raw.other, `--kv-capacity ${pool}`];
+  const out: ConfigParams = { other: other.sort() };
   if (ctx) out.contextSize = ctx;
   const defaults = family === 'vllm' ? VLLM_DEFAULTS : LLAMA_DEFAULTS;
   const cache = (v: string | undefined) => (v === undefined || v === defaults.cacheType || (family === 'vllm' && v === 'f16') || v === 'auto' ? undefined : v);

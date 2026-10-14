@@ -50,8 +50,25 @@ describe('configurations of NInfer', () => {
       cacheTypeV: 'int8',
       parallel: 2,
       speculative: '{"lm_head_draft":true,"method":"mtp","num_speculative_tokens":3}',
-      other: ['--kv-capacity 131072', '--vision'],
+      // 2 users × 65 536: the pool their contexts need, implied by them (not an extra argument).
+      other: ['--vision'],
     });
+  });
+
+  it('--kv-capacity is a setting of its own only when it is not context × users', () => {
+    const of = (args: string[], params: Partial<LaunchParams> = {}) => configParamsOf({ engineKind: 'ninfer-wsl', argv: ['/opt/ninfer/build/apps/ninfer-serve', '/m/a.ninfer', ...args], params: P(params) }).other;
+    // The tune of the RTX 5090 run: one user, the pool is the context ("argomenti extra: --kv-capacity 262144" before).
+    expect(of(['--max-context', '262144', '--max-concurrency', '1', '--kv-capacity', '262144', '--kv-dtype', 'rk8v4'])).toEqual([]);
+    expect(of(['--max-context', '262144', '--kv-capacity', '262144'])).toEqual([]);
+    // NInfer-all's own example: 4 users of 100K in a 400K pool.
+    expect(of(['--max-context', '102400', '--max-concurrency', '4', '--kv-capacity', '409600'])).toEqual([]);
+    // A larger pool than the users need, a pool without a context, NInfer's "auto": as written.
+    expect(of(['--max-context', '65536', '--kv-capacity', '131072'])).toEqual(['--kv-capacity 131072']);
+    expect(of(['--kv-capacity', '131072'])).toEqual(['--kv-capacity 131072']);
+    expect(of(['--max-context', '65536', '--kv-capacity', 'auto'])).toEqual(['--kv-capacity auto']);
+    // From the launch settings alone (labels, a server from a preset): the same.
+    expect(configParamsOf({ engineKind: 'ninfer-native', params: P({ contextSize: 32_768, parallel: 1, ninfer: { kvCapacity: 32_768, kvDtype: 'int8' } }) }).other).toEqual([]);
+    expect(configParamsOf({ engineKind: 'ninfer-native', params: P({ contextSize: 32_768, ninfer: { kvCapacity: 'auto' } }) }).other).toEqual(['--kv-capacity auto']);
   });
 
   it('says the same from the launch settings alone (a server made from the same preset)', () => {
