@@ -201,7 +201,8 @@ export function TuneRanking({ run, rows, depth, depths, onDepth, recommended, vi
                       {r.rank ?? '–'}
                     </td>
                     <th scope="row" className="border-b border-border px-3 py-3 text-left font-normal">
-                      <span className="flex flex-col gap-2">
+                      {/* At most ~24rem: a long configuration wraps instead of pushing the numbers past the edge. */}
+                      <span className="flex max-w-sm min-w-56 flex-col gap-2">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className={cn('font-medium', reaches ? 'text-fg' : 'text-fg-2')}>{text}</span>
                           {r.index === recommended && (

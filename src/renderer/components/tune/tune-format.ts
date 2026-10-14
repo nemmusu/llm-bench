@@ -1,6 +1,6 @@
 /** Words and short numbers for the tune screens (pure: the caller passes the formatters). */
 import type { EngineKind, LaunchParams } from '../../../contract/engines';
-import type { TuneAttempt, TuneCombination, TuneKvType, Tuning } from '../../../contract/results';
+import type { TuneAttempt, TuneCombination, TuneGoal, TuneKvType, Tuning } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { useConfigLabel } from '../presets/config-label';
 import { capacityLead, ratioOf, recommendedIndex } from './tune-logic';
@@ -79,10 +79,12 @@ export function discardReason(a: TuneAttempt, f: F & Pick<Formatters, 'bytes'>):
 }
 
 /** The live status of the launch in progress: "Cerco il contesto massimo con cache q4_0: provo 48K…". */
-export function stageText(a: Pick<TuneAttempt, 'stage' | 'kvType' | 'contextSize' | 'params'>, engineKind: EngineKind, label: LabelFn, f: F): string {
+export function stageText(a: Pick<TuneAttempt, 'stage' | 'kvType' | 'contextSize' | 'params'>, engineKind: EngineKind, label: LabelFn, f: F, goal?: TuneGoal): string {
   const kv = kvName(a.kvType, f);
   const ctx = depthLabel(a.contextSize, f);
   const settings = settingsText(a.params, engineKind, label);
+  // "Più utenti": a capacity launch checks the users fit (no largest context), the last one measures them.
+  if (goal === 'multi' && (a.stage === 'capacity' || a.stage === 'sweep')) return f.t(a.stage === 'capacity' ? 'tune.stage.usersCapacity' : 'tune.stage.usersSweep', { kv, ctx, settings });
   return f.t(`tune.stage.${a.stage}`, { kv, ctx, settings });
 }
 

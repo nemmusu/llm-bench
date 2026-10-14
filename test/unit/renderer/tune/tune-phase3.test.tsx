@@ -177,10 +177,10 @@ describe('"Più utenti": ranking logic', () => {
     expect([...best.keys()]).toEqual(['perUser', 'total', 'ttftP95']);
     const col = (key: string) => USERS_COLUMNS.find((c) => c.key === key);
     expect(sortRows(rows, col('perUser'), 'desc').map((r) => r.index)).toEqual([2, 0, 1, 3]);
-    expect(sortRows(rows, col('layout'), 'desc').map((r) => r.index)).toEqual([0, 2, 1, 3]);
-    expect(sortRows(rows, col('reuse'), 'desc').map((r) => r.index)).toEqual([1, 0, 2, 3]);
+    expect(sortRows(rows, col('vram'), 'asc').map((r) => r.index)).toEqual(expect.arrayContaining([0, 1, 2, 3]));
     expect(col('perUserContext')!.value(rows[1]!)).toBe(32768);
-    expect(col('layout')!.value(rows[3]!)).toBeUndefined();
+    // The KV layout and the cache reuse are in the configuration's words, not columns of their own.
+    expect(USERS_COLUMNS.map((c) => c.key)).toEqual(['perUser', 'total', 'ttftP95', 'perUserContext', 'vram']);
   });
 });
 
@@ -198,10 +198,10 @@ describe('"Più utenti": result page', () => {
     expect(within(rec).getByText(/^8[.,]?192 token$/)).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Classifica delle configurazioni con 4 utenti' });
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers).toEqual(expect.arrayContaining(['Per utente (tok/s)', 'In tutto (tok/s)', 'Primo token più lento (s)', 'Contesto per utente (token)', 'Contesto fra gli utenti', 'Riuso cache (token)', 'VRAM picco (GB)']));
-    expect(within(table).getAllByText('diviso per utente').length).toBe(2);
-    expect(within(table).getByText('condiviso')).toBeTruthy();
-    expect(within(table).getByText('256')).toBeTruthy();
+    expect(headers).toEqual(['#', 'Configurazione', 'Per utente (tok/s)', 'In tutto (tok/s)', 'Primo token più lento (s)', 'Contesto per utente (token)', 'VRAM picco (GB)']);
+    // The KV layout and the cache reuse: said by each configuration.
+    expect(within(table).getAllByText(/contesto diviso per utente/).length).toBeGreaterThan(0);
+    expect(within(table).getAllByText(/contesto condiviso/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Nessuna combinazione è stata misurata fino in fondo.')).toBeNull();
     // The measurements of a row: users 1 … 4 in order.
     await userEvent.click(within(table).getAllByRole('button', { name: 'Misure' })[0]!);

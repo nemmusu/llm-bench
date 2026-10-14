@@ -180,6 +180,8 @@ test('"Più utenti", only 2 users at once: no lower levels, the phases and the r
     await expect(measures.getByRole('row')).toHaveCount(2);
     await expect(measures.getByRole('row').nth(1).getByRole('rowheader')).toHaveText('2');
     await expect(page.getByText(/^Solo 2 utenti insieme, un messaggio a testa\./)).toBeVisible();
+    // Every column of the ranking in a normal window: the configuration wraps, nothing scrolls sideways.
+    await expect.poll(() => page.getByRole('region', { name: 'Classifica delle configurazioni con 2 utenti' }).evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
     await scan(page, 'tune result, only 2 users at once');
   } finally {
     await gb.close();

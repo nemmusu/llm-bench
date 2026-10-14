@@ -29,9 +29,7 @@ export const USERS_VIEWS: readonly ColumnView[] = [
   { column: USERS_COLUMNS[1]!, header: 'tune.users.columns.total', format: (v, f) => f.integer(v) },
   { column: USERS_COLUMNS[2]!, header: 'tune.users.columns.ttftP95', format: (v, f) => f.number(v / 1000, 2) },
   { column: USERS_COLUMNS[3]!, header: 'tune.users.columns.perUserContext', format: (v, f) => f.integer(v) },
-  { column: USERS_COLUMNS[4]!, header: 'tune.users.columns.layout', format: (v, f) => f.t(v === 1 ? 'tune.users.layoutSplit' : 'tune.users.layoutUnified') },
-  { column: USERS_COLUMNS[5]!, header: 'tune.users.columns.reuse', format: (v, f) => (v > 0 ? f.integer(v) : f.t('tune.users.reuseOff')) },
-  { column: USERS_COLUMNS[6]!, header: 'tune.users.columns.vram', format: (v, f) => f.number(v / MIB_PER_GB, 1) },
+  { column: USERS_COLUMNS[4]!, header: 'tune.users.columns.vram', format: (v, f) => f.number(v / MIB_PER_GB, 1) },
 ];
 
 /**

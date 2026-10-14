@@ -300,7 +300,7 @@ export function perUserContextOf(r: Pick<RankRow, 'combo' | 'users'>): number | 
   return r.users?.contextPerUser;
 }
 
-/** "Più utenti": per-user generation, total, slowest first token, context per user, KV layout, cache reuse, memory. */
+/** "Più utenti": per-user generation, total, slowest first token, context per user, memory (the KV layout and cache reuse are in the configuration's words). */
 export const USERS_COLUMNS: readonly MetricColumn[] = [
   {
     key: 'perUser',
@@ -318,9 +318,6 @@ export const USERS_COLUMNS: readonly MetricColumn[] = [
     best: { stat: (r) => (r.users ? noisy(r.users.ttftP95Ms, usersNoise(r.users)) : undefined), higher: false, floor: TIE_TAIL },
   },
   { key: 'perUserContext', dir: 'desc', atDepth: false, value: perUserContextOf },
-  // Split per user = 1, shared = 0: sorting groups them.
-  { key: 'layout', dir: 'desc', atDepth: false, value: (r) => (r.combo.kvLayout === undefined ? undefined : r.combo.kvLayout === 'split' ? 1 : 0) },
-  { key: 'reuse', dir: 'desc', atDepth: false, value: (r) => r.combo.cacheReuse ?? 0 },
   { key: 'vram', dir: 'asc', atDepth: false, value: (r) => r.combo.vramPeakMiB },
 ];
 

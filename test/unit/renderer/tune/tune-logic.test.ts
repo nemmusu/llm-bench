@@ -263,5 +263,9 @@ describe('words for the tune screens', () => {
       expect(stageText({ ...a, stage }, 'llamacpp-native', label, f)).not.toContain('tune.stage');
     }
     expect(stageText({ ...a, stage: 'variant' }, 'llamacpp-native', label, f)).toBe('Provo un’impostazione diversa a 48K: Cache KV q4_0 · flash attention…');
+    // "Più utenti": whether the users fit, then the users measured.
+    expect(stageText(a, 'llamacpp-native', label, f, 'multi')).toBe('Controllo se con cache q4_0 ci stanno tutti gli utenti: provo 48K in tutto…');
+    expect(stageText({ ...a, stage: 'sweep' }, 'llamacpp-native', label, f, 'multi')).toBe('Misuro gli utenti insieme con Cache KV q4_0 · flash attention…');
+    expect(stageText({ ...a, stage: 'variant' }, 'llamacpp-native', label, f, 'multi')).toContain('Provo un’impostazione diversa');
   });
 });

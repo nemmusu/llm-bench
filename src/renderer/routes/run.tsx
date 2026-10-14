@@ -117,7 +117,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const tune = scenario?.profile === 'tune';
   const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
   const label = useConfigLabel();
-  const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f) : undefined;
+  const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f, goal) : undefined;
   // A search's launch in progress: its measurement with the context full (where its speeds are read) says so.
   const fullAt = tune ? live.tuneCurrent?.contextSize : undefined;
   const nowLine = live.current ? nowText(live.current, f, fullAt) : undefined;
