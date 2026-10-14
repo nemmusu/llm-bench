@@ -293,7 +293,8 @@ export class SystemCheck {
       case 'running':
         return item('ok');
       case 'stopped':
-        return item('optional', { code: 'DOCKER_NOT_RUNNING', action: { kind: 'start-docker' } });
+        // Linux: a system service, started with its own command (the UI says which).
+        return item('optional', { code: 'DOCKER_NOT_RUNNING', ...(platform === 'win32' ? { action: { kind: 'start-docker' } } : {}) });
       case 'starting':
         return item('optional');
       case 'not-responding':

@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startFakeDockerApi } from '../fakes/fake-docker/api.mjs';
@@ -17,6 +18,11 @@ export const E2E_ENV_FILE = path.join(ROOT, '.qa', 'e2e-env.json');
  * Nothing in E2E touches the network, the real GPU or the real Docker.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
+  // The electron package has no install script any more: its binary is unzipped into
+  // node_modules/electron/dist the first time `require('electron')` runs. Left to the workers, two of
+  // them unzip it at once after a fresh `npm ci`, and one starts the binary while the other is still
+  // writing it (spawn ETXTBSY on Linux). Here it happens once, before any worker starts.
+  createRequire(import.meta.url)('electron');
   const cli = path.join(ROOT, 'test', 'fakes', 'fake-engine', 'cli.mjs');
   const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n` });
   const hub = await startFakeHub({ repos: demoRepos() });

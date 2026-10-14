@@ -935,6 +935,11 @@ export const it = {
         unknown: 'Non riesco a capire lo stato di Docker.',
         'not-responding': 'Docker è aperto ma non risponde: va riavviato.',
         distro: 'L’installazione guidata funziona su Ubuntu e Debian: per questo sistema segui la guida ufficiale.',
+        // Linux: a system service, started and restarted with its own command (no button here).
+        linux: {
+          stopped: 'È installato ma spento: su Linux si avvia con «sudo systemctl start docker». Serve per vLLM e SGLang.',
+          'not-responding': 'Docker è acceso ma non risponde: su Linux si riavvia con «sudo systemctl restart docker».',
+        },
       },
       'vllm-native': {
         title: 'vLLM (Linux)',
@@ -3364,6 +3369,7 @@ export const it = {
       title: 'Docker',
       desc: 'Serve per vLLM, SGLang e per llama.cpp dentro un contenitore.',
       install: 'Installa Docker',
+      howToStart: 'Come avviarlo',
       pullLlama: 'Scarica l’immagine di llama.cpp',
       cleanup: 'Pulisci i contenitori di LLM Bench',
       cleaned: 'Contenitori rimossi: {n}',
@@ -3390,6 +3396,11 @@ export const it = {
         unsupported: 'Questa installazione di Docker non è supportata da LLM Bench.',
         unknown: 'Non riesco a capire lo stato di Docker: premi «Ricontrolla».',
         'not-responding': 'Docker Desktop è aperto ma non risponde più. Premi «Riavvia Docker»: lo riavvio io e poi riaccendo i server di LLM Bench che erano attivi.',
+      },
+      // Linux: Docker is a system service, LLM Bench gives the command instead of starting it.
+      explainLinux: {
+        stopped: 'Docker è installato ma spento. Su Linux è un servizio del sistema: premi «Come avviarlo» per il comando da eseguire.',
+        'not-responding': 'Docker è acceso ma non risponde più. Su Linux è un servizio del sistema: premi «Perché e come evitarlo» per il comando che lo riavvia.',
       },
     },
     vllm: {

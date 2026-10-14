@@ -59,6 +59,11 @@ describe('SystemCheck: Docker that does not answer', () => {
     expect(item(linux.items, 'docker')).toMatchObject({ state: 'warning', code: 'DOCKER_NOT_RESPONDING' });
     expect(item(linux.items, 'docker').action).toBeUndefined();
   });
+
+  it('stopped on Linux: no "Avvia Docker" (a system service: the UI gives the command)', async () => {
+    const linux = await new SystemCheck(sources({ platform: 'linux', osRelease: () => Promise.resolve(UBUNTU) })).check();
+    expect(item(linux.items, 'docker')).toEqual({ id: 'docker', state: 'optional', required: false, params: { dockerState: 'stopped' }, code: 'DOCKER_NOT_RUNNING' });
+  });
 });
 
 describe('SystemCheck on this PC', () => {

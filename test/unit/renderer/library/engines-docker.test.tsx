@@ -49,10 +49,27 @@ describe('Engines → Docker', () => {
     expect(await within(docker).findByText('Docker non risponde')).toBeTruthy();
   });
 
+  it('Linux, Docker off: no "Avvia Docker" (a system service); "Come avviarlo" gives the command, then it carries on', async () => {
+    const api = libApi(world({ system: linux, docker: { state: 'stopped' } }));
+    renderLib('/engines', api);
+    const docker = await card('Docker');
+    expect(await within(docker).findByText(/Su Linux è un servizio del sistema: premi «Come avviarlo»/)).toBeTruthy();
+    expect(within(docker).queryByRole('button', { name: 'Avvia Docker' })).toBeNull();
+    await userEvent.click(within(docker).getByRole('button', { name: 'Come avviarlo' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Docker è spento' });
+    expect((await within(dialog).findByRole('region', { name: 'Docker è spento' })).textContent).toBe('sudo systemctl start docker');
+    // The user runs it: the dialog sees Docker answer and closes by itself.
+    api.w.docker = { state: 'running', version: '29.8.0' };
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(posts(api, '/api/docker/start')).toEqual([]);
+  });
+
   it('Linux: no restart from here; the dialog gives the command', async () => {
     const api = libApi(world({ system: linux, docker: { state: 'not-responding', reason: 'version-timeout' } }));
     renderLib('/engines', api);
     const docker = await card('Docker');
+    expect(within(docker).getByText(/Su Linux è un servizio del sistema: premi «Perché e come evitarlo»/)).toBeTruthy();
     await userEvent.click(await within(docker).findByRole('button', { name: 'Perché e come evitarlo' }));
     const dialog = await screen.findByRole('dialog', { name: 'Docker non risponde' });
     expect(within(dialog).getByText(/riavvialo con questo comando/)).toBeTruthy();

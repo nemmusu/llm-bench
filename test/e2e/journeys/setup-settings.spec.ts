@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, launchApp, test } from '../fixtures';
@@ -14,6 +15,27 @@ function cleanup(...dirs: string[]): void {
       /* left in the temp folder */
     }
   }
+}
+
+/**
+ * "Misure a freddo reali". Windows: an opt-in, its explanation first (never confirmed here: it would
+ * show a real UAC prompt). Linux: the model file leaves the page cache without special rights, so there
+ * is nothing to turn on.
+ */
+async function checkColdMeasurements(page: Page): Promise<void> {
+  const cold = page.getByRole('switch', { name: 'Misure a freddo reali' });
+  if (process.platform !== 'win32') {
+    await expect(page.getByText('Su Linux lo faccio da solo, senza permessi speciali.')).toBeVisible();
+    await expect(cold).toHaveCount(0);
+    return;
+  }
+  await expect(cold).toBeVisible();
+  await cold.click();
+  const ask = page.getByRole('alertdialog', { name: 'Attivare le misure a freddo reali?' });
+  await expect(ask.getByText(/«PurgeStandby» di LLM Bench/)).toBeVisible();
+  await scan(page, 'cold measurements explanation');
+  await ask.getByRole('button', { name: 'Annulla' }).click();
+  await expect(cold).not.toBeChecked();
 }
 
 let world: LibraryWorld;
@@ -52,15 +74,7 @@ test('settings survive a restart: appearance, options, folders, Hugging Face tok
     await expect(page.getByText(/^Salvato/)).toBeVisible();
     await expect(page.getByLabel('Token di accesso')).toHaveCount(0);
     await scan(page, 'settings changed (dark, compact)');
-    // Real cold measurements: the explanation comes first (never confirmed here: it would show a real UAC prompt).
-    const cold = page.getByRole('switch', { name: 'Misure a freddo reali' });
-    await expect(cold).toBeVisible();
-    await cold.click();
-    const ask = page.getByRole('alertdialog', { name: 'Attivare le misure a freddo reali?' });
-    await expect(ask.getByText(/«PurgeStandby» di LLM Bench/)).toBeVisible();
-    await scan(page, 'cold measurements explanation');
-    await ask.getByRole('button', { name: 'Annulla' }).click();
-    await expect(cold).not.toBeChecked();
+    await checkColdMeasurements(page);
     // About: credits open in the browser.
     await page.getByRole('button', { name: 'llmfit' }).click();
     await expect.poll(() => opened(gb)).toEqual(['https://github.com/AlexsJones/llmfit']);
