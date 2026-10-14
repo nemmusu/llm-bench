@@ -232,7 +232,11 @@ describe('plan', () => {
     expect(plan).toMatchObject({ env: {}, modelFiles: ['/home/u/m.ninfer'], ninfer: { distro: 'Ubuntu' }, engine: { variant: 'Ubuntu' } });
     expect(plan.argv).toContain('A=1');
     expect(plan).not.toHaveProperty('slowSharedFilesystem');
-    const elsewhere = { ...model, local: { ...model.local, paths: ['\\\\wsl.localhost\\Debian\\m.ninfer'] } };
+    // A model on a Windows drive, named as the distro sees it: read slowly through /mnt/c (any host).
+    const onDrive = { ...model, local: { ...model.local, paths: ['/mnt/c/models/m.ninfer'] } };
+    const slow = (await wsl({ distro: 'Ubuntu', path: '/home/u/ninfer' }).plan({ kind: 'ninfer-wsl' }, onDrive, P(), { port: 1, marker: 'gpubench-w-6' })) as NinferLaunchPlan;
+    expect(slow).toMatchObject({ modelFiles: ['/mnt/c/models/m.ninfer'], slowSharedFilesystem: true });
+    const elsewhere ={ ...model, local: { ...model.local, paths: ['\\\\wsl.localhost\\Debian\\m.ninfer'] } };
     await expect(wsl({ distro: 'Ubuntu', path: '/n' }).plan({ kind: 'ninfer-wsl' }, elsewhere, P(), { port: 1, marker: 'gpubench-w-2' })).rejects.toMatchObject({ params: { reason: 'ninfer_wsl_path' } });
     // No distro chosen: a preview says <distro>; a start is refused.
     const unset = wsl(undefined);
