@@ -7,6 +7,12 @@ import { it, type Messages } from './it';
 
 export type Lang = 'it' | 'en';
 
+/** The languages offered, English (the default) first. */
+export const LANGUAGES: readonly Lang[] = ['en', 'it'];
+
+/** Each language named in its own language: someone who cannot read the current one still finds theirs. */
+export const LANGUAGE_NAMES: Record<Lang, string> = { en: 'English', it: 'Italiano' };
+
 type Leaves<T, P extends string = ''> = {
   [K in keyof T & string]: T[K] extends string ? `${P}${K}` : Leaves<T[K], `${P}${K}.`>;
 }[keyof T & string];

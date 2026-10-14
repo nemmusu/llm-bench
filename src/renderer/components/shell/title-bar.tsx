@@ -8,6 +8,7 @@ import { Logo } from '../brand/logo';
 import { DownloadsPanel } from '../library/downloads-panel';
 import { IconButton } from '../ui/button';
 import { Kbd } from '../ui/kbd';
+import { LanguageMenu } from './language-menu';
 
 /** Width Windows/Linux reserve on the right for the native min/max/close overlay. */
 export const WINDOW_CONTROLS_WIDTH = 138;
@@ -22,7 +23,7 @@ export function isMac(platform: string | undefined): boolean {
 
 /**
  * Custom 40px title bar: draggable surface, app identity + current page, the command palette
- * trigger and the theme toggle. Leaves room for the native window buttons.
+ * trigger, the language menu, downloads and the theme toggle. Leaves room for the native window buttons.
  */
 export function TitleBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { t } = useI18n();
@@ -64,6 +65,7 @@ export function TitleBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       </div>
 
       <div className="app-no-drag ml-auto flex items-center gap-1">
+        <LanguageMenu />
         <DownloadsPanel />
         <IconButton
           size="sm"

@@ -100,7 +100,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   {t('palette.themeSystem')}
                 </Item>
                 <Item
-                  value="language switch english italiano"
+                  value="language lingua switch english italiano"
                   icon={<Languages />}
                   onSelect={run(() => {
                     const language = settings.language === 'it' ? 'en' : 'it';

@@ -91,10 +91,11 @@ export const it = {
     comfortable: 'Comoda',
     compact: 'Compatta',
   },
+  /** The names of the languages are not here: each is written in its own language (i18n/index.tsx LANGUAGE_NAMES). */
   language: {
     label: 'Lingua',
-    it: 'Italiano',
-    en: 'English',
+    /** The title bar's language button, e.g. "Lingua: Italiano". */
+    menu: 'Lingua: {name}',
     switched: 'Lingua: Italiano',
   },
   common: {

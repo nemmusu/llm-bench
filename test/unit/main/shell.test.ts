@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_SAVE_BYTES, startShell, titleBarColors } from '../../../src/main/shell';
-import { started, tick, world } from './harness';
+import { coreState, started, tick, world } from './harness';
 
 describe('title bar colours', () => {
   it('match the renderer canvas in both themes', () => {
@@ -150,13 +150,19 @@ describe('startShell', () => {
     await tick();
     w.proc.emit('exit', 3);
     await vi.waitFor(() => expect(w.calls.exit).toEqual([1]));
-    expect(w.errors[0]).toContain('core exited with code 3');
+    // The core never told the language: English, the default.
+    expect(w.errors[0]).toBe('LLM Bench could not start: core exited with code 3');
   });
 
   it('a core crash later shows a message and relaunches the app', async () => {
     const t = await started();
     t.proc.emit('exit', 9);
-    expect(t.errors[0]).toContain('codice 9');
+    expect(t.errors[0]).toBe('The internal engine closed unexpectedly (code 9). LLM Bench will restart.');
+    // In the language the core told.
+    const it = await started();
+    it.proc.emit('message', { type: 'shell-state', state: coreState() });
+    it.proc.emit('exit', 4);
+    expect(it.errors[0]).toBe('Il motore interno si è chiuso in modo inatteso (codice 4). LLM Bench verrà riavviato.');
     expect(t.calls.relaunch).toBe(1);
     expect(t.calls.exit).toEqual([1]);
     expect(t.s.core).toBeUndefined();

@@ -11,7 +11,7 @@ import { Page } from '../components/shell/page';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { Select } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
-import { useI18n } from '../i18n';
+import { LANGUAGE_NAMES, LANGUAGES, useI18n } from '../i18n';
 import { useSettings } from '../lib/settings';
 
 const INTERVALS = [250, 500, 1000] as const;
@@ -63,10 +63,7 @@ export function SettingsPage() {
                 className="w-44"
                 value={settings.language}
                 onValueChange={(language) => update({ language })}
-                options={[
-                  { value: 'it', label: t('language.it') },
-                  { value: 'en', label: t('language.en') },
-                ]}
+                options={LANGUAGES.map((lang) => ({ value: lang, label: LANGUAGE_NAMES[lang] }))}
               />
             }
           />

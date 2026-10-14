@@ -91,8 +91,7 @@ export const en: Messages = {
   },
   language: {
     label: 'Language',
-    it: 'Italiano',
-    en: 'English',
+    menu: 'Language: {name}',
     switched: 'Language: English',
   },
   common: {

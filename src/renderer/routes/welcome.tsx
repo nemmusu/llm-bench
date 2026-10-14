@@ -6,6 +6,7 @@ import { Logo } from '../components/brand/logo';
 import { VersionLabel } from '../components/domain/version-label';
 import { DownloadProgressLine } from '../components/library/download-progress';
 import { RecommendedSetup, useRecommendation, useReferenceJob } from '../components/setup/recommended-setup';
+import { LanguageSwitch } from '../components/shell/language-menu';
 import { SystemCheckPanel } from '../components/setup/system-check';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -41,7 +42,7 @@ function Done({ onGo }: { onGo: () => void }) {
   );
 }
 
-/** First-launch wizard: system check (each problem fixed with one button) → recommended setup → ready. */
+/** First-launch wizard: the language at the top, system check (each problem fixed with one button) → recommended setup → ready. */
 export function WelcomePage() {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -80,9 +81,13 @@ export function WelcomePage() {
               <p className="max-w-[520px] text-md text-fg-2">{t('welcome.subtitle')}</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => finish({})} className="mt-1">
-            {t('welcome.skip')}
-          </Button>
+          {/* The language first: someone who does not read English switches in one click. */}
+          <div className="mt-1 flex shrink-0 flex-col items-end gap-2">
+            <LanguageSwitch />
+            <Button variant="ghost" size="sm" onClick={() => finish({})}>
+              {t('welcome.skip')}
+            </Button>
+          </div>
         </div>
 
         <Stepper

@@ -372,7 +372,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
           reject(new Error(`core exited with code ${code}`));
           return;
         }
-        e.dialog.showErrorBox(APP_NAME, `Il motore interno si è chiuso in modo inatteso (codice ${code}). L'app verrà riavviata.`);
+        e.dialog.showErrorBox(APP_NAME, t('coreCrashed', { code: String(code) }));
         app.relaunch();
         app.exit(1);
       });
@@ -556,7 +556,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
       s.corePort = await startCore(secrets);
     } catch (err) {
       // startCore() only rejects with an Error (the core exited before saying it was ready).
-      e.dialog.showErrorBox(APP_NAME, `Impossibile avviare ${APP_NAME}: ${(err as Error).message}`);
+      e.dialog.showErrorBox(APP_NAME, t('startFailed', { error: (err as Error).message }));
       app.exit(1);
       return;
     }

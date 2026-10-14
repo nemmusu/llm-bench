@@ -44,6 +44,8 @@ export const TRAY_TEXT = {
     tooltipDockerStuck: 'Docker non risponde',
     dockerStuckTitle: 'Docker non risponde',
     dockerStuckBody: 'I server in Docker non funzionano più. Scegli «Riavvia Docker» dal menu di {app} vicino all’orologio, oppure apri {app}.',
+    coreCrashed: 'Il motore interno si è chiuso in modo inatteso (codice {code}). {app} verrà riavviato.',
+    startFailed: 'Impossibile avviare {app}: {error}',
   },
   en: {
     open: 'Open {app}',
@@ -83,6 +85,8 @@ export const TRAY_TEXT = {
     tooltipDockerStuck: 'Docker is not responding',
     dockerStuckTitle: 'Docker is not responding',
     dockerStuckBody: 'Servers in Docker no longer work. Choose “Restart Docker” in the {app} menu next to the clock, or open {app}.',
+    coreCrashed: 'The internal engine closed unexpectedly (code {code}). {app} will restart.',
+    startFailed: '{app} could not start: {error}',
   },
 } as const;
 
