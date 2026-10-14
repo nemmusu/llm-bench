@@ -1,261 +1,282 @@
-<p align="center"><img src="resources/icons/icon-256.png" width="88" alt=""></p>
+<p align="center"><img src="resources/icons/icon-256.png" width="88" alt="LLM Bench icon"></p>
 
 <h1 align="center">LLM Bench</h1>
 
-<p align="center"><b>Quanto è veloce la tua scheda video NVIDIA con l'intelligenza artificiale?</b><br>
-LLM Bench la mette alla prova con i modelli linguistici sul tuo PC e ti risponde in parole semplici.</p>
+<p align="center"><b>A local LLM benchmark for NVIDIA graphics cards, made for everyone.</b><br>
+Measure how fast your GPU runs AI language models (tokens per second, context length, VRAM, power) with llama.cpp, vLLM, SGLang and NInfer, on Windows and Linux. Results in plain words.</p>
 
-<p align="center"><a href="docs/GUIDA.md">Guida completa</a> · <a href="README.en.md">English</a></p>
+<p align="center">English · <a href="README.it.md">Italiano</a> · <a href="docs/GUIDE.md">Step-by-step guide</a></p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/benchmark-dark.png">
-  <img src="docs/screenshots/benchmark.png" alt="La pagina Benchmark di LLM Bench: motore, modello e durata già scelti, il pulsante Avvia benchmark, la scheda video dal vivo e gli ultimi risultati">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/benchmark-dark.png">
+  <img src="docs/screenshots/en/benchmark.png" alt="LLM Bench's Benchmark page: engine, model and test length already chosen, the Start benchmark button, the live graphics card readings and the latest results">
 </picture>
 
-Un **modello linguistico** (LLM) è il "cervello" di programmi come ChatGPT. Molti si possono scaricare e far girare sul proprio PC: LLM Bench ti dice quanto bene ci riesce la tua scheda video. Funziona su **Windows e Linux**, in italiano o in inglese.
+A **large language model** (LLM) is the "brain" behind programs like ChatGPT. Many of them can be downloaded and run on your own PC. **LLM Bench** is a desktop app that tells you how well your NVIDIA graphics card runs them: how fast the model writes and reads, how much text (context) fits in video memory, and which settings are the fastest.
 
-Non serve sapere nulla di tecnico: LLM Bench installa da solo quello che manca e ti chiede sempre conferma prima di scaricare qualcosa.
+You don't need to know anything technical. LLM Bench sets up what is missing by itself and always asks before downloading anything. The app speaks **English** and **Italian**.
 
-## Cosa fa
+## What it does
 
-- **Misura la tua scheda video** con i modelli che vuoi: quanto ci mette a caricarli, quanto velocemente leggono e scrivono, quanto aspetti la prima parola, come regge quando più persone li usano insieme, quanta memoria video e quanta corrente consuma.
-- **Ti spiega i numeri a parole**, per esempio: «Scrive circa 177 parole al secondo: molto più veloce di quanto tu riesca a leggere».
-- **Trova le impostazioni migliori** da solo: prova le combinazioni e ti dice quale va più veloce e quanto testo regge la tua scheda.
-- **Confronta** test e modelli fianco a fianco, sempre a parità di condizioni.
-- **Trova e scarica i modelli** da Hugging Face e ti dice prima se **entrano nella tua scheda**.
-- **Tiene acceso un modello** per i tuoi programmi (chat, editor, assistenti), anche a finestra chiusa, dall'area di notifica.
-- **Usa più motori** (i programmi che fanno girare i modelli): llama.cpp, vLLM, SGLang, NInfer e le versioni modificate. Li installa e li aggiorna con un pulsante.
+- **Benchmarks your graphics card** with the models you choose: load time, generation speed and prompt reading speed in tokens per second, time to the first word, several users at once, peak video memory (VRAM), power and efficiency.
+- **Explains the numbers in words**, for example "It writes about 177 words per second: much faster than you can read".
+- **Finds the best settings** by itself: KV cache, the largest context that fits in VRAM, batch sizes. It shows the speed of each combination at its largest context, with that context full.
+- **Compares** tests and models side by side, always at the same context length.
+- **Finds and downloads models** from Hugging Face and tells you up front whether they **fit your card**.
+- **Runs a local OpenAI-compatible server** for your own apps (chat, code editors, assistants), even with the window closed, from the notification area.
+- **Works with several engines** (the programs that run the models): llama.cpp, vLLM, SGLang, NInfer and their forks. It installs and updates them with one button.
 
-## Cosa ti serve
+## Requirements
 
-- Una **scheda video NVIDIA** con il suo **driver**. Se il driver manca o è troppo vecchio, LLM Bench te lo dice e apre la pagina giusta per scaricarlo.
-- **Windows 10 o 11** (64 bit) oppure **Linux** (Ubuntu, Debian e derivate; l'AppImage funziona anche su altre distribuzioni).
-- Un po' di spazio su disco per i modelli: da pochi GB per i più piccoli a qualche decina per i più grandi.
+- An **NVIDIA graphics card** with its **driver**. If the driver is missing or too old, LLM Bench tells you and opens NVIDIA's download page.
+- **Windows 10 or 11** (64-bit) or **Linux** (Ubuntu, Debian and derivatives; the AppImage also runs on other distributions).
+- Disk space for the models: a few GB for small ones, tens of GB for large ones.
 
-Nient'altro: il motore llama.cpp lo scarica e lo prepara LLM Bench al primo test.
+That is all for the default engine: LLM Bench downloads and sets up **llama.cpp** at the first test.
 
-Facoltativo, solo per alcuni motori:
+Only for some engines:
 
-- **Docker** per vLLM e SGLang (e per llama.cpp in un contenitore). Su Windows è Docker Desktop: se manca, LLM Bench lo installa e lo accende per te.
-- **WSL 2** con una distribuzione Linux (per esempio Ubuntu 24.04) per usare NInfer su Windows.
+- **Docker** for vLLM and SGLang (and for llama.cpp in a container). On Windows this is Docker Desktop: if it is missing, LLM Bench installs it and starts it for you.
+- **WSL 2** with a Linux distribution (for example Ubuntu 24.04) to use NInfer on Windows.
 
-## Installazione
+## Install
 
-> **Dove trovo i file di installazione?** Quando ci saranno le versioni pubblicate, le troverai nella pagina **Releases** di questo repository. Per ora si creano dal codice con `npm run dist`: vedi [Per sviluppatori](#per-sviluppatori).
+> **Where are the installers?** Once versions are published, they will be on this repository's **Releases** page. Until then, build them from the source with `npm run dist` (see [Developers](#developers)).
 
 ### Windows
 
-1. Apri **`LLM-Bench-Setup-x.y.z.exe`** (x.y.z è il numero di versione).
-2. Scegli la lingua, lascia la cartella proposta e premi **Installa**. Windows ti chiede una volta il permesso di amministratore: LLM Bench si installa in *Programmi*, per tutti gli utenti del PC.
-3. Alla fine LLM Bench si apre da solo. Lo ritrovi sul desktop e nel menu Start.
+1. Open **`LLM-Bench-Setup-x.y.z.exe`** (x.y.z is the version number).
+2. Pick the language, keep the proposed folder and press **Install**. Windows asks once for administrator permission: LLM Bench installs into *Program Files*, for every user of the PC.
+3. LLM Bench opens by itself at the end. You will find it on the desktop and in the Start menu.
 
-> Se Windows mostra «Windows ha protetto il PC», clicca **Ulteriori informazioni** → **Esegui comunque**. Succede con i programmi nuovi, non ancora diffusi.
+> If Windows shows "Windows protected your PC", click **More info** → **Run anyway**. This happens with new programs that are not widely known yet.
 
-**Disinstallare.** Come ogni programma: Impostazioni di Windows → **App** → **App installate** → **LLM Bench** → **Disinstalla**. I tuoi risultati e le impostazioni restano in `%APPDATA%\LLM Bench`, i modelli nella cartella `LLM Bench\models` della tua cartella utente: cancellali tu se non ti servono più.
+Prefer not to install anything? Use the **portable** version, `LLM-Bench-x.y.z-portable.exe`: double-click it to run.
 
-Preferisci non installare niente? C'è anche la versione **portable**, `LLM-Bench-x.y.z-portable.exe`: si apre con un doppio clic.
+**Uninstall** like any program: Windows Settings → **Apps** → **Installed apps** → **LLM Bench** → **Uninstall**. Your results and settings stay in `%APPDATA%\LLM Bench` and your models in the `LLM Bench\models` folder of your user folder: delete them yourself if you no longer need them.
 
 ### Linux
 
-- **Pacchetto .deb** (Ubuntu, Debian e derivate; consigliato): aprilo con il gestore dei pacchetti, oppure da terminale:
+- **.deb package** (Ubuntu, Debian and derivatives; recommended): open it with your package manager, or from a terminal:
 
   ```bash
   sudo apt install ./llm-bench-x.y.z-amd64.deb
   ```
 
-  LLM Bench compare tra le applicazioni. Per toglierlo: `sudo apt remove llm-bench`.
-- **AppImage** (qualunque distribuzione): rendila eseguibile e aprila.
+  LLM Bench appears among your applications. To remove it: `sudo apt remove llm-bench`.
+- **AppImage** (any distribution): make it executable and open it.
 
   ```bash
   chmod +x llm-bench-x.y.z-x86_64.AppImage
   ./llm-bench-x.y.z-x86_64.AppImage
   ```
 
-> **Da GPU Bench a LLM Bench.** Fino alla versione 0.3 il programma si chiamava GPU Bench. Al primo avvio LLM Bench prende i tuoi risultati, le impostazioni e i motori; i modelli restano dove sono ([dettagli nella guida](docs/GUIDA.md#da-gpu-bench-a-llm-bench)).
+> **From GPU Bench to LLM Bench.** Up to version 0.3 the app was called GPU Bench. At its first start LLM Bench takes over your results, settings and engines; models stay where they are ([details in the guide](docs/GUIDE.md#from-gpu-bench-to-llm-bench)).
 
-## Il primo test in 3 passi
+## Quick start: your first benchmark in 3 steps
 
-**1. Apri LLM Bench.** La prima volta controlla il PC (driver, scheda video, spazio libero) e ti propone da dove partire: il motore llama.cpp, un modello adatto alla tua scheda e un test *Rapido* di un paio di minuti. Se manca qualcosa, accanto c'è un pulsante che lo sistema.
+**1. Open LLM Bench.** The first time, it checks your PC (driver, graphics card, free space) and suggests where to start: the llama.cpp engine, a model that fits your card and a *Quick* test of a couple of minutes. Anything missing has a button next to it that fixes it. You can switch between English and Italian at the top.
 
 <p align="center"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/primo-avvio-dark.png">
-  <img src="docs/screenshots/primo-avvio.png" width="560" alt="Il primo avvio: la configurazione consigliata per la scheda, con motore, modello e durata">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/first-start-dark.png">
+  <img src="docs/screenshots/en/first-start.png" width="560" alt="The first start: the setup LLM Bench recommends for this graphics card, with engine, model and test length, and the language choice at the top">
 </picture></p>
 
-**2. Premi «Avvia benchmark».** Se prima serve scaricare qualcosa, LLM Bench ti dice cosa e quanto pesa e aspetta il tuo sì. Durante il test vedi a che punto è, la velocità, la memoria video, la temperatura e i watt. Puoi annullare quando vuoi.
+**2. Press "Start benchmark".** If something must be downloaded first, LLM Bench tells you what and how big, and waits for your OK. During the test you see each phase, the live speed, video memory, temperature and watts. You can cancel at any time.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/test-in-corso-dark.png">
-  <img src="docs/screenshots/test-in-corso.png" alt="Un test in corso: le fasi, la velocità di scrittura e di lettura, la memoria video, la temperatura e i watt dal vivo">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/test-running-dark.png">
+  <img src="docs/screenshots/en/test-running.png" alt="A test in progress: the phases, the live generation and prompt reading speed, video memory, temperature and power">
 </picture>
 
-**3. Leggi il risultato.** In cima trovi il punteggio e una frase che lo spiega; sotto, ogni numero con il suo significato (il **?** accanto a ogni voce lo spiega). I riquadri colorati ti dicono se qualcosa può aver falsato la misura e come rimediare.
+**3. Read the result.** At the top, the score and a sentence that explains it; below, every number with its meaning (the **?** next to each one explains it). Coloured boxes tell you when something may have skewed the measurement, and how to fix it.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/risultato-dark.png">
-  <img src="docs/screenshots/risultato.png" alt="Un risultato: il Punteggio LLM Bench, la velocità spiegata a parole, gli avvisi e le misure principali">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/result-dark.png">
+  <img src="docs/screenshots/en/result.png" alt="A result: the LLM Bench score, the speed explained in words, the notes and the main measurements">
 </picture>
 
-Quanto dura un test lo scegli tu:
+You choose how long a test lasts:
 
-| Durata | Quanto ci vuole | Cosa misura |
+| Test | How long | What it measures |
 |---|---|---|
-| **Rapido** | circa 2 minuti | Un caricamento e un testo di prova: per farti un'idea |
-| **Standard** | circa 6 minuti | Caricamento a freddo e a caldo, testi corti e lunghi, più utenti insieme. Sul modello di riferimento dà il Punteggio LLM Bench |
-| **Completo** | 15–30 minuti | Tutto, ripetuto più volte, per la massima precisione |
-| **Trova le impostazioni migliori** | te lo dice prima | Vedi [più sotto](#trovare-le-impostazioni-migliori) |
+| **Quick** | about 2 minutes | One load and one test prompt: to get an idea |
+| **Standard** | about 6 minutes | Cold and warm load, short and long prompts, several users at once. On the reference model it gives the LLM Bench score |
+| **Full** | 15–30 minutes | Everything, repeated more times, for the best precision |
+| **Find the best settings** | told before it starts | See [below](#find-the-best-settings) |
 
-## Capire i risultati
+## Find the best settings
 
-| Numero | Cosa vuol dire |
-|---|---|
-| **Generazione** (tok/s) | Quanto velocemente il modello **scrive**. Un *token* è un pezzo di parola: 100 token sono circa 70 parole |
-| **Lettura prompt** (tok/s) | Quanto velocemente **legge** il testo che gli dai: la domanda, un documento, il codice. Conta molto con i testi lunghi |
-| **Primo token** (ms) | Quanto aspetti prima che compaia la prima parola. Sotto i 200 ms sembra istantaneo |
-| **Caricamento a freddo / a caldo** | Quanto ci mette ad aprire il modello: dal disco la prima volta, oppure quando il PC lo tiene già in memoria |
-| **VRAM di picco** | Quanta memoria della scheda video ha usato al massimo |
-| **Più utenti** | Quanto scrive in tutto, e per ciascuno, quando più persone lo usano insieme |
-| **Efficienza** (tok/J) | Quanto lavoro fa per ogni unità di energia: più è alto, meno consuma |
-| **Punteggio LLM Bench** | Un numero solo per confrontare le schede: 1.000 è una RTX 5090 con llama.cpp sul modello di riferimento. Si calcola con il test Standard su quel modello |
+Choose **Find the best settings**, then *Fast* or *Thorough*: next to each, LLM Bench tells you how long it will take **for that model on your card** (from a few minutes to over half an hour for large models). The estimate counts slow disks too: a model read from a Windows folder through WSL or Docker Desktop loads more slowly.
 
-**Ogni velocità dice con quanto testo è stata misurata.** Un modello rallenta quando ha già molto testo davanti (il *contesto*): per questo LLM Bench non scrive mai un numero da solo. Trovi sempre «scrittura con 32.768 token già nel contesto» oppure «lettura di un prompt da 512 token»; nelle tabelle, la lunghezza è sotto il numero. Due velocità si confrontano solo alla stessa lunghezza, e il Confronta lo fa per te.
+Then LLM Bench starts the model several times and tries by itself:
+
+- the **KV cache**, the memory where the model keeps the text it has read: f16, then the compressed q8_0 and q4_0, which leave room for much more text;
+- the **largest context** that fits entirely in video memory, for each cache type;
+- the settings that change the speed: flash attention, batch and micro-batch and, if you have a draft or MTP file for the model, speculative decoding.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/risultati-dark.png">
-  <img src="docs/screenshots/risultati.png" alt="La pagina Risultati: ogni test con le sue velocità di scrittura e lettura, ciascuna con la lunghezza a cui è stata misurata">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/tune-result-dark.png">
+  <img src="docs/screenshots/en/tune-result.png" alt="The result of Find the best settings: a summary sentence, the recommended combination with its largest context and its speeds with that context full, and the speed chart of every combination">
 </picture>
 
-Nella pagina **Risultati** ritrovi tutti i test, con filtri per modello, scheda e motore. La vista **Configurazioni** li raggruppa per modo di avvio, dal più veloce. Ogni risultato si esporta in CSV (anche per Excel in italiano), JSON, Markdown o HTML, e con **Usa questo preset** riparti con le stesse impostazioni.
-
-Gli avvisi più comuni:
-
-- **Altri programmi stavano usando la GPU**: un gioco, un altro modello o una macchina virtuale occupavano la scheda; i numeri possono essere un po' più bassi.
-- **Il modello non è entrato tutto nella memoria della scheda**: su Windows il resto finisce nella RAM del PC e tutto va 10–15 volte più piano. LLM Bench te lo dice prima di partire, durante il test e nel risultato, con i pulsanti per rimediare (cache più piccola, meno contesto, *Trova le impostazioni migliori*).
-
-## Trovare le impostazioni migliori
-
-Scegli la durata **Trova le impostazioni migliori**: LLM Bench ti dice prima quanto ci vorrà per quel modello sulla tua scheda (da pochi minuti a più di mezz'ora per i modelli grandi). Poi avvia il modello più volte e prova da solo:
-
-- la **cache KV**, la memoria dove il modello tiene il testo già letto: le versioni compresse occupano meno e lasciano spazio a più testo;
-- il **contesto più grande** che entra tutto nella memoria della scheda;
-- le impostazioni che cambiano la velocità.
-
-Alla fine ti mostra la combinazione consigliata, quanto va veloce a ogni lunghezza di testo e il comando esatto. **Usa questo preset** la porta nel Benchmark o in un server.
-
-## Confrontare i modelli
-
-Premi **Confronta** accanto a un test, oppure **Confronta modelli** nella pagina Risultati e scegline da 2 a 4: per ognuno LLM Bench prende la configurazione più veloce misurata sulla tua scheda. In cima una frase ti dice chi scrive e chi legge più in fretta, e di quanto. Sotto, ogni misura ha il migliore evidenziato e gli altri detti a parole («2,2 volte più lento», «−16 %»).
+**Every speed is read at the largest context, with that context full**, because that is how the model runs when you use all the context you set. The **recommended combination** is the fastest among those that reach the largest context. The **ranking** lists every combination at its own largest context (largest context first, then the fastest); pick a depth in **Compare at** (1K, 64K…) to compare them all with the context filled up to there. Every attempt has its exact command.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/confronta-dark.png">
-  <img src="docs/screenshots/confronta.png" alt="Il confronto di quattro modelli: chi va più veloce, a parità di contesto, e ogni misura con il migliore evidenziato">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/tune-ranking-dark.png">
+  <img src="docs/screenshots/en/tune-ranking.png" alt="The combination ranking at the largest context: each KV cache and batch combination with its largest context, generation and prompt reading speed, the best values in green">
 </picture>
 
-Le velocità sono confrontate sempre alla **stessa lunghezza di contesto** (la scegli in **Confronta a**); dove un test non l'ha misurata c'è scritto «non misurato», mai una stima. L'indirizzo della pagina contiene il confronto, quindi puoi riaprirlo o condividerlo, e la **Scheda da condividere** lo riassume in una pagina.
+**Use this preset** takes the recommended combination to a benchmark or a server. If the search runs out of time, the result keeps what it measured and says why (for example, each engine start took longer than expected).
 
-## Trovare e scaricare modelli
+## Results and comparing
 
-Nella pagina **Modelli** trovi quelli che hai già sul PC (anche quelli di LM Studio, Ollama e Hugging Face), i consigliati per la tua scheda e la ricerca su Hugging Face, con il filtro **Entra nella mia GPU**.
-
-Ogni modello ha più **versioni**: più compresse occupano meno memoria, meno compresse sono un po' più precise. LLM Bench sceglie da solo la migliore che entra nella tua scheda (**Consigliata**) e accanto a ognuna ti dice se ci sta:
-
-| Giudizio | Cosa vuol dire |
+| Number | What it means |
 |---|---|
-| **Entra perfettamente** | Usa meno del 60 % della memoria della scheda: resta spazio anche per testi lunghi |
-| **Entra bene** | Usa meno dell'85 % |
-| **Al limite** | Usa quasi tutta la memoria: chiudi gli altri programmi prima del test |
-| **Entra in parte** | Una parte resta nella memoria del PC: funziona, ma più lentamente |
-| **Non entra** | È troppo grande per questa scheda |
+| **Generation** (tok/s) | How fast the model **writes**. A *token* is a piece of a word: 100 tokens are about 75 words |
+| **Prompt reading** (tok/s) | How fast it **reads** what you give it: the question, a document, code. It matters a lot with long texts |
+| **First token** (ms) | How long you wait for the first word. Under 200 ms it feels instant |
+| **Cold / warm load** | How long it takes to open the model: from disk the first time, or when the PC already holds it in memory |
+| **Peak VRAM** | The most video memory it used |
+| **Several users** | How much it writes in total, and for each person, when several people use it at once |
+| **Efficiency** (tok/J) | Work per unit of energy: higher means it uses less power |
+| **LLM Bench score** | One number to compare graphics cards: 1,000 is an RTX 5090 with llama.cpp on the reference model. Only a Standard test of that model gets one |
+
+**Every speed says how much text it was measured with.** A model slows down when it already has a lot of text in front of it (the *context*), so LLM Bench never shows a bare number: you always read "writing with 32,768 tokens already in context" or "reading a 512-token prompt". Two speeds only compare at the same length, and Compare does that for you.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/results-dark.png">
+  <img src="docs/screenshots/en/results.png" alt="The Results page: every test with its generation and prompt reading speeds, each with the context length it was measured at">
+</picture>
+
+The **Results** page lists every test, with filters for model, graphics card and engine. The **Configurations** view groups them by how the model was started, fastest first; a "Find the best settings" search shows there at its largest context, like everywhere else. Export any result to CSV, JSON, Markdown or HTML, and press **Use this preset** to start again with the same settings.
+
+Press **Compare** next to a test, or **Compare models** on the Results page and pick 2 to 4: for each model LLM Bench takes the fastest configuration measured on your card. A sentence on top says who writes and who reads faster, and by how much; below, each measurement highlights the best and puts the others in words ("2.2 times slower", "−16%"). Where a test did not measure a length, it says "not measured", never an estimate. The page address holds the comparison, so you can reopen or share it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/compare-dark.png">
+  <img src="docs/screenshots/en/compare.png" alt="Four models compared: who is faster at the same context length, each measurement with the best one highlighted">
+</picture>
+
+## Models that fit your card
+
+The **Models** page lists the models already on your PC (LM Studio, Ollama and Hugging Face folders included), the ones recommended for your card and the Hugging Face search, with the **Fits my GPU** filter. Each model comes in several **versions** (quantizations): LLM Bench picks the best one that fits (**Recommended**) and labels each one, from **Fits perfectly** to **Does not fit**.
 
 <p align="center"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/modello-versioni-dark.png">
-  <img src="docs/screenshots/modello-versioni.png" width="720" alt="La pagina di un modello: ogni versione con la sua dimensione e il giudizio Al limite, Entra bene o Non entra; quella consigliata è già scelta">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/model-versions-dark.png">
+  <img src="docs/screenshots/en/model-versions.png" width="720" alt="A model page: each version with its size and its verdict (Tight fit, Fits well, Does not fit); the recommended one is already selected">
 </picture></p>
 
-Il download si mette in pausa e riprende da solo se la connessione cade, e quello che hai già non si riscarica mai. Se un modello cambia su Hugging Face, LLM Bench te lo dice e lo aggiorna con **Aggiorna**, scaricando solo i file cambiati. Per i modelli con licenza da accettare (Llama, Gemma…) ti chiede una volta il token di Hugging Face e lo salva cifrato.
+Downloads pause and resume by themselves if the connection drops, and what you already have is never downloaded again. When a model changes on Hugging Face, **Update** downloads only the files that changed.
 
-## Tenere acceso un server
+## Run a local server
 
-Vuoi usare un modello nei tuoi programmi, senza test? Apri **Server** e premi **Avvia un server**: scegli il modello, il motore e le impostazioni (le migliori dei tuoi test, un tuo preset o le tue), e LLM Bench ti mostra cosa avvierà prima di farlo. Ogni server acceso ha l'**indirizzo** e il **nome del modello** da copiare, compatibili con le API di OpenAI, ed esempi pronti per il terminale, per Python e per programmi come Open WebUI, Continue o Chatbox.
+Want to use a model in your own apps, without a test? Open **Servers** and press **Start a server**: choose the model, the engine and the settings (the best from your tests, a preset or your own). LLM Bench shows what it will start before it does. Each running server shows its **OpenAI-compatible address** and **model name** to copy, with ready examples for the terminal, Python and apps like Open WebUI, Continue or Chatbox.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/server-dark.png">
-  <img src="docs/screenshots/server.png" alt="La pagina Server: un server acceso con il suo indirizzo, il nome del modello da copiare ed esempi d'uso">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/server-dark.png">
+  <img src="docs/screenshots/en/server.png" alt="The Servers page: a running server with its OpenAI-compatible address, its model name to copy and usage examples">
 </picture>
 
-**Dall'area di notifica.** Se chiudi la finestra con un server acceso, LLM Bench resta vicino all'orologio e il server continua a funzionare. Dal menu copi l'indirizzo, fermi o riavvii un server, avvii un **preset** o esci.
+**From the notification area.** Close the window with a server running and LLM Bench stays next to the clock: the server keeps working. From the menu you copy the address, stop or restart a server, start a **preset** or quit.
 
 <p align="center"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/area-di-notifica-dark.png">
-  <img src="docs/screenshots/area-di-notifica.png" width="300" alt="Il menu nell'area di notifica: il server acceso, Copia indirizzo, Ferma, Riavvia, Avvia preset, lo stato di Docker">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/tray-menu-dark.png">
+  <img src="docs/screenshots/en/tray-menu.png" width="300" alt="The notification-area menu: the running server, copy address, stop, restart, start a preset, Docker's state">
 </picture></p>
 
-**Preset.** Con **Salva come preset** ricordi modello, motore, impostazioni e porta: lo riavvii con un clic. Se lo segni **Avvia all'apertura di LLM Bench** parte da solo; in Impostazioni puoi anche far partire LLM Bench all'accesso al PC.
+**Save as preset** remembers model, engine, settings and port, to start it again with one click; mark it **Start when LLM Bench opens** to start it by itself. A server answers only your PC unless you turn on **Make it reachable from the local network**, which protects it with a key LLM Bench creates for you.
 
-Di solito il server risponde solo al tuo PC. Con **Rendi raggiungibile dalla rete locale** lo usano anche gli altri dispositivi di casa o dell'ufficio, con una chiave che LLM Bench genera per te.
+## Engines
 
-## Motori
+Engines are the programs that run the models. One is enough: if you are not sure, keep **llama.cpp**.
 
-I motori sono i programmi che fanno girare i modelli. Ne basta uno: se non sai quale scegliere, lascia **llama.cpp**.
-
-| Motore | A cosa serve | Cosa ti serve |
+| Engine | What it is for | What you need |
 |---|---|---|
-| **llama.cpp** | Il più semplice: legge i modelli GGUF, i più diffusi | Niente: LLM Bench lo scarica da solo (anche in Docker, se vuoi) |
-| **vLLM** | Pensato per servire molti utenti insieme | Docker; su Linux anche installato sul PC |
-| **SGLang** | Veloce con molti utenti e con testi che si ripetono | Docker; su Linux anche installato sul PC |
-| **NInfer** e **NInfer-all** | Fatti apposta per alcuni modelli Qwen su una RTX 5090. NInfer-all legge anche i modelli GGUF-NInfer | Una RTX 5090; su Windows WSL 2. LLM Bench lo scarica e lo compila per te |
-| **Motori personalizzati** | Una versione modificata (fork) di llama.cpp, vLLM, SGLang o NInfer, o un tuo programma con API OpenAI | Dove si trova: LLM Bench lo prova prima di usarlo |
+| **llama.cpp** | The simplest: reads GGUF models, the most common format | Nothing: LLM Bench downloads it (in Docker too, if you like) |
+| **vLLM** | Built to serve many users at once | Docker; on Linux it can also be installed on the PC |
+| **SGLang** | Fast with many users and with repeated text | Docker; on Linux it can also be installed on the PC |
+| **NInfer** and **NInfer-all** | Made for some Qwen models on a single **RTX 5090**; NInfer-all also reads GGUF-NInfer models | An RTX 5090; WSL 2 on Windows. LLM Bench downloads and builds it |
+| **Custom engines** | A fork of llama.cpp, vLLM, SGLang or NInfer, or your own program with an OpenAI-compatible API | Where it is: LLM Bench tries it before using it |
 
-Ogni motore ha la sua scheda nella pagina **Motori**, con lo stato, le versioni e i pulsanti per installare, scegliere la versione e **aggiornare**: quando c'è una versione nuova vedi «Aggiornamento disponibile» e il pulsante **Aggiorna**. Prima di aggiornare LLM Bench ti mostra i comandi esatti che eseguirà; la versione di prima resta sul PC finché la nuova non funziona.
+Each engine has a card on the **Engines** page with its state, its versions and the buttons to install, choose a version and **Update**. Before updating, LLM Bench shows the exact commands it will run, and the previous version stays on the PC until the new one works.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/motori-dark.png">
-  <img src="docs/screenshots/motori.png" alt="La pagina Motori: le schede di llama.cpp, Docker e vLLM con il loro stato e le versioni da scaricare">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/engines-dark.png">
+  <img src="docs/screenshots/en/engines.png" alt="The Engines page: the llama.cpp, Docker and vLLM cards with their state and the versions to download">
 </picture>
 
-<!-- docs/screenshots/motori-ninfer.png (e -dark): la scheda NInfer con NInfer-all, da aggiungere quando la nuova scheda NInfer è su main. -->
+## Language
 
-## Se qualcosa non va
+LLM Bench starts in **English**. Switch to **Italiano** from the globe in the title bar, at the top of the welcome screen or in **Settings**: every page, the notification-area menu and the start-up dialogs follow.
 
-Ogni problema che LLM Bench riconosce ha una spiegazione e, quasi sempre, un pulsante che lo risolve. I casi più comuni:
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/language-menu-dark.png">
+  <img src="docs/screenshots/en/language-menu.png" width="440" alt="The language menu in the title bar, open: English and Italiano">
+</picture></p>
 
-- **«Docker non risponde».** Succede quando il **Resource Saver** di Docker Desktop lo spegne dopo qualche minuto senza contenitori e lo spegnimento si blocca a metà. Premi **Riavvia Docker**, dall'avviso in cima alla finestra o dal menu dell'area di notifica: immagini e modelli restano, e i server di LLM Bench ripartono da soli. Per evitarlo, in Docker Desktop apri Impostazioni → **Resources** → **Advanced** e disattiva **Resource Saver**.
-- **«Docker non è avviato».** Premi **Avvia Docker**: LLM Bench lo accende e continua da solo.
-- **«La memoria della scheda video è occupata».** Un gioco, un altro modello o una macchina virtuale stanno usando la scheda. Chiudili, oppure premi **Continua comunque** (il risultato lo segnerà). Anche un server acceso occupa la scheda: LLM Bench ti propone di fermarlo prima del test.
-- **«Il modello non entra tutto nella scheda video».** Usa una versione più compressa del modello, la cache **q4_0** (la memoria del testo occupa circa un quarto), meno contesto, oppure **Trova le impostazioni migliori**.
-- **NInfer-all sulla RTX 5090.** Per compilarlo serve il toolkit **CUDA 13.1 o più recente**, da installare dal sito di NVIDIA (su Windows dentro la distribuzione WSL): quello dei pacchetti di Ubuntu è troppo vecchio per la RTX 5090. LLM Bench lo controlla prima di compilare e ti dice cosa manca.
-- **«Driver NVIDIA non installato» o «troppo vecchio».** Premi il pulsante che apre la pagina di NVIDIA, installa il driver e poi **Ricontrolla**.
+## Troubleshooting
 
-Altri casi e tutti i dettagli sono nella [guida completa](docs/GUIDA.md#9-problemi-comuni).
+Every problem LLM Bench recognises comes with an explanation and, almost always, a button that fixes it. The most common ones:
 
-## Per sviluppatori
+### "Docker is not responding"
 
-Serve **Node.js 22** o più recente.
+Usually Docker Desktop's **Resource Saver** stopped it after a few minutes without containers, and the stop got stuck halfway. Press **Restart Docker**, from the banner at the top of the window or from the notification-area menu: images and models stay, and LLM Bench's servers start again by themselves. To avoid it, open Docker Desktop's Settings → **Resources** → **Advanced** and turn off **Resource Saver**.
+
+### "Docker is not running"
+
+Press **Start Docker**: LLM Bench starts it and carries on.
+
+### "The graphics memory is in use"
+
+A game, another model or a virtual machine is using the card. Close them, or press **Continue anyway** (the result will say so). A running server also takes the card: LLM Bench offers to stop it before the test.
+
+### The model does not fit in video memory (slow test)
+
+On Windows the part that does not fit goes to the PC's RAM and everything becomes 10–15 times slower. LLM Bench warns you before the test, during it and in the result. Use a more compressed version of the model, the **q4_0** cache (the text memory takes about a quarter), less context, or **Find the best settings**.
+
+### "NVIDIA driver not installed" or "NVIDIA driver too old"
+
+Press the button that opens NVIDIA's page, install the driver, then press **Check again**.
+
+### NInfer-all does not build on the RTX 5090
+
+It needs the **CUDA 13.1 or newer** toolkit from NVIDIA's site (inside the WSL distribution on Windows): Ubuntu's own package is too old for this card. LLM Bench checks it before building and tells you what is missing.
+
+More cases and details are in the [guide](docs/GUIDE.md#troubleshooting).
+
+## Guide
+
+New to all this? The **[step-by-step guide](docs/GUIDE.md)** walks you through every screen: installing, the first test, finding the best settings, comparing, models, servers and engines. Also in Italian: [Guida](docs/GUIDA.md).
+
+## Developers
+
+You need **Node.js 22** or newer.
 
 ```bash
 npm install
-npm run build        # main, preload e core (esbuild) + interfaccia (Vite)
-npm start            # apre l'app Electron
-npm run validate     # lint, tipi, confini architetturali, test unitari e di integrazione, E2E, copertura 100%
-npm run ci:docker    # la stessa validazione in un contenitore Linux pulito, sul commit attuale
-npm run dist         # installer Windows (NSIS + portable) o pacchetti Linux (.deb + AppImage)
+npm run build        # main, preload and core (esbuild) + UI (Vite)
+npm start            # opens the Electron app
+npm run validate     # lint, types, architecture boundaries, unit and integration tests, E2E, 100% coverage
+npm run ci:docker    # the same validation in a clean Linux container, on the current commit
+npm run dist         # Windows installers (NSIS + portable) or Linux packages (.deb + AppImage)
 ```
 
-- **CI.** Non c'è una CI su GitHub, per scelta: la CI è locale. `npm run ci:docker` valida il commit attuale (`git HEAD`) in Linux, dentro Docker, con gli E2E sotto Xvfb (`-- --fast` li salta).
-- **Pacchetti Linux da Windows.** `node scripts/dist-linux.mjs` costruisce il .deb e l'AppImage nell'immagine Docker di electron-builder.
-- **Screenshot.** `node scripts/mockups.mjs` fotografa le schermate principali in `.qa/mockups` (chiaro e scuro) con dati realistici e servizi finti, senza toccare GPU, impostazioni o modelli veri. `node scripts/mockups.mjs --only=readme` rigenera le immagini di questo README in `docs/screenshots`.
+- **CI.** There is no GitHub CI, on purpose: the CI is local. `npm run ci:docker` validates the current commit (`git HEAD`) on Linux, inside Docker, with the E2E tests under Xvfb (`-- --fast` skips them).
+- **Linux packages from Windows.** `node scripts/dist-linux.mjs` builds the .deb and the AppImage in electron-builder's Docker image.
+- **Screenshots.** `node scripts/mockups.mjs` renders the main screens into `.qa/mockups` (light and dark) with realistic data and fake services, without touching the real GPU, settings or models. `node scripts/mockups.mjs --only=readme` regenerates the images of the READMEs and the guides in `docs/screenshots/en` and `docs/screenshots/it`.
 
-**Architettura**
+**Architecture**
 
-- `src/main`: il guscio Electron (finestra, area di notifica, dialoghi, segreti cifrati).
-- `src/core`: un server HTTP locale (127.0.0.1, con un token per sessione) in un utility process: motori, modelli, download, benchmark, telemetria della GPU, Docker, server.
-- `src/renderer`: l'interfaccia React (design system proprio, italiano e inglese).
-- `src/contract`: gli schemi condivisi (zod) e i tipi delle risposte.
+- `src/main`: the Electron shell (window, notification area, dialogs, encrypted secrets).
+- `src/core`: a local HTTP server (127.0.0.1, with a per-session token) in a utility process: engines, models, downloads, benchmarks, GPU telemetry, Docker, servers.
+- `src/renderer`: the React UI (its own design system, English and Italian).
+- `src/contract`: the shared schemas (zod) and response types.
 
-**Test**
+**Tests**
 
-- `test/unit`, `test/integration`: Vitest, con servizi finti deterministici in `test/fakes` (motore LLM, nvidia-smi, Docker, WSL, GitHub, Hugging Face).
-- `test/e2e`: Playwright sulla vera app Electron, scritti come li userebbe una persona (ruoli ed etichette visibili), con il controllo di accessibilità axe.
-- `scripts/coverage.mjs` unisce la copertura di unit ed E2E: il limite è il 100 % su ogni file.
+- `test/unit`, `test/integration`: Vitest, with deterministic fake services in `test/fakes` (LLM engine, nvidia-smi, Docker, WSL, GitHub, Hugging Face).
+- `test/e2e`: Playwright on the real Electron app, written the way a person would use it (visible roles and labels), with axe accessibility checks.
+- `scripts/coverage.mjs` merges unit and E2E coverage: the bar is 100% on every file.
 
-Le idee per la stima della memoria video vengono in parte da [llmfit](https://github.com/AlexsJones/llmfit) (licenza MIT).
+The video memory estimate is partly inspired by [llmfit](https://github.com/AlexsJones/llmfit) (MIT license).
