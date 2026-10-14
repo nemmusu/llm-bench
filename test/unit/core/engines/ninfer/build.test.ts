@@ -238,8 +238,7 @@ describe('the guided build in a WSL distro', () => {
     // Without LLM Bench's check, CMake itself refuses: the reading says CUDA is too old, the log keeps the whole output.
     const logs = tempDir('gb-ninfer-logs-');
     cleanups.push(logs.cleanup);
-    // A log keeps its newest lines only (here 3; 50,000 in the app).
-    const raw = wslBuilder(user, logs.dir, { logLines: 3 });
+    const raw = wslBuilder(user, logs.dir);
     const log: string[] = [];
     const refused = (await raw
       .step('configure', ['cmake', '-S', '/home/user/ninfer-all', '-B', '/home/user/ninfer-all/build', '-G', 'Ninja', '-DCMAKE_CUDA_ARCHITECTURES=120a', '-DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc'], 'Ubuntu-24.04', () => undefined, signal(), log)
@@ -248,8 +247,14 @@ describe('the guided build in a WSL distro', () => {
     expect(refused.detail).toContain('A 120a build needs CUDA 13.1 or newer');
     const withLog = (await raw.withLog(refused, log, 'build')) as AppError;
     expect(withLog.params?.log).toMatch(/ninfer-build-.*\.log$/);
-    expect(log.length).toBe(3);
     expect(readFileSync(String(withLog.params?.log), 'utf8')).toBe(`${log.join('\n')}\n`);
+    expect(log[0]).toBe('$ cmake -S /home/user/ninfer-all -B /home/user/ninfer-all/build -G Ninja -DCMAKE_CUDA_ARCHITECTURES=120a -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc');
+    // A log keeps its newest lines only (here 3; 50,000 in the app).
+    const short: string[] = [];
+    await wslBuilder(user, logs.dir, { logLines: 3 })
+      .step('configure', ['cmake', '-S', '/home/user/ninfer-all', '-B', '/home/user/ninfer-all/build', '-G', 'Ninja'], 'Ubuntu-24.04', () => undefined, signal(), short)
+      .catch(() => undefined);
+    expect(short).toHaveLength(3);
     // An error without output of its own keeps having none.
     const bare = (await raw.withLog(new AppError('ENGINE_INSTALL_FAILED', 'x'), ['a line'], 'update')) as AppError;
     expect(bare.params?.log).toMatch(/ninfer-update-.*\.log$/);

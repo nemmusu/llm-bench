@@ -143,6 +143,9 @@ describe("NInfer's builds on its card", () => {
     expect(builds[1]).toMatchObject({ build: 'all', state: 'ready', customEngineId: 'ninfer-all', release: '0.12.0-rtx3090+v0.6.0-rtx3090-1704-ge7b7e669', kvDtypes: expect.arrayContaining(['rk8v4']) });
     expect(builds[1]).not.toHaveProperty('distro');
     expect(found.saved().customEngines?.[0]?.run).toEqual({ mode: 'ninfer', path: '/home/user/ninfer-all/build/apps/ninfer-serve', source: ALL });
+    // "Cambia cartella" on Linux: saved with no distro.
+    expect(await found.deps.setBuildPath('official', { path: '/home/user/ninfer/build/apps/ninfer-serve' })).toMatchObject({ saved: true });
+    expect(found.saved().ninfer).toEqual({ native: { path: '/home/user/ninfer/build/apps/ninfer-serve' } });
     // Not there yet: built in its usual folder, through the same steps.
     const fresh = setup({ checkouts: ['/home/user/ninfer'] }, linux, 'linux', 'NVIDIA GeForce RTX 5090', (p) => p, HOST);
     await fresh.app.request('/api/engines/ninfer/build', { method: 'POST', body: JSON.stringify({ kind: 'ninfer-native', build: 'all', confirm: true }), headers: { 'content-type': 'application/json' } });

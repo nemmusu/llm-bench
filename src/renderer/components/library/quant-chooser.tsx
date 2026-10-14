@@ -137,8 +137,8 @@ export function QuantChooser({ repo, fit, format, extras = [], unsupported, onDo
                     {t('models.detail.best')}
                   </Badge>
                 )}
-                {/* A fork for some GGUF quants; "Funziona con NInfer-all" for a GGUF-NInfer artifact. */}
-                {format !== 'safetensors' && <ForkBadge model={{ displayName: name, repo, file: fileName(first.path), quant: c.quant, format }} weakKey={c.weakKey} label={`${name} ${label(c)}`} />}
+                {/* A fork for some GGUF quants; "Funziona con NInfer-all" for a GGUF-NInfer artifact (said: the option itself is the button). */}
+                {format !== 'safetensors' && <ForkBadge model={{ displayName: name, repo, file: fileName(first.path), quant: c.quant, format }} weakKey={c.weakKey} label={`${name} ${label(c)}`} plain />}
                 {unsupported && (
                   <Badge tone="warning" size="sm">
                     {t('models.needs5090')}

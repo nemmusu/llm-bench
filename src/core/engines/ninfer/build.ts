@@ -346,6 +346,8 @@ export type BuildLog = string[];
 
 /** The most lines a log keeps (the oldest go first). */
 const LOG_LINES = 50_000;
+/** The lines of a failed step its reading looks at (the error shows the last FAIL_TAIL of them). */
+const TAIL_LINES = 200;
 
 export class NinferBuilder {
   private readonly prefix: readonly string[];
@@ -450,8 +452,9 @@ export class NinferBuilder {
 
   /** Writes down the commit the program was just built from (a failure only costs the "Da ricompilare" check). */
   async record(dir: string, distro: string | undefined): Promise<boolean> {
-    const out = await this.runner(distro)('/bin/sh', ['-c', RECORD_SCRIPT, 'sh', dir], { timeoutMs: 60_000 }).catch(() => undefined);
-    return out?.stdout.includes('##gpubench-recorded') === true;
+    // A program that cannot be run answers with its exit code (the runner never rejects).
+    const out = await this.runner(distro)('/bin/sh', ['-c', RECORD_SCRIPT, 'sh', dir], { timeoutMs: 60_000 });
+    return out.stdout.includes('##gpubench-recorded');
   }
 
   /** The error of a failed build or update with the path of its whole output (a cancel is just a cancel). */
@@ -495,7 +498,8 @@ export class NinferBuilder {
       throw new AppError('ENGINE_INSTALL_FAILED', `Cannot start ${argv[0]}`, { params: { reason: 'ninfer_build', stage }, cause: e });
     }
     let pid: number | undefined;
-    const tail: string[] = [];
+    // Lines this step wrote (its last ones are what a failure shows).
+    let mine = 0;
     let pace: { at: number; step: number } | undefined;
     const onAbort = () => {
       void (async () => {
@@ -511,8 +515,7 @@ export class NinferBuilder {
           pid = Number(own);
           continue;
         }
-        tail.push(line.text);
-        if (tail.length > 200) tail.shift();
+        mine += 1;
         log.push(line.text);
         if (log.length > (this.o.logLines ?? LOG_LINES)) log.shift();
         const p = buildProgress(line.text);
@@ -526,7 +529,9 @@ export class NinferBuilder {
       const exit = await mp.exited;
       if (signal.aborted) throw new AppError('CANCELLED', 'Build cancelled');
       if (exit.code !== 0) {
-        // The reading looks at more than the lines shown (CMake prints its error well before its last lines).
+        // This step's own last lines (the log may hold earlier steps'). The reading looks at more than the
+        // lines shown: CMake prints its error well before its last lines.
+        const tail = log.slice(-Math.min(mine, TAIL_LINES));
         const reading = readBuildFailure(tail);
         throw new AppError('ENGINE_INSTALL_FAILED', `NInfer ${stage} failed`, {
           params: { reason: 'ninfer_build', stage, code: String(exit.code ?? exit.signal), ...(reading ? { reading: reading.reading, ...reading.params } : {}) },

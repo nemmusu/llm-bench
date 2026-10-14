@@ -298,12 +298,13 @@ describe('a variant of NInfer (advanced)', () => {
     });
     w.custom = [customInfo(all, notBuilt), customInfo(old, notBuilt)];
     const api = variantApi({ w });
-    api.on('POST /api/engines/ninfer/build-plan', () => plan({ existing: true, dir: '/home/u/old-all', source: ALL }));
+    api.on('POST /api/engines/ninfer/build-plan', () => plan({ existing: true, clearCache: true, dir: '/home/u/old-all', source: ALL }));
     renderLib('/engines', api);
     const card = await screen.findByRole('region', { name: 'Old all' });
     await userEvent.click(within(card).getByRole('button', { name: 'Compila' }));
     const build = await screen.findByRole('dialog', { name: 'Compila Old all' });
     await waitFor(() => expect(api.calls.find((x) => x.path === '/api/engines/ninfer/build-plan')?.body).toMatchObject({ dir: '/home/u/old-all', variant: { name: 'Old all', id: 'old-all', template: 'ninfer-all' } }));
+    expect(await within(build).findByText(/cancello solo la cache di CMake/)).toBeTruthy();
     // An empty folder is NInfer's usual one; a check that fails says why.
     const folder = within(build).getByRole('textbox', { name: 'Cartella' });
     await userEvent.clear(folder);

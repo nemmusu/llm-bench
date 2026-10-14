@@ -120,9 +120,14 @@ describe('which NInfer build runs a model', () => {
   });
 
   it('saved but not answering (a build that broke): not ready, previewed with its own path', async () => {
-    const { service, planned, detected } = setup({ engines: [ninferAll], installed: false });
+    const { s, service, planned, detected } = setup({ engines: [ninferAll], installed: false });
     const plan = await service.plan(official());
     expect(plan.ninferBuild).toMatchObject({ ready: false, customEngineId: 'ninfer-all' });
+    // A check that fails outright: not ready either.
+    const failing = s.deps.getAdapter('ninfer-wsl');
+    s.deps.getAdapter = () => ({ ...failing, detect: () => Promise.reject(new Error('wsl.exe gone')) }) as never;
+    expect((await new BenchService(s.deps).plan(official())).ninferBuild).toMatchObject({ ready: false });
+    s.deps.getAdapter = () => failing;
     expect(detected).toContainEqual({ kind: 'ninfer-wsl', customEngineId: 'ninfer-all' });
     expect(planned.at(-1)).toEqual({ kind: 'ninfer-wsl', customEngineId: 'ninfer-all' });
   });
@@ -146,6 +151,9 @@ describe('which NInfer build runs a model', () => {
     // Renamed, no manifest to read: what an earlier run here could not read.
     const renamed = gguf({ facts: {}, repo: undefined, displayName: 'mine', file: 'mine.ninfer', weakKey: 'local/mine' });
     const history = setup({ identity: renamed, engines: [ninferAll] });
+    expect((await history.service.plan(official())).ninferBuild).toBeUndefined();
+    // A run that read it fine says nothing.
+    await history.s.runs.save(makeRun({ id: 'OK-RUN', model: renamed }));
     expect((await history.service.plan(official())).ninferBuild).toBeUndefined();
     await history.s.runs.save(makeRun({ status: 'failed', model: renamed, error: { code: 'ENGINE_MODEL_UNSUPPORTED', message: 'x', params: { engine: 'NInfer', reason: 'layout', value: 'gguf_blocks_v1' } } }));
     expect((await history.service.plan(official())).ninferBuild).toMatchObject({ why: 'history', layout: 'gguf_blocks_v1' });

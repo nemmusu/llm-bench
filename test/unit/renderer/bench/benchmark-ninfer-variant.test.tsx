@@ -145,9 +145,12 @@ describe('a GGUF-NInfer artifact on the Benchmark page', () => {
     // Another folder (Avanzate) is checked as asked.
     await userEvent.click(within(gate).getByText('Avanzate'));
     await userEvent.type(within(gate).getByRole('textbox', { name: 'Cartella' }), '~/src/ninfer-all');
+    // Nothing there yet, and GitHub did not say how big it is.
+    api.world.ninferPlan = ninferPlanFor({ downloadBytes: undefined });
     await userEvent.click(within(gate).getByRole('button', { name: 'Controlla' }));
     await waitFor(() => expect(posted(api, '/api/engines/ninfer/build-plan').at(-1)?.body).toEqual({ kind: 'ninfer-wsl', distro: 'Ubuntu-24.04', build: 'all', dir: '~/src/ninfer-all' }));
-    await userEvent.click(within(gate).getByRole('button', { name: 'Compila' }));
+    expect(await within(gate).findByText('Lo scarico e lo compilo io dentro Ubuntu-24.04 (circa 10 min). Poi riparto da solo.')).toBeTruthy();
+    await userEvent.click(within(gate).getByRole('button', { name: 'Scarica e compila' }));
     await waitFor(() => expect(posted(api, '/api/engines/ninfer/build')).toHaveLength(1));
     act(() => api.emit({ type: 'engine.install', kind: 'ninfer-all', stage: 'error', bytesDone: 0, error: { code: 'ENGINE_INSTALL_FAILED', message: 'x', detail: 'c++: fatal error: Killed signal', params: { stage: 'build', reading: 'out-of-memory' } } }));
     expect(await within(gate).findByText('Il PC ha finito la memoria durante la compilazione')).toBeTruthy();

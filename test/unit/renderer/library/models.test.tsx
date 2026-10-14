@@ -1,7 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { rowFormatOf } from '../../../../src/renderer/components/library/formats';
+import { ForkBadge, rowFormatOf } from '../../../../src/renderer/components/library/formats';
+import { renderUi } from '../helpers';
 import { serveEngineFor } from '../../../../src/renderer/components/library/local-models';
 import { bridge, curated, ENGINES, fail, GPU, hubModel, item, job, libApi, localModel, okItems, patchPointer, renderLib, report, run, sample, system, world } from './fake';
 
@@ -475,6 +476,15 @@ describe('models: download', () => {
     expect(within(list).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ }).getAttribute('href')).toContain('modelName=prism-ml');
     expect(within(list).getAllByRole('link', { name: /Funziona con NInfer-all/ }).map((a) => a.getAttribute('href'))).toEqual([expect.stringContaining('modelName=nerkyor')]);
     expect(screen.queryByText(/^Ora altri programmi usano/)).toBeNull();
+    // Inside a quant to choose (itself a button): said, not a second thing to click.
+    renderUi(
+      <>
+        <ForkBadge plain model={{ displayName: 'Ternary-Bonsai-2-27B', repo: 'prism-ml/Ternary-Bonsai-2-27B-gguf', file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf', quant: 'PQ2_0', format: 'gguf' }} label="b" />
+        <ForkBadge plain model={{ displayName: 'Coder', repo: 'nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', file: 'x.ninfer', format: 'ninfer' }} label="n" />
+      </>,
+    );
+    expect(screen.getAllByText('Richiede il fork PrismML di llama.cpp').some((el) => el.closest('a') === null)).toBe(true);
+    expect(screen.getAllByText('Funziona con NInfer-all').some((el) => el.closest('a') === null)).toBe(true);
     // A "…-GGUF-NInfer" repo: NInfer-all for its NInfer artifacts, never for the plain GGUFs of a mixed one.
     expect(rowFormatOf(['gguf', 'safetensors', 'ninfer'], 'any')).toBe('gguf');
     expect(rowFormatOf(['gguf', 'ninfer'], 'ninfer')).toBe('ninfer');

@@ -109,9 +109,17 @@ export function FormatBadges({ m, engine, className }: { m: Pick<HubModel, 'form
  * a "GGUF-NInfer" name: contract/ninfer.ts ninferBuildFor): one click opens NInfer's card on its
  * NInfer-all build, which LLM Bench downloads and builds.
  */
-export function NinferAllBadge({ model, weakKey, label }: { model: NinferBuildModel; weakKey?: string | undefined; label: string }) {
+export function NinferAllBadge({ model, weakKey, label, plain = false }: { model: NinferBuildModel; weakKey?: string | undefined; label: string; plain?: boolean }) {
   const { t } = useI18n();
   if (ninferBuildFor(model).build !== 'all') return null;
+  const badge = (
+    <Badge tone="accent" size="sm" className="hover:brightness-95">
+      <Cpu aria-hidden />
+      {t('models.fork.ninferAll')}
+    </Badge>
+  );
+  // Inside something that is itself clicked (a quant to choose): just said.
+  if (plain) return badge;
   return (
     <Tooltip content={t('models.fork.ninferAllHelp')}>
       <Link
@@ -120,10 +128,7 @@ export function NinferAllBadge({ model, weakKey, label }: { model: NinferBuildMo
         className="relative z-10 inline-flex rounded-full focus-ring"
         aria-label={`${t('models.fork.ninferAll')} · ${t('models.fork.ninferAllAction')}`}
       >
-        <Badge tone="accent" size="sm" className="hover:brightness-95">
-          <Cpu aria-hidden />
-          {t('models.fork.ninferAll')}
-        </Badge>
+        {badge}
       </Link>
     </Tooltip>
   );
@@ -134,26 +139,26 @@ export function NinferAllBadge({ model, weakKey, label }: { model: NinferBuildMo
  * Bonsai quants): one click opens the Engines page with that engine ready to set up. A .ninfer artifact
  * only NInfer-all reads: "Funziona con NInfer-all" (NinferAllBadge).
  */
-export function ForkBadge({ model, weakKey, label }: { model: MatchableModel & Pick<NinferBuildModel, 'facts'>; weakKey?: string | undefined; label: string }) {
+export function ForkBadge({ model, weakKey, label, plain = false }: { model: MatchableModel & Pick<NinferBuildModel, 'facts'>; weakKey?: string | undefined; label: string; plain?: boolean }) {
   const { t } = useI18n();
   const template = model.format === 'ninfer' ? undefined : templateForModel(model);
   // NInfer-all is a build of NInfer (on its card), not a fork to add.
-  if (model.format === 'ninfer' || template?.builtIn) return <NinferAllBadge model={{ ...model, format: 'ninfer' }} weakKey={weakKey} label={label} />;
+  if (model.format === 'ninfer' || template?.builtIn) return <NinferAllBadge model={{ ...model, format: 'ninfer' }} weakKey={weakKey} label={label} plain={plain} />;
   if (!template) return null;
   const name = t(`models.fork.names.${template.id as 'prismml-bonsai'}`);
+  const badge = (
+    <Badge tone="warning" size="sm" className="hover:brightness-95">
+      <Wrench aria-hidden />
+      {t('models.fork.requires', { name })}
+    </Badge>
+  );
+  // Inside something that is itself clicked (a quant to choose): just said.
+  if (plain) return badge;
   // The Engines page opens its "Aggiungi motore" from these; an unknown template just opens the page.
   const search = { customTemplate: template.id, ...(weakKey ? { model: weakKey } : {}), modelName: label };
   return (
-    <Link
-      to="/engines"
-      search={search}
-      className="relative z-10 inline-flex rounded-full focus-ring"
-      aria-label={`${t('models.fork.requires', { name })} · ${t('models.fork.action')}`}
-    >
-      <Badge tone="warning" size="sm" className="hover:brightness-95">
-        <Wrench aria-hidden />
-        {t('models.fork.requires', { name })}
-      </Badge>
+    <Link to="/engines" search={search} className="relative z-10 inline-flex rounded-full focus-ring" aria-label={`${t('models.fork.requires', { name })} · ${t('models.fork.action')}`}>
+      {badge}
     </Link>
   );
 }
