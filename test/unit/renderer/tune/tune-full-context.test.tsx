@@ -209,7 +209,7 @@ describe('a search of the new shape (the context full measured first)', () => {
     const rec = screen.getByRole('region', { name: 'Combinazione consigliata' });
     expect(within(rec).getByText('40,0 tok/s').getAttribute('title')).toBe('a 261.200 token di contesto');
     expect(within(rec).getByText('1.500 tok/s')).toBeTruthy();
-    expect(within(rec).getByText('174,13 s')).toBeTruthy();
+    expect(within(rec).getByText('2 min 54 s')).toBeTruthy();
 
     // Largest context first, the recommendation on top, ties only between rows with the same context.
     const rows = rankRows();

@@ -21,7 +21,7 @@ import { comboText, depthLabel } from './tune-format';
 import { PartialBadge, TuneGlossary } from './tune-sections';
 import { AT_MAX, bestValues, CONTEXT_COLUMNS, reaches as reachesRow, sameLargestContext, sortRows, type CompareAt, type MetricColumn, type RankRow, type SortDir } from './tune-logic';
 
-type F = Pick<Formatters, 't' | 'number' | 'integer'>;
+type F = Pick<Formatters, 't' | 'number' | 'integer' | 'duration'>;
 
 /** How a metric column looks: its header (with the unit) and its numbers. */
 export interface ColumnView {
@@ -37,7 +37,7 @@ export const CONTEXT_VIEWS: readonly ColumnView[] = [
   { column: CONTEXT_COLUMNS[0]!, header: 'tune.columns.maxContext', format: (v, f) => depthLabel(v, f), title: (v, f) => `${f.integer(v)} ${f.t('results.tokens')}` },
   { column: CONTEXT_COLUMNS[1]!, header: 'tune.columns.decode', format: (v, f) => f.number(v, 1) },
   { column: CONTEXT_COLUMNS[2]!, header: 'tune.columns.prefill', format: (v, f) => f.integer(v) },
-  { column: CONTEXT_COLUMNS[3]!, header: 'tune.columns.ttft', format: (v, f) => f.number(v / 1000, 2) },
+  { column: CONTEXT_COLUMNS[3]!, header: 'tune.columns.ttft', format: (v, f) => f.duration(v) },
   { column: CONTEXT_COLUMNS[4]!, header: 'tune.columns.vram', format: (v, f) => f.number(v / MIB_PER_GB, 1) },
 ];
 

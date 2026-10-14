@@ -64,7 +64,7 @@ describe('tune result', () => {
     expect(within(rec).getByText('Generazione al contesto massimo (64K)')).toBeTruthy();
     expect(within(rec).getByText('60,0 tok/s').getAttribute('title')).toBe('a 65.392 token di contesto');
     expect(within(rec).getByText('6.400 tok/s')).toBeTruthy();
-    expect(within(rec).getByText('10,22 s')).toBeTruthy();
+    expect(within(rec).getByText('10,2 s')).toBeTruthy();
     expect(within(rec).getByText('29,8 GB')).toBeTruthy();
     expect(within(rec).queryByText(/Misurata solo fino a/)).toBeNull();
     // Its preset is in the page header (and on its row of the ranking).

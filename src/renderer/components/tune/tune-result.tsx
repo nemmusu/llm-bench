@@ -117,7 +117,7 @@ function RecommendedCard({ run, index, text }: { run: TunedRun; index: number; t
     { label: t('tune.rec.context'), value: ctx, help: t('tune.help.context') },
     speed(t('tune.rec.decodeAtMax', { ctx }), (p) => `${number(p.decodeTps.median, 1)} tok/s`),
     speed(t('tune.rec.prefillAtMax', { ctx }), (p) => `${integer(prefillStat(p).median)} tok/s`),
-    speed(t('tune.rec.ttftAtMax', { ctx }), (p) => `${number(p.ttftMs.median / 1000, 2)} s`),
+    speed(t('tune.rec.ttftAtMax', { ctx }), (p) => f.duration(p.ttftMs.median)),
     ...(combo.vramPeakMiB === undefined ? [] : [{ label: t('tune.rec.vram'), value: `${number(combo.vramPeakMiB / MIB_PER_GB, 1)} GB` }]),
   ];
   // Measured only below its context: how far, why, and what to do.

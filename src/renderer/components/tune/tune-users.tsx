@@ -27,7 +27,7 @@ type F = Pick<Formatters, 't' | 'number' | 'integer'>;
 export const USERS_VIEWS: readonly ColumnView[] = [
   { column: USERS_COLUMNS[0]!, header: 'tune.users.columns.perUser', format: (v, f) => f.number(v, 1) },
   { column: USERS_COLUMNS[1]!, header: 'tune.users.columns.total', format: (v, f) => f.integer(v) },
-  { column: USERS_COLUMNS[2]!, header: 'tune.users.columns.ttftP95', format: (v, f) => f.number(v / 1000, 2) },
+  { column: USERS_COLUMNS[2]!, header: 'tune.users.columns.ttftP95', format: (v, f) => f.duration(v) },
   { column: USERS_COLUMNS[3]!, header: 'tune.users.columns.perUserContext', format: (v, f) => f.integer(v) },
   { column: USERS_COLUMNS[4]!, header: 'tune.users.columns.vram', format: (v, f) => f.number(v / MIB_PER_GB, 1) },
 ];
@@ -100,7 +100,7 @@ function UsersRecommended({ row, n, text }: { row: RankRow; n: number; text: str
     ...(p.contextPerUser === undefined ? [] : [{ label: t('tune.users.perUserContext'), value: `${integer(p.contextPerUser)} ${t('results.tokens')}`, help: t('tune.help.context') }]),
     { label: t('tune.users.perUser', { n }), value: `${number(p.perRequestDecodeTpsP50, 1)} tok/s` },
     { label: t('tune.users.total', { n }), value: `${integer(p.aggregateTps)} tok/s` },
-    { label: t('tune.users.ttftP95', { n }), value: `${number(p.ttftP95Ms / 1000, 2)} s` },
+    { label: t('tune.users.ttftP95', { n }), value: f.duration(p.ttftP95Ms) },
     ...(row.combo.vramPeakMiB === undefined ? [] : [{ label: t('tune.rec.vram'), value: `${number(row.combo.vramPeakMiB / MIB_PER_GB, 1)} GB` }]),
   ];
   return (

@@ -60,7 +60,7 @@ export function ContextSweepChart({ points, calibrated = false }: { points: read
       table={{
         columns: [t('tune.measures.depth'), t('tune.columns.prefill'), t('tune.measures.ttftMs'), t('tune.columns.decode'), t('tune.measures.n')],
         numeric: [0, 1, 2, 3, 4],
-        rows: sorted.map((p) => [integer(p.promptTokens), integer(prefillStat(p).median), integer(p.ttftMs.median), number(p.decodeTps.median, 1), p.decodeTps.n]),
+        rows: sorted.map((p) => [integer(p.promptTokens), integer(prefillStat(p).median), f.duration(p.ttftMs.median), number(p.decodeTps.median, 1), p.decodeTps.n]),
       }}
     >
       <EChart build={build} height={260} label={title} />
@@ -96,7 +96,7 @@ export function SweepTable({ caption, points, framed }: { caption: string; point
             {depthLabel(nominalDepth(p.promptTokens), f)}
           </span>,
           integer(prefillStat(p).median),
-          integer(p.ttftMs.median),
+          f.duration(p.ttftMs.median),
           number(p.decodeTps.median, 1),
           ...(engine ? [p.decodeTpsEngine ? number(p.decodeTpsEngine.median, 1) : '–'] : []),
           number(p.itlP50Ms, 1),

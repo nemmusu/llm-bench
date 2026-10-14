@@ -133,10 +133,10 @@ describe('Ricontrollo rapido: before and now at the context full first', () => {
     expect(rows.map((r) => [r.at, r.metric, r.before, r.after, r.moved])).toEqual([
       ['256K, contesto pieno', 'Generazione (tok/s)', '70,0', '63,0', true],
       ['256K, contesto pieno', 'Lettura prompt (tok/s)', '3.000', '3.010', false],
-      ['256K, contesto pieno', 'Primo token (s)', expect.any(String), expect.any(String), true],
+      ['256K, contesto pieno', 'Primo token', expect.any(String), expect.any(String), true],
       ['1K', 'Generazione (tok/s)', '90,0', '92,0', true],
       ['1K', 'Lettura prompt (tok/s)', '9.000', '9.000', false],
-      ['1K', 'Primo token (s)', '0,11', '0,11', false],
+      ['1K', 'Primo token', '114 ms', '114 ms', false],
     ]);
   });
 

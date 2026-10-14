@@ -134,7 +134,7 @@ export function LivePoints({ points, current, scenario, tune, fullAt }: LivePoin
           cells: [
             first(n),
             p ? integer(prefillStat(p).median) : '–',
-            p ? integer(p.ttftMs.median) : '–',
+            p ? f.duration(p.ttftMs.median) : '–',
             p ? number(p.decodeTps.median, 1) : '–',
             p ? (total === undefined ? String(p.decodeTps.n) : t('run.points.repsOf', { n: p.decodeTps.n, total })) : isCurrent(n) ? t('run.points.running') : t('run.points.pending'),
           ],

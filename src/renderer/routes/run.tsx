@@ -181,9 +181,8 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   // Under a speed: what it was measured on ("prompt da 4.096 token", "contesto riempito a 32.768 token").
   return (
     <Page
-      width="wide"
       // A dashboard: the whole window (a big screen shows the tables and cards side by side).
-      className="max-w-none"
+      width="full"
       eyebrow={
         <span className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
           <StatusDot tone="accent" pulse />

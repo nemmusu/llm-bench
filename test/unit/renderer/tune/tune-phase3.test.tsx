@@ -198,7 +198,7 @@ describe('"Più utenti": result page', () => {
     expect(within(rec).getByText(/^8[.,]?192 token$/)).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Classifica delle configurazioni con 4 utenti' });
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent);
-    expect(headers).toEqual(['#', 'Configurazione', 'Per utente (tok/s)', 'In tutto (tok/s)', 'Primo token più lento (s)', 'Contesto per utente (token)', 'VRAM picco (GB)']);
+    expect(headers).toEqual(['#', 'Configurazione', 'Per utente (tok/s)', 'In tutto (tok/s)', 'Primo token più lento', 'Contesto per utente (token)', 'VRAM picco (GB)']);
     // The KV layout and the cache reuse: said by each configuration.
     expect(within(table).getAllByText(/contesto diviso per utente/).length).toBeGreaterThan(0);
     expect(within(table).getAllByText(/contesto condiviso/).length).toBeGreaterThan(0);
@@ -315,16 +315,16 @@ describe('"Ricontrollo rapido": result', () => {
     expect(rows.map((r) => `${r.at} ${r.metric} ${r.before}→${r.after} ${r.moved ? '!' : ''}`)).toEqual([
       '1 Generazione per utente (tok/s) 60,0→61,0 ',
       '1 In tutto (tok/s) 60→61 ',
-      '1 Primo token più lento (s) 0,25→0,25 ',
+      '1 Primo token più lento 250 ms→250 ms ',
       '2 Generazione per utente (tok/s) 55,0→54,0 ',
       '2 In tutto (tok/s) 110→108 ',
-      '2 Primo token più lento (s) 0,50→0,50 ',
+      '2 Primo token più lento 500 ms→500 ms ',
       '3 Generazione per utente (tok/s) 50,0→51,0 ',
       '3 In tutto (tok/s) 150→153 ',
-      '3 Primo token più lento (s) 0,75→0,75 ',
+      '3 Primo token più lento 750 ms→750 ms ',
       '4 Generazione per utente (tok/s) 46,0→30,0 !',
       '4 In tutto (tok/s) 184→120 ',
-      '4 Primo token più lento (s) 1,00→1,00 ',
+      '4 Primo token più lento 1,00 s→1,00 s ',
     ]);
     expect(recheckRows(recheck.checks[1]!, undefined, f)).toEqual([]);
     // A level measured only now is left out; a value that was 0 has no ratio.

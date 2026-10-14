@@ -23,7 +23,7 @@ import { DiscardedAttempts } from './tune-sections';
 
 type Check = TuneRecheck['checks'][number];
 type Metric = Check['moved'][number]['metric'];
-type F = Pick<Formatters, 't' | 'number' | 'integer' | 'percent'>;
+type F = Pick<Formatters, 't' | 'number' | 'integer' | 'percent' | 'duration'>;
 
 /** One "Prima / Ora" row: where, which measure (its unit in the label), both values, the difference in words. */
 export interface RecheckRow {
@@ -48,13 +48,13 @@ interface MetricSpec {
 const SINGLE: readonly (MetricSpec & { stat: (p: LatencyPoint) => Stat })[] = [
   { metric: 'decode', higherIsBetter: true, kind: 'speed', stat: (p) => p.decodeTps, format: (v, f) => f.number(v, 1) },
   { metric: 'prefill', higherIsBetter: true, kind: 'speed', stat: prefillStat, format: (v, f) => f.integer(v) },
-  { metric: 'ttft', higherIsBetter: false, kind: 'time', stat: (p) => p.ttftMs, format: (v, f) => f.number(v / 1000, 2) },
+  { metric: 'ttft', higherIsBetter: false, kind: 'time', stat: (p) => p.ttftMs, format: (v, f) => f.duration(v) },
 ];
 
 const USERS: readonly (MetricSpec & { value: (p: ConcurrencyPoint) => number })[] = [
   { metric: 'perUserDecode', higherIsBetter: true, kind: 'speed', value: (p) => p.perRequestDecodeTpsP50, format: (v, f) => f.number(v, 1) },
   { metric: 'aggregate', higherIsBetter: true, kind: 'speed', value: (p) => p.aggregateTps, format: (v, f) => f.integer(v) },
-  { metric: 'ttftP95', higherIsBetter: false, kind: 'time', value: (p) => p.ttftP95Ms, format: (v, f) => f.number(v / 1000, 2) },
+  { metric: 'ttftP95', higherIsBetter: false, kind: 'time', value: (p) => p.ttftP95Ms, format: (v, f) => f.duration(v) },
 ];
 
 /** A combination's sweep by grid depth, its point with the context full at the context (sweepDepths). */

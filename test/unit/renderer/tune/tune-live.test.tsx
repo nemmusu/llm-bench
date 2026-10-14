@@ -227,12 +227,12 @@ describe('live screen of any run', () => {
     const byPrompt = () => screen.getByRole('table', { name: 'Per lunghezza del prompt' });
     // Every prompt length of the plan is listed; the one in progress is highlighted.
     expect(within(byPrompt()).getAllByRole('row').map((r) => r.textContent)).toEqual([
-      'Prompt (token)Lettura prompt (tok/s)Primo token (ms)Generazione (tok/s)Ripetizioni',
+      'Prompt (token)Lettura prompt (tok/s)Primo tokenGenerazione (tok/s)Ripetizioni',
       '512–––in corso',
       '4.096–––in attesa',
     ]);
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'latency', point: point(512, 190.4, 9000) } }));
-    expect(within(byPrompt()).getAllByRole('row')[1]!.textContent).toBe('512' + '9.000' + '57' + '190,4' + '2 di 5');
+    expect(within(byPrompt()).getAllByRole('row')[1]!.textContent).toBe('512' + '9.000' + '57 ms' + '190,4' + '2 di 5');
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'context-sweep', depth: 32 * K, outputTokens: 128 } }));
     expect(screen.getByRole('table', { name: 'Contesto per gradi' }).textContent).toContain('32.768');
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'context-sweep', point: point(K, 180, 8800) } }));
@@ -270,7 +270,7 @@ describe('live screen of any run', () => {
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'latency', promptTokens: 128 } }));
     expect(within(screen.getByRole('table', { name: 'Per lunghezza del prompt' })).getAllByRole('row')[1]!.textContent).toBe('128–––in corso');
     act(() => api.emit({ type: 'run.point', runId: RUN, live: { stepKind: 'latency', point: point(128, 50, 900) } }));
-    expect(within(screen.getByRole('table', { name: 'Per lunghezza del prompt' })).getAllByRole('row')[1]!.textContent).toBe('128900142' + '50,0' + '2');
+    expect(within(screen.getByRole('table', { name: 'Per lunghezza del prompt' })).getAllByRole('row')[1]!.textContent).toBe('128900142 ms' + '50,0' + '2');
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'context-sweep' } }));
     expect(screen.queryByRole('table', { name: 'Contesto per gradi' })).toBeNull();
   });
