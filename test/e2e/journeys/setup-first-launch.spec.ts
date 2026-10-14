@@ -68,6 +68,8 @@ test('first launch on an empty PC: install llama.cpp with one click, download th
     await expect(page.getByText('Qwen3-4B-Q4_K_M', { exact: false }).first()).toBeVisible();
     await openPage(page, 'Motori');
     await expect(page.getByRole('list', { name: 'Versioni installate' }).getByText('In uso')).toBeVisible();
+    // Checked against the releases like every other engine: the one just installed is the newest.
+    await expect(page.getByRole('region', { name: 'llama.cpp' }).getByText('Hai l’ultima versione (b11438)')).toBeVisible({ timeout: 20_000 });
     await scan(page, 'engines');
     await page.getByRole('button', { name: 'Scegli versione…' }).click();
     const releases = page.getByRole('dialog', { name: 'Versioni di llama.cpp' });
