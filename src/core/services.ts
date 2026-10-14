@@ -715,7 +715,7 @@ export function serviceModules(s: CoreServices): RouteModule[] {
         files: createCustomEngineFiles({
           ninfer: { files: s.ninfer.variantFiles, remove: s.ninfer.removeVariantFiles },
           images: s.docker.images,
-          officialRepos: [BUILTIN_COMPAT.vllm.image, BUILTIN_COMPAT.sglang.image, BUILTIN_COMPAT.llamacpp.dockerImage.split(':')[0] as string],
+          officialRepos: [BUILTIN_COMPAT.vllm.image, BUILTIN_COMPAT.sglang.image, BUILTIN_COMPAT.trtllm.image, BUILTIN_COMPAT.llamacpp.dockerImage.split(':')[0] as string],
         }),
         busy: () => s.bench.active() !== undefined || s.serve.busy(),
       })(app, ctx),
