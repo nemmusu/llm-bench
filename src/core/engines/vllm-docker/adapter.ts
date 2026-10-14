@@ -143,7 +143,7 @@ export class VllmDockerAdapter extends DockerEngineAdapter {
         servedName: opts.marker,
         apiName: opts.apiName,
         ...(src.kind === 'repo' && src.revision !== undefined ? { revision: src.revision } : {}),
-        multimodal: multimodalArchitecture(model.identity.facts?.architecture),
+        multimodal: model.identity.facts?.vision === true || multimodalArchitecture(model.identity.facts?.architecture),
       }, gate),
     });
     const engine: EngineIdentity = { kind: this.kind, name: 'vLLM', image };

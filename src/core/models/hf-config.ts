@@ -91,6 +91,14 @@ export interface HfConfigFactsOptions {
   fileBytes?: number;
 }
 
+/** The chat template of a checkpoint: tokenizer_config.json's chat_template (a string, or named templates), else chat_template.jinja. */
+export function chatTemplateOf(tokenizerConfig: unknown, jinja?: string): string | undefined {
+  const t = obj(tokenizerConfig)?.chat_template;
+  if (typeof t === 'string') return t;
+  if (Array.isArray(t)) return t.map((x) => str(obj(x)?.template) ?? '').join('\n');
+  return jinja;
+}
+
 /** Facts for a safetensors checkpoint from its config.json (vLLM path). */
 export function factsFromHfConfig(raw: unknown, opts: HfConfigFactsOptions = {}): ModelFactsEx {
   const top = obj(raw) ?? {};
@@ -102,6 +110,8 @@ export function factsFromHfConfig(raw: unknown, opts: HfConfigFactsOptions = {})
   };
   const archs = Array.isArray(top.architectures) ? top.architectures : [];
   set('architecture', str(archs[0]) ?? str(c.model_type));
+  // A vision part of its own (vision_config, or the vision tower's settings): it reads images.
+  if (obj(top.vision_config) || obj(top.vision_tower_config)) set('vision', true);
   set('name', opts.name);
   if (opts.parameterCount) set('paramsB', round3(opts.parameterCount / 1e9));
   set('quant', quantFromHfConfig(c));

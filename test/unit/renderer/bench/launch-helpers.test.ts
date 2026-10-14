@@ -137,6 +137,9 @@ describe('the NInfer card and the expert fields as one', () => {
     expect(abilitiesOf('ninfer', localModel('n', { format: 'ninfer', facts: {} }))).toEqual({ vision: undefined, reasoning: true });
     expect(abilitiesOf('llamacpp', { ...localModel('g'), auxiliary: [{ kind: 'mmproj', path: 'mmproj.gguf' }] })).toEqual({ vision: true, reasoning: undefined });
     expect(abilitiesOf('vllm', undefined)).toEqual({ vision: undefined, reasoning: undefined });
+    // What the library read: a checkpoint's own vision part, a chat template that thinks (or does not).
+    expect(abilitiesOf('vllm', localModel('s', { format: 'safetensors', facts: { vision: true, reasoning: true } }))).toEqual({ vision: true, reasoning: true });
+    expect(abilitiesOf('llamacpp', localModel('g', { facts: { reasoning: false } }))).toEqual({ vision: undefined, reasoning: false });
     expect(switchOn('ninfer', 'vision', NO_SWITCHES, { vision: false })).toBe(false);
     expect(switchOn('ninfer', 'reasoning', NO_SWITCHES)).toBe(true);
     expect(switchOn('vllm', 'reasoning', { ...NO_SWITCHES, reasoning: 'off' })).toBe(false);

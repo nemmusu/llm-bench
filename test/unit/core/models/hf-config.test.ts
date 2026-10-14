@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { factsFromHfConfig, quantFromHfConfig, safetensorsParamCount } from '../../../../src/core/models/hf-config';
+import { chatTemplateOf, factsFromHfConfig, quantFromHfConfig, safetensorsParamCount } from '../../../../src/core/models/hf-config';
 import { writeSafetensors } from '../../../fixtures/gguf/writer';
 import { tempDir } from './helpers';
 
@@ -42,6 +42,16 @@ describe('factsFromHfConfig', () => {
       fullAttentionLayers: 28,
     });
     expect(f.kv).toEqual({ groups: [{ layers: 28, kvHeads: 8, keyLength: 128, valueLength: 128 }], recurrentLayers: 0, recurrentBytesPerSeq: 0 });
+  });
+
+  it('a vision part of its own; the chat template of tokenizer_config.json or chat_template.jinja', () => {
+    expect(factsFromHfConfig({ architectures: ['Qwen2_5_VLForConditionalGeneration'], vision_config: { depth: 32 } }).vision).toBe(true);
+    expect(factsFromHfConfig({ vision_tower_config: {} }).vision).toBe(true);
+    expect(factsFromHfConfig({ architectures: ['Qwen3ForCausalLM'] })).not.toHaveProperty('vision');
+    expect(chatTemplateOf({ chat_template: '{% if enable_thinking %}' })).toBe('{% if enable_thinking %}');
+    expect(chatTemplateOf({ chat_template: [{ name: 'default', template: 'a' }, { name: 'tool_use' }] })).toBe('a\n');
+    expect(chatTemplateOf({}, '<think>')).toBe('<think>');
+    expect(chatTemplateOf(undefined)).toBeUndefined();
   });
 
   it('reads text_config of multimodal checkpoints and layer_types for SWA', () => {

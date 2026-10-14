@@ -6,11 +6,11 @@ import { trainedContextOf } from '../../contract/ninfer';
 import type { Settings } from '../../contract/settings';
 import type { Logger, Platform } from '../deps';
 import { readJsonFile, writeFileAtomic } from '../store/atomic';
-import { readLocalGgufFacts } from './gguf';
+import { readLocalGgufFacts, templateThinks } from './gguf';
 import { readNinferHeader } from './ninfer-header';
 import type { HashCache } from './hash';
 import { weakKey } from './hash';
-import { factsFromHfConfig, safetensorsParamCount } from './hf-config';
+import { chatTemplateOf, factsFromHfConfig, safetensorsParamCount } from './hf-config';
 import { MTP_HEAD_RE } from './hub';
 import { fileKey, isInside, modelIdFor, normalizePath, parseShard, REPO_RE } from './paths';
 import { paramsFromLabel, quantFromFilename } from './quant';
@@ -54,8 +54,10 @@ export interface DownloadSidecar {
 }
 
 /** Bump when the facts extraction changes, so cached facts are recomputed. */
-const FACTS_VERSION = 4;
+const FACTS_VERSION = 5;
 const FACTS_CACHE_FILE = 'model-facts.json';
+/** A checkpoint's own files read besides its weights: its config and its chat template. */
+const CHECKPOINT_FILES = new Set(['config.json', 'params.json', 'tokenizer_config.json', 'chat_template.jinja']);
 const SHA_RE = /^[0-9a-f]{64}$/;
 const SKIP_DIRS = new Set(['node_modules', '$recycle.bin', 'system volume information']);
 const OLLAMA_MODEL = 'application/vnd.ollama.image.model';
@@ -232,7 +234,8 @@ export class ModelScanner {
     const listings = await this.walk(
       root,
       state,
-      (n) => /\.(gguf|safetensors|ninfer)$/i.test(n) || n === 'config.json' || n === 'params.json' || n.endsWith('.safetensors.index.json') || NINFER_MANIFEST.test(n) || NINFER_SUMS.test(n),
+      // A checkpoint's chat template too (tokenizer_config.json, chat_template.jinja): whether the model thinks.
+      (n) => /\.(gguf|safetensors|ninfer)$/i.test(n) || CHECKPOINT_FILES.has(n) || n.endsWith('.safetensors.index.json') || NINFER_MANIFEST.test(n) || NINFER_SUMS.test(n),
     );
     const out: LocalModel[] = [];
     const mainsByDir = new Map<string, GgufMain[]>();
@@ -423,6 +426,22 @@ export class ModelScanner {
     return expected;
   }
 
+  /** A checkpoint's chat template (tokenizer_config.json, else chat_template.jinja); undefined when there is none or it cannot be read. */
+  private async chatTemplate(l: DirListing): Promise<string | undefined> {
+    const read = (name: string) => {
+      const f = l.files.find((x) => x.name === name);
+      return f ? readFile(f.path, 'utf8').catch(() => undefined) : Promise.resolve(undefined);
+    };
+    const config = await read('tokenizer_config.json');
+    let parsed: unknown;
+    try {
+      parsed = config === undefined ? undefined : JSON.parse(config);
+    } catch {
+      parsed = undefined;
+    }
+    return chatTemplateOf(parsed, await read('chat_template.jinja'));
+  }
+
   /**
    * A folder with config.json + *.safetensors is a transformers checkpoint vLLM / SGLang can load. One
    * with weights still missing is listed as incomplete ("incompleto (1 di 4 file)") and never run.
@@ -452,6 +471,8 @@ export class ModelScanner {
           // A header that cannot be read (a file being replaced) costs the count, not the model.
           const params = raw.quantization_config ? undefined : await safetensorsParamCount(weights.map((w) => w.path)).catch(() => undefined);
           facts = factsFromHfConfig(raw, { name: src.repo ?? path.basename(l.dir), parameterCount: params, fileBytes: sizeBytes });
+          const template = await this.chatTemplate(l);
+          if (template !== undefined) facts.reasoning = templateThinks(template);
           state.factsChanged = true;
         } catch (e) {
           this.opts.log.warn('cannot read safetensors model', { dir: l.dir, error: (e as Error).message });

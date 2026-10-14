@@ -19,15 +19,18 @@ export interface ModelAbilities {
 
 /**
  * From what the library knows: a NInfer artifact's manifest lists its vision part (and the Qwen3.5 family
- * always thinks); a GGUF has its image projector (mmproj) next to it. Anything else is not known.
+ * always thinks); a GGUF has its image projector (mmproj) next to it; a checkpoint's config.json has a
+ * vision part (facts.vision); the chat template says whether it thinks (facts.reasoning). Anything else
+ * is not known.
  */
 export function abilitiesOf(base: EngineBase, model: Pick<LocalModel, 'identity' | 'auxiliary'> | undefined): ModelAbilities {
+  const facts = model?.identity.facts;
   if (base === 'ninfer') {
-    const parts = model?.identity.facts?.components;
-    return { vision: parts && parts.length > 0 && model?.identity.facts?.noManifest !== true ? parts.includes('vision') : undefined, reasoning: true };
+    const parts = facts?.components;
+    return { vision: parts && parts.length > 0 && facts?.noManifest !== true ? parts.includes('vision') : undefined, reasoning: true };
   }
-  if (base === 'llamacpp' && model?.auxiliary.some((a) => a.kind === 'mmproj')) return { vision: true, reasoning: undefined };
-  return { vision: undefined, reasoning: undefined };
+  const projector = base === 'llamacpp' && model?.auxiliary.some((a) => a.kind === 'mmproj') === true;
+  return { vision: projector || facts?.vision === true ? true : undefined, reasoning: facts?.reasoning };
 }
 
 type SwitchField = 'vision' | 'reasoning';

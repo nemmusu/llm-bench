@@ -249,6 +249,8 @@ describe('ModelScanner', () => {
     writeFileSync(path.join(mkdirAll(dir), 'config.json'), JSON.stringify({ architectures: ['Qwen3ForCausalLM'], num_hidden_layers: 4, num_attention_heads: 8, num_key_value_heads: 2, head_dim: 64, torch_dtype: 'bfloat16' }));
     writeSafetensors(path.join(dir, 'model-00002-of-00002.safetensors'), { tensors: { b: { dtype: 'BF16', shape: [8, 8] } } });
     writeSafetensors(path.join(dir, 'model-00001-of-00002.safetensors'), { tensors: { a: { dtype: 'BF16', shape: [4, 4] } } });
+    // Its chat template thinks (tokenizer_config.json); a checkpoint with a template that does not, from chat_template.jinja.
+    writeFileSync(path.join(dir, 'tokenizer_config.json'), JSON.stringify({ chat_template: '{%- if enable_thinking %}<think>{% endif %}' }));
     const awq = path.join(t.dir, 'custom', 'awq-model');
     writeFileSync(path.join(mkdirAll(awq), 'config.json'), JSON.stringify({ num_hidden_layers: 2, quantization_config: { quant_method: 'awq', bits: 4 } }));
     writeSafetensors(path.join(awq, 'model.safetensors'), { tensors: { q: { dtype: 'I32', shape: [4] } } });
@@ -277,6 +279,7 @@ describe('ModelScanner', () => {
     });
     expect(qwen.identity.files).toEqual(['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors']);
     expect(qwen.identity.facts?.paramsB).toBe(0);
+    expect(qwen.identity.facts?.reasoning).toBe(true);
     expect(qwen.paths.at(-1)).toBe(path.join(dir, 'config.json'));
     const a = models.find((m) => m.identity.displayName === 'awq-model') as LocalModel;
     expect(a.identity).toMatchObject({ source: 'local', quant: 'AWQ-4bit' });
@@ -293,8 +296,14 @@ describe('ModelScanner', () => {
     const plain = path.join(t.dir, 'custom', 'plain');
     writeFileSync(path.join(mkdirAll(plain), 'config.json'), '{"num_hidden_layers": 1}');
     writeSafetensors(path.join(plain, 'model.safetensors'));
+    // Its template in chat_template.jinja, and a tokenizer_config.json that cannot be read: it does not think.
+    writeFileSync(path.join(plain, 'tokenizer_config.json'), '{nope');
+    writeFileSync(path.join(plain, 'chat_template.jinja'), '{{ messages[0].content }}');
     const again = await scanner({ extraModelDirs: [path.join(t.dir, 'custom')] }).scan();
     expect(again.find((m) => m.identity.displayName === 'plain')?.identity.quant).toBeUndefined();
+    expect(again.find((m) => m.identity.displayName === 'plain')?.identity.facts?.reasoning).toBe(false);
+    // No template at all: not known.
+    expect(again.find((m) => m.identity.displayName === 'awq-model')?.identity.facts).not.toHaveProperty('reasoning');
   });
 
   /** A whole model with MTP layers fused in: many tensors per block (llamaLikeGguf), nextn declared. */

@@ -237,6 +237,11 @@ export interface GgufFactsOptions {
 }
 
 /** Maps GGUF KV metadata to facts. Pure: works on metadata from local or remote headers. */
+/** A chat template with a reasoning part: Qwen3 / DeepSeek <think>, enable_thinking, reasoning_content (gpt-oss: its analysis channel). */
+export function templateThinks(template: string): boolean {
+  return /<think>|enable_thinking|reasoning_content|<\|channel\|>analysis/.test(template);
+}
+
 export function factsFromGguf(md: Record<string, unknown>, opts: GgufFactsOptions = {}): ModelFactsEx {
   const arch = str(md['general.architecture']) ?? '';
   const get = (k: string): unknown => md[`${arch}.${k}`];
@@ -246,6 +251,9 @@ export function factsFromGguf(md: Record<string, unknown>, opts: GgufFactsOption
   };
   set('architecture', str(md['general.architecture']));
   set('name', str(md['general.name']));
+  // Its chat template says whether it thinks before it answers.
+  const template = str(md['tokenizer.chat_template']);
+  if (template !== undefined) set('reasoning', templateThinks(template));
 
   const params = opts.parameterCount ? opts.parameterCount / 1e9 : paramsFromLabel(str(md['general.size_label']));
   if (params) set('paramsB', round3(params));

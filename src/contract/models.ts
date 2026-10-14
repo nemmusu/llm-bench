@@ -46,6 +46,17 @@ export const modelFactsSchema = z.object({
   /** NInfer artifacts: the parts packed in it, from its manifest ("text", "vision", "mtp", "dflash2"), else what its file name says (noManifest). */
   components: z.array(z.string()).optional(),
   /**
+   * The checkpoint reads images itself (config.json has a vision part: Qwen-VL, Gemma 3, LLaVA…). A GGUF
+   * keeps its image projector in a separate mmproj file: it says nothing here. Absent = not known.
+   */
+  vision: z.boolean().optional(),
+  /**
+   * The model thinks before it answers: its chat template (GGUF tokenizer.chat_template, a checkpoint's
+   * tokenizer_config.json or chat_template.jinja) has a reasoning part (<think>, enable_thinking,
+   * reasoning_content). Absent = no template read.
+   */
+  reasoning: z.boolean().optional(),
+  /**
    * NInfer artifacts: no manifest next to the file ("senza manifest") and none readable at its start:
    * its facts come from its name and size only (the family, the parameters, an "MTP" in the name), and
    * NInfer itself says the rest.

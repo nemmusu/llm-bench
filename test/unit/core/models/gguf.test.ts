@@ -37,6 +37,15 @@ describe('factsFromGguf (pure)', () => {
     });
     expect(f.kv).toEqual({ groups: [{ layers: 32, kvHeads: 8, keyLength: 128, valueLength: 128 }], recurrentLayers: 0, recurrentBytesPerSeq: 0 });
     expect(f.slidingWindow).toBeUndefined();
+    // No chat template: whether it thinks is not known.
+    expect(f).not.toHaveProperty('reasoning');
+  });
+
+  it('its chat template says whether it thinks', () => {
+    const md = llamaLikeGguf({ arch: 'qwen3' }).metadata;
+    expect(factsFromGguf({ ...md, 'tokenizer.chat_template': '{%- if enable_thinking is defined %}<think>' }).reasoning).toBe(true);
+    expect(factsFromGguf({ ...md, 'tokenizer.chat_template': '<|start|>assistant<|channel|>analysis<|message|>' }).reasoning).toBe(true);
+    expect(factsFromGguf({ ...md, 'tokenizer.chat_template': '{{ messages[0].content }}' }).reasoning).toBe(false);
   });
 
   it('handles per-layer KV heads and SWA head sizes (Gemma 4)', () => {
