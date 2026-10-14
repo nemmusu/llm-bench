@@ -558,8 +558,8 @@ export function briefOf(tuning: Pick<Tuning, 'combinations' | 'recommended'>): B
   const bestWrite = out.write.point.decodeTps.median;
   out.both = best((p) => balanceScore(prefillStat(p.point).median, p.point.decodeTps.median, bestRead, bestWrite));
   // The most precise KV type measured; among its combinations the largest context, then the fastest with it full.
-  const precision = Math.min(...ids.map((i) => KV_PRECISION[tuning.combinations[i]!.kvType]));
-  const own = ids.filter((i) => KV_PRECISION[tuning.combinations[i]!.kvType] === precision);
+  const precision = Math.min(...ids.map((i) => KV_PRECISION(tuning.combinations[i]!.kvType)));
+  const own = ids.filter((i) => KV_PRECISION(tuning.combinations[i]!.kvType) === precision);
   const top = Math.max(...own.map((i) => tuning.combinations[i]!.maxContext));
   const candidates = own.filter((i) => tuning.combinations[i]!.maxContext === top).map((i) => atMaxOf(tuning.combinations[i]!, i));
   const q = candidates.reduce((a, b) => (b.point && (!a.point || b.point.decodeTps.median > a.point.decodeTps.median) ? b : a));
