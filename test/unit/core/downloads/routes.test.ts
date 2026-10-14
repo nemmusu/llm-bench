@@ -13,7 +13,7 @@ describe('downloads routes', () => {
       if (args[0] === 'missing') return Promise.reject(new AppError('VALIDATION', 'Unknown download'));
       return Promise.resolve({ id: String(args[0] ?? 'new'), fn });
     };
-    const svc = { list: () => [{ id: 'a' }], add: rec('add'), plan: rec('plan'), pause: rec('pause'), resume: rec('resume'), cancel: rec('cancel') } as unknown as DownloadService;
+    const svc = { list: () => [{ id: 'a' }], add: rec('add'), plan: rec('plan'), pause: rec('pause'), resume: rec('resume'), cancel: rec('cancel'), remove: rec('remove'), clearFinished: () => Promise.resolve({ removed: 3 }) } as unknown as DownloadService;
     const hono = new Hono();
     hono.onError((e, c) => errorResponse(c, e));
     createDownloadsRoutes(svc)(hono, {} as never);
@@ -35,6 +35,14 @@ describe('downloads routes', () => {
       expect(await (await hono.request(`/api/downloads/j1/${action}`, { method: 'POST' })).json()).toEqual({ id: 'j1', fn: action });
     }
     expect((await hono.request('/api/downloads/missing/pause', { method: 'POST' })).status).toBe(400);
+  });
+
+  it('clears finished entries and removes one from the list', async () => {
+    const { hono, calls } = app();
+    expect(await (await hono.request('/api/downloads/clear', { method: 'POST' })).json()).toEqual({ removed: 3 });
+    expect(await (await hono.request('/api/downloads/j1', { method: 'DELETE' })).json()).toEqual({ id: 'j1', fn: 'remove' });
+    expect(calls).toEqual([{ fn: 'remove', args: ['j1'] }]);
+    expect((await hono.request('/api/downloads/missing', { method: 'DELETE' })).status).toBe(400);
   });
 
   it('rejects invalid bodies', async () => {

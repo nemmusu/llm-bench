@@ -429,6 +429,31 @@ export function useDownloadAction() {
   });
 }
 
+/** A download that ended (completed, failed or cancelled): it can leave the list. */
+export function isDownloadFinished(j: DownloadJob): boolean {
+  return j.state === 'done' || j.state === 'failed' || j.state === 'cancelled';
+}
+
+/** POST /api/downloads/clear: finished downloads leave the list (their files stay on the PC). */
+export function useClearDownloads() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ removed: number }>('/api/downloads/clear'),
+    onSuccess: () => qc.setQueryData<DownloadJob[]>(libKeys.downloads, (old = []) => old.filter((j) => !isDownloadFinished(j))),
+  });
+}
+
+/** DELETE /api/downloads/:id: one finished download leaves the list (its files stay on the PC). */
+export function useRemoveDownload() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<{ ok: true }>(`/api/downloads/${encodeURIComponent(id)}`),
+    onSuccess: (_r, id) => qc.setQueryData<DownloadJob[]>(libKeys.downloads, (old = []) => old.filter((j) => j.id !== id)),
+  });
+}
+
 /** Open state of the downloads drawer, shared by the title bar and the screens that start downloads. */
 export function useDownloadsPanel(): [boolean, (open: boolean) => void] {
   const qc = useQueryClient();

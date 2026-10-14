@@ -316,6 +316,38 @@ describe('DownloadService', () => {
     expect((await svc.cancel(two.id)).state).toBe('cancelled');
   });
 
+  it('clears finished downloads from the list (never their files), and they stay cleared after a restart', async () => {
+    const finishing = service();
+    const done = await finishing.add({ repo: REPO, revision: 'main', files: [Q4] });
+    await finishing.idle();
+    const failed = await finishing.add({ repo: 'google/gated-demo-it', revision: 'main', files: ['gated-demo-it-Q4_K_M.gguf'] });
+    await finishing.idle();
+    // The same list, with a queue that starts nothing: one paused, one cancelled before starting.
+    let n = 10;
+    const first = service({ maxParallel: 0, newId: () => `job-${++n}` });
+    await first.init();
+    const paused = await first.pause((await first.add({ repo: REPO, revision: 'main', files: [Q8] })).id);
+    const cancelled = await first.cancel((await first.add({ repo: 'Qwen/Qwen3-0.6B', revision: 'main', files: ['*'] })).id);
+    expect(first.list().map((j) => j.state)).toEqual(['done', 'failed', 'paused', 'cancelled']);
+
+    // One at a time: only a finished one; an active one is refused, an unknown one is not found.
+    await expect(first.remove(paused.id)).rejects.toMatchObject({ code: 'VALIDATION', params: { id: paused.id, reason: 'active' } });
+    await expect(first.remove('nope')).rejects.toMatchObject({ code: 'DOWNLOAD_NOT_FOUND' });
+    expect(await first.remove(failed.id)).toEqual({ ok: true });
+    expect(first.list().map((j) => j.id)).toEqual([done.id, paused.id, cancelled.id]);
+
+    // All finished ones at once: the paused one stays, the downloaded file stays on disk.
+    expect(await first.clearFinished()).toEqual({ removed: 2 });
+    expect(first.list().map((j) => j.id)).toEqual([paused.id]);
+    expect(readFileSync(path.join(done.dest, Q4))).toEqual(hub.file(REPO, Q4).bytes);
+    expect(await first.clearFinished()).toEqual({ removed: 0 });
+
+    // A new instance reads the same downloads.json: the cleared ones do not come back.
+    const second = service();
+    await second.init();
+    expect(second.list().map((j) => [j.id, j.state])).toEqual([[paused.id, 'paused']]);
+  });
+
   it('refuses to start without enough free disk space', async () => {
     const svc = service({ statfs: async () => ({ bavail: 10n, bsize: 4096n }) });
     await svc.add({ repo: REPO, revision: 'main', files: [Q4] });

@@ -214,6 +214,24 @@ export class DownloadService {
     return this.snapshot(rec);
   }
 
+  /** Takes every finished download (done, failed, cancelled) off the list; their files stay where they are. */
+  async clearFinished(): Promise<{ removed: number }> {
+    const finished = [...this.records.values()].filter((r) => FINISHED.includes(r.job.state));
+    // A finished job has no pending progress event: its last state change sent it.
+    for (const rec of finished) this.records.delete(rec.job.id);
+    await this.persist();
+    return { removed: finished.length };
+  }
+
+  /** Takes one finished download off the list, never its files; one still queued, running or paused is refused. */
+  async remove(id: string): Promise<{ ok: true }> {
+    const rec = this.get(id);
+    if (!FINISHED.includes(rec.job.state)) throw new AppError('VALIDATION', `Cannot remove a ${rec.job.state} download`, { params: { id, reason: 'active' } });
+    this.records.delete(id);
+    await this.persist();
+    return { ok: true };
+  }
+
   /** Resolves when no job is running (tests, shutdown). */
   async idle(): Promise<void> {
     for (;;) {

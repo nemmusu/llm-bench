@@ -33,6 +33,8 @@ import { serverNetworkSchema, serverPortSchema } from './servers';
  *   GET    /api/downloads                    -> DownloadJob[]
  *   POST   /api/downloads                    (DownloadRequest) -> DownloadJob
  *   POST   /api/downloads/:id/(pause|resume|cancel) -> DownloadJob
+ *   POST   /api/downloads/clear              -> { removed: number } (finished, failed, cancelled leave the list; no file is deleted)
+ *   DELETE /api/downloads/:id                -> { ok: true } (one finished entry leaves the list; an active one: VALIDATION 'active')
  *   GET    /api/runs?model=&gpu=             -> RunSummary[]
  *   GET    /api/runs/:id                     -> RunResult
  *   DELETE /api/runs/:id                     -> { ok: true }

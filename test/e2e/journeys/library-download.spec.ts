@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, launchApp, test } from '../fixtures';
 import { clickToastAction, h1, openPage, opened, revealed, scan, skipWelcome, startLibraryWorld, stubDesktop, type LibraryWorld } from './library-helpers';
 
@@ -159,5 +162,65 @@ test('a model with a license to accept: what to do, the token, then it works', a
   } finally {
     world.hub.setAccepted('google/gated-demo-it', false);
     await gb.close();
+  }
+});
+
+test('the downloads panel can be cleared: finished entries leave the list, never the files, and stay gone after a restart', async () => {
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-clear-'));
+  try {
+    const gb = await launchApp({ env: world.env, userData });
+    try {
+      const { page } = gb;
+      await stubDesktop(gb);
+      await skipWelcome(page);
+      await openPage(page, 'Modelli');
+      await page.getByRole('tab', { name: 'Scarica' }).click();
+      await page.getByRole('searchbox', { name: 'Cerca un modello su Hugging Face' }).fill('qwen3-0.6b');
+      await page.getByRole('link', { name: 'ggml-org/Qwen3-0.6B-GGUF', exact: true }).click();
+      const choices = page.getByRole('radiogroup', { name: 'Scegli la versione da scaricare' });
+      await expect(choices.getByRole('radio', { name: /Q8_0/ })).toBeChecked({ timeout: 30_000 });
+      await page.getByRole('button', { name: /^Scarica Q8_0 · / }).click();
+      await page.getByRole('dialog', { name: /^Scaricare Qwen3-0\.6B-GGUF · Q8_0\?$/ }).getByRole('button', { name: /^Scarica · / }).click();
+      // A tiny file finishes at once: the panel opens from the title bar (the "started" toast is already gone).
+      await expect(page.getByText('Download completato: Qwen3-0.6B-GGUF · Q8_0')).toBeVisible({ timeout: 30_000 });
+      await page.getByRole('button', { name: 'Download e installazioni', exact: true }).click();
+      const panel = page.getByRole('dialog', { name: 'Download e installazioni' });
+      const row = panel.getByRole('listitem').filter({ hasText: 'Qwen3-0.6B-GGUF · Q8_0' });
+      await expect(row.getByText('Completato')).toBeVisible({ timeout: 30_000 });
+      // What tells it apart from another download of the same name, and the sheet below the window's own buttons.
+      await expect(row.getByText(/^GGUF · Q8_0 · /)).toBeVisible();
+      expect((await panel.boundingBox())?.y).toBeGreaterThanOrEqual(40);
+      await scan(page, 'downloads panel with a finished download');
+
+      // "Apri il modello" goes to its page and closes the panel.
+      await row.getByRole('button', { name: 'Apri il modello' }).click();
+      await expect(panel).toBeHidden();
+      await expect(h1(page, 'Qwen3-0.6B-GGUF')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Download e installazioni', exact: true }).click();
+      await expect(panel.getByText('I file scaricati restano sul PC.')).toBeVisible();
+      await panel.getByRole('button', { name: 'Pulisci completati' }).click();
+      await expect(panel.getByRole('heading', { name: 'Nessun download' })).toBeVisible();
+      await scan(page, 'downloads panel cleared');
+    } finally {
+      await gb.close();
+    }
+    // The file is still on the PC.
+    expect(existsSync(path.join(userData, 'models', 'ggml-org', 'Qwen3-0.6B-GGUF', 'Qwen3-0.6B-Q8_0.gguf'))).toBe(true);
+
+    // Same user data after a restart: the cleared entry does not come back.
+    const again = await launchApp({ env: world.env, userData });
+    try {
+      const { page } = again;
+      await expect(h1(page, 'Benchmark')).toBeVisible();
+      await page.getByRole('button', { name: 'Download e installazioni', exact: true }).click();
+      const panel = page.getByRole('dialog', { name: 'Download e installazioni' });
+      await expect(panel.getByRole('heading', { name: 'Nessun download' })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Pulisci completati' })).toHaveCount(0);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    rmSync(userData, { recursive: true, force: true });
   }
 });

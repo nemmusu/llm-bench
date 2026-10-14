@@ -484,6 +484,20 @@ export function libApi(w: World = world()): LibApi {
       w.downloads = [...w.downloads, j];
       return j;
     },
+    // Finished downloads leave the list (as the core: done, failed, cancelled; their files stay).
+    'POST /api/downloads/clear': () => {
+      const left = w.downloads.filter((d) => !['done', 'failed', 'cancelled'].includes(d.state));
+      const removed = w.downloads.length - left.length;
+      w.downloads = left;
+      return { removed };
+    },
+    'DELETE /api/downloads/*': (_b, _q, p) => {
+      const id = decodeURIComponent(p.split('/').pop() as string);
+      const d = w.downloads.find((x) => x.id === id) ?? fail('DOWNLOAD_NOT_FOUND', 404);
+      if (!['done', 'failed', 'cancelled'].includes(d.state)) fail('VALIDATION');
+      w.downloads = w.downloads.filter((x) => x.id !== id);
+      return { ok: true };
+    },
     'POST /api/downloads/*/*': (_b, _q, p) => {
       const [, , , id, action] = p.split('/');
       const state = { pause: 'paused', resume: 'queued', cancel: 'cancelled' }[action as 'pause'] as DownloadJob['state'];

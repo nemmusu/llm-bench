@@ -1044,6 +1044,11 @@ export const en: Messages = {
     cancel: 'Cancel',
     verifying: 'Checking the file is intact…',
     progress: '{done} of {total}',
+    clear: 'Clear finished',
+    clearHint: 'Downloaded files stay on the PC.',
+    remove: 'Remove from the list: {name}',
+    openModel: 'Open the model',
+    visionPart: 'vision part',
     state: {
       queued: 'Queued',
       running: 'In progress',

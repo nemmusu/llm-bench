@@ -1049,6 +1049,11 @@ export const it = {
     cancel: 'Annulla',
     verifying: 'Controllo che il file sia integro…',
     progress: '{done} di {total}',
+    clear: 'Pulisci completati',
+    clearHint: 'I file scaricati restano sul PC.',
+    remove: 'Togli dall’elenco: {name}',
+    openModel: 'Apri il modello',
+    visionPart: 'parte visione',
     state: {
       queued: 'In coda',
       running: 'In corso',
