@@ -3,10 +3,10 @@
 // "containers" (the fake engine bound to the published host port). Run with plain `node`.
 //
 //   version --format json | desktop start [--detach] | run [-d] [--rm] [--name N] [--label L]…
-//   [--gpus G] [--ipc=host] [-p [ip:]host:cont] [-v src:dst[:ro]] [-e NAME[=V]] [--entrypoint E]
+//   [--gpus G] [--ipc=host] [--ulimit K=V] [-p [ip:]host:cont] [-v src:dst[:ro]] [-e NAME[=V]] [--entrypoint E]
 //   [--pull P] IMAGE [ARGS…] | logs [-f] [--timestamps] ID | stop [-t N] ID | rm [-f] ID… |
 //   ps [-a] [--no-trunc] [--filter label=K[=V]]… [--format F] | container inspect ID | inspect ID |
-//   image inspect REF | pull REF |
+//   image inspect REF | pull REF | image rm REF (then missing until pulled again) |
 //   volume create [--label K=V]… NAME | volume inspect NAME… | volume ls [--filter label=K[=V]]… [--format {{.Name}}|-q] |
 //   volume rm [-f] NAME…
 //   internal: __container ID (the "container runtime"), __api --socket PATH (fake Engine API)
@@ -306,7 +306,7 @@ async function cmdDesktop(args) {
   return 0;
 }
 
-const VALUE_OPTS = new Set(['--name', '--label', '-l', '--gpus', '--ipc', '-p', '--publish', '-v', '--volume', '-e', '--env', '--entrypoint', '--pull', '--network', '--shm-size', '--runtime', '-w', '--workdir', '-u', '--user']);
+const VALUE_OPTS = new Set(['--name', '--label', '-l', '--gpus', '--ipc', '-p', '--publish', '-v', '--volume', '-e', '--env', '--entrypoint', '--pull', '--network', '--shm-size', '--ulimit', '--runtime', '-w', '--workdir', '-u', '--user']);
 const BOOL_OPTS = new Set(['-d', '--detach', '--rm', '-i', '-t', '--init', '--privileged']);
 
 function parseRun(args) {
@@ -370,8 +370,8 @@ function parseVolume(spec) {
 }
 
 function missingImages() {
-  const pulled = readJson('images.json', { pulled: [] }).pulled;
-  return list(env.FAKE_DOCKER_MISSING).filter((r) => !pulled.includes(r));
+  const st = readJson('images.json', { pulled: [] });
+  return [...list(env.FAKE_DOCKER_MISSING), ...(st.removed ?? [])].filter((r) => !st.pulled.includes(r));
 }
 
 function imageId(ref) {
@@ -411,7 +411,8 @@ function engineArgs(c) {
 }
 
 function engineEnv(c) {
-  return { ...env, ...c.env, FAKE_ENGINE_FLAVOR: /sglang/i.test(c.image) ? 'sglang' : /vllm/i.test(c.image) ? 'vllm' : 'llamacpp' };
+  const flavor = /tensorrt-llm/i.test(c.image) ? 'trtllm' : /sglang/i.test(c.image) ? 'sglang' : /vllm/i.test(c.image) ? 'vllm' : 'llamacpp';
+  return { ...env, ...c.env, FAKE_ENGINE_FLAVOR: flavor };
 }
 
 async function cmdRun(args) {
@@ -968,7 +969,29 @@ async function cmdPull(args) {
   out(ref);
   const st = readJson('images.json', { pulled: [] });
   if (!st.pulled.includes(ref)) st.pulled.push(ref);
+  st.removed = (st.removed ?? []).filter((r) => r !== ref);
   writeJson('images.json', st);
+  return 0;
+}
+
+/** `image rm REF`: refused while a container of it runs; afterwards the image is missing until pulled again. */
+function cmdImageRm(args) {
+  const ref = args.filter((a) => !a.startsWith('-'))[0];
+  if (!requireDaemon()) return 1;
+  if (!ref || missingImages().includes(ref)) {
+    err(`Error response from daemon: No such image: ${ref}`);
+    return 1;
+  }
+  const user = containers().find((c) => c.image === ref && c.state === 'running');
+  if (user) {
+    err(`Error response from daemon: conflict: unable to remove repository reference "${ref}" (must force) - container ${user.id.slice(0, 12)} is using its referenced image ${imageId(ref).slice(7, 19)}`);
+    return 1;
+  }
+  const st = readJson('images.json', { pulled: [] });
+  st.pulled = st.pulled.filter((r) => r !== ref);
+  st.removed = [...new Set([...(st.removed ?? []), ref])];
+  writeJson('images.json', st);
+  out(`Untagged: ${ref}`);
   return 0;
 }
 
@@ -1011,6 +1034,7 @@ async function main(argv) {
     case 'image':
       if (rest[0] === 'inspect') return cmdImageInspect(rest.slice(1));
       if (rest[0] === 'pull') return cmdPull(rest.slice(1));
+      if (rest[0] === 'rm') return cmdImageRm(rest.slice(1));
       break;
     case 'pull':
       return cmdPull(rest);

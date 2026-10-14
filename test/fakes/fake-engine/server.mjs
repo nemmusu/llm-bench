@@ -81,7 +81,7 @@ import * as L from './logs.mjs';
  * @property {Record<string, number>} [blockSizeDecodeFactor] vLLM: generation × factor per --block-size (default 1)
  */
 
-const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5, turbo4: 4.25 / 16, turbo3: 3.125 / 16, turbo3_tcq: 3.125 / 16, turbo2: 2.125 / 16, 'turbo1.5': 2 / 16 };
+const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5, turbo4: 4.25 / 16, turbo3: 3.125 / 16, turbo3_tcq: 3.125 / 16, turbo2: 2.125 / 16, 'turbo1.5': 2 / 16, nvfp4: 9 / 32 };
 /** vLLM's default CUDA graph capture list (1, 2, 4, 8, 16 … 512) has this many sizes. */
 const VLLM_DEFAULT_GRAPHS = 67;
 
@@ -96,6 +96,15 @@ export function memoryPlan(m, o) {
   const weights = m.weightsMiB * (1 - cpu);
   const kvPerToken = (m.kvMiBPer1k * (KV_SHARE[o.kvType ?? 'f16'] ?? 1)) / 1024;
   const compute = (m.computeMiBPer512 ?? 300) * ((o.ubatch ?? 512) / 512);
+  if (o.flavor === 'trtllm') {
+    // TensorRT-LLM: its KV pool takes --kv_cache_free_gpu_memory_fraction of what is free after the weights and buffers.
+    const fraction = o.gpuMemoryUtilization ?? 0.9;
+    const activations = (m.computeMiBPer512 ?? 0) * ((o.ubatch ?? 512) / 512);
+    const pool = fraction * ((m.freeMiB ?? m.totalMiB) - weights - 1024 - activations);
+    const capacity = Math.max(0, Math.floor(pool / kvPerToken));
+    const need = weights + 1024 + activations + Math.max(0, pool);
+    return { cpuShare: cpu, needMiB: need, vramMiB: Math.round(Math.min(need, m.totalMiB)), capacity, outcome: o.ctx > capacity ? 'kv-too-small' : 'ok' };
+  }
   if (o.flavor === 'vllm') {
     const util = o.gpuMemoryUtilization ?? 0.9;
     if (util * m.totalMiB > (m.freeMiB ?? m.totalMiB)) return { cpuShare: cpu, needMiB: util * m.totalMiB, vramMiB: 0, capacity: 0, outcome: 'busy' };
@@ -214,7 +223,7 @@ function sendJson(res, status, body) {
 
 /**
  * @typedef {object} FakeEngineOptions
- * @property {'llamacpp' | 'vllm' | 'sglang'} [flavor]
+ * @property {'llamacpp' | 'vllm' | 'sglang' | 'trtllm'} [flavor]
  * @property {string} [host]
  * @property {number} [port]            0 = any free port.
  * @property {string} [model]           Model path (llama.cpp) or repo id (vLLM).
@@ -231,6 +240,7 @@ function sendJson(res, status, body) {
  * @property {boolean} [watchdog]       Spawn the state watchdog (default true when stateFile is set).
  * @property {(code: number) => void} [onFatal] Simulated crash (default: close the server).
  * @property {boolean} [prefixCaching] vLLM: reuse cached prompt prefixes (default true, like vLLM V1; --no-enable-prefix-caching).
+ * @property {boolean} [chunkedPrefill] TensorRT-LLM --enable_chunked_prefill (else a prompt longer than ubatch is refused).
  * @property {boolean} [promptTokensDetails] vLLM: report usage.prompt_tokens_details.cached_tokens (--enable-prompt-tokens-details).
  * @property {number} [kvTokens] GPU KV cache size in tokens reported by vLLM (default 164816).
  * @property {boolean} [kvUnified] llama.cpp --kv-unified / --no-kv-unified (default: unified only with automatic slots).
@@ -242,8 +252,9 @@ function sendJson(res, status, body) {
  * @property {number[]} [graphSizes] vLLM CUDA graph capture sizes.
  */
 
-/** vLLM caches whole blocks of this many tokens. */
+/** vLLM caches whole blocks of this many tokens; TensorRT-LLM's KV blocks hold 32. */
 const VLLM_BLOCK = 16;
+const TRTLLM_BLOCK = 32;
 
 /** Length of the common prefix of two token arrays. */
 export function commonPrefix(a, b) {
@@ -262,7 +273,7 @@ export function commonPrefix(a, b) {
 export async function startFakeEngine(o = {}) {
   const flavor = o.flavor ?? 'llamacpp';
   /** SGLang serves the OpenAI API like vLLM: same memory model, prefix cache (token-exact) and routes. */
-  const openai = flavor === 'vllm' || flavor === 'sglang';
+  const openai = flavor === 'vllm' || flavor === 'sglang' || flavor === 'trtllm';
   const cold = o.coldMarker !== undefined && existsSync(o.coldMarker);
   // `warm` replaces the profile's own speeds on every launch after the cold one (an engine that slows down once a search is under way).
   const p = !cold && o.profile?.warm ? { ...o.profile, ...o.profile.warm } : (o.profile ?? {});
@@ -285,7 +296,7 @@ export async function startFakeEngine(o = {}) {
   const rand = mulberry32(p.seed ?? 1);
   // The memory model (when the profile has one) decides what loads, what spills and how much VRAM it holds.
   const mem = p.memory
-    ? memoryPlan(p.memory, { flavor: openai ? 'vllm' : flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
+    ? memoryPlan(p.memory, { flavor: flavor === 'sglang' ? 'vllm' : flavor, ctx, kvType: o.kvType, ubatch: o.ubatch, nCpuMoe: o.nCpuMoe, gpuLayers: o.gpuLayers, gpuMemoryUtilization: o.gpuMemoryUtilization, eager: o.eager, blockSize: o.blockSize, graphSizes: o.graphSizes })
     : undefined;
   /** Shared GPU memory of this launch once loaded, or once it generates (a spill's grows with its compute buffers). */
   const sharedOf = (generating) => {
@@ -380,7 +391,7 @@ export async function startFakeEngine(o = {}) {
     if (o.prefixCaching === false) return 0;
     const best = prefixCache.reduce((m, seq) => Math.max(m, commonPrefix(seq, ids)), 0);
     // vLLM: whole blocks only; SGLang's radix cache: any token. Never the last token (it is recomputed).
-    const block = flavor === 'sglang' ? 1 : VLLM_BLOCK;
+    const block = flavor === 'sglang' ? 1 : flavor === 'trtllm' ? TRTLLM_BLOCK : VLLM_BLOCK;
     return Math.floor(Math.min(best, Math.max(0, ids.length - 1)) / block) * block;
   };
   const remember = (seq, slot) => {
@@ -589,6 +600,7 @@ export async function startFakeEngine(o = {}) {
 
   async function handleVllm(req, res, url) {
     const sglang = flavor === 'sglang';
+    const trtllm = flavor === 'trtllm';
     // SGLang binds its port before its own warm-up request: until then it is not up yet.
     if (sglang && !loaded) {
       res.writeHead(503);
@@ -604,7 +616,9 @@ export async function startFakeEngine(o = {}) {
     if (sglang && url.pathname === '/server_info') {
       return sendJson(res, 200, { model_path: model, context_length: ctx, max_total_num_tokens: c.kvTokens, version: L.SGLANG_VERSION });
     }
-    if (!sglang && url.pathname === '/version') return sendJson(res, 200, { version: '0.12.0' });
+    if (!sglang && url.pathname === '/version') return sendJson(res, 200, { version: trtllm ? L.TRTLLM_VERSION : '0.12.0' });
+    // trtllm-serve's /metrics: iteration stats as JSON (no Prometheus text, nothing about a prefix cache).
+    if (trtllm && url.pathname === '/metrics') return sendJson(res, 200, []);
     if (!sglang && url.pathname === '/metrics' && req.method === 'GET') {
       const style = p.vllmMetrics ?? 'counters';
       if (style === 'none') return sendJson(res, 404, { detail: 'Not Found' });
@@ -627,7 +641,7 @@ export async function startFakeEngine(o = {}) {
     if (url.pathname === '/v1/models') {
       return sendJson(res, 200, {
         object: 'list',
-        data: aliases.map((id) => ({ id, object: 'model', created: 1_760_000_000, owned_by: sglang ? 'sglang' : 'vllm', root: model, parent: null, max_model_len: ctx })),
+        data: aliases.map((id) => ({ id, object: 'model', created: 1_760_000_000, owned_by: sglang ? 'sglang' : trtllm ? 'tensorrt_llm' : 'vllm', root: model, parent: null, max_model_len: ctx })),
       });
     }
     if (req.method !== 'POST') return sendJson(res, 404, { detail: 'Not Found' });
@@ -636,7 +650,14 @@ export async function startFakeEngine(o = {}) {
     if (body.model !== undefined && !aliases.includes(body.model)) {
       return sendJson(res, 404, { object: 'error', message: `The model \`${body.model}\` does not exist.`, type: 'NotFoundError', code: 404 });
     }
-    if (url.pathname === '/tokenize') {
+    // trtllm-serve: its own tokenizer route (special tokens always added); its request model forbids other fields.
+    if (trtllm && url.pathname === '/_internal/tokenize') {
+      const extra = Object.keys(body).filter((k) => k !== 'model' && k !== 'prompt');
+      if (extra.length > 0 || typeof body.prompt !== 'string') return sendJson(res, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', ...extra], msg: 'Extra inputs are not permitted' }] });
+      const ids = tokenize(body.prompt, true);
+      return sendJson(res, 200, { count: ids.length, tokens: ids });
+    }
+    if (!trtllm && url.pathname === '/tokenize') {
       const ids = tokenize(String(body.prompt ?? ''), body.add_special_tokens !== false);
       return sendJson(res, 200, { count: ids.length, max_model_len: ctx, tokens: ids, token_strs: null });
     }
@@ -650,6 +671,10 @@ export async function startFakeEngine(o = {}) {
       const maxTokens = typeof body.max_tokens === 'number' ? body.max_tokens : 16;
       if (promptN + maxTokens > ctx) {
         return sendJson(res, 400, { object: 'error', message: `This model's maximum context length is ${ctx} tokens.`, type: 'BadRequestError', code: 400 });
+      }
+      // TensorRT-LLM without chunked prefill reads a prompt in one step of at most --max_num_tokens.
+      if (trtllm && !o.chunkedPrefill && promptN > (o.ubatch ?? 8192)) {
+        return sendJson(res, 400, { object: 'error', message: `The prompt (${promptN} tokens) is longer than max_num_tokens`, type: 'BadRequestError', code: 400 });
       }
       const minTokens = typeof body.min_tokens === 'number' ? body.min_tokens : 0;
       const n = body.ignore_eos === true ? maxTokens : Math.min(maxTokens, Math.max(minTokens, p.eosAfter ?? 48));
@@ -835,6 +860,28 @@ export async function startFakeEngine(o = {}) {
     gpu.setMem(c.vramMiB);
   }
 
+  /** TensorRT-LLM: weights, memory profile, KV pool, autotuner and CUDA graphs, all before the HTTP port. */
+  async function loadTrtllm() {
+    out(L.trtllmBanner(c));
+    await sleep(loadMs * 0.05);
+    for (let i = 0; i <= SHARDS; i++) {
+      out([L.trtllmWeights(i, SHARDS)]);
+      if (i < SHARDS) await sleep((loadMs * 0.4) / SHARDS);
+      if (p.oomAtLoad && i === 2) throw Object.assign(new Error('oom'), { lines: L.trtllmOom() });
+    }
+    gpu.setMem(Math.round(c.vramMiB * 0.6));
+    out(L.trtllmMemory(c));
+    if (p.noKernelImage) throw Object.assign(new Error('nokernel'), { lines: L.trtllmNoKernelImage() });
+    if (mem?.outcome === 'kv-too-small') throw Object.assign(new Error('kv'), { lines: L.trtllmKvTooSmall(c) });
+    out(L.trtllmKvCache(c));
+    await sleep(loadMs * 0.2);
+    out(L.trtllmWarmup());
+    gpu.setMem(c.vramMiB);
+    gpu.setLoad(busyLoad);
+    await sleep(loadMs * 0.1);
+    gpu.setLoad(null);
+  }
+
   const finishLoad = () => {
     loaded = true;
     if (cold) rmSync(/** @type {string} */ (o.coldMarker), { force: true });
@@ -880,6 +927,26 @@ export async function startFakeEngine(o = {}) {
         gpu.setLoad(null);
         finishLoad();
         out(L.sglangReady());
+      },
+      (e) => {
+        fatal(1, e.lines ?? [String(e)]);
+        throw e;
+      },
+    );
+    port = o.port ?? 0;
+  } else if (flavor === 'trtllm') {
+    // trtllm-serve builds its engine first, then uvicorn binds the port: answering = ready.
+    loadedPromise = loadTrtllm().then(
+      async () => {
+        try {
+          port = await bind();
+        } catch (e) {
+          fatal(1, L.vllmPortInUse(c));
+          throw e;
+        }
+        c.port = port;
+        finishLoad();
+        out(L.trtllmServing(c));
       },
       (e) => {
         fatal(1, e.lines ?? [String(e)]);

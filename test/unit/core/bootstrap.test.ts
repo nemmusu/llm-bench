@@ -105,6 +105,7 @@ describe('bootstrap helpers', () => {
       pypi: 'http://pypi',
       git: ['node', 'git.mjs'],
       cmake: ['cmake4'],
+      ngcRegistry: 'https://nvcr.io',
     });
   });
 

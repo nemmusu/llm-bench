@@ -70,7 +70,7 @@ export function speeds(
 ): { decode: number; prefill: number };
 
 export interface FakeEngineOptions {
-  flavor?: 'llamacpp' | 'vllm' | 'sglang';
+  flavor?: 'llamacpp' | 'vllm' | 'sglang' | 'trtllm';
   host?: string;
   port?: number;
   model?: string;
@@ -102,6 +102,8 @@ export interface FakeEngineOptions {
   prefixCaching?: boolean;
   /** vLLM: report usage.prompt_tokens_details.cached_tokens (--enable-prompt-tokens-details). */
   promptTokensDetails?: boolean;
+  /** TensorRT-LLM --enable_chunked_prefill: without it a prompt longer than --max_num_tokens (ubatch) is refused. */
+  chunkedPrefill?: boolean;
   /** GPU KV cache size in tokens reported by vLLM (default 164816). */
   kvTokens?: number;
   /** llama.cpp --kv-unified (true) / --no-kv-unified (false); default: unified only with automatic slots. */

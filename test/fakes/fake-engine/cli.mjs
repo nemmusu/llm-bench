@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Command-line twin of llama-server (default), `vllm serve` (argv "serve <model>" or
-// FAKE_ENGINE_FLAVOR=vllm) or SGLang's Python (argv "[-X opt] -m sglang.launch_server …",
-// "-c 'import sglang…'" or FAKE_ENGINE_FLAVOR=sglang). Run with plain `node cli.mjs …`.
+// FAKE_ENGINE_FLAVOR=vllm), SGLang's Python (argv "[-X opt] -m sglang.launch_server …",
+// "-c 'import sglang…'" or FAKE_ENGINE_FLAVOR=sglang) or TensorRT-LLM's trtllm-serve (argv
+// "trtllm-serve serve <model> …", "[-X opt] -m tensorrt_llm.commands.serve serve …",
+// "-c 'import tensorrt_llm…'" or FAKE_ENGINE_FLAVOR=trtllm). Run with plain `node cli.mjs …`.
 //
 // Environment:
 //   FAKE_ENGINE_PROFILE      inline JSON or a path to a JSON file (see FakeProfile in server.mjs)
 //   FAKE_ENGINE_COLD_MARKER  if this file exists the load is "cold" (loadMsCold) and the file is deleted
 //   FAKE_NVIDIA_SMI_STATE    fake nvidia-smi state file updated while loading/generating
-//   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm" | "sglang"
+//   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm" | "sglang" | "trtllm"
 //   FAKE_ENGINE_HELP=fork    a llama.cpp fork (PrismML-like): its own --version, no -ub, an extra
 //                            --ternary-kernels option; SGLang: a fork without --chunked-prefill-size
 //   FAKE_ENGINE_HELP=turbo   a llama.cpp fork with its own KV caches (TurboQuant-like): its own --version,
@@ -15,12 +17,13 @@
 //   FAKE_ENGINE_BUILD        the fork's build number in its --version (default 7001)
 //   FAKE_ENGINE_ALLOW_MISSING_MODEL=1  do not fail when -m does not exist
 import { readFileSync } from 'node:fs';
-import { SGLANG_VERSION } from './logs.mjs';
+import { SGLANG_VERSION, trtllmBadOption, TRTLLM_VERSION } from './logs.mjs';
 import { readProfile, startFakeEngine } from './server.mjs';
 
 const FIXTURES = new URL('../../fixtures/llamacpp/', import.meta.url);
 const VLLM_FIXTURES = new URL('../../fixtures/vllm/', import.meta.url);
 const SGLANG_FIXTURES = new URL('../../fixtures/sglang/', import.meta.url);
+const TRTLLM_HELP = new URL('../../fixtures/trtllm/help.stdout.txt', import.meta.url);
 const argv = process.argv.slice(2);
 const env = process.env;
 const fork = env.FAKE_ENGINE_HELP === 'fork';
@@ -54,6 +57,18 @@ function cacheTypes(help) {
   return m ? m[1].split(/,\s*/) : [];
 }
 
+/** click options of trtllm-serve's help: spelling → takes a value ("--trust_remote_code" alone does not). */
+function clickFlags(help) {
+  const flags = new Map();
+  for (const line of help.split(/\r?\n/)) {
+    const spec = /^ {2}(--[A-Za-z0-9].*?)(?: {2,}|$)/.exec(line)?.[1];
+    if (spec === undefined) continue;
+    const takes = !/^--[\w-]+(?:, --[\w-]+)*$/.test(spec) && !spec.includes(' / ');
+    for (const m of spec.matchAll(/--[\w-]+/g)) flags.set(m[0], takes);
+  }
+  return flags;
+}
+
 /** Option table of the real b10997 --help: name → takes a value. */
 function knownFlags(help) {
   const flags = new Map();
@@ -82,7 +97,8 @@ const err = (lines) => {
 
 async function main() {
   const sglang = env.FAKE_ENGINE_FLAVOR === 'sglang' || argv.includes('sglang.launch_server') || argv.some((a) => a.includes('import sglang'));
-  const flavor = sglang ? 'sglang' : env.FAKE_ENGINE_FLAVOR === 'vllm' || argv[0] === 'serve' ? 'vllm' : 'llamacpp';
+  const trtllm = env.FAKE_ENGINE_FLAVOR === 'trtllm' || argv[0] === 'trtllm-serve' || argv.includes('tensorrt_llm.commands.serve') || argv.some((a) => a.includes('import tensorrt_llm'));
+  const flavor = trtllm ? 'trtllm' : sglang ? 'sglang' : env.FAKE_ENGINE_FLAVOR === 'vllm' || argv[0] === 'serve' ? 'vllm' : 'llamacpp';
   const profile = readProfile(env);
 
   if (flavor === 'llamacpp') {
@@ -98,7 +114,51 @@ async function main() {
   }
 
   const o = { flavor, log: (l) => process.stderr.write(`${l}\n`), profile };
-  if (flavor === 'sglang') {
+  if (flavor === 'trtllm') {
+    // python -c "import tensorrt_llm; print(tensorrt_llm.__version__)": the banner, then the version.
+    if (argv.some((a) => a.includes('import tensorrt_llm'))) {
+      process.stdout.write(`[TensorRT-LLM] TensorRT-LLM version: ${TRTLLM_VERSION}\n${TRTLLM_VERSION}\n`);
+      return 0;
+    }
+    const at = argv.indexOf('tensorrt_llm.commands.serve');
+    let rest = at >= 0 ? argv.slice(at + 1) : argv[0] === 'trtllm-serve' ? argv.slice(1) : argv;
+    if (rest[0] === 'serve') rest = rest.slice(1);
+    const help = readFileSync(TRTLLM_HELP, 'utf8');
+    if (rest.includes('--help')) {
+      process.stdout.write(help);
+      return 0;
+    }
+    const flags = clickFlags(help);
+    const val = {};
+    let model;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (!a.startsWith('--')) {
+        model ??= a;
+        continue;
+      }
+      if (!flags.has(a) || (profile.badFlag && a === profile.badFlag)) {
+        err(trtllmBadOption(a));
+        return 2;
+      }
+      val[a] = flags.get(a) ? rest[++i] : 'true';
+    }
+    o.model = model ?? 'Qwen/Qwen3-0.6B';
+    o.host = val['--host'] ?? 'localhost';
+    o.port = Number(val['--port'] ?? 8000);
+    o.aliases = [val['--served_model_name'] ?? o.model];
+    o.ctx = Number(val['--max_seq_len'] ?? 4096);
+    const dtype = val['--kv_cache_dtype'];
+    o.kvType = dtype === 'fp8' || dtype === 'nvfp4' ? dtype : 'auto';
+    o.kvTypeV = o.kvType;
+    if (val['--max_batch_size'] !== undefined) o.np = Number(val['--max_batch_size']);
+    if (val['--max_num_tokens'] !== undefined) o.ubatch = Number(val['--max_num_tokens']);
+    if (val['--kv_cache_free_gpu_memory_fraction'] !== undefined) o.gpuMemoryUtilization = Number(val['--kv_cache_free_gpu_memory_fraction']);
+    // Without chunked prefill a prompt longer than --max_num_tokens is refused.
+    o.chunkedPrefill = val['--enable_chunked_prefill'] !== undefined;
+    // trtllm-serve reports the cached prompt tokens (its KV block reuse is on by default).
+    o.promptTokensDetails = true;
+  } else if (flavor === 'sglang') {
     // python -c "import sglang; print(sglang.__version__)": the version check of a native install.
     if (argv.some((a) => a.includes('import sglang'))) {
       process.stdout.write(`${SGLANG_VERSION}\n`);

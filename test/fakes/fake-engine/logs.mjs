@@ -387,3 +387,58 @@ export function sglangMemFraction() {
 export function sglangNoKernelImage() {
   return [`${sts()} Scheduler hit an exception: Traceback (most recent call last):`, 'RuntimeError: CUDA error: no kernel image is available for execution on the device'];
 }
+
+// ---------------------------------------------------------------------------------- TensorRT-LLM
+
+/** The version `python -c "import tensorrt_llm; print(tensorrt_llm.__version__)"` prints (after its banner). */
+export const TRTLLM_VERSION = '1.4.0rc0';
+
+const tts = (level = 'I') => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `[${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}-${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}] [TRT-LLM] [${level}]`;
+};
+
+export function trtllmBanner(c) {
+  return [`[TensorRT-LLM] TensorRT-LLM version: ${TRTLLM_VERSION}`, `${tts()} Using LLM with PyTorch backend`, `${tts()} Set nccl_plugin to None.`, `${tts()} neither checkpoint_format nor checkpoint_loader were provided, checkpoint_format will be set to HF. model=${c.model}`];
+}
+
+/** One redraw of the "Loading weights" bar. */
+export function trtllmWeights(done, total) {
+  const pct = Math.round((done / total) * 100);
+  const bar = '█'.repeat(Math.round(pct / 10)).padEnd(10);
+  return `Loading weights: ${String(pct).padStart(3)}%|${bar}| ${done}/${total} [00:00<00:00, 40.20it/s]`;
+}
+
+export function trtllmMemory(c) {
+  return [`${tts()} Memory used after loading model weights (inside torch) in memory usage profiling: ${((c.vramMiB * 0.6) / 1024).toFixed(2)} GiB`, `${tts()} Memory used outside torch (e.g., NCCL and CUDA graphs) in memory usage profiling: 0.52 GiB`];
+}
+
+export function trtllmKvCache(c) {
+  return [`${tts()} [MemUsageChange] Allocated ${((c.kvTokens * 0.125) / 1024).toFixed(2)} GiB for max tokens in paged KV cache (${c.kvTokens}).`];
+}
+
+export function trtllmWarmup() {
+  return [`${tts()} [Autotuner] Autotuning process starts ...`, `${tts()} [Autotuner] Autotuning process ends`, `${tts()} Run generation only CUDA graph warmup for batch size=1, draft_len=0`];
+}
+
+export function trtllmServing(c) {
+  return ['INFO:     Started server process [1]', 'INFO:     Waiting for application startup.', 'INFO:     Application startup complete.', `INFO:     Uvicorn running on http://${c.host}:${c.port} (Press CTRL+C to quit)`];
+}
+
+export function trtllmOom() {
+  return [`${tts('E')} Failed to initialize executor on rank 0: CUDA out of memory. Tried to allocate 1.16 GiB.`, 'torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.16 GiB. GPU 0 has a total capacity of 31.36 GiB of which 812.00 MiB is free.'];
+}
+
+/** The KV pool left after the weights cannot hold one sequence of --max_seq_len. */
+export function trtllmKvTooSmall(c) {
+  return [`${tts('E')} Failed to initialize executor on rank 0: Not enough GPU memory to allocate the KV cache for max_seq_len=${c.ctx}`, `RuntimeError: Not enough GPU memory to allocate the KV cache for max_seq_len=${c.ctx}`];
+}
+
+export function trtllmNoKernelImage() {
+  return [`${tts('E')} Failed to initialize executor on rank 0`, 'RuntimeError: TRTLLMGenFusedMoE does not support SM120'];
+}
+
+export function trtllmBadOption(flag) {
+  return ['Usage: trtllm-serve serve [OPTIONS] MODEL', "Try 'trtllm-serve serve --help' for help.", '', `Error: No such option: ${flag}`];
+}

@@ -10,6 +10,7 @@ import { capsFromOutputs, type LlamaCaps } from '../../../../src/core/engines/ll
 import { llamaArgs } from '../../../../src/core/engines/llamacpp-native/args';
 import { ninferServeArgs } from '../../../../src/core/engines/ninfer/args';
 import { sglangServeArgs } from '../../../../src/core/engines/shared/sglang';
+import { trtllmServeArgs } from '../../../../src/core/engines/shared/trtllm';
 import { FlagGate, STANDARD_FLAGS } from '../../../../src/core/engines/shared/standard-flags';
 import { vllmServeArgs } from '../../../../src/core/engines/shared/vllm-args';
 import { EMPTY_PARAMS_FORM, paramsFromForm, type ParamsField, type ParamsForm } from '../../../../src/renderer/components/bench/expert-form';
@@ -29,6 +30,8 @@ function argv(base: LaunchBase, params: LaunchParams): string[] {
       return sglangServeArgs(params, { model: 'org/m', host: '127.0.0.1', port: 30000, servedName: 'mk' });
     case 'ninfer':
       return ninferServeArgs(params, { model: 'm.ninfer', host: '127.0.0.1', port: 8080, modelId: 'mk' });
+    case 'trtllm':
+      return trtllmServeArgs(params, { model: 'org/m', host: '127.0.0.1', port: 8000, servedName: 'mk' });
   }
 }
 

@@ -15,7 +15,7 @@ afterAll(() => {
   for (const c of cleanups) c();
 });
 
-const DEFAULT_IMAGE: Partial<Record<EngineKind, string>> = { 'sglang-docker': 'lmsysorg/sglang:v0.5.21', 'vllm-docker': 'vllm/vllm-openai:v0.11.0' };
+const DEFAULT_IMAGE: Partial<Record<EngineKind, string>> = { 'sglang-docker': 'lmsysorg/sglang:v0.5.21', 'vllm-docker': 'vllm/vllm-openai:v0.11.0', 'trtllm-docker': 'nvcr.io/nvidia/tensorrt-llm/release:1.4.0rc0' };
 
 /** An adapter that installs by recording the plan (a docker pull, a uv install), with the status given. */
 function adapter(kind: EngineKind, o: { status?: (cfg?: EngineConfig) => Partial<EngineStatus>; noInstall?: boolean } = {}) {
@@ -60,7 +60,9 @@ interface Setup {
   pypi?: Record<string, unknown>;
   git?: FakeGitState;
   wrap?: boolean;
-  packages?: Partial<Record<'vllm-native' | 'sglang-native', string>>;
+  packages?: Partial<Record<'vllm-native' | 'sglang-native' | 'trtllm-native', string>>;
+  /** TensorRT-LLM's NGC tags and the digest of the image's own tag there. */
+  trtllm?: { tags: UpdateTag[]; remote?: UpdateTag; remoteFails?: boolean };
 }
 
 function setup(o: Setup = {}) {
@@ -99,7 +101,21 @@ function setup(o: Setup = {}) {
       },
       tagInfo: async (ref) => o.tagInfo?.[ref],
     },
-    tags: { 'vllm-docker': { tags: async () => o.tags?.['vllm-docker'] ?? [] }, 'sglang-docker': { tags: async () => o.tags?.['sglang-docker'] ?? [] } },
+    tags: {
+      'vllm-docker': { tags: async () => o.tags?.['vllm-docker'] ?? [] },
+      'sglang-docker': { tags: async () => o.tags?.['sglang-docker'] ?? [] },
+      ...(o.trtllm
+        ? {
+            'trtllm-docker': {
+              tags: async () => o.trtllm?.tags ?? [],
+              remoteTag: async () => {
+                if (o.trtllm?.remoteFails) throw new Error('ngc down');
+                return o.trtllm?.remote;
+              },
+            },
+          }
+        : {}),
+    },
     ...(o.packages ? { packages: o.packages } : {}),
     tools,
     fetch,
@@ -336,5 +352,45 @@ describe('targets', () => {
     const bare = setup({ wrap: false, adapters: [adapter('sglang-docker', { noInstall: true })] });
     await expect(bare.updates.check('sglang-docker')).rejects.toMatchObject({ code: 'VALIDATION' });
     expect(new AppError('ENGINE_UPDATE_FAILED', 'x').code).toBe('ENGINE_UPDATE_FAILED');
+  });
+});
+
+describe('TensorRT-LLM', () => {
+  const TRT = 'nvcr.io/nvidia/tensorrt-llm/release';
+  const trtAdapters = () => [adapter('trtllm-docker'), adapter('trtllm-native', { status: () => ({ version: '1.2.1', variant: 'Ubuntu' }) })];
+
+  it('its NGC image: a newer release candidate, pulled and chosen', async () => {
+    const s = setup({ adapters: trtAdapters(), trtllm: { tags: [{ name: '1.4.0rc0' }, { name: '1.4.0rc1', sizeBytes: 17e9 }, { name: '1.2.1' }] } });
+    expect(await s.updates.labelOf('trtllm-docker')).toBe('TensorRT-LLM (Docker)');
+    expect(await s.updates.labelOf('trtllm-native')).toBe('TensorRT-LLM');
+    const c = await s.updates.check('trtllm-docker');
+    expect(c).toMatchObject({ method: 'docker-tag', state: 'available', current: '1.4.0rc0', latest: '1.4.0rc1', sizeBytes: 17e9, image: `${TRT}:1.4.0rc1` });
+    expect(await s.update('trtllm-docker')).toEqual({ version: '1.4.0rc1' });
+    expect(s.settings().lastEngine).toMatchObject({ kind: 'trtllm-docker', image: `${TRT}:1.4.0rc1` });
+  });
+
+  it('the same tag rebuilt on NGC: pulled again; the same digest: current; NGC silent: current', async () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const images = { [`${TRT}:1.4.0rc0`]: [`${TRT}@${digest}`] };
+    const newer = setup({ adapters: trtAdapters(), images, trtllm: { tags: [{ name: '1.4.0rc0' }], remote: { name: '1.4.0rc0', digest: `sha256:${'b'.repeat(64)}`, sizeBytes: 5 } } });
+    expect(await newer.updates.check('trtllm-docker')).toMatchObject({ method: 'docker-pull', state: 'available', current: '1.4.0rc0', sizeBytes: 5 });
+    const same = setup({ adapters: trtAdapters(), images, trtllm: { tags: [], remote: { name: '1.4.0rc0', digest } } });
+    expect(await same.updates.check('trtllm-docker')).toMatchObject({ state: 'current', current: '1.4.0rc0' });
+    const down = setup({ adapters: trtAdapters(), images, trtllm: { tags: [], remoteFails: true } });
+    expect(await down.updates.check('trtllm-docker')).toMatchObject({ state: 'current' });
+    // Without NGC wired in: like any other registry, it can be pulled again.
+    const none = setup({ adapters: trtAdapters(), images });
+    expect(await none.updates.check('trtllm-docker')).toMatchObject({ state: 'unknown' });
+  });
+
+  it('its Python environment, in WSL: against PyPI, the distro named', async () => {
+    const s = setup({ adapters: trtAdapters(), pypi: { 'tensorrt-llm': { info: { version: '1.2.2' }, urls: [] } } });
+    const c = await s.updates.check('trtllm-native');
+    expect(c).toMatchObject({ method: 'uv', state: 'available', current: '1.2.1', latest: '1.2.2', distro: 'Ubuntu', commands: [['uv', 'pip', 'install', 'tensorrt-llm==1.2.2', '--torch-backend', 'auto']] });
+    expect(s.pypiCalls).toEqual(['tensorrt-llm']);
+    const own = setup({ adapters: trtAdapters(), settings: { lastEngine: { kind: 'trtllm-native', trtllmPath: '/opt/py' } } });
+    expect(await own.updates.check('trtllm-native')).toMatchObject({ state: 'none', reason: 'own-environment' });
+    const linux = setup({ adapters: [adapter('trtllm-native', { status: () => ({ version: '1.2.1' }) })], pypi: { 'tensorrt-llm': { info: { version: '1.2.1' }, urls: [] } } });
+    expect(await linux.updates.check('trtllm-native')).not.toHaveProperty('distro');
   });
 });

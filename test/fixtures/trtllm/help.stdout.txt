@@ -1,0 +1,73 @@
+Usage: trtllm-serve serve [OPTIONS] MODEL
+
+  Running an OpenAI API compatible server
+
+  MODEL: model name | HF checkpoint path
+
+Options:
+  --tokenizer TEXT                [Beta] Path | Name of the tokenizer.
+  --custom_tokenizer TEXT         [Prototype] Custom tokenizer type: alias
+                                  (e.g., 'deepseek_v32') or Python import path
+                                  (e.g., 'tensorrt_llm.tokenizer.deepseek_v32.D
+                                  eepseekV32Tokenizer').
+  --host TEXT                     [Beta] Hostname of the server.
+  --port INTEGER                  [Beta] Port of the server.
+  --backend [pytorch]             [Deprecated] The backend to use to serve the
+                                  model. Default is pytorch backend.
+  --log_level [internal_error|error|warning|info|verbose|debug|trace]
+                                  [Beta] The logging level.
+  --max_beam_width INTEGER        [Beta] Maximum number of beams for beam
+                                  search decoding.
+  --max_batch_size INTEGER        [Beta] Maximum number of requests that the
+                                  engine can schedule.
+  --max_num_tokens INTEGER        [Beta] Maximum number of batched input
+                                  tokens after padding is removed in each
+                                  batch.
+  --max_seq_len INTEGER           [Beta] Maximum total length of one request,
+                                  including prompt and outputs. If
+                                  unspecified, the value is deduced from the
+                                  model config.
+  --tensor_parallel_size, --tp_size INTEGER
+                                  [Beta] Tensor parallelism size.
+  --pipeline_parallel_size, --pp_size INTEGER
+                                  [Beta] Pipeline parallelism size.
+  --context_parallel_size, --cp_size INTEGER
+                                  [Beta] Context parallelism size.
+  --moe_expert_parallel_size, --ep_size INTEGER
+                                  [Beta] Expert parallelism size
+  --gpus_per_node INTEGER         [Beta] Number of GPUs per node. Default to
+                                  None, and it will be detected automatically.
+  --kv_cache_free_gpu_memory_fraction, --free_gpu_memory_fraction FLOAT
+                                  [Beta] Free GPU memory fraction reserved for
+                                  KV Cache, after allocating model weights and
+                                  buffers.
+  --kv_cache_dtype [auto|fp8|nvfp4]
+                                  [Prototype] KV cache quantization dtype.
+                                  'auto' uses checkpoint/model metadata.
+  --num_postprocess_workers INTEGER
+                                  [Prototype] Number of workers to
+                                  postprocess raw responses to comply with
+                                  OpenAI protocol.
+  --trust_remote_code             [Beta] Flag for HF transformers.
+  --hf_revision, --revision TEXT  [Beta] The revision to use for the
+                                  HuggingFace model (branch name, tag name, or
+                                  commit id).
+  --config, --extra_llm_api_options TEXT
+                                  [Prototype] Path to a YAML file that
+                                  overwrites the parameters specified by
+                                  trtllm-serve.
+  --set TEXT                      [Prototype] Override a config field,
+                                  repeatable: --set PATH=YAML_VALUE.
+  --reasoning_parser [auto|deepseek-r1|qwen3|nemotron-v3]
+                                  [Prototype] Specify the parser for reasoning
+                                  models.
+  --tool_parser [auto|qwen3|qwen3_coder|deepseek_v3|kimi_k2]
+                                  [Prototype] Specify the parser for tool
+                                  models.
+  --served_model_name TEXT        [Prototype] The model name used in the API.
+                                  If not specified, the model path is used.
+  --chat_template TEXT            [Prototype] Specify a custom chat template.
+  --enable_chunked_prefill        [Prototype] Enable chunked prefill
+  --enable_attention_dp           [Beta] Enable attention data parallel.
+  --telemetry / --no-telemetry    [Beta] Send anonymous usage data.
+  --help                          Show this message and exit.

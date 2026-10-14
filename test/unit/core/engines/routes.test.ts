@@ -267,3 +267,32 @@ describe('engines routes', () => {
     expect(events.at(-1)).toMatchObject({ stage: 'error', error: { code: 'CANCELLED' } });
   });
 });
+
+describe('TensorRT-LLM routes', () => {
+  it('GET /api/engines/trtllm/tags (refresh passed on), refused when not wired', async () => {
+    const tags = vi.fn(async () => [{ name: '1.4.0rc0' }]);
+    const { app } = setup({}, { trtllm: { tags } });
+    expect(await (await app.request('/api/engines/trtllm/tags?refresh=1')).json()).toEqual([{ name: '1.4.0rc0' }]);
+    expect(tags).toHaveBeenCalledWith({ refresh: true });
+    expect((await setup().app.request('/api/engines/trtllm/tags')).status).toBe(400);
+  });
+
+  it('DELETE /api/engines/:kind/install removes with the saved configuration; refused while busy or when not removable', async () => {
+    const removed: unknown[] = [];
+    const trt: EngineAdapter = { ...fakeAdapter('trtllm-docker', async () => ({ kind: 'trtllm-docker', available: true, installed: true, problems: [], supported: true })), remove: async (cfg) => void removed.push(cfg) };
+    let busy = false;
+    const registry = new EngineRegistry([trt]);
+    const s = setup({}, { registry, busy: () => busy, configs: async () => ({ 'trtllm-docker': { kind: 'trtllm-docker', image: 'nvcr.io/nvidia/tensorrt-llm/release:1.2.1' } }) });
+    const res = await s.app.request('/api/engines/trtllm-docker/install', { method: 'DELETE' });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(removed).toEqual([{ kind: 'trtllm-docker', image: 'nvcr.io/nvidia/tensorrt-llm/release:1.2.1' }]);
+    busy = true;
+    expect(await (await s.app.request('/api/engines/trtllm-docker/install', { method: 'DELETE' })).json()).toMatchObject({ error: { code: 'VALIDATION', params: { reason: 'busy' } } });
+    expect((await s.app.request('/api/engines/vllm-docker/install', { method: 'DELETE' })).status).toBe(400);
+    expect((await s.app.request('/api/engines/nope/install', { method: 'DELETE' })).status).toBe(400);
+    // No saved configurations, no busy check: the kind alone.
+    const plain = setup({}, { registry });
+    await plain.app.request('/api/engines/trtllm-docker/install', { method: 'DELETE' });
+    expect(removed.at(-1)).toEqual({ kind: 'trtllm-docker' });
+  });
+});

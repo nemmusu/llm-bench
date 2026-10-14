@@ -123,3 +123,11 @@ describe('Preparati da LLM Bench', () => {
     expect(screen.getByText(/^Dalla tua «Trova le impostazioni migliori» del [^,]*\.$/)).toBeTruthy();
   });
 });
+
+describe('LaunchFields of TensorRT-LLM', () => {
+  it('shows its shared fields until its own panel words them', () => {
+    renderUi(<LaunchFields base="trtllm" form={form()} invalid={[]} onForm={() => undefined} use="test" />);
+    expect(screen.getByLabelText('Tipo di cache KV')).toBeTruthy();
+    expect(screen.queryByLabelText('Token previsti per passo')).toBeNull();
+  });
+});
