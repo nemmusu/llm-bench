@@ -107,13 +107,12 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario ?? info?.scenario;
   // A tune run's shape: from its request, else (a reopened screen) from its live search.
   const asked = ctx?.request.tune;
-  const shape: TuneShape = {
-    goal: asked?.goal ?? live.tuning?.goal,
-    budget: asked?.budget ?? live.tuning?.budget,
-    usersMode: asked?.usersMode ?? live.tuning?.multi?.usersMode,
-  };
-  const phases = relevantPhases(scenario, ctx?.pre, { fidelity: asked?.fidelity === true || live.phase === 'fidelity', tune: shape });
-  const words = (p: RunPhase) => phaseKey(p, scenario?.profile === 'tune' ? shape : undefined);
+  const goal = asked?.goal ?? live.tuning?.goal;
+  const budget = asked?.budget ?? live.tuning?.budget;
+  const usersMode = asked?.usersMode ?? live.tuning?.multi?.usersMode;
+  const isTune = scenario?.profile === 'tune';
+  const phases = relevantPhases(scenario, ctx?.pre, { fidelity: asked?.fidelity === true || live.phase === 'fidelity', tune: { goal, budget, usersMode } });
+  const words = useCallback((p: RunPhase) => phaseKey(p, isTune ? ({ goal, budget, usersMode } satisfies TuneShape) : undefined), [isTune, goal, budget, usersMode]);
   const current: RunPhase = displayPhase(live.phase, live.detail);
   const tune = scenario?.profile === 'tune';
   const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
