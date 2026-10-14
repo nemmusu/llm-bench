@@ -48,6 +48,12 @@ describe('useConfigLabel', () => {
     ).toEqual(['Contesto 16.384', 'cache KV fp8', 'batch 8192 token', '8 slot paralleli', 'memoria GPU 80%', 'modalità eager', 'decodifica speculativa (ngram)']);
   });
 
+  it('says reasoning and images switched off (on is the default: nothing said)', () => {
+    expect(launchLabelOf(P({ contextSize: 4096, reasoning: false, vision: false }), 'llamacpp-native', it_).parts).toEqual(['Contesto 4.096', 'cache KV f16', 'senza ragionamento', 'senza immagini']);
+    expect(launchLabelOf(P({ contextSize: 4096, reasoning: false }), 'llamacpp-native', en).parts).toEqual(['Context 4,096', 'KV cache f16', 'no reasoning']);
+    expect(launchLabelOf(P({ contextSize: 4096, reasoning: true, vision: true }), 'llamacpp-native', it_).parts).toEqual(['Contesto 4.096', 'cache KV f16']);
+  });
+
   it('leaves the context out for a table with its own column', () => {
     expect(configLabelOf('llamacpp-native', { contextSize: 8192, other: [] }, it_, { context: false }).text).toBe('Cache KV f16');
     // An external server: nothing known, nothing said.

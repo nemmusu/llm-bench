@@ -1848,6 +1848,8 @@ export const it = {
       cpuMoeAll: 'esperti MoE sulla CPU',
       offload: 'parte sulla CPU',
       eager: 'modalità eager',
+      reasoningOff: 'senza ragionamento',
+      visionOff: 'senza immagini',
       speculative: 'decodifica speculativa',
       speculativeWith: 'decodifica speculativa ({name})',
       yarn: 'YaRN ×{factor} (da {orig})',

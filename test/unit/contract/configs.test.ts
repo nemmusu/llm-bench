@@ -71,6 +71,28 @@ describe('configuration settings from a launch', () => {
     expect(llama(['-c', 'big']).contextSize).toBeUndefined();
   });
 
+  it('reasoning and images switched off are configurations of their own, however each engine says it', () => {
+    const of = (engineKind: Parameters<typeof configParamsOf>[0]['engineKind'], args: string[], params: Partial<LaunchParams> = {}) =>
+      configParamsOf({ engineKind, argv: ['llama-server', '-m', 'm.gguf', ...args], params: P(params) });
+    for (const args of [['--reasoning', 'off'], ['-rea', 'off'], ['--reasoning-budget', '0'], ['--chat-template-kwargs', '{"enable_thinking": false}']]) {
+      expect(of('llamacpp-native', args)).toMatchObject({ reasoningOff: true, other: [] });
+    }
+    // On, or any other value: the default, or a setting as written.
+    expect(of('llamacpp-native', ['--reasoning', 'auto', '--reasoning-budget', '-1'])).toEqual({ other: [] });
+    expect(of('llamacpp-native', ['--reasoning', 'sometimes', '--reasoning-budget', '512', '--chat-template-kwargs', '{"b":1, "a":2}']).other).toEqual([
+      '--chat-template-kwargs {"a":2,"b":1}',
+      '--reasoning sometimes',
+      '--reasoning-budget 512',
+    ]);
+    expect(of('vllm-docker', ['--default-chat-template-kwargs', '{"enable_thinking":false}', '--limit-mm-per-prompt', '{"image":0,"video":0}'])).toMatchObject({ reasoningOff: true, visionOff: true });
+    expect(of('vllm-docker', ['--limit-mm-per-prompt', '{"image":4}']).other).toEqual(['--limit-mm-per-prompt {"image":4}']);
+    // The launch settings say it too (llama.cpp vision off loads no projector: nothing in the command).
+    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ reasoning: false, vision: false }) })).toMatchObject({ reasoningOff: true, visionOff: true });
+    expect(configParamsOf({ engineKind: 'external', params: P({ reasoning: false }) })).toMatchObject({ reasoningOff: true });
+    expect(configParamsOf({ engineKind: 'command', params: P({ reasoning: false, vision: false }) })).toMatchObject({ reasoningOff: true, visionOff: true });
+    expect(configParamsOf({ engineKind: 'llamacpp-native', params: P({ reasoning: true, vision: true }) })).not.toHaveProperty('reasoningOff');
+  });
+
   it('reads flash attention as a switch or with a value', () => {
     expect(llama(['-fa']).flashAttention).toBe('on');
     expect(llama(['-fa', '-c', '1024']).flashAttention).toBe('on');

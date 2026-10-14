@@ -79,6 +79,8 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   if (p.threads !== undefined) parts.push(t('result.launch.threads', { n: p.threads }));
   if (p.gpuMemoryUtilization !== undefined) parts.push(t('result.launch.gpuMemory', { pct: f.percent(p.gpuMemoryUtilization, 0) }));
   if (p.enforceEager) parts.push(t('result.launch.eager'));
+  if (p.reasoningOff) parts.push(t('result.launch.reasoningOff'));
+  if (p.visionOff) parts.push(t('result.launch.visionOff'));
   const spec = speculativeName(p);
   if (spec) parts.push(t('result.launch.speculativeWith', { name: spec }));
   else if (p.speculative !== undefined || p.draftMax !== undefined) parts.push(t('result.launch.speculative'));

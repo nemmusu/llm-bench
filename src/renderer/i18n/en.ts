@@ -1843,6 +1843,8 @@ export const en: Messages = {
       cpuMoeAll: 'MoE experts on the CPU',
       offload: 'partly on the CPU',
       eager: 'eager mode',
+      reasoningOff: 'no reasoning',
+      visionOff: 'no images',
       speculative: 'speculative decoding',
       speculativeWith: 'speculative decoding ({name})',
       yarn: 'YaRN ×{factor} (from {orig})',

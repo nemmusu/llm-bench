@@ -89,6 +89,13 @@ export const configParamsSchema = z.object({
   maxNumBatchedTokens: z.number().int().positive().optional(),
   gpuMemoryUtilization: z.number().optional(),
   enforceEager: z.boolean().optional(),
+  /**
+   * Reasoning / image input switched off (LaunchParams.reasoning / vision false, or the flags that do it:
+   * --reasoning off, --reasoning-budget 0, enable_thinking false in the template kwargs, NInfer
+   * --no-thinking; vLLM --limit-mm-per-prompt with no images). Absent = on (the default).
+   */
+  reasoningOff: z.literal(true).optional(),
+  visionOff: z.literal(true).optional(),
   /** vLLM --block-size (16, its CUDA default, is dropped). */
   blockSize: z.number().int().positive().optional(),
   /** vLLM CUDA graph capture sizes (--cuda-graph-sizes, or cudagraph_capture_sizes of --compilation-config), ascending. */
@@ -235,6 +242,23 @@ add(['--max-num-batched-tokens', '--chunked-prefill-size'], (r, v) => {
 add(['--gpu-memory-utilization', '--mem-fraction-static'], (r, v) => {
   r.gpuMemoryUtilization = num(v[0]) ?? r.gpuMemoryUtilization;
 });
+// Reasoning and image input switched off (engines/shared/reasoning-vision.ts writes these).
+add(['--reasoning', '-rea'], (r, v) => {
+  if (v[0] === 'off') r.reasoningOff = true;
+  else if (v[0] !== 'on' && v[0] !== 'auto') r.other.add(['--reasoning', ...v].join(' '));
+});
+add(['--reasoning-budget'], (r, v) => {
+  if (v[0] === '0') r.reasoningOff = true;
+  else if (v[0] !== '-1') r.other.add(['--reasoning-budget', ...v].join(' '));
+});
+add(['--chat-template-kwargs', '--default-chat-template-kwargs'], (r, v, flag) => {
+  if (/"enable_thinking"\s*:\s*false/.test(v.join(' '))) r.reasoningOff = true;
+  else r.other.add([flag, canonicalJson(v.join(' '))].join(' '));
+});
+add(['--limit-mm-per-prompt'], (r, v, flag) => {
+  if (/"image"\s*:\s*0\b/.test(v.join(' '))) r.visionOff = true;
+  else r.other.add([flag, canonicalJson(v.join(' '))].join(' '));
+});
 add(['--cache-reuse'], (r, v) => {
   const n = int(v[0]);
   if (n !== undefined && n >= 0) r.cacheReuse = n;
@@ -342,6 +366,7 @@ const BOOLEAN_FLAGS = new Map<string, (raw: Raw) => void>([
   ['--cpu-moe', (r) => (r.cpuMoe = 'all')],
   ['-cmoe', (r) => (r.cpuMoe = 'all')],
   ['--lm-head-draft', (r) => (r.lmHeadDraft = true)],
+  ['--no-thinking', (r) => (r.reasoningOff = true)],
 ]);
 
 /** Identity, network, paths, seeds and logging: never part of a configuration. Values are skipped. */
@@ -394,10 +419,9 @@ const IGNORED_SWITCH = new Set([
   '--disable-uvicorn-access-log',
   '--enable-log-requests',
   '--no-enable-log-requests',
-  // NInfer: benchmarks always read every prompt in full and answer without thinking (servers keep
-  // both): how a test is run, not a different configuration.
+  // NInfer: benchmarks always read every prompt in full (servers keep it on): how a test is run, not a
+  // different configuration (--no-thinking is: reasoning off, see reasoningOff).
   '--no-prefix-reuse',
-  '--no-thinking',
   '--preserve-thinking',
 ]);
 /** `docker run` flags, for a Docker command whose image cannot be found in the argv. */
@@ -499,6 +523,8 @@ function fromCommandParams(p: LaunchParams, raw: Raw): void {
   if (p.ubatchSize !== undefined) raw.ubatchSize = p.ubatchSize;
   if (p.gpuLayers !== undefined) raw.gpuLayers = p.gpuLayers;
   if (p.parallel !== undefined) raw.parallel = p.parallel;
+  if (p.reasoning === false) raw.reasoningOff = true;
+  if (p.vision === false) raw.visionOff = true;
 }
 
 /** The settings of the launch params themselves (what each engine family reads), then their extra arguments. */
@@ -507,6 +533,7 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw, kind?: Engi
     fromCommandParams(p, raw);
     return;
   }
+  if (p.reasoning === false) raw.reasoningOff = true;
   if (family === 'external') return;
   if (p.ropeScaling) raw.rope = { ...p.ropeScaling };
   if (family === 'vllm') {
@@ -526,6 +553,7 @@ function fromParams(family: EngineFamily, p: LaunchParams, raw: Raw, kind?: Engi
     if (p.threads !== undefined) raw.threads = p.threads;
   }
   if (p.parallel !== undefined) raw.parallel = p.parallel;
+  if (p.vision === false) raw.visionOff = true;
   if (p.ninfer) parseArgs(ninferFlags(p.ninfer), raw);
   parseArgs(p.extraArgs, raw);
 }
@@ -593,6 +621,8 @@ function normalize(family: EngineFamily, raw: Raw, input: LaunchInput, unifiedBy
   if (raw.maxNumBatchedTokens !== undefined) out.maxNumBatchedTokens = raw.maxNumBatchedTokens;
   if (raw.gpuMemoryUtilization !== undefined && raw.gpuMemoryUtilization !== VLLM_DEFAULTS.gpuMemoryUtilization) out.gpuMemoryUtilization = raw.gpuMemoryUtilization;
   if (raw.enforceEager === true) out.enforceEager = true;
+  if (raw.reasoningOff === true) out.reasoningOff = true;
+  if (raw.visionOff === true) out.visionOff = true;
   if (raw.blockSize !== undefined && raw.blockSize !== VLLM_DEFAULTS.blockSize) out.blockSize = raw.blockSize;
   if (raw.cudaGraphSizes !== undefined) out.cudaGraphSizes = [...new Set(raw.cudaGraphSizes)].sort((a, b) => a - b);
   if (raw.dtype !== undefined && raw.dtype !== 'auto') out.dtype = raw.dtype;

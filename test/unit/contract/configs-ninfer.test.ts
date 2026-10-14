@@ -50,6 +50,8 @@ describe('configurations of NInfer', () => {
       cacheTypeV: 'int8',
       parallel: 2,
       speculative: '{"lm_head_draft":true,"method":"mtp","num_speculative_tokens":3}',
+      // --no-thinking: reasoning off, a configuration of its own.
+      reasoningOff: true,
       // 2 users × 65 536: the pool their contexts need, implied by them (not an extra argument).
       other: ['--vision'],
     });
@@ -72,7 +74,7 @@ describe('configurations of NInfer', () => {
   });
 
   it('says the same from the launch settings alone (a server made from the same preset)', () => {
-    const params = P({ contextSize: 65_536, parallel: 2, ninfer: { kvCapacity: 131_072, kvDtype: 'int8', spec: 'mtp', draftTokens: 3, lmHeadDraft: true, vision: true } });
+    const params = P({ contextSize: 65_536, parallel: 2, ninfer: { kvCapacity: 131_072, kvDtype: 'int8', spec: 'mtp', draftTokens: 3, lmHeadDraft: true, vision: true, thinking: false } });
     expect(configParamsOf({ engineKind: 'ninfer-native', params })).toEqual(configParamsOf({ engineKind: 'ninfer-wsl', argv: WSL_ARGV, params }));
   });
 
