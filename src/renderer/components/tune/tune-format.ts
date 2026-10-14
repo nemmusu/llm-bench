@@ -125,8 +125,6 @@ export function speedSentence(tuning: Pick<Tuning, 'combinations' | 'fastestByDe
   return `${f.t('tune.summary.atMaxNone', { ctx })} ${f.t(below.of > 1 ? 'tune.summary.belowMax' : 'tune.summary.belowMaxOne', params)}`;
 }
 
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-
 /**
  * Short names that tell the measured combinations apart, for a sentence: their settings without the
  * parts every one of them shares ("cache KV q8_0" rather than "Cache KV q8_0 · flash attention · ub 2048").
@@ -135,7 +133,7 @@ export function distinctNames(tuning: Pick<Tuning, 'combinations'>, engineKind: 
   const parts = new Map(
     measuredCombinations(tuning).map((i) => {
       const c = tuning.combinations[i]!;
-      return [i, label(c.params, engineKind, { context: false, tags: c.tags }).parts.map(lowerFirst)] as const;
+      return [i, label(c.params, engineKind, { context: false, tags: c.tags, capitalize: false }).parts] as const;
     }),
   );
   const lists = [...parts.values()];

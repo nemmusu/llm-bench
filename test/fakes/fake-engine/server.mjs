@@ -13,6 +13,7 @@ import * as L from './logs.mjs';
  * @property {number} [loadMsWarm]      Load time otherwise (default 300).
  * @property {number} [prefillTps]      Prompt tokens per second (default 4000).
  * @property {number} [decodeTps]       Generated tokens per second, single request (default 120).
+ * @property {Partial<FakeProfile>} [warm] Replaces these fields on every launch after the cold one (FAKE_ENGINE_COLD_MARKER).
  * @property {number} [tokensPerChunk]  Tokens per streamed chunk (default 1; >1 mimics MTP/speculative).
  * @property {number} [timeScale]       Multiplies every delay (default 1).
  * @property {boolean} [oomAtLoad]      Print CUDA OOM lines while loading weights and exit 1.
@@ -261,7 +262,9 @@ export async function startFakeEngine(o = {}) {
   const flavor = o.flavor ?? 'llamacpp';
   /** SGLang serves the OpenAI API like vLLM: same memory model, prefix cache (token-exact) and routes. */
   const openai = flavor === 'vllm' || flavor === 'sglang';
-  const p = o.profile ?? {};
+  const cold = o.coldMarker !== undefined && existsSync(o.coldMarker);
+  // `warm` replaces the profile's own speeds on every launch after the cold one (an engine that slows down once a search is under way).
+  const p = !cold && o.profile?.warm ? { ...o.profile, ...o.profile.warm } : (o.profile ?? {});
   const scale = p.timeScale ?? 1;
   const log = o.log ?? (() => {});
   const out = (lines) => lines.forEach((l) => log(l));
@@ -749,7 +752,6 @@ export async function startFakeEngine(o = {}) {
     gpu.release();
   }
 
-  const cold = o.coldMarker !== undefined && existsSync(o.coldMarker);
   const loadMs = (cold ? (p.loadMsCold ?? 1200) : (p.loadMsWarm ?? 300)) * scale;
 
   async function loadLlama() {

@@ -93,8 +93,10 @@ test('a run that spills into shared memory says so, and its quick fixes run it a
 });
 
 test('a search that runs out of time keeps what it measured: partial combinations, a recommendation, a preset', async () => {
-  // Generation far slower than its forecast expects: the search's own time limit ends it early.
-  const gb = await withModel('Qwen3-16K-Q4_K_M.gguf', { name: 'Qwen3 16K', sizeLabel: '0.6B', layers: 4, ctx: 16_384 }, TUNE_SLOW_PROFILE);
+  // The first launch fast, then prompt reading far slower than the limit set from it: the search's own time limit ends it early.
+  const cold = path.join(mkdtempSync(path.join(os.tmpdir(), 'gpubench-e2e-cold-')), 'cold');
+  writeFileSync(cold, '');
+  const gb = await withModel('Qwen3-16K-Q4_K_M.gguf', { name: 'Qwen3 16K', sizeLabel: '0.6B', layers: 4, ctx: 16_384 }, TUNE_SLOW_PROFILE, { FAKE_ENGINE_COLD_MARKER: cold });
   try {
     const { page } = gb;
     await skipWelcome(page);
@@ -109,7 +111,8 @@ test('a search that runs out of time keeps what it measured: partial combination
     await expect(page.getByText(/Le combinazioni «misurate in parte» hanno i numeri presi fin lì/)).toBeVisible();
     const recommended = page.getByRole('region', { name: 'Combinazione consigliata' });
     await expect(recommended).toBeVisible();
-    await expect(recommended.getByText('Misurata in parte (tempo finito)')).toBeVisible();    await scan(page, 'tune result cut by its time limit');
+    await expect(recommended.getByText('Misurata in parte (tempo finito)')).toBeVisible();
+    await scan(page, 'tune result cut by its time limit');
 
     // The header's preset is the recommended combination: back on Benchmark with its settings.
     // (The header's group comes first; every ranking row has its own.)

@@ -96,13 +96,14 @@ export const SPILL_PROFILE = {
 };
 
 /**
- * "Trova le impostazioni migliori" that runs out of time: TUNE_PROFILE's memory, but generation at
- * 20 tok/s (a 128-token answer takes 6.4 s), 15× slower than the forecast expects for a file this small
- * (300 tok/s). With a 16K test model the search's own limit (its forecast × 1.5, at least a minute: about
- * 1 min 40 s) ends it during the first screenings: what was measured becomes combinations "misurate in
- * parte" (the screening's 1K, 4K… points, not the whole sweep).
+ * "Trova le impostazioni migliori" that runs out of time: TUNE_PROFILE, but every launch after the
+ * first (the cold one: FAKE_ENGINE_COLD_MARKER) reads prompts at 1 500 tok/s instead of 200 000, so a
+ * 16K prompt takes ~13 s. The search sets its time limit again with the first launch's speeds (fast:
+ * the minimum, a minute), then its screenings run far slower than that: the limit ends it during the
+ * first screenings and what was measured becomes combinations "misurate in parte". Generation stays as
+ * fast (a slower one would read as a spill), and every request stays well within its deadline.
  */
-export const TUNE_SLOW_PROFILE = { ...TUNE_PROFILE, decodeTps: 20, tokensPerChunk: 1 };
+export const TUNE_SLOW_PROFILE = { ...TUNE_PROFILE, warm: { prefillTps: 1500 } };
 
 /**
  * "Trova le impostazioni migliori" meets the borderline spill of the bug report (RTX 5090 32 GB, a 27B

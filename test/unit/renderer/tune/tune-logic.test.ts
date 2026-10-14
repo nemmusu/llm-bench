@@ -165,6 +165,10 @@ describe('summary from the numbers', () => {
     expect(speedLead(t)).toMatchObject({ context: 64 * K, full: { row: { index: 2 }, of: 3 } });
     expect(speedSentence(t, 'llamacpp-native', label, f)).toBe('Al contesto massimo (64K) la più veloce a scrivere è cache KV q4_0 · ub 2048 · b 4096: 60,0 tok/s.');
     expect(speedSentence({ combinations: [], fastestByDepth: [] }, 'llamacpp-native', label, f)).toBeUndefined();
+    // Acronyms keep their case inside a sentence ("KV cache", never "kV cache").
+    const en = createFormatters('en');
+    const labelEn = (p: LaunchParams, k: Parameters<typeof launchLabelOf>[1], o?: Parameters<typeof launchLabelOf>[3]) => launchLabelOf(p, k, en, o);
+    expect(speedSentence(t, 'llamacpp-native', labelEn, en)).toContain('KV cache q4_0');
     // One combination with the largest context: nothing to compare it with, its whole settings.
     const two = { combinations: [t.combinations[0]!, t.combinations[1]!], fastestByDepth: [] };
     expect(speedSentence(two, 'llamacpp-native', label, f)).toBe('Al contesto massimo (32K) cache KV q8_0 scrive a 72,0 tok/s.');
