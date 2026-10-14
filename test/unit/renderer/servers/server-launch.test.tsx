@@ -38,13 +38,13 @@ describe('Avvia un server: the launch fields', () => {
     await openFlow(api);
     // "Scelte da LLM Bench" for a server says what a server gets; vision is said (NInfer starts without it).
     await userEvent.click(screen.getByRole('tab', { name: 'I tuoi preset' }));
-    await userEvent.click(screen.getByRole('radio', { name: 'Scelte da LLM Bench' }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Scelte da LLM Bench' }, { timeout: 5000 }));
     expect(screen.getByText(/^NInfer così com’è/)).toBeTruthy();
     await waitFor(() => expect(lastPlan(api).params).toEqual({ extraArgs: [], env: {}, ninfer: { vision: true } }), { timeout: 5000 });
-    await userEvent.click(screen.getByRole('switch', { name: 'Immagini' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Immagini' }, { timeout: 5000 }));
     await waitFor(() => expect(lastPlan(api).params).toEqual({ extraArgs: [], env: {}, ninfer: { vision: false } }), { timeout: 5000 });
     await userEvent.click(screen.getByRole('tab', { name: 'Comandi personalizzati' }));
-    expect(screen.getByText('--max-concurrency')).toBeTruthy();
+    expect(await screen.findByText('--max-concurrency', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.queryByText('Contesto oltre il limite del modello (YaRN)')).toBeNull();
     const reuse = screen.getByRole('combobox', { name: 'Riusa il testo già letto' });
     reuse.focus();
