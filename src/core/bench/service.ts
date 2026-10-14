@@ -35,7 +35,7 @@ import {
   type ScenarioWarning,
 } from './scenarios';
 import { loadScoreReference } from './score';
-import { cpuOffloaded, normalDecode, spillPossible, type NormalDecode } from './spill';
+import { cpuOffloaded, normalDecode, shortContext, spillPossible, type NormalDecode } from './spill';
 import { tuneTime } from './tune-run';
 import { buildTuneSetup, latestTuneRun, recheckInputOf, recheckSource, tuneGoalOf, tunedServerParams, type TuneSetupDeps } from './tune-setup';
 import { BUDGETS, type TunerInput } from './tuner';
@@ -466,13 +466,13 @@ export class BenchService {
     return this.deps.runs.tried({ ...(id.sha256 ? { sha256: id.sha256 } : {}), weakKey: id.weakKey }, here);
   }
 
-  /** Speeds from the latest completed run of this model on this PC that did not spill, to estimate durations. */
+  /** Speeds from the latest completed run of this model on this PC that did not spill (measured on a short context), to estimate durations. */
   private async expectations(model: ModelTarget): Promise<Partial<Expectations>> {
     try {
       const here = await this.here();
       const id = model.identity;
       const past = (await this.triedHere(id, here)).find(
-        (r) => r.status === 'completed' && r.hostId === here.hostId && !spilledRun(r),
+        (r) => r.status === 'completed' && r.hostId === here.hostId && !spilledRun(r) && shortContext(r),
       );
       if (!past) return {};
       return {

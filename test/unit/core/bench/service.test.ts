@@ -369,6 +369,12 @@ describe('BenchService.plan', () => {
     bare.metrics = { ...bare.metrics, latency: [], load: { phases: [] } };
     await t.runs.save(bare);
     expect((await new BenchService(t.deps).plan(request({ profile: 'standard' }))).estimatedSeconds).toBe(before);
+    // Speeds read with the context full (a one-user tune: 64K and more) are no usual speed.
+    const u = serviceSetup(tmp);
+    const deep = makeRun({ id: 'deep' });
+    deep.metrics = { ...deep.metrics, latency: deep.metrics.latency.map((p) => ({ ...p, promptTokens: 65_536 })) };
+    await u.runs.save(deep);
+    expect((await new BenchService(u.deps).plan(request({ profile: 'standard' }))).estimatedSeconds).toBe(before);
   });
 
   it('past results are matched by sha256 when the model has one', async () => {

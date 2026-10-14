@@ -116,6 +116,14 @@ const median = (xs: readonly number[]): number => {
 };
 
 /**
+ * The run's headline generation was measured on a short context (≤ SHALLOW_DEPTH): a one-user tune
+ * reads its speeds with the context full (256K writes much slower), never a usual speed to compare with.
+ */
+export function shortContext(r: Pick<RunSummary, 'decodeTokens'>): boolean {
+  return r.decodeTokens === undefined || r.decodeTokens <= SHALLOW_DEPTH;
+}
+
+/**
  * Median generation speed of the NORMAL_RUNS newest completed runs of this model (the list RunsRepo.tried
  * gives) with this engine kind on this PC and card that did not spill; undefined when there is none.
  */
@@ -126,6 +134,7 @@ export function normalDecode(runs: readonly RunSummary[], here: SpillHere, kind:
         r.status === 'completed' &&
         !spilledRun(r) &&
         r.decodeTps !== undefined &&
+        shortContext(r) &&
         r.engineKind === kind &&
         r.hostId === here.hostId &&
         (!here.gpuUuid || !r.gpuUuid || r.gpuUuid === here.gpuUuid),

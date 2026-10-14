@@ -108,6 +108,8 @@ describe('the usual generation speed (earlier runs that did not spill)', () => {
       summary({ id: 'other-pc', hostId: 'h2', decodeTps: 1 }),
       summary({ id: 'other-card', gpuUuid: 'GPU-2', decodeTps: 1 }),
       summary({ id: 'none', decodeTps: undefined }),
+      // A one-user tune: its speeds are read with the context full (256K), not a usual speed.
+      summary({ id: 'tune', decodeTps: 30, decodeTokens: 262_144, speedBasis: 'depth' }),
     ];
     expect(normalDecode(runs, here, 'llamacpp-native')).toEqual({ tps: 54, runIds: ['b', 'c', 'a'] });
     expect(normalDecode(runs.slice(0, 2), here, 'llamacpp-native')).toEqual({ tps: 52, runIds: ['b', 'a'] });
