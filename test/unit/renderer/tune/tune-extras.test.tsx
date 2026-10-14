@@ -59,8 +59,8 @@ describe('results list', () => {
     // (twice: in the date column, and under the model where a small window shows it).
     const [search, small] = await screen.findAllByTitle('Trova le impostazioni migliori · 6 combinazioni');
     expect(small!.textContent).toMatch(/^\d+ \w+ 2026, \d\d:\d\d · Impostazioni migliori/);
-    expect(search.textContent).toMatch(/^Impostazioni migliori( · [\d.]+ punti)?$/);
-    expect(within(search.closest('tr')!).getByText('cache q4_0')).toBeTruthy();
+    expect(search!.textContent).toMatch(/^Impostazioni migliori( · [\d.]+ punti)?$/);
+    expect(within(search!.closest('tr')!).getByText('cache q4_0')).toBeTruthy();
     expect(screen.getAllByTitle('Trova le impostazioni migliori · 1 combinazione')).toHaveLength(2);
   });
 });

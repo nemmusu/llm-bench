@@ -17,6 +17,7 @@ import {
   engineBase,
   fullDepth,
   itemOf,
+  itemShortName,
   leadSentences,
   maxChoice,
   missingSpeed,
@@ -193,7 +194,11 @@ describe('"Contesto massimo": each at its own largest context, full', () => {
     const mixed = compareRows([list[0]!, itemOf(seeded(IDS.moe))], 512, it_);
     expect(row(mixed, 'precise').missing).toEqual([undefined, 'un test, non una ricerca']);
     expect(row(mixed, 'writeFull').missing).toEqual([undefined, 'non misurata a 8K: misurata solo fino a 4K']);
-    expect(row(compareRows(list, AT_MAX, en), 'precise').notes[0]).toBe('KV cache auto · combination 2');
+    expect(row(compareRows(list, AT_MAX, en), 'precise').notes?.[0]).toBe('KV cache auto · combination 2');
+    // Token counts in each language; chart legends short enough to fit.
+    expect(row(compareRows(list, AT_MAX, en), 'maxContext').format(212_992)).toBe('212,992 tokens');
+    expect(itemShortName(list[0]!, 0)).toBe('A · nvidia/Qwen3.8-27B-NVFP4');
+    expect(itemShortName(list[2]!, 2)).toBe('C · Qwopus3.8-27B-Flash-V2-…');
   });
 
   it('the sheet says the context of every number at "Contesto massimo", and why one is missing', () => {

@@ -123,9 +123,13 @@ export function itemName(item: Pick<CompareItem, 'run'>, i: number): string {
   return `${LETTERS[i]} · ${modelLabelOf(item.run.model)}`;
 }
 
-/** "A · Qwen3 8B": short enough for a chart legend. */
+/** Longest model name in a chart legend: four of them fit side by side in half a 1366 px window. */
+export const LEGEND_NAME = 24;
+
+/** "A · Qwen3 8B": short enough for a chart legend (a longer name ends with "…"; the cards above say it whole). */
 export function itemShortName(item: Pick<CompareItem, 'run'>, i: number): string {
-  return `${LETTERS[i]} · ${item.run.model.displayName}`;
+  const name = item.run.model.displayName;
+  return `${LETTERS[i]} · ${name.length > LEGEND_NAME ? `${name.slice(0, LEGEND_NAME - 1)}…` : name}`;
 }
 
 /**
@@ -468,7 +472,7 @@ export function compareRows(items: readonly CompareItem[], at: CompareAt | undef
       values: items.map((it) => it.maxContext),
       higherIsBetter: true,
       kind: 'amount',
-      format: (v) => `${integer(v)} token`,
+      format: (v) => t('speedAt.tokens', { n: integer(v) }),
       // The largest that fits is something a search found; a run's context is just how it was started.
       plain: !allCombos,
     },
@@ -493,7 +497,7 @@ export function compareRows(items: readonly CompareItem[], at: CompareAt | undef
       values: items.map((it) => it.kvTokens),
       higherIsBetter: true,
       kind: 'amount',
-      format: (v) => `${integer(v)} token`,
+      format: (v) => t('speedAt.tokens', { n: integer(v) }),
       // Only some engines say it, each its own way: ranked only between numbers of the same engine.
       plain: new Set(items.flatMap((it) => (it.kvTokens === undefined ? [] : [engineBase(it.run)]))).size > 1,
       missing: items.map((it) => (it.kvTokens === undefined ? t('compare.notReported') : undefined)),

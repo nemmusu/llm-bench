@@ -142,7 +142,7 @@ export function ResultsPage() {
             <span className="xl:hidden"> · {t('results.columns.date')}</span>
           </>
         ),
-        meta: { fill: true, className: 'min-w-40 py-1.5 2xl:min-w-48' },
+        meta: { fill: true, className: 'min-w-36 py-1.5 xl:min-w-40 2xl:min-w-48' },
         cell: (c) => {
           const r = c.row.original;
           const quant = r.quant && !c.getValue().includes(r.quant) ? r.quant : undefined;
