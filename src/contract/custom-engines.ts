@@ -583,6 +583,11 @@ export const customEngineCheckSchema = z.object({
   placeholders: z.array(z.string()).optional(),
   /** NInfer variants: the --kv-dtype values its --help lists (the official ones and its own: rk8v4…). */
   kvDtypes: z.array(z.string()).optional(),
+  /**
+   * llama.cpp forks: the -ctk values its --help lists (upstream's and the fork's own: turbo3, turbo4…).
+   * The forms offer them; the tuner searches the ones whose size is known (contract/kv-cache.ts).
+   */
+  kvCacheTypes: z.array(z.string()).optional(),
 });
 export type CustomEngineCheck = z.infer<typeof customEngineCheckSchema>;
 

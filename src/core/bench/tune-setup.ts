@@ -295,6 +295,8 @@ export async function buildTuneSetup(
       ...(users !== undefined ? { users } : {}),
       ...(llama ? { flags: llama.flags } : {}),
       ...(prefer ? { prefer } : {}),
+      // A fork's own KV types (turbo3…) its --help lists join the search.
+      cacheTypes: caps?.choices?.['--cache-type-k'],
   });
   return {
     ...common,

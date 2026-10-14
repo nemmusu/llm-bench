@@ -6,3 +6,4 @@ export const VLLM_TUNE_PROFILE: FakeProfile;
 export const SPILL_PROFILE: FakeProfile;
 export const TUNE_SLOW_PROFILE: FakeProfile;
 export const BORDERLINE_PROFILE: FakeProfile;
+export const TURBO_PROFILE: FakeProfile;

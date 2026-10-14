@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { appErrorSchema } from './errors';
 import { hardwareFingerprintSchema } from './hardware';
+import { KV_CACHE_TYPE } from './kv-cache';
 import { engineKindSchema, launchParamsSchema } from './engines';
 import { customEngineBaseSchema } from './custom-engines';
 import { fitFixesSchema, modelIdentitySchema } from './models';
@@ -492,9 +493,13 @@ export const tuneDimValueSchema = z.union([z.string(), z.number(), z.boolean()])
 export const tuneVariantSchema = z.record(z.string(), tuneDimValueSchema);
 export type TuneVariant = z.infer<typeof tuneVariantSchema>;
 
-/** KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8, NInfer bf16 / int8 / fp8 / k8v4 / nvfp4. */
+/**
+ * KV cache precisions searched: llama.cpp f16 / q8_0 / q4_0 (K = V), vLLM auto / fp8, NInfer bf16 / int8 /
+ * fp8 / k8v4 / nvfp4. A llama.cpp fork's own types (turbo3…) its build lists are searched too: any
+ * KV type word is accepted (contract/kv-cache.ts).
+ */
 export const TUNE_KV_TYPES = ['f16', 'q8_0', 'q4_0', 'auto', 'fp8', 'bf16', 'int8', 'k8v4', 'rk8v4', 'nvfp4'] as const;
-export const tuneKvTypeSchema = z.enum(TUNE_KV_TYPES);
+export const tuneKvTypeSchema = z.string().regex(KV_CACHE_TYPE);
 export type TuneKvType = z.infer<typeof tuneKvTypeSchema>;
 
 /**

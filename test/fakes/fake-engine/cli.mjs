@@ -10,6 +10,8 @@
 //   FAKE_ENGINE_FLAVOR       "llamacpp" | "vllm" | "sglang"
 //   FAKE_ENGINE_HELP=fork    a llama.cpp fork (PrismML-like): its own --version, no -ub, an extra
 //                            --ternary-kernels option; SGLang: a fork without --chunked-prefill-size
+//   FAKE_ENGINE_HELP=turbo   a llama.cpp fork with its own KV caches (TurboQuant-like): its own --version,
+//                            -ctk / -ctv also take turbo4, turbo3, turbo2, turbo1.5, turbo3_tcq
 //   FAKE_ENGINE_BUILD        the fork's build number in its --version (default 7001)
 //   FAKE_ENGINE_ALLOW_MISSING_MODEL=1  do not fail when -m does not exist
 import { readFileSync } from 'node:fs';
@@ -22,8 +24,9 @@ const SGLANG_FIXTURES = new URL('../../fixtures/sglang/', import.meta.url);
 const argv = process.argv.slice(2);
 const env = process.env;
 const fork = env.FAKE_ENGINE_HELP === 'fork';
-const LLAMA_HELP = fork ? 'help-fork.stdout.txt' : 'help.stdout.txt';
-const LLAMA_VERSION = fork ? 'version-fork.stderr.txt' : 'version.stderr.txt';
+const turbo = env.FAKE_ENGINE_HELP === 'turbo';
+const LLAMA_HELP = fork ? 'help-fork.stdout.txt' : turbo ? 'help-turbo.stdout.txt' : 'help.stdout.txt';
+const LLAMA_VERSION = fork || turbo ? 'version-fork.stderr.txt' : 'version.stderr.txt';
 
 /** SGLang's --help, without --chunked-prefill-size for a fork. */
 function sglangHelp() {
@@ -43,6 +46,12 @@ function sglangFlags(help) {
     }
   }
   return flags;
+}
+
+/** The -ctk / -ctv values the help lists ("allowed values: f32, f16, …"). */
+function cacheTypes(help) {
+  const m = /^-ctk,.*\r?\n\s+allowed values: ([^\r\n]+)/m.exec(help);
+  return m ? m[1].split(/,\s*/) : [];
 }
 
 /** Option table of the real b10997 --help: name → takes a value. */
@@ -129,7 +138,8 @@ async function main() {
     if (val['--disable-radix-cache']) o.prefixCaching = false;
     if (val['--enable-cache-report']) o.promptTokensDetails = true;
   } else if (flavor === 'llamacpp') {
-    const flags = knownFlags(readFileSync(new URL(LLAMA_HELP, FIXTURES), 'utf8'));
+    const helpText = readFileSync(new URL(LLAMA_HELP, FIXTURES), 'utf8');
+    const flags = knownFlags(helpText);
     const val = {};
     for (let i = 0; i < argv.length; i++) {
       const a = argv[i];
@@ -166,6 +176,14 @@ async function main() {
     // What the memory model of the profile looks at (see FakeMemory in server.mjs).
     o.kvType = get('-ctk', '--cache-type-k') ?? 'f16';
     o.kvTypeV = get('-ctv', '--cache-type-v') ?? 'f16';
+    // Like llama-server: a cache type its build does not have is refused before anything loads.
+    const allowed = cacheTypes(helpText);
+    for (const [flag, type] of [['-ctk', o.kvType], ['-ctv', o.kvTypeV]]) {
+      if (!allowed.includes(type)) {
+        err([`error while handling argument "${flag}": Unsupported cache type: ${type}`, '', 'to show complete usage, run with -h']);
+        return 1;
+      }
+    }
     o.ubatch = Number(get('-ub', '--ubatch-size') ?? 512);
     o.batch = Number(get('-b', '--batch-size') ?? 2048);
     const ncmoe = get('-ncmoe', '--n-cpu-moe');

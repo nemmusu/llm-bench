@@ -40,7 +40,8 @@ import * as L from './logs.mjs';
 
 /**
  * VRAM model (MiB) for "Trova le impostazioni migliori" tests: need = weights on the GPU + KV cache
- * (per 1024 tokens of context, f16; q8_0 = 34/64 and q4_0 = 18/64 of it; vLLM fp8 = 1/2) + compute
+ * (per 1024 tokens of context, f16; q8_0 = 34/64 and q4_0 = 18/64 of it; vLLM fp8 = 1/2; a fork's turbo4 /
+ * turbo3 / turbo2 / turbo1.5 / turbo3_tcq = their bits per value / 16) + compute
  * buffer (per 512 ubatch tokens). Above totalMiB the load fails with CUDA OOM, unless `spillMiB` > 0:
  * up to totalMiB + spillMiB it loads but spills (Windows), and generation collapses (FakeSpeed.spill).
  * vLLM: the KV pool is gpu-memory-utilization × totalMiB − weights − 1024 (− 512 more for CUDA graphs
@@ -80,7 +81,7 @@ import * as L from './logs.mjs';
  * @property {Record<string, number>} [blockSizeDecodeFactor] vLLM: generation × factor per --block-size (default 1)
  */
 
-const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5 };
+const KV_SHARE = { f16: 1, auto: 1, q8_0: 34 / 64, q4_0: 18 / 64, fp8: 0.5, turbo4: 4.25 / 16, turbo3: 3.125 / 16, turbo3_tcq: 3.125 / 16, turbo2: 2.125 / 16, 'turbo1.5': 2 / 16 };
 /** vLLM's default CUDA graph capture list (1, 2, 4, 8, 16 … 512) has this many sizes. */
 const VLLM_DEFAULT_GRAPHS = 67;
 

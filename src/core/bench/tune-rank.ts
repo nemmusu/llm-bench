@@ -22,6 +22,7 @@ import {
   type TuneRecheck,
   type Tuning,
 } from '../../contract/results';
+import { kvPrecision } from '../../contract/kv-cache';
 
 /** Smallest relative difference that is never noise. */
 export const TIE_MIN = 0.02;
@@ -30,12 +31,12 @@ export const TIE_CV = 2;
 /** Tail numbers (p95 of a handful of requests) are noisier: never decided below this difference. */
 export const TIE_TAIL = 0.1;
 
-/** f16 / auto / bf16 are the most precise, then the 8-bit caches, then K 8-bit with V 4-bit, then the 4-bit ones. */
+/**
+ * f16 / auto / bf16 are the most precise, then the 8-bit caches, then K 8-bit with V 4-bit, then the
+ * 4-bit ones, then a fork's smaller ones by size (turbo3 after q4_0): contract/kv-cache.ts kvPrecision.
+ */
 export function kvPrecisionRank(kv: TuneKvType): number {
-  if (kv === 'f16' || kv === 'auto' || kv === 'bf16') return 0;
-  if (kv === 'q8_0' || kv === 'fp8' || kv === 'int8') return 1;
-  if (kv === 'k8v4' || kv === 'rk8v4') return 1.5;
-  return 2;
+  return kvPrecision(kv);
 }
 
 /** Two plain numbers are tied within max(floor, TIE_CV × cv) of the larger one. */

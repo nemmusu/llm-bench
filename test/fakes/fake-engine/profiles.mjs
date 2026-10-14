@@ -28,6 +28,21 @@ export const TUNE_PROFILE = {
 };
 
 /**
+ * "Trova le impostazioni migliori" with a llama.cpp fork that has its own KV caches (turbo.mjs: its
+ * --help lists turbo4, turbo3, turbo2, turbo1.5, turbo3_tcq), against the same seeded model (trained on
+ * 40 960 tokens). The KV cache costs twice TUNE_PROFILE's, so upstream's types stop short:
+ *   - f16 holds 8K, q8_0 16K, q4_0 32K (40K runs out of memory);
+ *   - a fork type holds the whole 40K (turbo3: 6000 + 1200 × 40 × 3.125/16 + 300 = 15 675 MiB; turbo2
+ *     13 575 MiB) → more context than q4_0.
+ * VRAM need = 6000 + 1200 × ctx/1K × (bits per value / 16) + 300 × ub/512 MiB, against 18 000 (no spill:
+ * over it, out of memory).
+ */
+export const TURBO_PROFILE = {
+  ...TUNE_PROFILE,
+  memory: { totalMiB: 18_000, weightsMiB: 6000, kvMiBPer1k: 1200, computeMiBPer512: 300 },
+};
+
+/**
  * "Più utenti" (tune.goal 'multi', users 4, perUserContext 8192 → llama-server -np 4 -c 32768) against
  * the same seeded model. Deterministic outcome of a 'fast' run with llama.cpp:
  *   - f16 does not hold 4 × 8K (6000 + 600 × 32 + 300 = 25 500 MiB > 18 000: out of memory);

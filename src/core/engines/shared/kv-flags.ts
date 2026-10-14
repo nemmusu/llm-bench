@@ -4,8 +4,10 @@
  * only works with flash attention, so a quantized type turns it on whatever was asked.
  */
 import type { LaunchParams } from '../../../contract/engines';
+import { isFullPrecisionKv } from '../../../contract/kv-cache';
 
-export type LlamaKvType = 'f16' | 'q8_0' | 'q4_0';
+/** f16, q8_0, q4_0, or a type the build lists (a fork's turbo3…). */
+export type LlamaKvType = string;
 
 /** The cache type to pass as -ctk/-ctv: fp8 (vLLM's 8-bit cache) is q8_0 here; unset / 'auto' = the default. */
 export function llamaKvType(p: Pick<LaunchParams, 'kvCacheType'>): LlamaKvType | undefined {
@@ -14,8 +16,9 @@ export function llamaKvType(p: Pick<LaunchParams, 'kvCacheType'>): LlamaKvType |
   return kv === 'fp8' ? 'q8_0' : kv;
 }
 
+/** Every type but f32 / f16 / bf16 is quantized (llama.cpp's q8_0, q4_0…, a fork's turbo3…). */
 export function isQuantizedKv(kv: LlamaKvType | undefined): boolean {
-  return kv === 'q8_0' || kv === 'q4_0';
+  return kv !== undefined && !isFullPrecisionKv(kv);
 }
 
 /** -fa value: 'on' with a quantized cache, else what the params say (default 'auto'). */

@@ -2,7 +2,8 @@
  * What "Trova le impostazioni migliori" searches, per engine family. Every dimension is a list of
  * values (the current one is skipped while descending); the tuner itself knows nothing about engines.
  *
- * llama.cpp: KV f16 / q8_0 / q4_0 (K = V; quantized forces flash attention on), flash attention
+ * llama.cpp: KV f16 / q8_0 / q4_0 (K = V; quantized forces flash attention on) and a fork's own types its
+ * build lists, placed by size (contract/kv-cache.ts llamaKvLadder: "Veloce" the two most compact), flash attention
  * on/off (off only with f16), -ub (prompt tokens the GPU processes together: faster prompt reading,
  * but a bigger compute buffer that costs context): 512 / 2048, "Accurata" 256 … 4096 (4096 only when
  * the build lists -ub and the VRAM estimate allows it at that context); "Accurata" also -b in
@@ -29,6 +30,7 @@
  */
 import type { CommandKvType, CommandSetting } from '../../contract/custom-engines';
 import type { LaunchParams } from '../../contract/engines';
+import { llamaKvLadder } from '../../contract/kv-cache';
 import type { TuneBudget, TuneTag } from '../../contract/results';
 import type { LocalModel } from '../../contract/models';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
@@ -85,6 +87,8 @@ export interface LlamaSpaceOptions {
   flags?: ReadonlySet<string>;
   /** Values that won in earlier tune runs on this GPU, by dimension key: tried first. */
   prefer?: Readonly<Record<string, readonly DimValue[]>>;
+  /** The -ctk values the build lists (EngineCaps.choices): a fork's own types join the KV ladder. */
+  cacheTypes?: readonly string[] | undefined;
 }
 
 /** llama.cpp KV layouts of goal 'multi' this build can be told to use, the default first. */
@@ -113,7 +117,7 @@ export function llamaSpace(o: LlamaSpaceOptions): TuneSpace {
   }
   if (draft) dims.push({ key: 'draft', values: () => [false, true] });
   return {
-    kvLadder: ['f16', 'q8_0', 'q4_0'],
+    kvLadder: llamaKvLadder(o.budget, o.cacheTypes),
     base: (kv) => ({
       kv,
       fa: 'on',
@@ -134,7 +138,7 @@ export function llamaSpace(o: LlamaSpaceOptions): TuneSpace {
       return {
         ...kept,
         contextSize: ctx,
-        kvCacheType: v.kv as LaunchParams['kvCacheType'],
+        kvCacheType: v.kv as string,
         flashAttention: v.fa as 'on' | 'off',
         ubatchSize: v.ub as number,
         // llama.cpp clamps ub to b: b is at least ub.

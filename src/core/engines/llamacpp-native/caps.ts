@@ -95,11 +95,20 @@ export interface LlamaCaps extends EngineCaps {
   flashAttn: 'value' | 'toggle' | 'none';
   /** Keywords accepted by -ngl besides a number (current builds: "auto", "all"). */
   nglKeywords: string[];
-  /** Allowed -ctk/-ctv values. */
+  /** Allowed -ctk values ("allowed values: f32, f16, …"; a fork adds its own: turbo3, turbo4…). */
   cacheTypes: string[];
   /** `--alias a,b` gives the model several names (current builds); older ones take one name. */
   aliasList: boolean;
   entries: HelpEntry[];
+}
+
+/**
+ * The values an option's description lists: llama.cpp prints "allowed values: f32, f16, bf16, q8_0,
+ * q4_0, q4_1, iq4_nl, q5_0, q5_1" (then "(default: f16)"); a fork prints its own list the same way.
+ */
+export function allowedValues(entry: HelpEntry | undefined): string[] {
+  const list = entry ? /allowed values:\s*([^()]+?)(?:\s*\(|$)/.exec(entry.desc)?.[1] : undefined;
+  return list === undefined ? [] : list.split(/[,\s]+/).filter((v) => v !== '');
 }
 
 export function capsFromOutputs(versionText: string, helpText: string): LlamaCaps {
@@ -110,6 +119,7 @@ export function capsFromOutputs(versionText: string, helpText: string): LlamaCap
   const fa = entry('--flash-attn');
   const ngl = entry('--n-gpu-layers');
   const ctk = entry('--cache-type-k');
+  const ctv = entry('--cache-type-v');
   const alias = entry('--alias');
   const caps: LlamaCaps = {
     flags,
@@ -121,10 +131,17 @@ export function capsFromOutputs(versionText: string, helpText: string): LlamaCap
     fitFlag: flags.has('--fit'),
     flashAttn: fa ? (fa.values ? 'value' : 'toggle') : 'none',
     nglKeywords: ngl ? [...ngl.desc.matchAll(/'(auto|all)'/g)].map((m) => m[1] as string) : [],
-    cacheTypes: ctk ? (/allowed values:\s*([^()]+?)(?:\s*\(|$)/.exec(ctk.desc)?.[1]?.split(/,\s*/) ?? []) : [],
+    cacheTypes: allowedValues(ctk),
     aliasList: alias !== undefined && /comma-separated/.test(alias.desc),
     entries,
   };
+  // The KV types it takes, by every spelling (as vLLM's choices): the forms and the tuner read them.
+  const choices: Record<string, string[]> = {};
+  for (const e of [ctk, ctv]) {
+    const values = allowedValues(e);
+    if (e && values.length > 0) for (const n of e.names) choices[n] = values;
+  }
+  if (Object.keys(choices).length > 0) caps.choices = choices;
   if (v.version !== undefined) caps.version = v.version;
   if (v.build !== undefined) caps.build = v.build;
   if (v.commit !== undefined) caps.commit = v.commit;

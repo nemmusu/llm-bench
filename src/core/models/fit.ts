@@ -21,6 +21,7 @@
  */
 import type { LaunchParams, EngineKind } from '../../contract/engines';
 import type { NinferManifest } from '../../contract/formats';
+import { llamaKvBits } from '../../contract/kv-cache';
 import { VRAM_RESERVE_MIB, type FitEstimate, type FitFixes, type FitLevel, type HubFile } from '../../contract/models';
 import { bytesPerParam } from './quant';
 import type { GpuMem, KvLayout, ModelFactsEx } from './types';
@@ -54,6 +55,8 @@ export const FIT_NOTES = {
   paramsUnknown: 'weights.params-unknown',
   embeddingsOnCpu: 'weights.input-embeddings-on-cpu',
   kvAssumed: 'kv.assumed-layout',
+  /** A KV type LLM Bench does not know the size of (a fork's own): its cache is counted as f16. */
+  kvTypeUnknown: 'kv.type-unknown',
   slidingWindow: 'kv.sliding-window',
   recurrent: 'kv.recurrent-state',
   contextOverModel: 'context.exceeds-model',
@@ -68,7 +71,8 @@ export const FIT_NOTES = {
 export interface FitParams {
   /** Tokens per sequence (llama.cpp -c per slot, vLLM max_model_len when maxModelLen is unset). */
   contextSize?: number;
-  kvCacheType?: 'f16' | 'q8_0' | 'q4_0' | 'fp8' | 'auto';
+  /** f16 / q8_0 / q4_0, a fork's type (turbo3…), vLLM 'fp8' / 'auto' (contract/kv-cache.ts). */
+  kvCacheType?: string;
   ubatchSize?: number;
   /** llama.cpp slots (-np) / vLLM concurrent sequences the user wants. */
   parallel?: number;
@@ -170,12 +174,21 @@ export function runsSafetensors(engine: EngineKind): boolean {
   return family(engine) === 'vllm';
 }
 
-/** KV cache bytes per element. vLLM has no q8_0/q4_0: both map to its fp8 cache (1 byte). */
+/**
+ * KV cache bytes per element. vLLM has no q8_0/q4_0: both map to its fp8 cache (1 byte). llama.cpp:
+ * the type's bits per value (q8_0 8.5, q4_0 4.5, a fork's turbo3 3.125…); a type of unknown size
+ * counts as f16 (2 bytes, the safe side).
+ */
 export function kvElementBytes(fam: 'llamacpp' | 'vllm', type: FitParams['kvCacheType']): number {
   if (type === 'fp8') return 1;
-  if (type === 'q8_0') return fam === 'vllm' ? 1 : 34 / 32;
-  if (type === 'q4_0') return fam === 'vllm' ? 1 : 18 / 32;
-  return 2;
+  if (fam === 'vllm') return type === 'q8_0' || type === 'q4_0' ? 1 : 2;
+  const bits = type === undefined ? undefined : llamaKvBits(type);
+  return bits === undefined ? 2 : bits / 8;
+}
+
+/** A llama.cpp launch asks for a KV type whose size is not known (it is estimated as f16). */
+export function kvSizeUnknown(type: FitParams['kvCacheType']): boolean {
+  return type !== undefined && type !== 'auto' && type !== 'fp8' && llamaKvBits(type) === undefined;
 }
 
 /** The exact layout when the metadata gave one, else a uniform stack built from the scalar facts. */
@@ -280,6 +293,7 @@ export function estimateFit(input: FitInput): FitEstimate {
   if (layout.groups.some((g) => g.window)) notes.push(FIT_NOTES.slidingWindow);
   if (layout.recurrentLayers > 0) notes.push(FIT_NOTES.recurrent);
   const elem = kvElementBytes(fam, p.kvCacheType);
+  if (fam === 'llamacpp' && kvSizeUnknown(p.kvCacheType)) notes.push(FIT_NOTES.kvTypeUnknown);
   const seqs = Math.max(1, Math.floor(p.parallel ?? 1));
 
   const weightsMiB = Math.round(weightsBytes / MIB);
@@ -427,7 +441,8 @@ export function fitFixes(
 ): FitFixes | undefined {
   if (engine === 'external' || family(engine) !== 'llamacpp' || fitsNow(current)) return undefined;
   const out: FitFixes = {};
-  if (params.kvCacheType !== 'q4_0' && fitsNow(estimate({ ...params, kvCacheType: 'q4_0', flashAttention: 'on' }))) out.kvCacheType = 'q4_0';
+  // q4_0 only helps a cache larger than it (not a fork's smaller turbo3…).
+  if ((llamaKvBits(params.kvCacheType ?? 'f16') ?? 16) > 4.5 && fitsNow(estimate({ ...params, kvCacheType: 'q4_0', flashAttention: 'on' }))) out.kvCacheType = 'q4_0';
   // The launch's whole -c (several slots share it); without one, the context the estimate assumed.
   const ctx = params.contextSize ?? current.contextSize;
   const fits = (c: number) => fitsNow(estimate({ ...params, contextSize: c }));

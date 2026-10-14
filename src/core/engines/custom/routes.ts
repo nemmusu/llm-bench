@@ -52,7 +52,16 @@ export async function checkCustomEngine(registry: EngineRegistry, engine: Custom
   if (flags.size === 0) return { kind, status, flagCount: 0, missing: [] };
   // A NInfer variant: the KV types its --help lists (its own, like rk8v4, among them).
   const kvDtypes = engine.base === 'ninfer' ? caps?.choices?.['--kv-dtype'] : undefined;
-  return { kind, status, flagCount: flags.size, missing: missingStandardFlags(engineBaseOf(kind) as FlagBase, flags), ...(kvDtypes ? { kvDtypes } : {}) };
+  // A llama.cpp fork: the KV types its --help lists (its own, like turbo3, among them).
+  const kvCacheTypes = engine.base === 'llamacpp' ? caps?.choices?.['--cache-type-k'] : undefined;
+  return {
+    kind,
+    status,
+    flagCount: flags.size,
+    missing: missingStandardFlags(engineBaseOf(kind) as FlagBase, flags),
+    ...(kvDtypes ? { kvDtypes } : {}),
+    ...(kvCacheTypes ? { kvCacheTypes } : {}),
+  };
 }
 
 const duplicateSchema = z.object({ name: z.string().trim().min(1).max(60).optional() });

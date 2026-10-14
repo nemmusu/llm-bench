@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { KV_CACHE_TYPE } from './kv-cache';
 
 /**
  * How an engine runs. SGLang: Docker everywhere (`lmsysorg/sglang`, on Windows through Docker
@@ -129,10 +130,11 @@ export const launchParamsSchema = z.object({
   gpuLayers: z.number().int().min(0).optional(),
   flashAttention: z.enum(['auto', 'on', 'off']).optional(),
   /**
-   * llama.cpp -ctk/-ctv (K = V, a quantized type turns flash attention on); vLLM / SGLang
-   * --kv-cache-dtype (q8_0/q4_0 → fp8).
+   * llama.cpp -ctk/-ctv (K = V, a quantized type turns flash attention on): f16, q8_0, q4_0, or any
+   * type the build lists (a fork's turbo3…: contract/kv-cache.ts); vLLM / SGLang --kv-cache-dtype
+   * 'auto' / 'fp8' (q8_0/q4_0 → fp8).
    */
-  kvCacheType: z.enum(['f16', 'q8_0', 'q4_0', 'fp8', 'auto']).optional(),
+  kvCacheType: z.string().regex(KV_CACHE_TYPE).optional(),
   batchSize: z.number().int().positive().optional(),
   ubatchSize: z.number().int().positive().optional(),
   threads: z.number().int().positive().optional(),
