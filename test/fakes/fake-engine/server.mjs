@@ -264,6 +264,9 @@ export function commonPrefix(a, b) {
   return i;
 }
 
+/** Pause between a server's last load line and its HTTP bind (vLLM, SGLang, TensorRT-LLM), ms. */
+const BIND_PAUSE_MS = 150;
+
 /**
  * Starts the fake engine. Resolves once the port is bound (llama.cpp binds before loading;
  * vLLM only after loading). `loaded` resolves when the model is "loaded" and rejects on a
@@ -914,6 +917,9 @@ export async function startFakeEngine(o = {}) {
     // SGLang loads first, binds the HTTP port, then answers once its own warm-up request is done.
     loadedPromise = loadSglang().then(
       async () => {
+        // Like the real servers (tokenizer and API set-up between the last load line and the bind),
+        // and so the load lines reach a reader through a busy pipe (docker logs) before it can answer.
+        await sleep(BIND_PAUSE_MS);
         try {
           port = await bind();
         } catch (e) {
@@ -938,6 +944,9 @@ export async function startFakeEngine(o = {}) {
     // trtllm-serve builds its engine first, then uvicorn binds the port: answering = ready.
     loadedPromise = loadTrtllm().then(
       async () => {
+        // Like the real servers (tokenizer and API set-up between the last load line and the bind),
+        // and so the load lines reach a reader through a busy pipe (docker logs) before it can answer.
+        await sleep(BIND_PAUSE_MS);
         try {
           port = await bind();
         } catch (e) {
@@ -958,6 +967,9 @@ export async function startFakeEngine(o = {}) {
     // vLLM loads first and binds the HTTP port afterwards.
     loadedPromise = loadVllm().then(
       async () => {
+        // Like the real servers (tokenizer and API set-up between the last load line and the bind),
+        // and so the load lines reach a reader through a busy pipe (docker logs) before it can answer.
+        await sleep(BIND_PAUSE_MS);
         try {
           port = await bind();
         } catch (e) {
