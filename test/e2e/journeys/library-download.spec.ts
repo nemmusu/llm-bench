@@ -1,5 +1,5 @@
 import { expect, launchApp, test } from '../fixtures';
-import { h1, openPage, opened, revealed, scan, skipWelcome, startLibraryWorld, stubDesktop, type LibraryWorld } from './library-helpers';
+import { clickToastAction, h1, openPage, opened, revealed, scan, skipWelcome, startLibraryWorld, stubDesktop, type LibraryWorld } from './library-helpers';
 
 test.describe.configure({ timeout: 150_000 });
 
@@ -77,11 +77,16 @@ test('search a model, open it, download the best version with pause and resume, 
     world.hub.behavior.throttleBytesPerSec = 0;
     await row.getByRole('button', { name: 'Riprendi' }).click();
     await expect(row.getByText('Completato')).toBeVisible({ timeout: 30_000 });
+    // The "downloaded" toast stays clickable over the open panel: its action opens the Benchmark page.
+    await clickToastAction(page, 'Fai il benchmark');
+    await expect(h1(page, 'Benchmark')).toBeVisible();
+    await expect(panel).toBeHidden();
+    // The finished download stays in the panel, its file one click away.
+    await page.getByRole('button', { name: 'Download e installazioni', exact: true }).click();
+    await expect(row.getByText('Completato')).toBeVisible();
     await row.getByRole('button', { name: 'Mostra nella cartella' }).click();
     await expect.poll(() => revealed(gb)).toHaveLength(1);
-    // The "downloaded" toast stays clickable over the open panel: its action opens the Benchmark page.
-    await page.getByText('Fai il benchmark', { exact: true }).click();
-    await expect(h1(page, 'Benchmark')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
 
     // It is now on the PC, ready to benchmark.

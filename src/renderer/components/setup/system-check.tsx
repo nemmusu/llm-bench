@@ -71,8 +71,8 @@ const STATE_TONE: Record<CheckState, 'success' | 'danger' | 'warning' | 'neutral
 
 const str = (v: unknown) => (v === undefined ? '–' : String(v));
 
-/** The plain-language line under each item's title. */
-export function itemDetail(item: CheckItem, f: Pick<Formatters, 't' | 'number'>): string {
+/** The plain-language line under each item's title (Docker's depends on the system: on Linux it is a service). */
+export function itemDetail(item: CheckItem, f: Pick<Formatters, 't' | 'number'>, platform?: SystemCheckReport['platform']): string {
   const { t } = f;
   const p = item.params;
   if (item.error) return t('setup.checkFailed');
@@ -101,6 +101,8 @@ export function itemDetail(item: CheckItem, f: Pick<Formatters, 't' | 'number'>)
       });
     case 'docker':
       if (p.distroSupport) return t('setup.items.docker.distro');
+      // No button can start or restart it there: the command instead.
+      if (platform === 'linux' && (p.dockerState === 'stopped' || p.dockerState === 'not-responding')) return t(`setup.items.docker.linux.${p.dockerState}`);
       return t(`setup.items.docker.${(p.dockerState ?? 'unsupported') as 'running'}`, { version: str(p.version) });
     default:
       if (item.state === 'ok') return t('setup.items.vllm-native.ok', { version: str(p.version) });
@@ -179,7 +181,7 @@ function CheckRow({ item, platform, onPickModel }: { item: CheckItem; platform: 
             {title}
             <span className="sr-only">: {t(`setup.state.${item.state}`)}</span>
           </p>
-          <p className="text-sm text-fg-2">{itemDetail(item, f)}</p>
+          <p className="text-sm text-fg-2">{itemDetail(item, f, platform)}</p>
         </div>
         {action && !active ? (
           <Button variant={item.required ? 'primary' : 'secondary'} size="sm" onClick={run} disabled={start.isPending} aria-label={`${label} (${title})`}>

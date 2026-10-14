@@ -1,4 +1,4 @@
-import { Container, Download, Eraser, Play, RefreshCw, RotateCcw, ScanSearch } from 'lucide-react';
+import { Container, Download, Eraser, Play, RefreshCw, RotateCcw, ScanSearch, SquareTerminal } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n';
@@ -82,7 +82,13 @@ export function DockerCard() {
       </Button>
     );
   else if (state === 'stopped')
-    action = (
+    // Windows: LLM Bench starts Docker Desktop; Linux: a system service, its command in the dialog.
+    action = linux ? (
+      <Button variant="primary" size="sm" onClick={() => setGate(true)}>
+        <SquareTerminal aria-hidden />
+        {t('engines.docker.howToStart')}
+      </Button>
+    ) : (
       <Button variant="primary" size="sm" onClick={() => start.mutate({ key: 'docker-desktop', path: '/api/docker/start' })}>
         <Play aria-hidden />
         {t('engines.actions.startDocker')}
@@ -137,7 +143,9 @@ export function DockerCard() {
       status={{ tone: TONES[state] as StatusDotProps['tone'], text: t(`engines.docker.state.${state}`) }}
       footer={action}
     >
-      <p className="text-sm text-fg-2">{t(`engines.docker.explain.${state}`, { version: docker.data?.version ?? '' })}</p>
+      <p className="text-sm text-fg-2">
+        {linux && (state === 'stopped' || state === 'not-responding') ? t(`engines.docker.explainLinux.${state}`) : t(`engines.docker.explain.${state}`, { version: docker.data?.version ?? '' })}
+      </p>
       {/* Not responding: "Perché è successo" says it in words instead. */}
       {docker.data?.reason && state !== 'running' && state !== 'not-responding' && <p className="text-xs text-fg-3">{t('engines.docker.reason', { reason: docker.data.reason })}</p>}
       {startEvent?.stage === 'error' && <ErrorCallout error={startEvent.error ?? { code: 'DOCKER_NOT_RUNNING', message: 'start' }} />}

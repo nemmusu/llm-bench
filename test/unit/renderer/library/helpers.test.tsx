@@ -171,6 +171,11 @@ describe('system check details', () => {
     expect(d(item('docker', { params: { dockerState: 'running', version: '29' } }))).toBe('Docker 29 è pronto. Serve per vLLM e SGLang.');
     expect(d(item('docker', { state: 'unsupported' }))).toContain('non è supportata');
     expect(d(item('docker', { params: { distroSupport: 'unsupported-distro' } }))).toContain('Ubuntu e Debian');
+    // Linux: Docker is a system service, the line gives its command; elsewhere a button does it.
+    expect(itemDetail(item('docker', { state: 'optional', params: { dockerState: 'stopped' } }), it_, 'linux')).toContain('«sudo systemctl start docker»');
+    expect(itemDetail(item('docker', { state: 'warning', params: { dockerState: 'not-responding' } }), it_, 'linux')).toContain('«sudo systemctl restart docker»');
+    expect(itemDetail(item('docker', { params: { dockerState: 'running', version: '29' } }), it_, 'linux')).toBe('Docker 29 è pronto. Serve per vLLM e SGLang.');
+    expect(itemDetail(item('docker', { state: 'optional', params: { dockerState: 'stopped' } }), it_, 'win32')).toBe('È installato ma spento. Serve per vLLM e SGLang.');
     expect(d(item('vllm-native', { params: { version: '0.11' } }))).toBe('vLLM 0.11 installato.');
     expect(d(item('vllm-native', { state: 'unsupported' }))).toBe('Disponibile solo su Linux.');
     expect(d(item('vllm-native', { state: 'optional', params: { uv: true } }))).toContain('installo vLLM');

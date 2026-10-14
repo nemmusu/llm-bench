@@ -933,6 +933,10 @@ export const en: Messages = {
         'not-responding': 'Docker is open but not responding: it needs a restart.',
         unknown: 'I cannot tell what state Docker is in.',
         distro: 'The guided install works on Ubuntu and Debian: on this system please follow the official guide.',
+        linux: {
+          stopped: 'Installed but not running: on Linux it starts with “sudo systemctl start docker”. Needed for vLLM and SGLang.',
+          'not-responding': 'Docker is running but not responding: on Linux it restarts with “sudo systemctl restart docker”.',
+        },
       },
       'vllm-native': {
         title: 'vLLM (Linux)',
@@ -3362,6 +3366,7 @@ export const en: Messages = {
       title: 'Docker',
       desc: 'Needed for vLLM, SGLang and for llama.cpp inside a container.',
       install: 'Install Docker',
+      howToStart: 'How to start it',
       pullLlama: 'Download the llama.cpp image',
       cleanup: 'Clean up LLM Bench containers',
       cleaned: 'Containers removed: {n}',
@@ -3388,6 +3393,10 @@ export const en: Messages = {
         unsupported: 'This Docker setup is not supported by LLM Bench.',
         'not-responding': 'Docker Desktop is open but no longer responds. Press “Restart Docker”: I restart it and then start again the LLM Bench servers that were running.',
         unknown: 'I cannot tell what state Docker is in: press “Check again”.',
+      },
+      explainLinux: {
+        stopped: 'Docker is installed but not running. On Linux it is a system service: press “How to start it” for the command to run.',
+        'not-responding': 'Docker is running but no longer responds. On Linux it is a system service: press “Why, and how to avoid it” for the command that restarts it.',
       },
     },
     vllm: {

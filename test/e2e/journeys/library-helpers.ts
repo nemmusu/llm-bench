@@ -108,6 +108,21 @@ export async function scan(page: Page, label: string): Promise<void> {
   expect(summary, `axe violations on ${label}`).toEqual([]);
 }
 
+/**
+ * Clicks the action of a toast the way a person does: the pointer goes onto the toast first, which
+ * keeps it on screen (sonner pauses its 4-second timer while it is hovered), then the click. The E2E
+ * window is never shown, so it paints about once a second, and Playwright's wait for a steady element
+ * alone could outlast the toast.
+ */
+export async function clickToastAction(page: Page, label: string): Promise<void> {
+  const action = page.getByRole('button', { name: label, exact: true });
+  await expect(action).toBeVisible();
+  const box = await action.boundingBox();
+  expect(box, `the "${label}" toast is on screen`).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await action.click();
+}
+
 /** First launch lands on the wizard: skip it like a user in a hurry. */
 export async function skipWelcome(page: Page): Promise<void> {
   await expect(h1(page, 'Benvenuto in LLM Bench')).toBeVisible();
