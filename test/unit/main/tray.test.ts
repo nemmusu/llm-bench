@@ -94,9 +94,9 @@ describe('tray menu', () => {
 
   it('tooltip: the servers with their ports, cut at the Windows limit', () => {
     expect(trayTooltip(undefined, 'it')).toBe('LLM Bench');
-    expect(trayTooltip(state({ servers: [two.servers[0]!] }), 'it')).toBe('LLM Bench · 1 server attivo: Qwen3 8B (8080)');
-    expect(trayTooltip(two, 'en')).toBe('LLM Bench · 2 servers running: Qwen3 8B (8080), Gemma 4 12B (8081)');
-    expect(trayTooltip(state({ servers: [{ ...two.servers[0]!, status: 'loading' }] }), 'it')).toBe('LLM Bench · 1 server attivo: Qwen3 8B si avvia');
+    expect(trayTooltip(state({ servers: [two.servers[0]!] }), 'it')).toBe('LLM Bench · 1 server attivo: Chat veloce (8080)');
+    expect(trayTooltip(two, 'en')).toBe('LLM Bench · 2 servers running: Chat veloce (8080), Gemma 4 12B (8081)');
+    expect(trayTooltip(state({ servers: [{ ...two.servers[0]!, status: 'loading' }] }), 'it')).toBe('LLM Bench · 1 server attivo: Chat veloce si avvia');
     const many = state({ servers: Array.from({ length: 9 }, (_, i) => ({ ...two.servers[0]!, id: `s${i}`, modelName: `Modello lunghissimo ${i}`, port: 8080 + i })) });
     const tip = trayTooltip(many, 'it');
     expect(tip).toHaveLength(TOOLTIP_MAX);

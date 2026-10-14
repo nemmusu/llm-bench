@@ -9,6 +9,7 @@ import { Section } from './section';
 export const CREDITS = [
   { name: 'llama.cpp', license: 'MIT', url: 'https://github.com/ggml-org/llama.cpp' },
   { name: 'vLLM', license: 'Apache-2.0', url: 'https://github.com/vllm-project/vllm' },
+  { name: 'SGLang', license: 'Apache-2.0', url: 'https://github.com/sgl-project/sglang' },
   { name: 'llmfit', license: 'MIT', url: 'https://github.com/AlexsJones/llmfit', noteKey: 'about.llmfit' },
   { name: 'Hugging Face Hub', license: 'Apache-2.0', url: 'https://github.com/huggingface/huggingface.js' },
 ] as const;

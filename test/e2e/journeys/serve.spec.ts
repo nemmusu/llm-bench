@@ -68,7 +68,7 @@ test('custom commands saved as a preset and started from it; the window closes t
     // The tray lists it, says it in the tooltip and copies its address.
     await expectTrayLine(app, new RegExp(`^Chat veloce · porta ${PORT}$`));
     expect(await hook(app, 'trayStatus')).toBe('running');
-    expect(await hook(app, 'trayTooltip')).toContain('1 server attivo');
+    expect(await hook(app, 'trayTooltip')).toContain(`1 server attivo: Chat veloce (${PORT})`);
     await app.evaluate(({ clipboard }) => clipboard.writeText(''));
     expect(await hook(app, 'clickTray', `Chat veloce · porta ${PORT}`, 'Copia indirizzo')).toBe(true);
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(URL);

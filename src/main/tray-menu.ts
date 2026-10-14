@@ -114,7 +114,13 @@ export function trayTooltip(state: ShellState | undefined, lang: TrayLang): stri
   // A stuck Docker is why servers stopped working: said in the tooltip too.
   const stuck = state?.docker?.state === 'not-responding' ? ` · ${trayText(lang, 'tooltipDockerStuck')}` : '';
   if (!servers.length) return `${trayText(lang, 'tooltipIdle')}${stuck}`;
-  const list = servers.map((s) => (s.status === 'loading' ? trayText(lang, 'tooltipLoading', { model: s.modelName }) : `${s.modelName} (${s.port})`)).join(', ');
+  // Each server named as in the menu (its preset's name when it has one).
+  const list = servers
+    .map((s) => {
+      const name = s.presetName ?? s.modelName;
+      return s.status === 'loading' ? trayText(lang, 'tooltipLoading', { model: name }) : `${name} (${s.port})`;
+    })
+    .join(', ');
   const text = `${servers.length === 1 ? trayText(lang, 'tooltipOne', { list }) : trayText(lang, 'tooltipMany', { n: servers.length, list })}${stuck}`;
   return text.length > TOOLTIP_MAX ? `${text.slice(0, TOOLTIP_MAX - 1)}…` : text;
 }
