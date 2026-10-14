@@ -136,7 +136,7 @@ describe('llama.cpp adapter × fake llama-server (real processes)', () => {
     const { adapter, gguf, root } = setup();
     const coldMarker = path.join(root, 'cold');
     writeFileSync(coldMarker, '');
-    const profile = { loadMsCold: 900, loadMsWarm: 100 };
+    const profile = { loadMsCold: 2500, loadMsWarm: 100 };
     const run = async () => {
       const plan = await adapter.plan(cfg, target(gguf), params(profile, {}, { FAKE_ENGINE_COLD_MARKER: coldMarker }), {
         port: await pickFreePort(),
@@ -150,7 +150,7 @@ describe('llama.cpp adapter × fake llama-server (real processes)', () => {
     const cold = await run();
     expect(existsSync(coldMarker)).toBe(false);
     const warm = await run();
-    expect(cold).toBeGreaterThan(warm + 500);
+    expect(cold).toBeGreaterThan(warm + 1500);
   });
 
   it.each([
