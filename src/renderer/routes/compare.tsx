@@ -5,6 +5,7 @@ import { entryOfRun, entryOfSummary } from '../components/compare/compare-entrie
 import { CompareStart, type StartView } from '../components/compare/compare-start';
 import { Comparison } from '../components/compare/compare-view';
 import { ErrorCard } from '../components/bench/error-card';
+import { AT_MAX, type CompareAt } from '../components/configs/depths';
 import { Page } from '../components/shell/page';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
@@ -15,27 +16,29 @@ import { apiErrorData, useRuns } from '../lib/queries-runs';
 
 /**
  * /compare?ids=A,B~2,C&at=4096          two to four items (a run, or "run~combination"), compared at 4K
+ * /compare?ids=A,B&at=max                each at its own largest context, with the context full
  * /compare?view=models | view=runs      the start screen: pick models, or tests
  * /compare?a=A&b=B                      older links: the same as ids=A,B
  */
 export interface CompareSearch {
   ids?: string;
-  at?: number;
+  at?: CompareAt;
   view?: StartView;
 }
 
 const text = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
-/** Router search validation: tokens checked and capped at four, a positive depth, a known view. */
+/** Router search validation: tokens checked and capped at four, a positive depth (or "max"), a known view. */
 export function validateCompareSearch(search: Record<string, unknown>): CompareSearch {
   const ids = idsOf(parseIds(text(search.ids) ?? [text(search.a), text(search.b)].filter(Boolean).join(',')));
-  const at = Number(search.at);
+  const depth = Number(search.at);
+  const at = search.at === AT_MAX ? AT_MAX : Number.isInteger(depth) && depth > 0 ? depth : undefined;
   const view = search.view === 'models' || search.view === 'runs' ? search.view : undefined;
-  return { ...(ids ? { ids } : {}), ...(Number.isInteger(at) && at > 0 ? { at } : {}), ...(view ? { view } : {}) };
+  return { ...(ids ? { ids } : {}), ...(at === undefined ? {} : { at }), ...(view ? { view } : {}) };
 }
 
 /** Two to four items from the address: loaded, then compared. */
-function CompareItems({ refs, at }: { refs: CompareRef[]; at: number | undefined }) {
+function CompareItems({ refs, at }: { refs: CompareRef[]; at: CompareAt | undefined }) {
   const f = useI18n();
   const { t } = f;
   const navigate = useNavigate();
@@ -46,8 +49,8 @@ function CompareItems({ refs, at }: { refs: CompareRef[]; at: number | undefined
   useEffect(() => {
     if (items) setCompareSelection(items.map((it) => entryOfRun(it.run, it.comboIndex, f)));
   }, [items, f]);
-  const go = (next: CompareRef[], depth = at) =>
-    void navigate({ to: '/compare', search: next.length >= 2 ? { ids: idsOf(next), ...(depth === undefined ? {} : { at: depth }) } : { view: 'runs' as const }, replace: true });
+  const go = (next: CompareRef[], where = at) =>
+    void navigate({ to: '/compare', search: next.length >= 2 ? { ids: idsOf(next), ...(where === undefined ? {} : { at: where }) } : { view: 'runs' as const }, replace: true });
   if (failed) {
     const missing = ids[failed.index]!;
     return (

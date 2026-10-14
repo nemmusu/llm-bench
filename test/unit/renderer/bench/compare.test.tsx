@@ -302,19 +302,26 @@ describe('picking what to compare', () => {
   it('"Confronta modelli": two models, each with its fastest configuration or another one', async () => {
     const { router } = renderApp('/compare', world());
     // Nothing picked yet: the models first.
-    expect(await screen.findByText(/per ognuno uso la configurazione più veloce misurata su RTX 5090/)).toBeTruthy();
+    expect(await screen.findByText(/per ognuno uso la configurazione migliore misurata su RTX 5090/)).toBeTruthy();
     expect(screen.getByText('Non hai ancora scelto niente da confrontare.')).toBeTruthy();
     const qwen = screen.getByRole('checkbox', { name: /^Qwen3 8B · Q4_K_M/ });
     const card = qwen.closest('li')!;
     expect(within(card).getByText('2 configurazioni provate')).toBeTruthy();
-    // The fastest: its speed with what it was measured on.
-    expect(within(card).getByText('194,5 tok/s · scrittura con 512 token già nel contesto')).toBeTruthy();
+    // The best as in Configurazioni: one measured with its context full (8K) before one that never filled its 32K; its speed with that context.
+    expect(within(card).getByText('La più veloce al contesto massimo')).toBeTruthy();
+    expect(within(card).getByText(/^[\d,]+ tok\/s con il contesto pieno a 8K$/)).toBeTruthy();
     await userEvent.click(qwen);
     await userEvent.click(screen.getByRole('checkbox', { name: /^Gemma 4 31B/ }));
     expect(screen.getByText('Scelti 2 su 4')).toBeTruthy();
-    // The other configuration of Qwen3 8B instead of the fastest.
-    await choose('Configurazione di Qwen3 8B', /cache KV f16/);
-    await waitFor(() => expect(screen.getByRole('list', { name: 'Scelti per il confronto' }).textContent).toContain('cache KV f16'));
+    expect(screen.getByRole('list', { name: 'Scelti per il confronto' }).textContent).toContain('cache KV f16');
+    // The other configuration of Qwen3 8B instead: it says why it has no speed at its largest context.
+    const picker = screen.getByRole('combobox', { name: 'Configurazione di Qwen3 8B' });
+    picker.focus();
+    fireEvent.keyDown(picker, { key: 'Enter' });
+    const other = await screen.findByRole('option', { name: /cache KV q8_0/ });
+    expect(within(other).getByText('non misurata a 32K: misurata solo fino a 8K')).toBeTruthy();
+    fireEvent.click(other);
+    await waitFor(() => expect(screen.getByRole('list', { name: 'Scelti per il confronto' }).textContent).toContain('cache KV q8_0'));
     // Taking a model away, and a fifth refused.
     await userEvent.click(screen.getByRole('checkbox', { name: /^Gemma 4 31B/ }));
     expect(screen.getByText('Scelto 1 su 4: scegline almeno un altro')).toBeTruthy();
@@ -367,7 +374,7 @@ describe('picking what to compare', () => {
     expect(await screen.findByRole('heading', { name: 'Si è verificato un errore imprevisto' })).toBeTruthy();
     fail = false;
     await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
-    expect(await screen.findByText(/per ognuno uso la configurazione più veloce/)).toBeTruthy();
+    expect(await screen.findByText(/per ognuno uso la configurazione migliore/)).toBeTruthy();
     await userEvent.click(screen.getByRole('tab', { name: 'Test' }));
     expect(await screen.findByRole('heading', { name: 'Si è verificato un errore imprevisto' })).toBeTruthy();
     delete api.world.routes['GET /api/runs'];

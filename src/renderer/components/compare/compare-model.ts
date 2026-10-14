@@ -1,14 +1,17 @@
 /**
  * The comparison as data: two to four things (a run, or one combination of a "Trova le impostazioni
- * migliori" run) side by side. Speeds are compared only at a context every one of them really
- * measured (the same grid depth; "Confronta a"), never estimated; the best number of each row is
- * marked and every other one says how far it is, in words ("2,2 volte più lento", "−16%").
+ * migliori" run) side by side. Speeds are compared where every one of them really measured them,
+ * never estimated ("Confronta a"): each at its own largest context with the context full ("Contesto
+ * massimo", as the tune ranking: only those with the same context compare), or one grid depth for
+ * all. The best number of each row is marked and every other one says how far it is, in words
+ * ("2,2 volte più lento", "−16%").
  */
 import { configParamsOf, sweepDepths } from '../../../contract/configs';
 import type { LaunchParams } from '../../../contract/engines';
-import { fullContextPoint, nominalDepth, spilledRun, type ConcurrencyPoint, type EngineIdentity, type LatencyPoint, type RunResult, type SessionsPoint, type TuneCombination } from '../../../contract/results';
+import { fillsContext, nominalDepth, spilledRun, type ConcurrencyPoint, type EngineIdentity, type LatencyPoint, type RunResult, type SessionsPoint, type TuneCombination } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
-import { contextWords, firstTokenWords, usersWords, type ContextBasis } from '../../lib/speed-at';
+import { contextWords, firstTokenWords, notMeasuredAt, tokensK, usersWords, type ContextBasis } from '../../lib/speed-at';
+import { AT_MAX, type CompareAt } from '../configs/depths';
 import { deltaWords, REREAD_SHARE, type DeltaKind } from '../bench/compare-words';
 import type { DeltaView } from '../bench/delta';
 import { SAME_THRESHOLD } from '../bench/delta';
@@ -35,6 +38,8 @@ export interface CompareItem {
   maxContext?: number;
   /** Tokens its KV cache holds, as the engine said. */
   kvTokens?: number;
+  /** Its point with its largest context full (the deepest one, when it fills maxContext): where "Contesto massimo" reads it. */
+  full?: DepthPoint;
   /** How the engine was started (a combination: its own settings and command). */
   params: LaunchParams;
   argv: readonly string[];
@@ -105,6 +110,8 @@ export function itemOf(run: RunResult, ref: CompareRef = { runId: run.id }): Com
   if (vram !== undefined) item.vramMiB = vram;
   if (maxContext !== undefined) item.maxContext = maxContext;
   if (kvTokens !== undefined) item.kvTokens = kvTokens;
+  const deepest = item.points.reduce<DepthPoint | undefined>((a, p) => (a === undefined || p.point.promptTokens > a.point.promptTokens ? p : a), undefined);
+  if (deepest && maxContext !== undefined && fillsContext(deepest.point.promptTokens, maxContext)) item.full = deepest;
   return item;
 }
 
@@ -160,18 +167,21 @@ export function depthChoices(items: readonly Pick<CompareItem, 'points'>[]): Dep
 /** The headline prompt of a run: the depth "Confronta a" starts closest to. */
 export const EVERYDAY_DEPTH = 512;
 
-/**
- * The depth where every item is a combination of a one-user search measured with its context full,
- * when it is the same for all (two 256K combinations: "256K", where the search reads their speeds).
- */
-export function fullDepth(items: readonly Pick<CompareItem, 'combo'>[]): number | undefined {
-  const depths = new Set(items.map((it) => (it.combo && fullContextPoint(it.combo) ? nominalDepth(it.combo.maxContext) : undefined)));
+/** The depth of every item's largest context full, when every item has one and it is the same for all (two 256K combinations: "256K"). */
+export function fullDepth(items: readonly Pick<CompareItem, 'full'>[]): number | undefined {
+  const depths = new Set(items.map((it) => it.full?.depth));
   const [only] = depths;
   return depths.size === 1 ? only : undefined;
 }
 
+/** "Contesto massimo" is a choice when at least two items were measured with their largest context full. */
+export function maxChoice(items: readonly Pick<CompareItem, 'full'>[]): { measured: number; total: number } | undefined {
+  const measured = items.filter((it) => it.full).length;
+  return measured >= 2 ? { measured, total: items.length } : undefined;
+}
+
 /**
- * The depth to start from: `full` (the context full of every combination compared, see fullDepth)
+ * The depth to start from among plain depths: `full` (the context full of every item, see fullDepth)
  * when every item measured it; else the one most items measured, among those the closest to everyday
  * prompts (512 tokens, the result page's headline), the deeper on a tie.
  */
@@ -181,6 +191,34 @@ export function defaultDepth(choices: readonly DepthChoice[], full?: number): nu
   const distance = (d: number) => Math.abs(Math.log2(d / EVERYDAY_DEPTH));
   const best = choices.filter((c) => c.measured === top).sort((a, b) => distance(a.depth) - distance(b.depth) || b.depth - a.depth)[0];
   return best?.depth;
+}
+
+/**
+ * Where the comparison starts, coherent with the contexts the cards show:
+ *  - every item with its largest context full, the same for all: that depth ("256K");
+ *  - every item with its largest context full, different ones: "Contesto massimo" (each at its own);
+ *  - a "Trova le impostazioni migliori" combination among them (its card says its context): the
+ *    deepest depth every item measured, the closest to the contexts shown;
+ *  - else plain runs: defaultDepth (closest to everyday prompts, as their result pages).
+ */
+export function defaultAt(items: readonly Pick<CompareItem, 'full' | 'combo'>[], choices: readonly DepthChoice[]): CompareAt | undefined {
+  const full = fullDepth(items);
+  if (full !== undefined && choices.some((c) => c.depth === full && c.measured === c.total)) return full;
+  if (items.length > 0 && items.every((it) => it.full)) return AT_MAX;
+  const all = choices.filter((c) => c.measured === c.total);
+  if (items.some((it) => it.combo) && all.length) return all[all.length - 1]!.depth;
+  return defaultDepth(choices);
+}
+
+/** "Confronta a" from the address when it is one of the choices, else the default. */
+export function compareAtOf(items: readonly Pick<CompareItem, 'full' | 'combo'>[], choices: readonly DepthChoice[], at: CompareAt | undefined): CompareAt | undefined {
+  if (at === AT_MAX ? maxChoice(items) : choices.some((c) => c.depth === at)) return at;
+  return defaultAt(items, choices);
+}
+
+/** An item's point where the comparison reads it: its own largest context full, or the depth. */
+export function pointAt(item: Pick<CompareItem, 'points' | 'full'>, at: CompareAt | undefined): DepthPoint | undefined {
+  return at === AT_MAX ? item.full : pointAtDepth(item, at);
 }
 
 // ---- users at once: the same number of users with the same prompt each -----------------------------
@@ -248,8 +286,21 @@ export interface CompareRow {
   higherIsBetter: boolean;
   kind: DeltaKind;
   format: (v: number) => string;
+  /** What "Chi va più veloce" says the numbers were measured on, when not `context` ("con il contesto pieno a 256K"). */
+  leadContext?: string;
+  /** What the row's number means, in a few sentences (a help tip next to the label). */
+  help?: string;
   /** The later messages read the whole context again on that item ("riletto da capo"). */
   reread?: boolean[];
+  /**
+   * Items whose number is not compared with the others (false): at "Contesto massimo", a smaller
+   * context than the largest one (speeds at different contexts do not compare). Default: all.
+   */
+  compared?: boolean[];
+  /** No winner: the numbers are shown side by side, not ranked (what they mean differs between engines). */
+  plain?: boolean;
+  /** Why an item has no number ("non misurata a 256K", "arriva solo a 208K", "il motore non lo dice"); default "non misurato". */
+  missing?: (string | undefined)[];
   /** Items with the best value (more than one: equal within half a percent); empty below two values. */
   best: number[];
   /** Each other item against the best, in words ("2,2 volte più lento", "−16%"). */
@@ -259,17 +310,22 @@ export interface CompareRow {
 type RowInput = Omit<CompareRow, 'best' | 'words'>;
 export type CompareFormatters = Pick<Formatters, 't' | 'number' | 'integer' | 'percent' | 'duration'>;
 
-/** The best value(s) of a row and how far every other one is from it. */
+/**
+ * The best value(s) of a row and how far every other one is from it. A `plain` row has no winner: only
+ * "the same for all" is said (every value equal).
+ */
 export function judge(row: RowInput, f: Pick<Formatters, 't' | 'number' | 'percent'>): CompareRow {
-  const known = row.values.flatMap((v, i) => (v === undefined ? [] : [{ v, i }]));
-  if (known.length < 2) return { ...row, best: [], words: row.values.map(() => undefined) };
+  const known = row.values.flatMap((v, i) => (v === undefined || row.compared?.[i] === false ? [] : [{ v, i }]));
+  const none = { ...row, best: [], words: row.values.map(() => undefined) };
+  if (known.length < 2) return none;
   const top = known.reduce((a, b) => ((row.higherIsBetter ? b.v > a.v : b.v < a.v) ? b : a)).v;
   const tied = (v: number) => (top === 0 ? v === 0 : Math.abs(v - top) / Math.abs(top) < SAME_THRESHOLD);
   const best = known.filter((k) => tied(k.v)).map((k) => k.i);
+  if (row.plain) return best.length === known.length ? { ...none, best } : none;
   return {
     ...row,
     best,
-    words: row.values.map((v, i) => (v === undefined || best.includes(i) ? undefined : deltaWords(top, v, row, f))),
+    words: row.values.map((v, i) => (v === undefined || best.includes(i) || row.compared?.[i] === false ? undefined : deltaWords(top, v, row, f))),
   };
 }
 
@@ -278,30 +334,110 @@ const reread = (p: SessionsPoint | undefined): boolean => {
   return share !== undefined && share.n > 0 && share.median < REREAD_SHARE;
 };
 
+/** The engine a run's numbers come from: "vllm", "llamacpp", "sglang", "ninfer"… (a fork: the engine it is built on). */
+export function engineBase(run: Pick<RunResult, 'engine'>): string {
+  return run.engine.customEngine?.base ?? run.engine.kind.split('-')[0]!;
+}
+
+/** vLLM and SGLang reserve a share of the card's memory when they start (gpu-memory-utilization / mem-fraction). */
+export function reservesMemory(run: Pick<RunResult, 'engine'>): boolean {
+  const base = engineBase(run);
+  return base === 'vllm' || base === 'sglang';
+}
+
 /**
- * Every row of the comparison: speeds at `depth` (generation, prompt reading, first token), memory and
- * context, users at once, long conversations and the rest. A row nobody measured is left out.
+ * Why an item has no speed where the comparison reads it: at "Contesto massimo", its largest context
+ * was never filled ("non misurata a 256K · misurata solo fino a 64K"); at a depth beyond its context,
+ * it cannot get there ("arriva solo a 208K"); else it was not measured there ("non misurata a 64K").
  */
-export function compareRows(items: readonly CompareItem[], depth: number | undefined, f: CompareFormatters): CompareRow[] {
+export function missingSpeed(item: { points: readonly { depth: number }[]; maxContext?: number | undefined }, at: CompareAt, f: CompareFormatters): string {
+  if (at !== AT_MAX) return item.maxContext !== undefined && item.maxContext < at ? f.t('compare.reachesOnly', { ctx: tokensK(item.maxContext, f) }) : notMeasuredAt(at, f);
+  if (item.maxContext === undefined) return f.t('compare.notMeasured');
+  const head = notMeasuredAt(item.maxContext, f);
+  return item.points.length ? f.t('compare.onlyUpTo', { head, depth: tokensK(Math.max(...item.points.map((p) => p.depth)), f) }) : head;
+}
+
+/** "Velocità": generation, prompt reading and first token where the comparison reads them. */
+function speedRows(items: readonly CompareItem[], at: CompareAt, f: CompareFormatters): RowInput[] {
+  const { t, number, integer } = f;
+  const points = items.map((it) => pointAt(it, at));
+  const missing = items.map((it, i) => (points[i] ? undefined : missingSpeed(it, at, f)));
+  let ctx: { write: string; read: string; first: string };
+  let extra: Pick<RowInput, 'compared' | 'leadContext'> = {};
+  if (at === AT_MAX) {
+    // Each at its own context, full: only those with the largest one compare (as the tune ranking).
+    const depths = points.flatMap((p) => (p ? [p.depth] : []));
+    const top = Math.max(0, ...depths);
+    const full = t('compare.rows.atFull', { ctx: tokensK(top, f) });
+    const words = new Set(depths).size > 1 ? t('compare.rows.atMax') : full;
+    ctx = { write: words, read: words, first: words };
+    extra = { compared: points.map((p) => p?.depth === top), leadContext: full };
+  } else {
+    const basis: ContextBasis = points.some((p) => p?.basis === 'prompt') ? 'prompt' : 'depth';
+    ctx = { write: contextWords({ kind: 'write', tokens: at }, f), read: contextWords({ kind: 'read', tokens: at, basis }, f), first: firstTokenWords(at, basis, f) };
+  }
+  const common = { group: 'speed' as const, missing, ...extra };
+  return [
+    { ...common, id: 'decode', label: t('compare.rows.decode'), context: ctx.write, values: points.map((p) => p?.point.decodeTps.median), higherIsBetter: true, kind: 'speed', format: (v) => `${number(v, 1)} tok/s` },
+    { ...common, id: 'prefill', label: t('compare.rows.prefill'), context: ctx.read, values: points.map((p) => (p ? prefillStat(p.point).median : undefined)), higherIsBetter: true, kind: 'speed', format: (v) => `${integer(v)} tok/s` },
+    { ...common, id: 'ttft', label: t('compare.rows.ttft'), context: ctx.first, values: points.map((p) => p?.point.ttftMs.median), higherIsBetter: false, kind: 'time', format: (v) => `${integer(v)} ms` },
+  ];
+}
+
+/**
+ * Every row of the comparison: speeds where it compares (`at`: generation, prompt reading, first
+ * token), memory and context, users at once, long conversations and the rest. A row nobody measured is
+ * left out.
+ */
+export function compareRows(items: readonly CompareItem[], at: CompareAt | undefined, f: CompareFormatters): CompareRow[] {
   const { t, number, integer, percent, duration } = f;
   const tps1 = (v: number) => `${number(v, 1)} tok/s`;
   const tps0 = (v: number) => `${integer(v)} tok/s`;
   const sec = (v: number) => `${number(v / 1000, 2)} s`;
   const ms = (v: number) => `${integer(v)} ms`;
   const rows: RowInput[] = [];
-  if (depth !== undefined) {
-    const at = items.map((it) => pointAtDepth(it, depth));
-    const basis: ContextBasis = at.some((p) => p?.basis === 'prompt') ? 'prompt' : 'depth';
-    rows.push(
-      { id: 'decode', group: 'speed', label: t('compare.rows.decode'), context: contextWords({ kind: 'write', tokens: depth }, f), values: at.map((p) => p?.point.decodeTps.median), higherIsBetter: true, kind: 'speed', format: tps1 },
-      { id: 'prefill', group: 'speed', label: t('compare.rows.prefill'), context: contextWords({ kind: 'read', tokens: depth, basis }, f), values: at.map((p) => (p ? prefillStat(p.point).median : undefined)), higherIsBetter: true, kind: 'speed', format: tps0 },
-      { id: 'ttft', group: 'speed', label: t('compare.rows.ttft'), context: firstTokenWords(depth, basis, f), values: at.map((p) => p?.point.ttftMs.median), higherIsBetter: false, kind: 'time', format: ms },
-    );
-  }
+  if (at !== undefined) rows.push(...speedRows(items, at, f));
+  const allCombos = items.every((it) => it.combo);
+  const reserves = items.some((it) => reservesMemory(it.run));
   rows.push(
-    { id: 'maxContext', group: 'memory', label: t('compare.rows.maxContext'), context: t('compare.rows.maxContextHint'), values: items.map((it) => it.maxContext), higherIsBetter: true, kind: 'amount', format: (v) => `${integer(v)} token` },
-    { id: 'vram', group: 'memory', label: t('compare.rows.vram'), values: items.map((it) => it.vramMiB), higherIsBetter: false, kind: 'amount', format: (v) => `${number(v / MIB_PER_GB, 1)} GB` },
-    { id: 'kvTokens', group: 'memory', label: t('compare.rows.kvTokens'), context: t('compare.rows.kvTokensHint'), values: items.map((it) => it.kvTokens), higherIsBetter: true, kind: 'amount', format: (v) => `${integer(v)} token` },
+    {
+      id: 'maxContext',
+      group: 'memory',
+      label: t('compare.rows.maxContext'),
+      context: t(allCombos ? 'compare.rows.maxContextFound' : 'compare.rows.maxContextHint'),
+      values: items.map((it) => it.maxContext),
+      higherIsBetter: true,
+      kind: 'amount',
+      format: (v) => `${integer(v)} token`,
+      // The largest that fits is something a search found; a run's context is just how it was started.
+      plain: !allCombos,
+    },
+    {
+      id: 'vram',
+      group: 'memory',
+      label: t('compare.rows.vram'),
+      ...(reserves ? { context: t('compare.rows.vramReserved'), help: t('compare.rows.vramHelp') } : {}),
+      values: items.map((it) => it.vramMiB),
+      higherIsBetter: false,
+      kind: 'amount',
+      format: (v) => `${number(v / MIB_PER_GB, 1)} GB`,
+      // vLLM and SGLang take their share of the card up front, whatever the model needs: no winner.
+      plain: reserves,
+    },
+    {
+      id: 'kvTokens',
+      group: 'memory',
+      label: t('compare.rows.kvTokens'),
+      context: t('compare.rows.kvTokensHint'),
+      help: t('compare.rows.kvTokensHelp'),
+      values: items.map((it) => it.kvTokens),
+      higherIsBetter: true,
+      kind: 'amount',
+      format: (v) => `${integer(v)} token`,
+      // Only some engines say it, each its own way: ranked only between numbers of the same engine.
+      plain: new Set(items.flatMap((it) => (it.kvTokens === undefined ? [] : [engineBase(it.run)]))).size > 1,
+      missing: items.map((it) => (it.kvTokens === undefined ? t('compare.notReported') : undefined)),
+    },
   );
   const users = usersChoice(items);
   if (users) {
@@ -350,7 +486,7 @@ export type RowLead = { winner: number; tie: true } | { winner: number; tie: fal
 export function rowLead(row: CompareRow, f: Pick<Formatters, 't' | 'number' | 'percent'>): RowLead | undefined {
   if (!row.best.length) return undefined;
   const winner = row.best[0]!;
-  const others = row.values.flatMap((v, i) => (v === undefined || row.best.includes(i) ? [] : [{ v, i }]));
+  const others = row.values.flatMap((v, i) => (v === undefined || row.best.includes(i) || row.compared?.[i] === false ? [] : [{ v, i }]));
   if (!others.length) return { winner, tie: true };
   const second = others.reduce((a, b) => ((row.higherIsBetter ? b.v > a.v : b.v < a.v) ? b : a));
   const top = row.values[winner]!;
@@ -360,8 +496,10 @@ export function rowLead(row: CompareRow, f: Pick<Formatters, 't' | 'number' | 'p
 }
 
 /**
- * "In breve": who writes faster and who reads faster at the compared depth, in one sentence each,
- * against the runner-up. Nothing when fewer than two items measured it.
+ * "Chi va più veloce": who writes faster and who reads faster where the table compares them, in one
+ * sentence each against the runner-up, with the same context words as the table. At "Contesto
+ * massimo", an item with a smaller context than the others is said apart: its speed with its own
+ * context full does not compare with theirs. Nothing when fewer than two items measured it.
  */
 export function leadSentences(items: readonly CompareItem[], rows: readonly CompareRow[], f: CompareFormatters): string[] {
   const out: string[] = [];
@@ -370,12 +508,21 @@ export function leadSentences(items: readonly CompareItem[], rows: readonly Comp
     const lead = row && rowLead(row, f);
     if (!lead) continue;
     const value = row.format(row.values[lead.winner]!);
-    const context = row.context!;
+    const context = row.leadContext ?? row.context!;
+    const apart = row.values.some((v, i) => v !== undefined && row.compared?.[i] === false);
     out.push(
       lead.tie
-        ? f.t(`compare.lead.${id}Tie`, { value, context })
+        ? apart
+          ? f.t(`compare.lead.${id}TieSome`, { names: row.best.map((i) => LETTERS[i]).join(', '), value, context })
+          : f.t(`compare.lead.${id}Tie`, { value, context })
         : f.t(`compare.lead.${id}`, { name: itemName(items[lead.winner]!, lead.winner), value, context, diff: lead.diff, other: itemName(items[lead.second]!, lead.second), otherValue: row.format(row.values[lead.second]!) }),
     );
   }
+  // At "Contesto massimo": who has a smaller context than the others, with its own speed.
+  const decode = rows.find((r) => r.id === 'decode');
+  decode?.values.forEach((v, i) => {
+    if (v === undefined || decode.compared?.[i] !== false) return;
+    out.push(f.t('compare.lead.apart', { name: itemName(items[i]!, i), ctx: tokensK(items[i]!.full!.depth, f), value: decode.format(v), top: decode.leadContext! }));
+  });
   return out;
 }

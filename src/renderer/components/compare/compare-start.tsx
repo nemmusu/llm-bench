@@ -29,7 +29,8 @@ import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { modelsOf, type ModelConfigs } from './best-config';
+import { AT_MAX, pointFor } from '../configs/depths';
+import { bestConfigLabel, configSpeedWords, modelsOf, type ModelConfigs } from './best-config';
 import { entryOfConfig, entryOfSummary } from './compare-entries';
 import { CompareToggle } from './compare-tray';
 
@@ -65,11 +66,15 @@ function Picked() {
   );
 }
 
-/** The model's fastest configuration in words: "54,6 tok/s · scrittura con 512 token già nel contesto". */
+/**
+ * The model's best configuration's speed, with what it was measured on: "61,2 tok/s con il contesto
+ * pieno a 256K" (ranked at the largest context), "54,6 tok/s · scrittura con 512 token già nel contesto".
+ */
 function bestLine(m: ModelConfigs, f: ReturnType<typeof useI18n>): string | undefined {
   const best = m.configs[0]!;
-  const v = best.points.find((p) => p.depth === m.depth)?.decodeTps;
-  return v === undefined ? undefined : speedAt(v, { kind: 'write', tokens: m.depth! }, f);
+  if (m.at === AT_MAX) return pointFor(best, AT_MAX)?.decodeTps === undefined ? undefined : configSpeedWords(best, AT_MAX, f);
+  const v = best.points.find((p) => p.depth === m.at)?.decodeTps;
+  return v === undefined ? undefined : speedAt(v, { kind: 'write', tokens: m.at! }, f);
 }
 
 /** The picked item standing for one of these configurations (any of their tests), if any. */
@@ -114,11 +119,11 @@ function ModelsPicker() {
   const toggle = (m: ModelConfigs, on: boolean) => {
     const pick = pickOf(m, sel.items);
     if (!on) sel.remove(pick!.entry);
-    else if (sel.toggle(entryOfConfig(m.configs[0]!, m.depth, f)) === 'full') toast(t('compare.toggle.full', { n: COMPARE_MAX }));
+    else if (sel.toggle(entryOfConfig(m.configs[0]!, m.at, f)) === 'full') toast(t('compare.toggle.full', { n: COMPARE_MAX }));
   };
   const swap = (m: ModelConfigs, id: string) => {
     const old = pickOf(m, sel.items)!.entry;
-    const next = entryOfConfig(m.configs.find((e) => e.id === id)!, m.depth, f);
+    const next = entryOfConfig(m.configs.find((e) => e.id === id)!, m.at, f);
     setCompareSelection(sel.items.map((e) => (e === old ? next : e)));
   };
   return (
@@ -140,7 +145,7 @@ function ModelsPicker() {
                   </span>
                 </label>
                 <div className="flex flex-col gap-1 text-sm">
-                  <span className="text-xs font-medium tracking-wide text-fg-3 uppercase">{t('compare.start.fastest')}</span>
+                  <span className="text-xs font-medium tracking-wide text-fg-3 uppercase">{t(m.at === AT_MAX ? 'compare.start.fastestMax' : 'compare.start.fastest')}</span>
                   <span className="text-fg-2">{words(m.configs[0]!)}</span>
                   {line ? <span className="font-medium text-fg tabular-nums">{line}</span> : <span className="text-fg-3">{t('compare.start.noSpeed')}</span>}
                   {m.configs[0]!.spill && <SpillBadge className="self-start" />}
@@ -151,7 +156,10 @@ function ModelsPicker() {
                     value={pick.config.id}
                     onValueChange={(v) => swap(m, v)}
                     className="mt-auto h-8 text-xs [&>span]:truncate"
-                    options={m.configs.map((e, i) => ({ value: e.id, label: i === 0 ? t('compare.card.fastestConfig', { config: words(e) }) : words(e), text: words(e) }))}
+                    options={m.configs.map((e, i) => {
+                      const speed = configSpeedWords(e, m.at, f);
+                      return { value: e.id, label: i === 0 ? bestConfigLabel(m.at, words(e), f) : words(e), text: words(e), ...(speed ? { description: speed } : {}) };
+                    })}
                   />
                 )}
               </Card>

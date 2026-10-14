@@ -1,8 +1,9 @@
 /**
  * The comparison itself: one column per item (its card on top: model, engine, configuration in words,
- * date, "Usa questo preset" / "Avvia il server così"), one row per measurement with the best value
- * marked and the others' distance in words, every speed at the same measured context ("Confronta a"),
- * the charts with every item on them, and "Cosa cambia tra loro".
+ * date, where its speeds were read, "Usa questo preset" / "Avvia il server così"), one row per
+ * measurement with the best value marked and the others' distance in words, every speed where all of
+ * them measured it ("Confronta a": one context for all, or each one's own largest context full), the
+ * charts with every item on them, and "Cosa cambia tra loro".
  */
 import { ChevronDown, Plus, Share2, X, Zap } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
@@ -30,19 +31,21 @@ import { ScrollX } from '../ui/scroll-x';
 import { SegmentedControl } from '../ui/segmented-control';
 import { Select } from '../ui/select';
 import { Switch } from '../ui/switch';
-import { refOfConfig, rankConfigs } from './best-config';
+import { AT_MAX, type CompareAt } from '../configs/depths';
+import { bestConfigLabel, configSpeedWords, refOfConfig, rankConfigs } from './best-config';
 import { speedSeries, usersLinesOption, usersSeries } from './compare-charts';
 import { DIFF_GROUPS, diffRows } from './compare-diff';
 import {
+  compareAtOf,
   compareRows,
-  defaultDepth,
   depthChoices,
   engineName,
-  fullDepth,
   itemName,
   itemShortName,
   leadSentences,
   LETTERS,
+  maxChoice,
+  pointAt,
   ROW_GROUPS,
   usersChoice,
   type CompareItem,
@@ -65,15 +68,18 @@ export function ItemMark({ index, className }: { index: number; className?: stri
 export interface ComparisonProps {
   items: readonly CompareItem[];
   /** "Confronta a" from the address, when it is one of the choices. */
-  at: number | undefined;
-  onDepth: (depth: number) => void;
+  at: CompareAt | undefined;
+  onDepth: (at: CompareAt) => void;
   /** A new list of items (one removed, or another configuration of the same model). */
   onItems: (refs: CompareRef[]) => void;
   onAdd: () => void;
 }
 
-/** Another configuration of the same model on the same card, for one column ("Configurazione"). */
-function ConfigPicker({ item, depth, onPick }: { item: CompareItem; depth: number | undefined; onPick: (ref: CompareRef) => void }) {
+/**
+ * Another configuration of the same model on the same card, for one column ("Configurazione"): ranked
+ * as in Configurazioni, each with its generation speed and the context it was measured at.
+ */
+function ConfigPicker({ item, at, onPick }: { item: CompareItem; at: CompareAt | undefined; onPick: (ref: CompareRef) => void }) {
   const f = useI18n();
   const { t } = f;
   const gpu = item.run.hardware.gpus[0];
@@ -83,28 +89,45 @@ function ConfigPicker({ item, depth, onPick }: { item: CompareItem; depth: numbe
   if (!current || ranked.configs.length < 2) return null;
   // The context is always said, so the words are never empty.
   const words = (e: ConfigEntry) => configLabelOf(e.engineKind, e.params, f, { tags: e.tags }).text;
+  const label = (e: ConfigEntry) => (e === ranked.configs[0] ? bestConfigLabel(ranked.at, words(e), f) : words(e));
+  // The trigger may cut the words: the whole of them, with the speed and its context, on hover.
+  const title = [label(current), configSpeedWords(current, ranked.at, f)].filter(Boolean).join(' · ');
   return (
-    <Select
-      aria-label={t('compare.card.pickConfig', { name: item.run.model.displayName })}
-      value={current.id}
-      onValueChange={(id) => onPick(refOfConfig(ranked.configs.find((e) => e.id === id)!, depth))}
-      className="h-8 w-full text-xs [&>span]:truncate"
-      options={ranked.configs.map((e, i) => ({
-        value: e.id,
-        label: i === 0 ? t('compare.card.fastestConfig', { config: words(e) }) : words(e),
-        text: words(e),
-      }))}
-    />
+    <div title={title} className="min-w-0">
+      <Select
+        aria-label={t('compare.card.pickConfig', { name: item.run.model.displayName })}
+        value={current.id}
+        onValueChange={(id) => onPick(refOfConfig(ranked.configs.find((e) => e.id === id)!, at ?? ranked.at))}
+        className="h-8 w-full text-xs [&>span]:truncate"
+        options={ranked.configs.map((e) => {
+          const speed = configSpeedWords(e, ranked.at, f);
+          return { value: e.id, label: label(e), text: words(e), ...(speed ? { description: speed } : {}) };
+        })}
+      />
+    </div>
   );
 }
 
+/**
+ * Where an item's speeds were read, said once on its column: at "Contesto massimo" each column has its
+ * own context ("Velocità con il contesto pieno a 208K"), or that it never filled it.
+ */
+function speedsWhere(item: CompareItem, at: CompareAt | undefined, f: ReturnType<typeof useI18n>): string | undefined {
+  if (at !== AT_MAX) return undefined;
+  if (item.full) return f.t('compare.card.speedsFull', { ctx: tokensK(item.full.depth, f) });
+  return item.maxContext === undefined ? undefined : f.t('compare.card.speedsNotFull', { ctx: tokensK(item.maxContext, f) });
+}
+
 /** The card on top of an item's column. */
-function ItemCard({ item, index, depth, onRemove, onPick }: { item: CompareItem; index: number; depth: number | undefined; onRemove: () => void; onPick: (ref: CompareRef) => void }) {
+function ItemCard({ item, index, at, onRemove, onPick }: { item: CompareItem; index: number; at: CompareAt | undefined; onRemove: () => void; onPick: (ref: CompareRef) => void }) {
   const f = useI18n();
   const { t, dateTime } = f;
   const run = item.run;
   const gpu = run.hardware.gpus[0];
   const config = launchLabelOf(item.params, run.engine.kind, f, { blockCount: run.model.facts?.blockCount, tags: item.combo?.tags }).text;
+  const where = speedsWhere(item, at, f);
+  // The preset quotes its own numbers where they are compared (at "Contesto massimo": its context full).
+  const presetAt = at === AT_MAX ? item.full?.depth : at;
   return (
     <div className="flex h-full min-w-0 flex-col gap-2 text-left font-normal">
       <div className="flex items-start gap-2">
@@ -138,10 +161,11 @@ function ItemCard({ item, index, depth, onRemove, onPick }: { item: CompareItem;
           </dd>
         </div>
       </dl>
+      {where && <p className={cn('text-xs font-medium', item.full ? 'text-fg' : 'text-fg-3 italic')}>{where}</p>}
       {item.spill && <SpillBadge className="self-start" />}
       <div className="mt-auto flex flex-col gap-2 pt-1">
-        <ConfigPicker item={item} depth={depth} onPick={onPick} />
-        {run.status === 'completed' && <PresetActions run={run} combo={item.comboIndex} at={depth} layout="compact" />}
+        <ConfigPicker item={item} at={at} onPick={onPick} />
+        {run.status === 'completed' && <PresetActions run={run} combo={item.comboIndex} at={presetAt} layout="compact" />}
       </div>
     </div>
   );
@@ -159,10 +183,11 @@ function ValueCell({ row, i }: { row: CompareRow; i: number }) {
   if (v === undefined) {
     return (
       <td className="border-b border-border px-3 py-2.5 align-top text-sm text-fg-3 italic">
-        {t('compare.notMeasured')}
+        {row.missing?.[i] ?? t('compare.notMeasured')}
       </td>
     );
   }
+  const apart = row.compared?.[i] === false;
   const bestKey = row.kind === 'speed' ? 'compare.best.speed' : row.kind === 'time' ? 'compare.best.time' : row.higherIsBetter ? 'compare.best.more' : 'compare.best.less';
   return (
     <td className="border-b border-border px-3 py-2.5 align-top">
@@ -171,7 +196,9 @@ function ValueCell({ row, i }: { row: CompareRow; i: number }) {
           {row.format(v)}
           {reread && <span className="font-normal"> · {t('longConversations.compare.reread')}</span>}
         </span>
-        {allSame ? (
+        {apart ? (
+          <span className="text-xs text-fg-3">{t('compare.smallerContext')}</span>
+        ) : allSame ? (
           <span className="text-xs text-fg-3">{t('compare.same')}</span>
         ) : best ? (
           <span className="text-xs font-medium text-success-text">{t(row.best.length > 1 ? 'compare.best.tie' : bestKey)}</span>
@@ -197,7 +224,10 @@ function GroupRows({ group, rows, n }: { group: string; rows: readonly CompareRo
         <tr key={r.id} className="hover:bg-surface-2/40">
           <th scope="row" className="sticky left-0 z-10 border-b border-border bg-surface px-3 py-2.5 pl-card text-left align-top font-normal">
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-fg">{r.label}</span>
+              <span className="flex items-center gap-1 text-sm font-medium text-fg">
+                {r.label}
+                {r.help && <HelpTip term={r.label}>{r.help}</HelpTip>}
+              </span>
               {r.context && <span className="text-xs text-fg-3">{r.context}</span>}
             </span>
           </th>
@@ -388,10 +418,11 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
   const { t } = f;
   const [sheet, setSheet] = useState(false);
   const choices = useMemo(() => depthChoices(items), [items]);
-  // Combinations of a search start where it reads their speeds: with the context full, when they share it.
-  const full = fullDepth(items);
-  const depth = at !== undefined && choices.some((c) => c.depth === at) ? at : defaultDepth(choices, full);
-  const rows = useMemo(() => compareRows(items, depth, f), [items, depth, f]);
+  // Where the cards' contexts say: each one's largest context full, or the deepest depth they all measured (defaultAt).
+  const compareAt = compareAtOf(items, choices, at);
+  const depth = compareAt === AT_MAX ? undefined : compareAt;
+  const max = maxChoice(items);
+  const rows = useMemo(() => compareRows(items, compareAt, f), [items, compareAt, f]);
   const lead = leadSentences(items, rows, f);
   const names = useMemo(() => items.map((it, i) => itemName(it, i)), [items]);
   // Chart legends: the letter and the model, short (the cards above say the rest).
@@ -400,15 +431,22 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
   const refs = items.map((it) => it.ref);
   const replace = (i: number, ref: CompareRef) => onItems(refs.map((r, k) => (k === i ? ref : r)));
   const n = items.length;
+  const missingAt = (a: CompareAt) => items.flatMap((it, i) => (pointAt(it, a) ? [] : [LETTERS[i]!]));
   const depthOption = (c: (typeof choices)[number]) => {
-    const missing = items.flatMap((it, i) => (it.points.some((p) => p.depth === c.depth) ? [] : [LETTERS[i]!]));
+    const missing = missingAt(c.depth);
+    const allFull = items.every((it) => it.full?.depth === c.depth);
     return {
       value: String(c.depth),
       label: tokensK(c.depth, f),
       text: tokensK(c.depth, f),
-      description: missing.length ? t('compare.depth.missing', { items: missing.join(', ') }) : t(c.depth === full ? 'compare.depth.allFull' : 'compare.depth.all'),
+      description: missing.length ? t('compare.depth.missing', { items: missing.join(', ') }) : t(allFull ? 'compare.depth.allFull' : 'compare.depth.all'),
     };
   };
+  const maxOption = () => {
+    const missing = missingAt(AT_MAX);
+    return { value: AT_MAX, label: t('compare.depth.max'), text: t('compare.depth.max'), description: missing.length ? t('compare.depth.maxSome', { items: missing.join(', ') }) : t('compare.depth.maxAll') };
+  };
+  const options = [...(max ? [maxOption()] : []), ...choices.map(depthOption)];
 
   return (
     <div className="flex flex-col gap-section">
@@ -425,10 +463,10 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
             <span aria-hidden className="text-sm font-medium text-fg">
               {t('compare.depth.label')}
             </span>
-            {depth === undefined ? (
+            {compareAt === undefined ? (
               <span className="text-sm text-fg-3">{t('compare.depth.none')}</span>
             ) : (
-              <Select aria-label={t('compare.depth.label')} value={String(depth)} onValueChange={(v) => onDepth(Number(v))} className="w-32" options={choices.map(depthOption)} />
+              <Select aria-label={t('compare.depth.label')} value={String(compareAt)} onValueChange={(v) => onDepth(v === AT_MAX ? AT_MAX : Number(v))} className="w-44" options={options} />
             )}
             <HelpTip term={t('compare.depth.label')}>{t('compare.depth.help')}</HelpTip>
           </div>
@@ -463,7 +501,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
                 </th>
                 {items.map((it, i) => (
                   <th key={i} scope="col" aria-label={names[i]} className="border-b border-l border-border px-3 py-3 align-top">
-                    <ItemCard item={it} index={i} depth={depth} onRemove={() => onItems(refs.filter((_, k) => k !== i))} onPick={(ref) => replace(i, ref)} />
+                    <ItemCard item={it} index={i} at={compareAt} onRemove={() => onItems(refs.filter((_, k) => k !== i))} onPick={(ref) => replace(i, ref)} />
                   </th>
                 ))}
               </tr>
@@ -494,7 +532,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
           {t('sheet.open')}
         </Button>
       </div>
-      <SheetDialog open={sheet} onOpenChange={setSheet} compare={{ items, depth, names }} />
+      <SheetDialog open={sheet} onOpenChange={setSheet} compare={{ items, at: compareAt, names }} />
     </div>
   );
 }

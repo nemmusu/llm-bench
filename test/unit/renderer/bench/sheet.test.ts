@@ -17,7 +17,7 @@ const titles = (r: ReturnType<typeof sheetOf>) => r.sections.map((s) => s.title)
 /** The Compare page's items (oldest first), the sheet about `subject`. */
 const compared = (runs: RunResult[], subject = runs.length - 1): SheetCompare => {
   const items = runs.map((r) => itemOf(r));
-  return { items, names: items.map((it, i) => itemName(it, i)), subject, depth: 512 };
+  return { items, names: items.map((it, i) => itemName(it, i)), subject, at: 512 };
 };
 
 /** A run whose command, environment and notes are full of secrets that must never leave. */
@@ -69,7 +69,7 @@ describe('Scheda da condividere: content', () => {
     expect(row(/^Lettura del contesto/)?.[3]).toBe('B · Qwen3-8B-FP8: 2,2 volte più veloce');
     expect(row(/^Velocità di scrittura/)?.[3]).toBe('B · Qwen3-8B-FP8: +16%');
     expect(row(/^Contesto tenuto in memoria/)?.slice(1)).toEqual(['399.806 token', '889.820 token', 'B · Qwen3-8B-FP8: 2,2 volte di più']);
-    expect(row(/^Contesto tenuto in memoria/)?.[0]).toBe('Contesto tenuto in memoria (token) · quanti token la cache KV tiene insieme, secondo il motore');
+    expect(row(/^Contesto tenuto in memoria/)?.[0]).toBe('Contesto tenuto in memoria (token) · quanti token può tenere la cache KV, come lo dice il motore');
     expect(row(/^Attesa prima risposta a/)?.slice(1)).toEqual(['4 min 07 s', '1 min 53 s', 'B · Qwen3-8B-FP8: 2,2 volte più breve']);
     expect(row(/^Attesa risposte successive/)?.slice(1)).toEqual(['riletto da capo (4 min 06 s)', '1,00 s', 'B · Qwen3-8B-FP8: 246 volte più breve']);
     expect(row(/^Generazione/)?.slice(1)).toEqual(['167,9 tok/s', '167,9 tok/s', 'uguale']);
@@ -147,7 +147,7 @@ describe('Scheda da condividere: content', () => {
     const noKv = structuredClone(teamRuns().before);
     delete noKv.metrics.kvCapacity;
     const cmp = sheetOf({ run: teamRuns().now, compare: compared([noKv, teamRuns().now]), appVersion: '0.3.0', now: NOW }, it_).sections.find((x) => x.title === 'Confronto con le altre configurazioni');
-    expect(cmp?.table?.rows.find((x) => (x[0] as string).startsWith('Contesto tenuto in memoria'))?.slice(1)).toEqual(['–', '889.820 token', '–']);
+    expect(cmp?.table?.rows.find((x) => (x[0] as string).startsWith('Contesto tenuto in memoria'))?.slice(1)).toEqual(['il motore non lo dice', '889.820 token', '–']);
   });
 
   it('the model in words', () => {

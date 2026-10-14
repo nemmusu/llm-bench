@@ -395,7 +395,13 @@ describe('the rows: the best number marked, the others in words', () => {
     expect(row('prefill').context).toBe('lettura di un prompt da 512 token');
     expect(row('ttft').context).toBe('dopo un prompt da 512 token');
     expect(row('ttft').format(58.4)).toBe('58 ms');
-    expect(row('maxContext')).toMatchObject({ best: [0, 1], context: 'il più grande con cui è stato avviato' });
+    // A run's context is how it was started, not something it found: side by side, no winner (only "the same").
+    expect(row('maxContext')).toMatchObject({ best: [0, 1], plain: true, context: 'quello con cui è stato avviato' });
+    expect(judge({ ...row('maxContext'), values: [8192, 4096] }, it_)).toMatchObject({ best: [], words: [undefined, undefined] });
+    expect(row('vram')).toMatchObject({ plain: false });
+    expect(row('vram').best).toHaveLength(1);
+    expect(row('vram')).not.toHaveProperty('help');
+    expect(row('decode').missing).toEqual([undefined, undefined]);
     expect(row('perUser').context).toBe('con 4 utenti insieme, prompt da 512 token ciascuno');
     expect(row('vram').format(6963)).toBe('6,8 GB');
     expect(row('warm').format(2140)).toBe('2,14 s');
@@ -405,6 +411,8 @@ describe('the rows: the best number marked, the others in words', () => {
     // At a depth one of them did not measure: no number for it, never an estimate.
     const deeper = compareRows([...items, itemOf(seeded(IDS.quick))], 4096, it_);
     expect(deeper.find((r) => r.id === 'prefill')?.values[2]).toBeUndefined();
+    // Why: its context is smaller than that depth.
+    expect(deeper.find((r) => r.id === 'prefill')?.missing).toEqual([undefined, undefined, 'arriva solo a 1K']);
     // No compared depth: no speed rows.
     expect(compareRows(items, undefined, it_)[0]?.id).toBe('maxContext');
     // A context sweep only: its reading is the context's, not a prompt's.
@@ -418,6 +426,8 @@ describe('the rows: the best number marked, the others in words', () => {
     const rows = compareRows([itemOf(run, { runId: run.id, combo: 0 }), itemOf(run, { runId: run.id, combo: 1 })], 4 * K, it_);
     expect(rows.map((r) => r.id)).toEqual(['decode', 'prefill', 'ttft', 'maxContext', 'vram']);
     expect(rows[0]!.best).toEqual([0]);
+    // The largest context that fits is what a search found: ranked.
+    expect(rows.find((r) => r.id === 'maxContext')).toMatchObject({ plain: false, context: 'il più grande che entra nella scheda, trovato dalla ricerca' });
     expect(rows.find((r) => r.id === 'maxContext')?.words[0]?.text).toBe('−25%');
   });
 
@@ -536,11 +546,11 @@ describe('"Confronta modelli": the best configuration of each model on this card
     const old = config({ id: 'old', points: [at(4096, 200)], latest: '2026-08-04T00:00:00.000Z' });
     const spill = config({ id: 'spill', points: [at(512, 500)], spill: true });
     expect(rankingDepth([a, b, c, d, deep])).toBe(512);
-    expect(rankConfigs([a, b, c, d, deep, old, spill])).toEqual({ configs: [d, c, b, a, deep, old, spill], depth: 512 });
+    expect(rankConfigs([a, b, c, d, deep, old, spill])).toEqual({ configs: [d, c, b, a, deep, old, spill], at: 512 });
     // Equally many at 256 and 1024: the closer to 512 (both as close), then the deeper.
     expect(rankingDepth([config({ points: [at(256, 1)] }), config({ points: [at(1024, 1)] })])).toBe(1024);
     // Only spills: ranked among themselves.
-    expect(rankConfigs([spill]).depth).toBe(512);
+    expect(rankConfigs([spill]).at).toBe(512);
     // Spills last whatever the order they come in; configurations without a number at the depth after those with one.
     expect(rankConfigs([d, spill]).configs).toEqual([d, spill]);
     expect(rankConfigs([spill, d]).configs).toEqual([d, spill]);
@@ -554,7 +564,7 @@ describe('"Confronta modelli": the best configuration of each model on this card
     expect(rankingDepth([config({ points: [{ depth: 2048, ttftMs: 100, n: 1 }, at(512, 1)] })])).toBe(512);
     // Nothing measured: no depth, newest first.
     const none = rankConfigs([config({ id: 'x', latest: '2026-01-01T00:00:00.000Z' }), config({ id: 'y', latest: '2026-02-01T00:00:00.000Z' })]);
-    expect(none.depth).toBeUndefined();
+    expect(none.at).toBeUndefined();
     expect(none.configs.map((e) => e.id)).toEqual(['y', 'x']);
   });
 
@@ -634,6 +644,6 @@ describe('charts with every item on them', () => {
 describe('a comparison row as the page sees it', () => {
   it('keeps every field the cells need', () => {
     const row: CompareRow = compareRows([itemOf(seeded(IDS.moe)), itemOf(seeded(IDS.gemma))], 512, it_)[0]!;
-    expect(Object.keys(row).sort()).toEqual(['best', 'context', 'format', 'group', 'higherIsBetter', 'id', 'kind', 'label', 'values', 'words']);
+    expect(Object.keys(row).sort()).toEqual(['best', 'context', 'format', 'group', 'higherIsBetter', 'id', 'kind', 'label', 'missing', 'values', 'words']);
   });
 });

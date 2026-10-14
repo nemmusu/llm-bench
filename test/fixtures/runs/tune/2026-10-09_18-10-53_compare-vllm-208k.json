@@ -1,0 +1,4442 @@
+{
+  "schema": 1,
+  "id": "01M4GXRQZS9SKTC0HBQXVLLM08",
+  "app": {
+    "name": "gpu-bench",
+    "version": "0.3.0"
+  },
+  "createdAt": "2026-10-09T18:10:53.268Z",
+  "finishedAt": "2026-10-09T19:19:55.144Z",
+  "status": "completed",
+  "scenario": {
+    "profile": "tune",
+    "steps": [
+      {
+        "kind": "context-sweep",
+        "depths": [],
+        "fractions": false,
+        "outputTokens": 128,
+        "reps": 2
+      }
+    ],
+    "seed": 42
+  },
+  "hardware": {
+    "hostId": "__THIS_HOST_ID__",
+    "hostLabel": "__THIS_PC__",
+    "gpus": [
+      {
+        "index": 0,
+        "uuid": "GPU-00000000-0000-0000-0000-000000000000",
+        "name": "NVIDIA GeForce RTX 5090",
+        "vendor": "nvidia",
+        "memoryTotalMiB": 32607,
+        "driverVersion": "617.14",
+        "cudaVersion": "13.4",
+        "computeCapability": "12.0",
+        "powerLimitW": 575,
+        "pcieGenMax": 5,
+        "pcieWidthMax": 16
+      }
+    ],
+    "cpu": {
+      "model": "Intel(R) Core(TM) Ultra 7 265F",
+      "cores": 20,
+      "threads": 20
+    },
+    "ramBytes": 205751443456,
+    "os": {
+      "platform": "win32",
+      "release": "10.0.26300",
+      "arch": "x64",
+      "name": "Windows 11 Pro 26H2",
+      "isWsl": false,
+      "powerPlan": "Prestazioni elevate"
+    }
+  },
+  "model": {
+    "displayName": "nvidia/Qwen3.8-27B-NVFP4",
+    "format": "safetensors",
+    "source": "hf",
+    "repo": "nvidia/Qwen3.8-27B-NVFP4",
+    "revision": "482ca0f3832238542f8f5295dde86b5f22711d80",
+    "file": "model-00001-of-00003.safetensors",
+    "files": [
+      "model-00001-of-00003.safetensors",
+      "model-00002-of-00003.safetensors",
+      "model-00003-of-00003.safetensors"
+    ],
+    "quant": "MODELOPT",
+    "sizeBytes": 21921697280,
+    "weakKey": "nvidia/Qwen3.8-27B-NVFP4/model-00001-of-00003.safetensors//21921697280",
+    "path": "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4",
+    "facts": {
+      "architecture": "Qwen3_5ForConditionalGeneration",
+      "name": "nvidia/Qwen3.8-27B-NVFP4",
+      "quant": "MODELOPT",
+      "contextLength": 262144,
+      "blockCount": 64,
+      "headCount": 24,
+      "headCountKv": 4,
+      "keyLength": 256,
+      "valueLength": 256,
+      "embeddingLength": 5120,
+      "fullAttentionLayers": 16,
+      "kv": {
+        "groups": [
+          {
+            "layers": 16,
+            "kvHeads": 4,
+            "keyLength": 256,
+            "valueLength": 256
+          }
+        ],
+        "recurrentLayers": 48,
+        "recurrentBytesPerSeq": 156893184
+      },
+      "vocabSize": 248320,
+      "feedForwardLength": 17408
+    }
+  },
+  "engine": {
+    "kind": "vllm-docker",
+    "name": "vLLM",
+    "version": "v0.31.0",
+    "image": "vllm/vllm-openai:v0.31.0",
+    "imageDigest": "sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3"
+  },
+  "launch": {
+    "argv": [
+      "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+      "run",
+      "-d",
+      "--name",
+      "gpubench-00000000-0000-0000-0000-000000000000",
+      "--label",
+      "gpubench=1",
+      "--label",
+      "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+      "--gpus",
+      "all",
+      "--ipc=host",
+      "-p",
+      "127.0.0.1:61869:8000",
+      "-v",
+      "gpubench-hf-cache:/root/.cache/huggingface",
+      "-v",
+      "gpubench-vllm-cache:/root/.cache/vllm",
+      "-v",
+      "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+      "vllm/vllm-openai:v0.31.0",
+      "/models/Qwen3.8-27B-NVFP4",
+      "--served-model-name",
+      "gpubench-00000000-0000-0000-0000-000000000000",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000",
+      "--max-model-len",
+      "212992",
+      "--gpu-memory-utilization",
+      "0.93",
+      "--max-num-seqs",
+      "1",
+      "--kv-cache-dtype",
+      "fp8",
+      "--max-num-batched-tokens",
+      "2048",
+      "--seed",
+      "0"
+    ],
+    "env": {},
+    "display": {
+      "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+      "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+    },
+    "params": {
+      "kvCacheType": "fp8",
+      "batchSize": 2048,
+      "parallel": 1,
+      "gpuMemoryUtilization": 0.93,
+      "maxModelLen": 212992,
+      "extraArgs": [],
+      "env": {}
+    },
+    "host": "127.0.0.1",
+    "port": 61869,
+    "requestExample": {
+      "model": "gpubench-00000000-0000-0000-0000-000000000000",
+      "prompt": "<1024 token ids>",
+      "max_tokens": 32,
+      "temperature": 0,
+      "seed": 42,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true,
+        "continuous_usage_stats": true
+      },
+      "min_tokens": 32,
+      "ignore_eos": true
+    }
+  },
+  "metrics": {
+    "formulaVersion": 1,
+    "load": {
+      "phases": []
+    },
+    "latency": [],
+    "contextSweep": [
+      {
+        "promptTokens": 1024,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 3,
+          "median": 116.92219999991357,
+          "mean": 118.26193333331805,
+          "min": 116.38809999986552,
+          "max": 121.47550000017509,
+          "stddev": 2.795813610429669,
+          "cv": 0.02364085831870974,
+          "values": [
+            116.38809999986552,
+            121.47550000017509,
+            116.92219999991357
+          ]
+        },
+        "prefillTps": {
+          "n": 3,
+          "median": 8757.96042155174,
+          "mean": 8661.93136656724,
+          "min": 8429.683351774836,
+          "max": 8798.150326375147,
+          "stddev": 202.1340208715208,
+          "cv": 0.02333590654524285,
+          "values": [
+            8798.150326375147,
+            8429.683351774836,
+            8757.96042155174
+          ]
+        },
+        "decodeTps": {
+          "n": 3,
+          "median": 55.750036852087405,
+          "mean": 55.875103801110924,
+          "min": 55.69787996325735,
+          "max": 56.17739458798804,
+          "stddev": 0.2630872006316418,
+          "cv": 0.004708487013610005,
+          "values": [
+            55.69787996325735,
+            56.17739458798804,
+            55.750036852087405
+          ]
+        },
+        "itlP50Ms": 17.889999999897555,
+        "itlP95Ms": 18.678700000047684,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 3,
+          "median": 2395.0128999999724,
+          "mean": 2391.3273999999897,
+          "min": 2382.288300000131,
+          "max": 2396.680999999866,
+          "stddev": 7.872397094150874,
+          "cv": 0.003292061594807515,
+          "values": [
+            2396.680999999866,
+            2382.288300000131,
+            2395.0128999999724
+          ]
+        }
+      },
+      {
+        "promptTokens": 4096,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 409.61664999998175,
+          "mean": 409.61664999998175,
+          "min": 409.1762999999337,
+          "max": 410.0570000000298,
+          "stddev": 0.6227489422589542,
+          "cv": 0.0015203213596395116,
+          "values": [
+            410.0570000000298,
+            409.1762999999337
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 9999.605078811674,
+          "mean": 9999.605078811674,
+          "min": 9988.85520793378,
+          "max": 10010.354949689568,
+          "stddev": 15.2026131892772,
+          "cv": 0.0015203213596395187,
+          "values": [
+            9988.85520793378,
+            10010.354949689568
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 55.73232448157051,
+          "mean": 55.73232448157051,
+          "min": 55.61344852294238,
+          "max": 55.85120044019864,
+          "stddev": 0.1681159929320054,
+          "cv": 0.003016489882592243,
+          "values": [
+            55.61344852294238,
+            55.85120044019864
+          ]
+        },
+        "itlP50Ms": 17.946449999930337,
+        "itlP95Ms": 18.716899999952876,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 2688.6012999997474,
+          "mean": 2688.6012999997474,
+          "min": 2683.4534999998286,
+          "max": 2693.749099999666,
+          "stddev": 7.280088576269368,
+          "cv": 0.0027077605654174356,
+          "values": [
+            2693.749099999666,
+            2683.4534999998286
+          ]
+        }
+      },
+      {
+        "promptTokens": 8192,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 896.4654500000179,
+          "mean": 896.4654500000179,
+          "min": 891.9273000000976,
+          "max": 901.0035999999382,
+          "stddev": 6.417913277970719,
+          "cv": 0.007159130648002766,
+          "values": [
+            891.9273000000976,
+            901.0035999999382
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 9138.34430349651,
+          "mean": 9138.34430349651,
+          "min": 9092.08353884553,
+          "max": 9184.605068147486,
+          "stddev": 65.4226007751626,
+          "cv": 0.007159130648002685,
+          "values": [
+            9184.605068147486,
+            9092.08353884553
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 55.66917639211835,
+          "mean": 55.66917639211835,
+          "min": 55.639969616195565,
+          "max": 55.69838316804114,
+          "stddev": 0.04130461862319825,
+          "cv": 0.000741965685503588,
+          "values": [
+            55.639969616195565,
+            55.69838316804114
+          ]
+        },
+        "itlP50Ms": 17.9730499999132,
+        "itlP95Ms": 19.024175000027753,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 3177.8946499999147,
+          "mean": 3177.8946499999147,
+          "min": 3174.5792000000365,
+          "max": 3181.210099999793,
+          "stddev": 4.688754355197602,
+          "cv": 0.0014754278765023656,
+          "values": [
+            3174.5792000000365,
+            3181.210099999793
+          ]
+        }
+      },
+      {
+        "promptTokens": 16384,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 1860.5053499997593,
+          "mean": 1860.5053499997593,
+          "min": 1851.2840999998152,
+          "max": 1869.7265999997035,
+          "stddev": 13.040816811953876,
+          "cv": 0.00700928745620407,
+          "values": [
+            1869.7265999997035,
+            1851.2840999998152
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 8806.425890554709,
+          "mean": 8806.425890554709,
+          "min": 8762.77847253315,
+          "max": 8850.073308576268,
+          "stddev": 61.72677052865677,
+          "cv": 0.007009287456204172,
+          "values": [
+            8762.77847253315,
+            8850.073308576268
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 55.218419335476625,
+          "mean": 55.218419335476625,
+          "min": 55.213226306623454,
+          "max": 55.2236123643298,
+          "stddev": 0.007344051833953892,
+          "cv": 0.00013300003734868773,
+          "values": [
+            55.2236123643298,
+            55.213226306623454
+          ]
+        },
+        "itlP50Ms": 18.171650000149384,
+        "itlP95Ms": 19.128460000013,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 4160.708149999846,
+          "mean": 4160.708149999846,
+          "min": 4151.8001000001095,
+          "max": 4169.616199999582,
+          "stddev": 12.59788512392465,
+          "cv": 0.0030278223489251742,
+          "values": [
+            4169.616199999582,
+            4151.8001000001095
+          ]
+        }
+      },
+      {
+        "promptTokens": 32768,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 4459.605650000041,
+          "mean": 4459.605650000041,
+          "min": 4459.590799999889,
+          "max": 4459.620500000194,
+          "stddev": 0.021001071616716223,
+          "cv": 0.000004709176834215381,
+          "values": [
+            4459.590799999889,
+            4459.620500000194
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 7347.734883321586,
+          "mean": 7347.734883321586,
+          "min": 7347.710416166258,
+          "max": 7347.759350476912,
+          "stddev": 0.03460178289595502,
+          "cv": 0.000004709176834141992,
+          "values": [
+            7347.759350476912,
+            7347.710416166258
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 54.32550486001868,
+          "mean": 54.32550486001868,
+          "min": 54.14943265038659,
+          "max": 54.50157706965077,
+          "stddev": 0.249003706818699,
+          "cv": 0.0045835507182180905,
+          "values": [
+            54.14943265038659,
+            54.50157706965077
+          ]
+        },
+        "itlP50Ms": 18.491399999940768,
+        "itlP95Ms": 19.2271099999547,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 6797.543150000041,
+          "mean": 6797.543150000041,
+          "min": 6790.000700000208,
+          "max": 6805.085599999875,
+          "stddev": 10.666635083285454,
+          "cv": 0.0015691897569323101,
+          "values": [
+            6805.085599999875,
+            6790.000700000208
+          ]
+        }
+      },
+      {
+        "promptTokens": 65536,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 12054.553850000026,
+          "mean": 12054.553850000026,
+          "min": 12034.109199999832,
+          "max": 12074.99850000022,
+          "stddev": 28.91310130824558,
+          "cv": 0.0023985210624983453,
+          "values": [
+            12034.109199999832,
+            12074.99850000022
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 5436.633269648301,
+          "mean": 5436.633269648301,
+          "min": 5427.4126824942305,
+          "max": 5445.853856802372,
+          "stddev": 13.039879406330243,
+          "cv": 0.002398521062498262,
+          "values": [
+            5445.853856802372,
+            5427.4126824942305
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 52.42349166596423,
+          "mean": 52.42349166596423,
+          "min": 52.408275819726654,
+          "max": 52.4387075122018,
+          "stddev": 0.02151845611216046,
+          "cv": 0.0004104735382616882,
+          "values": [
+            52.4387075122018,
+            52.408275819726654
+          ]
+        },
+        "itlP50Ms": 19.219699999783188,
+        "itlP95Ms": 20.079040000378154,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 14477.427149999887,
+          "mean": 14477.427149999887,
+          "min": 14456.313199999742,
+          "max": 14498.541100000031,
+          "stddev": 29.859634445471823,
+          "cv": 0.0020624959211396933,
+          "values": [
+            14456.313199999742,
+            14498.541100000031
+          ]
+        }
+      },
+      {
+        "promptTokens": 131072,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 3,
+          "median": 37032.448700000066,
+          "mean": 37004.92163333335,
+          "min": 36832.72409999999,
+          "max": 37149.59210000001,
+          "stddev": 160.21746754164417,
+          "cv": 0.004329625911092951,
+          "values": [
+            36832.72409999999,
+            37032.448700000066,
+            37149.59210000001
+          ]
+        },
+        "prefillTps": {
+          "n": 3,
+          "median": 3539.382476752064,
+          "mean": 3542.0596515269485,
+          "min": 3528.221780933093,
+          "max": 3558.5746968956887,
+          "stddev": 15.352534821310606,
+          "cv": 0.004334352419698035,
+          "values": [
+            3558.5746968956887,
+            3539.382476752064,
+            3528.221780933093
+          ]
+        },
+        "decodeTps": {
+          "n": 3,
+          "median": 49.09241651274355,
+          "mean": 49.07050147981579,
+          "min": 48.78870514584769,
+          "max": 49.330382780856134,
+          "stddev": 0.2715029770891155,
+          "cv": 0.005532916291894695,
+          "values": [
+            49.09241651274355,
+            49.330382780856134,
+            48.78870514584769
+          ]
+        },
+        "itlP50Ms": 20.697799999965355,
+        "itlP95Ms": 21.546000000089407,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 3,
+          "median": 39607.217399999965,
+          "mean": 39594.20449999991,
+          "min": 39422.44949999987,
+          "max": 39752.94659999991,
+          "stddev": 165.6323789357536,
+          "cv": 0.0041832480542892065,
+          "values": [
+            39422.44949999987,
+            39607.217399999965,
+            39752.94659999991
+          ]
+        }
+      },
+      {
+        "promptTokens": 212848,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 1,
+          "median": 170305.3888999999,
+          "mean": 170305.3888999999,
+          "min": 170305.3888999999,
+          "max": 170305.3888999999,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            170305.3888999999
+          ]
+        },
+        "prefillTps": {
+          "n": 1,
+          "median": 1249.8019080592942,
+          "mean": 1249.8019080592942,
+          "min": 1249.8019080592942,
+          "max": 1249.8019080592942,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            1249.8019080592942
+          ]
+        },
+        "decodeTps": {
+          "n": 1,
+          "median": 45.54025534457024,
+          "mean": 45.54025534457024,
+          "min": 45.54025534457024,
+          "max": 45.54025534457024,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            45.54025534457024
+          ]
+        },
+        "itlP50Ms": 22.42839999985881,
+        "itlP95Ms": 23.443370000086723,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 1,
+          "median": 173094.69420000003,
+          "mean": 173094.69420000003,
+          "min": 173094.69420000003,
+          "max": 173094.69420000003,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            173094.69420000003
+          ]
+        }
+      }
+    ],
+    "concurrency": [],
+    "sessions": [],
+    "llamaBench": [],
+    "vram": {
+      "baselineMiB": 1251,
+      "peakMiB": 31313,
+      "deltaMiB": 30062,
+      "estimateMiB": 24128,
+      "method": "total-delta"
+    },
+    "energy": {
+      "avgPowerW": 349.88596788902555,
+      "maxPowerW": 551.11,
+      "tokensPerJoule": 0.14296321151255773
+    },
+    "thermals": {
+      "maxTempC": 80,
+      "throttleReasons": []
+    }
+  },
+  "validity": [
+    "slow_shared_filesystem"
+  ],
+  "notes": [],
+  "sharedGpu": [],
+  "telemetry": {
+    "intervalMs": 2000,
+    "t": [
+      1200,
+      3271,
+      5332,
+      7397
+    ],
+    "utilPct": [
+      8.8,
+      3,
+      1.3,
+      1.3
+    ],
+    "memUsedMiB": [
+      1252,
+      1231,
+      1211,
+      1206
+    ],
+    "powerW": [
+      62.2,
+      61.7,
+      57.2,
+      54.8
+    ],
+    "tempC": [
+      47,
+      47,
+      47,
+      47
+    ],
+    "smClockMHz": [
+      1453,
+      1728.5,
+      1311.1,
+      1123.9
+    ],
+    "marks": []
+  },
+  "logExcerpt": "",
+  "tuning": {
+    "budget": "thorough",
+    "maxLaunches": 60,
+    "estimateSeconds": 4698,
+    "limitSeconds": 7048,
+    "dimensions": [
+      {
+        "key": "kv",
+        "values": [
+          "auto",
+          "fp8"
+        ]
+      },
+      {
+        "key": "gmu",
+        "values": [
+          0.93
+        ]
+      },
+      {
+        "key": "bt",
+        "values": [
+          2048,
+          8192,
+          16384
+        ]
+      }
+    ],
+    "capacity": [
+      {
+        "kvType": "auto",
+        "predictedMax": 155648,
+        "measuredMax": 112640,
+        "inferred": false,
+        "bound": "found",
+        "failedAt": 131072
+      },
+      {
+        "kvType": "fp8",
+        "predictedMax": 262144,
+        "measuredMax": 212992,
+        "inferred": false,
+        "bound": "found",
+        "failedAt": 214016
+      }
+    ],
+    "depths": [
+      1024,
+      4096,
+      8192,
+      16384,
+      32768,
+      65536,
+      112640,
+      131072,
+      212992
+    ],
+    "attempts": [
+      {
+        "stage": "reference",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 4096,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 4096,
+        "outcome": "ok",
+        "loadMs": 354245.18100000004,
+        "vramPeakMiB": 29553,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 277.7005000000354,
+              "mean": 277.7005000000354,
+              "min": 277.7005000000354,
+              "max": 277.7005000000354,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                277.7005000000354
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 3687.425841868738,
+              "mean": 3687.425841868738,
+              "min": 3687.425841868738,
+              "max": 3687.425841868738,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                3687.425841868738
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 55.469657113419274,
+              "mean": 55.469657113419274,
+              "min": 55.469657113419274,
+              "max": 55.469657113419274,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                55.469657113419274
+              ]
+            },
+            "itlP50Ms": 18.20020000002114,
+            "itlP95Ms": 18.935249999980442,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 837.0526000000536,
+              "mean": 837.0526000000536,
+              "min": 837.0526000000536,
+              "max": 837.0526000000536,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                837.0526000000536
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "4096",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 4096 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 4096 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 34.2751999999964,
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 51541
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 155648,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 155648,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 155648,
+            "estimatedMaxModelLen": 112896
+          },
+          "detail": "(EngineCore pid=110) ERROR 10-09 18:20:19 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (155648), (9.81 GiB KV cache is needed, which is larger than the available KV cache memory (7.18 GiB). Based on the available memory, the estimated maximum model length is 112896. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 212982.99110000004,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "155648",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 155648 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 155648 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 357669.1963,
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 112640,
+        "outcome": "ok",
+        "loadMs": 280510.473,
+        "vramPeakMiB": 29447,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 384.11129999998957,
+              "mean": 384.11129999998957,
+              "min": 384.11129999998957,
+              "max": 384.11129999998957,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                384.11129999998957
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2665.8939739602242,
+              "mean": 2665.8939739602242,
+              "min": 2665.8939739602242,
+              "max": 2665.8939739602242,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2665.8939739602242
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 57.54283553645085,
+              "mean": 57.54283553645085,
+              "min": 57.54283553645085,
+              "max": 57.54283553645085,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                57.54283553645085
+              ]
+            },
+            "itlP50Ms": 17.402699999976903,
+            "itlP95Ms": 18.34839999995893,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 923.1546999999555,
+              "mean": 923.1546999999555,
+              "min": 923.1546999999555,
+              "max": 923.1546999999555,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                923.1546999999555
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 570880.8866,
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 113390
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 262144,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 262144,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 262144,
+            "estimatedMaxModelLen": 213248
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 18:27:38 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (262144), (8.33 GiB KV cache is needed, which is larger than the available KV cache memory (6.8 GiB). Based on the available memory, the estimated maximum model length is 213248. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 155122.43410000007,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "262144",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 262144 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 262144 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 854967.6882,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 212992,
+        "outcome": "ok",
+        "loadMs": 289898.1335,
+        "vramPeakMiB": 29680,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 293.1912000000011,
+              "mean": 293.1912000000011,
+              "min": 293.1912000000011,
+              "max": 293.1912000000011,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                293.1912000000011
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 3492.601415049279,
+              "mean": 3492.601415049279,
+              "min": 3492.601415049279,
+              "max": 3492.601415049279,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                3492.601415049279
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 56.07410029558075,
+              "mean": 56.07410029558075,
+              "min": 56.07410029558075,
+              "max": 56.07410029558075,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                56.07410029558075
+              ]
+            },
+            "itlP50Ms": 17.90930000017397,
+            "itlP95Ms": 18.682799999951385,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 846.34440000006,
+              "mean": 846.34440000006,
+              "min": 846.34440000006,
+              "max": 846.34440000006,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                846.34440000006
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 1010308.5606000001,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 214491
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 214016,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 214016,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 214016,
+            "estimatedMaxModelLen": 213248
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 18:35:41 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (214016), (6.84 GiB KV cache is needed, which is larger than the available KV cache memory (6.8 GiB). Based on the available memory, the estimated maximum model length is 213248. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 190438.33499999996,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "214016",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 214016 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 214016 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "atMs": 1303454.2938,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 212992,
+        "outcome": "ok",
+        "loadMs": 194298.22940000007,
+        "vramPeakMiB": 29560,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 159.51190000004135,
+              "mean": 159.51190000004135,
+              "min": 159.51190000004135,
+              "max": 159.51190000004135,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                159.51190000004135
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 6419.583742653273,
+              "mean": 6419.583742653273,
+              "min": 6419.583742653273,
+              "max": 6419.583742653273,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                6419.583742653273
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 55.22861797331975,
+              "mean": 55.22861797331975,
+              "min": 55.22861797331975,
+              "max": 55.22861797331975,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                55.22861797331975
+              ]
+            },
+            "itlP50Ms": 17.968399999896064,
+            "itlP95Ms": 20.89174999995157,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 721.1122000000905,
+              "mean": 721.1122000000905,
+              "min": 721.1122000000905,
+              "max": 721.1122000000905,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                721.1122000000905
+              ]
+            }
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 116.92219999991357,
+              "mean": 118.26193333331805,
+              "min": 116.38809999986552,
+              "max": 121.47550000017509,
+              "stddev": 2.795813610429669,
+              "cv": 0.02364085831870974,
+              "values": [
+                116.38809999986552,
+                121.47550000017509,
+                116.92219999991357
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 8757.96042155174,
+              "mean": 8661.93136656724,
+              "min": 8429.683351774836,
+              "max": 8798.150326375147,
+              "stddev": 202.1340208715208,
+              "cv": 0.02333590654524285,
+              "values": [
+                8798.150326375147,
+                8429.683351774836,
+                8757.96042155174
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 55.750036852087405,
+              "mean": 55.875103801110924,
+              "min": 55.69787996325735,
+              "max": 56.17739458798804,
+              "stddev": 0.2630872006316418,
+              "cv": 0.004708487013610005,
+              "values": [
+                55.69787996325735,
+                56.17739458798804,
+                55.750036852087405
+              ]
+            },
+            "itlP50Ms": 17.889999999897555,
+            "itlP95Ms": 18.678700000047684,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 2395.0128999999724,
+              "mean": 2391.3273999999897,
+              "min": 2382.288300000131,
+              "max": 2396.680999999866,
+              "stddev": 7.872397094150874,
+              "cv": 0.003292061594807515,
+              "values": [
+                2396.680999999866,
+                2382.288300000131,
+                2395.0128999999724
+              ]
+            }
+          },
+          {
+            "promptTokens": 131072,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 37032.448700000066,
+              "mean": 37004.92163333335,
+              "min": 36832.72409999999,
+              "max": 37149.59210000001,
+              "stddev": 160.21746754164417,
+              "cv": 0.004329625911092951,
+              "values": [
+                36832.72409999999,
+                37032.448700000066,
+                37149.59210000001
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 3539.382476752064,
+              "mean": 3542.0596515269485,
+              "min": 3528.221780933093,
+              "max": 3558.5746968956887,
+              "stddev": 15.352534821310606,
+              "cv": 0.004334352419698035,
+              "values": [
+                3558.5746968956887,
+                3539.382476752064,
+                3528.221780933093
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 49.09241651274355,
+              "mean": 49.07050147981579,
+              "min": 48.78870514584769,
+              "max": 49.330382780856134,
+              "stddev": 0.2715029770891155,
+              "cv": 0.005532916291894695,
+              "values": [
+                49.09241651274355,
+                49.330382780856134,
+                48.78870514584769
+              ]
+            },
+            "itlP50Ms": 20.697799999965355,
+            "itlP95Ms": 21.546000000089407,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 39607.217399999965,
+              "mean": 39594.20449999991,
+              "min": 39422.44949999987,
+              "max": 39752.94659999991,
+              "stddev": 165.6323789357536,
+              "cv": 0.0041832480542892065,
+              "values": [
+                39422.44949999987,
+                39607.217399999965,
+                39752.94659999991
+              ]
+            }
+          },
+          {
+            "promptTokens": 212848,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 170305.3888999999,
+              "mean": 170305.3888999999,
+              "min": 170305.3888999999,
+              "max": 170305.3888999999,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                170305.3888999999
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1249.8019080592942,
+              "mean": 1249.8019080592942,
+              "min": 1249.8019080592942,
+              "max": 1249.8019080592942,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1249.8019080592942
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 45.54025534457024,
+              "mean": 45.54025534457024,
+              "min": 45.54025534457024,
+              "max": 45.54025534457024,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                45.54025534457024
+              ]
+            },
+            "itlP50Ms": 22.42839999985881,
+            "itlP95Ms": 23.443370000086723,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 173094.69420000003,
+              "mean": 173094.69420000003,
+              "min": 173094.69420000003,
+              "max": 173094.69420000003,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                173094.69420000003
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "screen": "kept",
+        "atMs": 1494099.0276000001,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 214491
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 8192,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 212992,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 212992,
+            "estimatedMaxModelLen": 210112
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 18:47:12 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (212992), (6.79 GiB KV cache is needed, which is larger than the available KV cache memory (6.74 GiB). Based on the available memory, the estimated maximum model length is 210112. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 195005.24150000024,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "8192",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 8192 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 8192 --seed 0"
+        },
+        "atMs": 1990390.7473,
+        "variant": {
+          "kv": "fp8",
+          "bt": 8192,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 16384,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 212992,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 212992,
+            "estimatedMaxModelLen": 181888
+          },
+          "detail": "ValueError: To serve at least one request with the model's max seq len (212992), (6.79 GiB KV cache is needed, which is larger than the available KV cache memory (5.87 GiB). Based on the available memory, the estimated maximum model length is 181888. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 192364.62019999977,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "16384",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 16384 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 16384 --seed 0"
+        },
+        "atMs": 2185514.1759,
+        "variant": {
+          "kv": "fp8",
+          "bt": 16384,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 212992,
+        "outcome": "ok",
+        "loadMs": 187570.34409999987,
+        "vramPeakMiB": 29624,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 156.67900000000373,
+              "mean": 156.67900000000373,
+              "min": 156.67900000000373,
+              "max": 156.67900000000373,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                156.67900000000373
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 6535.6557036997665,
+              "mean": 6535.6557036997665,
+              "min": 6535.6557036997665,
+              "max": 6535.6557036997665,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                6535.6557036997665
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 56.86266309494963,
+              "mean": 56.86266309494963,
+              "min": 56.86266309494963,
+              "max": 56.86266309494963,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                56.86266309494963
+              ]
+            },
+            "itlP50Ms": 17.711800000164658,
+            "itlP95Ms": 18.27985000004992,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 702.7345000002533,
+              "mean": 702.7345000002533,
+              "min": 702.7345000002533,
+              "max": 702.7345000002533,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                702.7345000002533
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 409.61664999998175,
+              "mean": 409.61664999998175,
+              "min": 409.1762999999337,
+              "max": 410.0570000000298,
+              "stddev": 0.6227489422589542,
+              "cv": 0.0015203213596395116,
+              "values": [
+                410.0570000000298,
+                409.1762999999337
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9999.605078811674,
+              "mean": 9999.605078811674,
+              "min": 9988.85520793378,
+              "max": 10010.354949689568,
+              "stddev": 15.2026131892772,
+              "cv": 0.0015203213596395187,
+              "values": [
+                9988.85520793378,
+                10010.354949689568
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.73232448157051,
+              "mean": 55.73232448157051,
+              "min": 55.61344852294238,
+              "max": 55.85120044019864,
+              "stddev": 0.1681159929320054,
+              "cv": 0.003016489882592243,
+              "values": [
+                55.61344852294238,
+                55.85120044019864
+              ]
+            },
+            "itlP50Ms": 17.946449999930337,
+            "itlP95Ms": 18.716899999952876,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2688.6012999997474,
+              "mean": 2688.6012999997474,
+              "min": 2683.4534999998286,
+              "max": 2693.749099999666,
+              "stddev": 7.280088576269368,
+              "cv": 0.0027077605654174356,
+              "values": [
+                2693.749099999666,
+                2683.4534999998286
+              ]
+            }
+          },
+          {
+            "promptTokens": 8192,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 896.4654500000179,
+              "mean": 896.4654500000179,
+              "min": 891.9273000000976,
+              "max": 901.0035999999382,
+              "stddev": 6.417913277970719,
+              "cv": 0.007159130648002766,
+              "values": [
+                891.9273000000976,
+                901.0035999999382
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9138.34430349651,
+              "mean": 9138.34430349651,
+              "min": 9092.08353884553,
+              "max": 9184.605068147486,
+              "stddev": 65.4226007751626,
+              "cv": 0.007159130648002685,
+              "values": [
+                9184.605068147486,
+                9092.08353884553
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.66917639211835,
+              "mean": 55.66917639211835,
+              "min": 55.639969616195565,
+              "max": 55.69838316804114,
+              "stddev": 0.04130461862319825,
+              "cv": 0.000741965685503588,
+              "values": [
+                55.639969616195565,
+                55.69838316804114
+              ]
+            },
+            "itlP50Ms": 17.9730499999132,
+            "itlP95Ms": 19.024175000027753,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3177.8946499999147,
+              "mean": 3177.8946499999147,
+              "min": 3174.5792000000365,
+              "max": 3181.210099999793,
+              "stddev": 4.688754355197602,
+              "cv": 0.0014754278765023656,
+              "values": [
+                3174.5792000000365,
+                3181.210099999793
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1860.5053499997593,
+              "mean": 1860.5053499997593,
+              "min": 1851.2840999998152,
+              "max": 1869.7265999997035,
+              "stddev": 13.040816811953876,
+              "cv": 0.00700928745620407,
+              "values": [
+                1869.7265999997035,
+                1851.2840999998152
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8806.425890554709,
+              "mean": 8806.425890554709,
+              "min": 8762.77847253315,
+              "max": 8850.073308576268,
+              "stddev": 61.72677052865677,
+              "cv": 0.007009287456204172,
+              "values": [
+                8762.77847253315,
+                8850.073308576268
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.218419335476625,
+              "mean": 55.218419335476625,
+              "min": 55.213226306623454,
+              "max": 55.2236123643298,
+              "stddev": 0.007344051833953892,
+              "cv": 0.00013300003734868773,
+              "values": [
+                55.2236123643298,
+                55.213226306623454
+              ]
+            },
+            "itlP50Ms": 18.171650000149384,
+            "itlP95Ms": 19.128460000013,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 4160.708149999846,
+              "mean": 4160.708149999846,
+              "min": 4151.8001000001095,
+              "max": 4169.616199999582,
+              "stddev": 12.59788512392465,
+              "cv": 0.0030278223489251742,
+              "values": [
+                4169.616199999582,
+                4151.8001000001095
+              ]
+            }
+          },
+          {
+            "promptTokens": 32768,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 4459.605650000041,
+              "mean": 4459.605650000041,
+              "min": 4459.590799999889,
+              "max": 4459.620500000194,
+              "stddev": 0.021001071616716223,
+              "cv": 0.000004709176834215381,
+              "values": [
+                4459.590799999889,
+                4459.620500000194
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 7347.734883321586,
+              "mean": 7347.734883321586,
+              "min": 7347.710416166258,
+              "max": 7347.759350476912,
+              "stddev": 0.03460178289595502,
+              "cv": 0.000004709176834141992,
+              "values": [
+                7347.759350476912,
+                7347.710416166258
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 54.32550486001868,
+              "mean": 54.32550486001868,
+              "min": 54.14943265038659,
+              "max": 54.50157706965077,
+              "stddev": 0.249003706818699,
+              "cv": 0.0045835507182180905,
+              "values": [
+                54.14943265038659,
+                54.50157706965077
+              ]
+            },
+            "itlP50Ms": 18.491399999940768,
+            "itlP95Ms": 19.2271099999547,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 6797.543150000041,
+              "mean": 6797.543150000041,
+              "min": 6790.000700000208,
+              "max": 6805.085599999875,
+              "stddev": 10.666635083285454,
+              "cv": 0.0015691897569323101,
+              "values": [
+                6805.085599999875,
+                6790.000700000208
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 12054.553850000026,
+              "mean": 12054.553850000026,
+              "min": 12034.109199999832,
+              "max": 12074.99850000022,
+              "stddev": 28.91310130824558,
+              "cv": 0.0023985210624983453,
+              "values": [
+                12034.109199999832,
+                12074.99850000022
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 5436.633269648301,
+              "mean": 5436.633269648301,
+              "min": 5427.4126824942305,
+              "max": 5445.853856802372,
+              "stddev": 13.039879406330243,
+              "cv": 0.002398521062498262,
+              "values": [
+                5445.853856802372,
+                5427.4126824942305
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 52.42349166596423,
+              "mean": 52.42349166596423,
+              "min": 52.408275819726654,
+              "max": 52.4387075122018,
+              "stddev": 0.02151845611216046,
+              "cv": 0.0004104735382616882,
+              "values": [
+                52.4387075122018,
+                52.408275819726654
+              ]
+            },
+            "itlP50Ms": 19.219699999783188,
+            "itlP95Ms": 20.079040000378154,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 14477.427149999887,
+              "mean": 14477.427149999887,
+              "min": 14456.313199999742,
+              "max": 14498.541100000031,
+              "stddev": 29.859634445471823,
+              "cv": 0.0020624959211396933,
+              "values": [
+                14456.313199999742,
+                14498.541100000031
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "combination": 0,
+        "atMs": 2378013.0827,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 214491
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 112640,
+        "outcome": "ok",
+        "loadMs": 218429.43889999995,
+        "vramPeakMiB": 29491,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 275.39339999994263,
+              "mean": 275.39339999994263,
+              "min": 275.39339999994263,
+              "max": 275.39339999994263,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                275.39339999994263
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 3718.3171419511627,
+              "mean": 3718.3171419511627,
+              "min": 3718.3171419511627,
+              "max": 3718.3171419511627,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                3718.3171419511627
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 53.43385793315736,
+              "mean": 53.43385793315736,
+              "min": 53.43385793315736,
+              "max": 53.43385793315736,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                53.43385793315736
+              ]
+            },
+            "itlP50Ms": 18.619799999985844,
+            "itlP95Ms": 19.97329999995418,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 855.660500000231,
+              "mean": 855.660500000231,
+              "min": 855.660500000231,
+              "max": 855.660500000231,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                855.660500000231
+              ]
+            }
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 239.96260000020266,
+              "mean": 239.2919000000693,
+              "min": 231.59899999992922,
+              "max": 246.314100000076,
+              "stddev": 7.3804417802198055,
+              "cv": 0.03084283998003137,
+              "values": [
+                239.96260000020266,
+                246.314100000076,
+                231.59899999992922
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 4267.331659179952,
+              "mean": 4282.020152309382,
+              "min": 4157.293472033002,
+              "max": 4421.435325715193,
+              "stddev": 132.68211480631447,
+              "cv": 0.03098586883921045,
+              "values": [
+                4267.331659179952,
+                4157.293472033002,
+                4421.435325715193
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 52.57625077761496,
+              "mean": 52.64893385751969,
+              "min": 52.49328209989067,
+              "max": 52.877268695053424,
+              "stddev": 0.20204838255848157,
+              "cv": 0.003837653828000994,
+              "values": [
+                52.49328209989067,
+                52.57625077761496,
+                52.877268695053424
+              ]
+            },
+            "itlP50Ms": 19.004399999976158,
+            "itlP95Ms": 19.99129999987781,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 2659.43200000003,
+              "mean": 2651.6372333333516,
+              "min": 2633.5208000000566,
+              "max": 2661.9588999999687,
+              "stddev": 15.740081748269823,
+              "cv": 0.005935986095836758,
+              "values": [
+                2659.43200000003,
+                2661.9588999999687,
+                2633.5208000000566
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 10673.468499999959,
+              "mean": 10681.744633333292,
+              "min": 10672.902199999895,
+              "max": 10698.863200000022,
+              "stddev": 14.827817353372387,
+              "cv": 0.0013881456505804232,
+              "values": [
+                10672.902199999895,
+                10673.468499999959,
+                10698.863200000022
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 6140.08464071452,
+              "mean": 6135.335225853109,
+              "min": 6125.510605650128,
+              "max": 6140.410431194679,
+              "stddev": 8.509929873909547,
+              "cv": 0.0013870358441133515,
+              "values": [
+                6140.410431194679,
+                6140.08464071452,
+                6125.510605650128
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 46.105623190649766,
+              "mean": 45.97862024162851,
+              "min": 45.2722767406556,
+              "max": 46.55796079358018,
+              "stddev": 0.6521833965850514,
+              "cv": 0.014184492556707303,
+              "values": [
+                46.55796079358018,
+                46.105623190649766,
+                45.2722767406556
+              ]
+            },
+            "itlP50Ms": 21.945999999996275,
+            "itlP95Ms": 23.058100000023842,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 13428.423299999908,
+              "mean": 13444.65406666665,
+              "min": 13401.095699999947,
+              "max": 13504.443200000096,
+              "stddev": 53.55142182064715,
+              "cv": 0.003983101503029168,
+              "values": [
+                13401.095699999947,
+                13428.423299999908,
+                13504.443200000096
+              ]
+            }
+          },
+          {
+            "promptTokens": 112496,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 50523.46790000005,
+              "mean": 50472.88556666672,
+              "min": 50365.19909999985,
+              "max": 50529.98970000027,
+              "stddev": 93.31620864676654,
+              "cv": 0.0018488383931112983,
+              "values": [
+                50365.19909999985,
+                50529.98970000027,
+                50523.46790000005
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 2226.608834980623,
+              "mean": 2228.845356593824,
+              "min": 2226.3214512390728,
+              "max": 2233.6057835617753,
+              "stddev": 4.12515406277476,
+              "cv": 0.0018508031750928298,
+              "values": [
+                2233.6057835617753,
+                2226.3214512390728,
+                2226.608834980623
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 41.50435712414325,
+              "mean": 41.45186521819858,
+              "min": 41.299987008392115,
+              "max": 41.55125152206036,
+              "stddev": 0.1336039449249661,
+              "cv": 0.0032231105698546487,
+              "values": [
+                41.299987008392115,
+                41.55125152206036,
+                41.50435712414325
+              ]
+            },
+            "itlP50Ms": 24.38219999987632,
+            "itlP95Ms": 25.265800000168383,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 53583.68690000009,
+              "mean": 53537.044000000074,
+              "min": 53440.57569999993,
+              "max": 53586.8694000002,
+              "stddev": 83.55915123582186,
+              "cv": 0.001560772597676886,
+              "values": [
+                53440.57569999993,
+                53586.8694000002,
+                53583.68690000009
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "screen": "kept",
+        "atMs": 2631754.0028,
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 113390
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 8192,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 112640,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 112640,
+            "estimatedMaxModelLen": 111328
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 19:05:59 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (112640), (7.18 GiB KV cache is needed, which is larger than the available KV cache memory (7.12 GiB). Based on the available memory, the estimated maximum model length is 111328. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 250378.59299999988,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "8192",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 8192 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 8192 --seed 0"
+        },
+        "atMs": 3061820.4686000003,
+        "variant": {
+          "kv": "auto",
+          "bt": 8192,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 16384,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 112640,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 112640,
+            "estimatedMaxModelLen": 97216
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 19:10:06 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (112640), (7.18 GiB KV cache is needed, which is larger than the available KV cache memory (6.26 GiB). Based on the available memory, the estimated maximum model length is 97216. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 246412.41870000027,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "16384",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 16384 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 16384 --seed 0"
+        },
+        "atMs": 3312327.9221,
+        "variant": {
+          "kv": "auto",
+          "bt": 16384,
+          "gmu": 0.93
+        }
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "contextSize": 112640,
+        "outcome": "ok",
+        "loadMs": 216365.50009999983,
+        "vramPeakMiB": 29095,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 278.4713999996893,
+              "mean": 278.4713999996893,
+              "min": 278.4713999996893,
+              "max": 278.4713999996893,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                278.4713999996893
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 3677.217839968997,
+              "mean": 3677.217839968997,
+              "min": 3677.217839968997,
+              "max": 3677.217839968997,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                3677.217839968997
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 55.96064847197726,
+              "mean": 55.96064847197726,
+              "min": 55.96064847197726,
+              "max": 55.96064847197726,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                55.96064847197726
+              ]
+            },
+            "itlP50Ms": 17.968499999959022,
+            "itlP95Ms": 18.550949999829754,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 832.5873999996111,
+              "mean": 832.5873999996111,
+              "min": 832.5873999996111,
+              "max": 832.5873999996111,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                832.5873999996111
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 506.38810000009835,
+              "mean": 506.38810000009835,
+              "min": 502.6450000000186,
+              "max": 510.13120000017807,
+              "stddev": 5.293542785431475,
+              "cv": 0.010453529191208179,
+              "values": [
+                510.13120000017807,
+                502.6450000000186
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8089.099664928842,
+              "mean": 8089.099664928842,
+              "min": 8029.306970439311,
+              "max": 8148.8923594183725,
+              "stddev": 84.55963947792539,
+              "cv": 0.01045352919120811,
+              "values": [
+                8029.306970439311,
+                8148.8923594183725
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.3343477706303,
+              "mean": 55.3343477706303,
+              "min": 55.31999787432528,
+              "max": 55.348697666935315,
+              "stddev": 0.020293817973202663,
+              "cv": 0.000366749022818951,
+              "values": [
+                55.31999787432528,
+                55.348697666935315
+              ]
+            },
+            "itlP50Ms": 18.06359999999404,
+            "itlP95Ms": 18.820495000109076,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2801.622849999927,
+              "mean": 2801.622849999927,
+              "min": 2797.2642999999225,
+              "max": 2805.9813999999315,
+              "stddev": 6.163920522287576,
+              "cv": 0.002200125017643876,
+              "values": [
+                2805.9813999999315,
+                2797.2642999999225
+              ]
+            }
+          },
+          {
+            "promptTokens": 8192,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 851.9822499996517,
+              "mean": 851.9822499996517,
+              "min": 850.6701999995857,
+              "max": 853.2942999997176,
+              "stddev": 1.8555189046048692,
+              "cv": 0.0021778844625056776,
+              "values": [
+                853.2942999997176,
+                850.6701999995857
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9615.246594770846,
+              "mean": 9615.246594770846,
+              "min": 9600.439145090635,
+              "max": 9630.054044451057,
+              "stddev": 20.940896161911535,
+              "cv": 0.002177884462505624,
+              "values": [
+                9600.439145090635,
+                9630.054044451057
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 54.718787869125,
+              "mean": 54.718787869125,
+              "min": 54.64383770469821,
+              "max": 54.7937380335518,
+              "stddev": 0.10599553903446718,
+              "cv": 0.0019370958890387814,
+              "values": [
+                54.7937380335518,
+                54.64383770469821
+              ]
+            },
+            "itlP50Ms": 18.275550000136718,
+            "itlP95Ms": 19.16871000030078,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3173.0346499998122,
+              "mean": 3173.0346499998122,
+              "min": 3171.1972999996506,
+              "max": 3174.871999999974,
+              "stddev": 2.598405289054853,
+              "cv": 0.0008189022735868979,
+              "values": [
+                3171.1972999996506,
+                3174.871999999974
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1729.125699999975,
+              "mean": 1729.125699999975,
+              "min": 1727.1088999998756,
+              "max": 1731.1425000000745,
+              "stddev": 2.8521859127347233,
+              "cv": 0.0016494959925323904,
+              "values": [
+                1727.1088999998756,
+                1731.1425000000745
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9475.32171265947,
+              "mean": 9475.32171265947,
+              "min": 9464.26998355092,
+              "max": 9486.37344176802,
+              "stddev": 15.629505192985938,
+              "cv": 0.0016494959925322844,
+              "values": [
+                9486.37344176802,
+                9464.26998355092
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 53.55980984981528,
+              "mean": 53.55980984981528,
+              "min": 53.49142985162044,
+              "max": 53.628189848010116,
+              "stddev": 0.09670392084218904,
+              "cv": 0.0018055314444422464,
+              "values": [
+                53.628189848010116,
+                53.49142985162044
+              ]
+            },
+            "itlP50Ms": 18.692800000077114,
+            "itlP95Ms": 19.3288450000342,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 4100.420200000051,
+              "mean": 4100.420200000051,
+              "min": 4095.3740000003017,
+              "max": 4105.466399999801,
+              "stddev": 7.136404478093079,
+              "cv": 0.0017404080874669843,
+              "values": [
+                4095.3740000003017,
+                4105.466399999801
+              ]
+            }
+          },
+          {
+            "promptTokens": 32768,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 4082.522699999856,
+              "mean": 4082.522699999856,
+              "min": 4078.6941999997944,
+              "max": 4086.3511999999173,
+              "stddev": 5.414316623632322,
+              "cv": 0.0013262183756216502,
+              "values": [
+                4086.3511999999173,
+                4078.6941999997944
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8026.41680770318,
+              "mean": 8026.41680770318,
+              "min": 8018.8898105480175,
+              "max": 8033.943804858342,
+              "stddev": 10.644781460774457,
+              "cv": 0.0013262183756216545,
+              "values": [
+                8018.8898105480175,
+                8033.943804858342
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 51.677456728396436,
+              "mean": 51.677456728396436,
+              "min": 51.633001407669575,
+              "max": 51.721912049123304,
+              "stddev": 0.0628693174915779,
+              "cv": 0.0012165714311755517,
+              "values": [
+                51.721912049123304,
+                51.633001407669575
+              ]
+            },
+            "itlP50Ms": 19.435199999948964,
+            "itlP95Ms": 20.15056499980856,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 6540.19915,
+              "mean": 6540.19915,
+              "min": 6538.496799999848,
+              "max": 6541.901500000153,
+              "stddev": 2.4074864581213142,
+              "cv": 0.00036810598621011626,
+              "values": [
+                6541.901500000153,
+                6538.496799999848
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "combination": 1,
+        "atMs": 3558861.9862,
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        },
+        "kvTokens": 113390
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 262144,
+          "extraArgs": [
+            "--enforce-eager"
+          ],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 262144,
+        "outcome": "oom",
+        "error": {
+          "code": "MODEL_TOO_LARGE",
+          "message": "The context does not fit in the KV cache",
+          "params": {
+            "code": "1",
+            "reason": "kv-cache",
+            "maxModelLen": 262144,
+            "estimatedMaxModelLen": 227360
+          },
+          "detail": "(EngineCore pid=111) ERROR 10-09 19:16:44 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (262144), (8.33 GiB KV cache is needed, which is larger than the available KV cache memory (7.26 GiB). Based on the available memory, the estimated maximum model length is 227360. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.\n…\n    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 185, in run_server_worker\n    async with build_async_engine_client(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 58, in build_async_engine_client\n    async with build_async_engine_client_from_engine_args(\n  File \"/usr/lib/python3.12/contextlib.py\", line 210, in __aenter__\n    return await anext(self.gen)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py\", line 92, in build_async_engine_client_from_engine_args\n    async_llm = AsyncLLM.from_vllm_config(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 248, in from_vllm_config\n    return cls(\n           ^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py\", line 180, in __init__\n    self.engine_core = EngineCoreClient.make_async_mp_client(\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 167, in make_async_mp_client\n    return AsyncMPClient(\n           ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/tracing/otel.py\", line 175, in sync_wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 1100, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py\", line 674, in __init__\n    with launch_core_engines(\n  File \"/usr/lib/python3.12/contextlib.py\", line 144, in __exit__\n    next(self.gen)\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1268, in launch_core_engines\n    wait_for_engine_startup(\n  File \"/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py\", line 1348, in wait_for_engine_startup\n    raise RuntimeError(\nRuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+        },
+        "loadMs": 144221.86620000005,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "262144",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0",
+            "--enforce-eager"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 262144 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0 --enforce-eager",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 262144 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0 --enforce-eager"
+        },
+        "atMs": 3811112.2517,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93,
+          "eager": true
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 227328,
+          "extraArgs": [
+            "--enforce-eager"
+          ],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "contextSize": 227328,
+        "outcome": "spill",
+        "spill": "decode-collapse",
+        "loadMs": 172661.7272999999,
+        "vramPeakMiB": 30042,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 7507.467500000261,
+              "mean": 7507.467500000261,
+              "min": 7507.467500000261,
+              "max": 7507.467500000261,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                7507.467500000261
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 136.3975268624159,
+              "mean": 136.3975268624159,
+              "min": 136.3975268624159,
+              "max": 136.3975268624159,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                136.3975268624159
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 9.771085529778297,
+              "mean": 9.771085529778297,
+              "min": 9.771085529778297,
+              "max": 9.771085529778297,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                9.771085529778297
+              ]
+            },
+            "itlP50Ms": 105.40760000050068,
+            "itlP95Ms": 110.69714999990538,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 10680.200600000098,
+              "mean": 10680.200600000098,
+              "min": 10680.200600000098,
+              "max": 10680.200600000098,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                10680.200600000098
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "227328",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0",
+            "--enforce-eager"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 227328 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0 --enforce-eager",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 227328 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0 --enforce-eager"
+        },
+        "atMs": 3955456.0366,
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93,
+          "eager": true
+        },
+        "kvTokens": 228833
+      }
+    ],
+    "combinations": [
+      {
+        "params": {
+          "kvCacheType": "fp8",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 212992,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "fp8",
+        "maxContext": 212992,
+        "vramPeakMiB": 29624,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 116.92219999991357,
+              "mean": 118.26193333331805,
+              "min": 116.38809999986552,
+              "max": 121.47550000017509,
+              "stddev": 2.795813610429669,
+              "cv": 0.02364085831870974,
+              "values": [
+                116.38809999986552,
+                121.47550000017509,
+                116.92219999991357
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 8757.96042155174,
+              "mean": 8661.93136656724,
+              "min": 8429.683351774836,
+              "max": 8798.150326375147,
+              "stddev": 202.1340208715208,
+              "cv": 0.02333590654524285,
+              "values": [
+                8798.150326375147,
+                8429.683351774836,
+                8757.96042155174
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 55.750036852087405,
+              "mean": 55.875103801110924,
+              "min": 55.69787996325735,
+              "max": 56.17739458798804,
+              "stddev": 0.2630872006316418,
+              "cv": 0.004708487013610005,
+              "values": [
+                55.69787996325735,
+                56.17739458798804,
+                55.750036852087405
+              ]
+            },
+            "itlP50Ms": 17.889999999897555,
+            "itlP95Ms": 18.678700000047684,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 2395.0128999999724,
+              "mean": 2391.3273999999897,
+              "min": 2382.288300000131,
+              "max": 2396.680999999866,
+              "stddev": 7.872397094150874,
+              "cv": 0.003292061594807515,
+              "values": [
+                2396.680999999866,
+                2382.288300000131,
+                2395.0128999999724
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 409.61664999998175,
+              "mean": 409.61664999998175,
+              "min": 409.1762999999337,
+              "max": 410.0570000000298,
+              "stddev": 0.6227489422589542,
+              "cv": 0.0015203213596395116,
+              "values": [
+                410.0570000000298,
+                409.1762999999337
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9999.605078811674,
+              "mean": 9999.605078811674,
+              "min": 9988.85520793378,
+              "max": 10010.354949689568,
+              "stddev": 15.2026131892772,
+              "cv": 0.0015203213596395187,
+              "values": [
+                9988.85520793378,
+                10010.354949689568
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.73232448157051,
+              "mean": 55.73232448157051,
+              "min": 55.61344852294238,
+              "max": 55.85120044019864,
+              "stddev": 0.1681159929320054,
+              "cv": 0.003016489882592243,
+              "values": [
+                55.61344852294238,
+                55.85120044019864
+              ]
+            },
+            "itlP50Ms": 17.946449999930337,
+            "itlP95Ms": 18.716899999952876,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2688.6012999997474,
+              "mean": 2688.6012999997474,
+              "min": 2683.4534999998286,
+              "max": 2693.749099999666,
+              "stddev": 7.280088576269368,
+              "cv": 0.0027077605654174356,
+              "values": [
+                2693.749099999666,
+                2683.4534999998286
+              ]
+            }
+          },
+          {
+            "promptTokens": 8192,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 896.4654500000179,
+              "mean": 896.4654500000179,
+              "min": 891.9273000000976,
+              "max": 901.0035999999382,
+              "stddev": 6.417913277970719,
+              "cv": 0.007159130648002766,
+              "values": [
+                891.9273000000976,
+                901.0035999999382
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9138.34430349651,
+              "mean": 9138.34430349651,
+              "min": 9092.08353884553,
+              "max": 9184.605068147486,
+              "stddev": 65.4226007751626,
+              "cv": 0.007159130648002685,
+              "values": [
+                9184.605068147486,
+                9092.08353884553
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.66917639211835,
+              "mean": 55.66917639211835,
+              "min": 55.639969616195565,
+              "max": 55.69838316804114,
+              "stddev": 0.04130461862319825,
+              "cv": 0.000741965685503588,
+              "values": [
+                55.639969616195565,
+                55.69838316804114
+              ]
+            },
+            "itlP50Ms": 17.9730499999132,
+            "itlP95Ms": 19.024175000027753,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3177.8946499999147,
+              "mean": 3177.8946499999147,
+              "min": 3174.5792000000365,
+              "max": 3181.210099999793,
+              "stddev": 4.688754355197602,
+              "cv": 0.0014754278765023656,
+              "values": [
+                3174.5792000000365,
+                3181.210099999793
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1860.5053499997593,
+              "mean": 1860.5053499997593,
+              "min": 1851.2840999998152,
+              "max": 1869.7265999997035,
+              "stddev": 13.040816811953876,
+              "cv": 0.00700928745620407,
+              "values": [
+                1869.7265999997035,
+                1851.2840999998152
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8806.425890554709,
+              "mean": 8806.425890554709,
+              "min": 8762.77847253315,
+              "max": 8850.073308576268,
+              "stddev": 61.72677052865677,
+              "cv": 0.007009287456204172,
+              "values": [
+                8762.77847253315,
+                8850.073308576268
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.218419335476625,
+              "mean": 55.218419335476625,
+              "min": 55.213226306623454,
+              "max": 55.2236123643298,
+              "stddev": 0.007344051833953892,
+              "cv": 0.00013300003734868773,
+              "values": [
+                55.2236123643298,
+                55.213226306623454
+              ]
+            },
+            "itlP50Ms": 18.171650000149384,
+            "itlP95Ms": 19.128460000013,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 4160.708149999846,
+              "mean": 4160.708149999846,
+              "min": 4151.8001000001095,
+              "max": 4169.616199999582,
+              "stddev": 12.59788512392465,
+              "cv": 0.0030278223489251742,
+              "values": [
+                4169.616199999582,
+                4151.8001000001095
+              ]
+            }
+          },
+          {
+            "promptTokens": 32768,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 4459.605650000041,
+              "mean": 4459.605650000041,
+              "min": 4459.590799999889,
+              "max": 4459.620500000194,
+              "stddev": 0.021001071616716223,
+              "cv": 0.000004709176834215381,
+              "values": [
+                4459.590799999889,
+                4459.620500000194
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 7347.734883321586,
+              "mean": 7347.734883321586,
+              "min": 7347.710416166258,
+              "max": 7347.759350476912,
+              "stddev": 0.03460178289595502,
+              "cv": 0.000004709176834141992,
+              "values": [
+                7347.759350476912,
+                7347.710416166258
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 54.32550486001868,
+              "mean": 54.32550486001868,
+              "min": 54.14943265038659,
+              "max": 54.50157706965077,
+              "stddev": 0.249003706818699,
+              "cv": 0.0045835507182180905,
+              "values": [
+                54.14943265038659,
+                54.50157706965077
+              ]
+            },
+            "itlP50Ms": 18.491399999940768,
+            "itlP95Ms": 19.2271099999547,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 6797.543150000041,
+              "mean": 6797.543150000041,
+              "min": 6790.000700000208,
+              "max": 6805.085599999875,
+              "stddev": 10.666635083285454,
+              "cv": 0.0015691897569323101,
+              "values": [
+                6805.085599999875,
+                6790.000700000208
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 12054.553850000026,
+              "mean": 12054.553850000026,
+              "min": 12034.109199999832,
+              "max": 12074.99850000022,
+              "stddev": 28.91310130824558,
+              "cv": 0.0023985210624983453,
+              "values": [
+                12034.109199999832,
+                12074.99850000022
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 5436.633269648301,
+              "mean": 5436.633269648301,
+              "min": 5427.4126824942305,
+              "max": 5445.853856802372,
+              "stddev": 13.039879406330243,
+              "cv": 0.002398521062498262,
+              "values": [
+                5445.853856802372,
+                5427.4126824942305
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 52.42349166596423,
+              "mean": 52.42349166596423,
+              "min": 52.408275819726654,
+              "max": 52.4387075122018,
+              "stddev": 0.02151845611216046,
+              "cv": 0.0004104735382616882,
+              "values": [
+                52.4387075122018,
+                52.408275819726654
+              ]
+            },
+            "itlP50Ms": 19.219699999783188,
+            "itlP95Ms": 20.079040000378154,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 14477.427149999887,
+              "mean": 14477.427149999887,
+              "min": 14456.313199999742,
+              "max": 14498.541100000031,
+              "stddev": 29.859634445471823,
+              "cv": 0.0020624959211396933,
+              "values": [
+                14456.313199999742,
+                14498.541100000031
+              ]
+            }
+          },
+          {
+            "promptTokens": 131072,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 37032.448700000066,
+              "mean": 37004.92163333335,
+              "min": 36832.72409999999,
+              "max": 37149.59210000001,
+              "stddev": 160.21746754164417,
+              "cv": 0.004329625911092951,
+              "values": [
+                36832.72409999999,
+                37032.448700000066,
+                37149.59210000001
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 3539.382476752064,
+              "mean": 3542.0596515269485,
+              "min": 3528.221780933093,
+              "max": 3558.5746968956887,
+              "stddev": 15.352534821310606,
+              "cv": 0.004334352419698035,
+              "values": [
+                3558.5746968956887,
+                3539.382476752064,
+                3528.221780933093
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 49.09241651274355,
+              "mean": 49.07050147981579,
+              "min": 48.78870514584769,
+              "max": 49.330382780856134,
+              "stddev": 0.2715029770891155,
+              "cv": 0.005532916291894695,
+              "values": [
+                49.09241651274355,
+                49.330382780856134,
+                48.78870514584769
+              ]
+            },
+            "itlP50Ms": 20.697799999965355,
+            "itlP95Ms": 21.546000000089407,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 39607.217399999965,
+              "mean": 39594.20449999991,
+              "min": 39422.44949999987,
+              "max": 39752.94659999991,
+              "stddev": 165.6323789357536,
+              "cv": 0.0041832480542892065,
+              "values": [
+                39422.44949999987,
+                39607.217399999965,
+                39752.94659999991
+              ]
+            }
+          },
+          {
+            "promptTokens": 212848,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 170305.3888999999,
+              "mean": 170305.3888999999,
+              "min": 170305.3888999999,
+              "max": 170305.3888999999,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                170305.3888999999
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1249.8019080592942,
+              "mean": 1249.8019080592942,
+              "min": 1249.8019080592942,
+              "max": 1249.8019080592942,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1249.8019080592942
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 45.54025534457024,
+              "mean": 45.54025534457024,
+              "min": 45.54025534457024,
+              "max": 45.54025534457024,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                45.54025534457024
+              ]
+            },
+            "itlP50Ms": 22.42839999985881,
+            "itlP95Ms": 23.443370000086723,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 173094.69420000003,
+              "mean": 173094.69420000003,
+              "min": 173094.69420000003,
+              "max": 173094.69420000003,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                173094.69420000003
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "212992",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "fp8",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 212992 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 212992 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype fp8 --max-num-batched-tokens 2048 --seed 0"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {
+          "kv": "fp8",
+          "bt": 2048,
+          "gmu": 0.93
+        }
+      },
+      {
+        "params": {
+          "kvCacheType": "auto",
+          "batchSize": 2048,
+          "parallel": 1,
+          "gpuMemoryUtilization": 0.93,
+          "maxModelLen": 112640,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "auto",
+        "maxContext": 112640,
+        "vramPeakMiB": 29095,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 239.96260000020266,
+              "mean": 239.2919000000693,
+              "min": 231.59899999992922,
+              "max": 246.314100000076,
+              "stddev": 7.3804417802198055,
+              "cv": 0.03084283998003137,
+              "values": [
+                239.96260000020266,
+                246.314100000076,
+                231.59899999992922
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 4267.331659179952,
+              "mean": 4282.020152309382,
+              "min": 4157.293472033002,
+              "max": 4421.435325715193,
+              "stddev": 132.68211480631447,
+              "cv": 0.03098586883921045,
+              "values": [
+                4267.331659179952,
+                4157.293472033002,
+                4421.435325715193
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 52.57625077761496,
+              "mean": 52.64893385751969,
+              "min": 52.49328209989067,
+              "max": 52.877268695053424,
+              "stddev": 0.20204838255848157,
+              "cv": 0.003837653828000994,
+              "values": [
+                52.49328209989067,
+                52.57625077761496,
+                52.877268695053424
+              ]
+            },
+            "itlP50Ms": 19.004399999976158,
+            "itlP95Ms": 19.99129999987781,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 2659.43200000003,
+              "mean": 2651.6372333333516,
+              "min": 2633.5208000000566,
+              "max": 2661.9588999999687,
+              "stddev": 15.740081748269823,
+              "cv": 0.005935986095836758,
+              "values": [
+                2659.43200000003,
+                2661.9588999999687,
+                2633.5208000000566
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 506.38810000009835,
+              "mean": 506.38810000009835,
+              "min": 502.6450000000186,
+              "max": 510.13120000017807,
+              "stddev": 5.293542785431475,
+              "cv": 0.010453529191208179,
+              "values": [
+                510.13120000017807,
+                502.6450000000186
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8089.099664928842,
+              "mean": 8089.099664928842,
+              "min": 8029.306970439311,
+              "max": 8148.8923594183725,
+              "stddev": 84.55963947792539,
+              "cv": 0.01045352919120811,
+              "values": [
+                8029.306970439311,
+                8148.8923594183725
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.3343477706303,
+              "mean": 55.3343477706303,
+              "min": 55.31999787432528,
+              "max": 55.348697666935315,
+              "stddev": 0.020293817973202663,
+              "cv": 0.000366749022818951,
+              "values": [
+                55.31999787432528,
+                55.348697666935315
+              ]
+            },
+            "itlP50Ms": 18.06359999999404,
+            "itlP95Ms": 18.820495000109076,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2801.622849999927,
+              "mean": 2801.622849999927,
+              "min": 2797.2642999999225,
+              "max": 2805.9813999999315,
+              "stddev": 6.163920522287576,
+              "cv": 0.002200125017643876,
+              "values": [
+                2805.9813999999315,
+                2797.2642999999225
+              ]
+            }
+          },
+          {
+            "promptTokens": 8192,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 851.9822499996517,
+              "mean": 851.9822499996517,
+              "min": 850.6701999995857,
+              "max": 853.2942999997176,
+              "stddev": 1.8555189046048692,
+              "cv": 0.0021778844625056776,
+              "values": [
+                853.2942999997176,
+                850.6701999995857
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9615.246594770846,
+              "mean": 9615.246594770846,
+              "min": 9600.439145090635,
+              "max": 9630.054044451057,
+              "stddev": 20.940896161911535,
+              "cv": 0.002177884462505624,
+              "values": [
+                9600.439145090635,
+                9630.054044451057
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 54.718787869125,
+              "mean": 54.718787869125,
+              "min": 54.64383770469821,
+              "max": 54.7937380335518,
+              "stddev": 0.10599553903446718,
+              "cv": 0.0019370958890387814,
+              "values": [
+                54.7937380335518,
+                54.64383770469821
+              ]
+            },
+            "itlP50Ms": 18.275550000136718,
+            "itlP95Ms": 19.16871000030078,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3173.0346499998122,
+              "mean": 3173.0346499998122,
+              "min": 3171.1972999996506,
+              "max": 3174.871999999974,
+              "stddev": 2.598405289054853,
+              "cv": 0.0008189022735868979,
+              "values": [
+                3171.1972999996506,
+                3174.871999999974
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1729.125699999975,
+              "mean": 1729.125699999975,
+              "min": 1727.1088999998756,
+              "max": 1731.1425000000745,
+              "stddev": 2.8521859127347233,
+              "cv": 0.0016494959925323904,
+              "values": [
+                1727.1088999998756,
+                1731.1425000000745
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 9475.32171265947,
+              "mean": 9475.32171265947,
+              "min": 9464.26998355092,
+              "max": 9486.37344176802,
+              "stddev": 15.629505192985938,
+              "cv": 0.0016494959925322844,
+              "values": [
+                9486.37344176802,
+                9464.26998355092
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 53.55980984981528,
+              "mean": 53.55980984981528,
+              "min": 53.49142985162044,
+              "max": 53.628189848010116,
+              "stddev": 0.09670392084218904,
+              "cv": 0.0018055314444422464,
+              "values": [
+                53.628189848010116,
+                53.49142985162044
+              ]
+            },
+            "itlP50Ms": 18.692800000077114,
+            "itlP95Ms": 19.3288450000342,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 4100.420200000051,
+              "mean": 4100.420200000051,
+              "min": 4095.3740000003017,
+              "max": 4105.466399999801,
+              "stddev": 7.136404478093079,
+              "cv": 0.0017404080874669843,
+              "values": [
+                4095.3740000003017,
+                4105.466399999801
+              ]
+            }
+          },
+          {
+            "promptTokens": 32768,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 4082.522699999856,
+              "mean": 4082.522699999856,
+              "min": 4078.6941999997944,
+              "max": 4086.3511999999173,
+              "stddev": 5.414316623632322,
+              "cv": 0.0013262183756216502,
+              "values": [
+                4086.3511999999173,
+                4078.6941999997944
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 8026.41680770318,
+              "mean": 8026.41680770318,
+              "min": 8018.8898105480175,
+              "max": 8033.943804858342,
+              "stddev": 10.644781460774457,
+              "cv": 0.0013262183756216545,
+              "values": [
+                8018.8898105480175,
+                8033.943804858342
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 51.677456728396436,
+              "mean": 51.677456728396436,
+              "min": 51.633001407669575,
+              "max": 51.721912049123304,
+              "stddev": 0.0628693174915779,
+              "cv": 0.0012165714311755517,
+              "values": [
+                51.721912049123304,
+                51.633001407669575
+              ]
+            },
+            "itlP50Ms": 19.435199999948964,
+            "itlP95Ms": 20.15056499980856,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 6540.19915,
+              "mean": 6540.19915,
+              "min": 6538.496799999848,
+              "max": 6541.901500000153,
+              "stddev": 2.4074864581213142,
+              "cv": 0.00036810598621011626,
+              "values": [
+                6541.901500000153,
+                6538.496799999848
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 10673.468499999959,
+              "mean": 10681.744633333292,
+              "min": 10672.902199999895,
+              "max": 10698.863200000022,
+              "stddev": 14.827817353372387,
+              "cv": 0.0013881456505804232,
+              "values": [
+                10672.902199999895,
+                10673.468499999959,
+                10698.863200000022
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 6140.08464071452,
+              "mean": 6135.335225853109,
+              "min": 6125.510605650128,
+              "max": 6140.410431194679,
+              "stddev": 8.509929873909547,
+              "cv": 0.0013870358441133515,
+              "values": [
+                6140.410431194679,
+                6140.08464071452,
+                6125.510605650128
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 46.105623190649766,
+              "mean": 45.97862024162851,
+              "min": 45.2722767406556,
+              "max": 46.55796079358018,
+              "stddev": 0.6521833965850514,
+              "cv": 0.014184492556707303,
+              "values": [
+                46.55796079358018,
+                46.105623190649766,
+                45.2722767406556
+              ]
+            },
+            "itlP50Ms": 21.945999999996275,
+            "itlP95Ms": 23.058100000023842,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 13428.423299999908,
+              "mean": 13444.65406666665,
+              "min": 13401.095699999947,
+              "max": 13504.443200000096,
+              "stddev": 53.55142182064715,
+              "cv": 0.003983101503029168,
+              "values": [
+                13401.095699999947,
+                13428.423299999908,
+                13504.443200000096
+              ]
+            }
+          },
+          {
+            "promptTokens": 112496,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 3,
+              "median": 50523.46790000005,
+              "mean": 50472.88556666672,
+              "min": 50365.19909999985,
+              "max": 50529.98970000027,
+              "stddev": 93.31620864676654,
+              "cv": 0.0018488383931112983,
+              "values": [
+                50365.19909999985,
+                50529.98970000027,
+                50523.46790000005
+              ]
+            },
+            "prefillTps": {
+              "n": 3,
+              "median": 2226.608834980623,
+              "mean": 2228.845356593824,
+              "min": 2226.3214512390728,
+              "max": 2233.6057835617753,
+              "stddev": 4.12515406277476,
+              "cv": 0.0018508031750928298,
+              "values": [
+                2233.6057835617753,
+                2226.3214512390728,
+                2226.608834980623
+              ]
+            },
+            "decodeTps": {
+              "n": 3,
+              "median": 41.50435712414325,
+              "mean": 41.45186521819858,
+              "min": 41.299987008392115,
+              "max": 41.55125152206036,
+              "stddev": 0.1336039449249661,
+              "cv": 0.0032231105698546487,
+              "values": [
+                41.299987008392115,
+                41.55125152206036,
+                41.50435712414325
+              ]
+            },
+            "itlP50Ms": 24.38219999987632,
+            "itlP95Ms": 25.265800000168383,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 3,
+              "median": 53583.68690000009,
+              "mean": 53537.044000000074,
+              "min": 53440.57569999993,
+              "max": 53586.8694000002,
+              "stddev": 83.55915123582186,
+              "cv": 0.001560772597676886,
+              "values": [
+                53440.57569999993,
+                53586.8694000002,
+                53583.68690000009
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe",
+            "run",
+            "-d",
+            "--name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--label",
+            "gpubench=1",
+            "--label",
+            "gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000",
+            "--gpus",
+            "all",
+            "--ipc=host",
+            "-p",
+            "127.0.0.1:61869:8000",
+            "-v",
+            "gpubench-hf-cache:/root/.cache/huggingface",
+            "-v",
+            "gpubench-vllm-cache:/root/.cache/vllm",
+            "-v",
+            "C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro",
+            "vllm/vllm-openai:v0.31.0",
+            "/models/Qwen3.8-27B-NVFP4",
+            "--served-model-name",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "112640",
+            "--gpu-memory-utilization",
+            "0.93",
+            "--max-num-seqs",
+            "1",
+            "--kv-cache-dtype",
+            "auto",
+            "--max-num-batched-tokens",
+            "2048",
+            "--seed",
+            "0"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label 'gpubench=1' --label 'gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000' --gpus all '--ipc=host' -p '127.0.0.1:61869:8000' -v 'gpubench-hf-cache:/root/.cache/huggingface' -v 'gpubench-vllm-cache:/root/.cache/vllm' -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' 'vllm/vllm-openai:v0.31.0' '/models/Qwen3.8-27B-NVFP4' --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host '0.0.0.0' --port 8000 --max-model-len 112640 --gpu-memory-utilization '0.93' --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0",
+          "bash": "'C:\\Users\\user\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe' run -d --name gpubench-00000000-0000-0000-0000-000000000000 --label gpubench=1 --label gpubench.marker=gpubench-00000000-0000-0000-0000-000000000000 --gpus all --ipc=host -p 127.0.0.1:61869:8000 -v gpubench-hf-cache:/root/.cache/huggingface -v gpubench-vllm-cache:/root/.cache/vllm -v 'C:\\Users\\user\\GPU Bench\\models\\nvidia\\Qwen3.8-27B-NVFP4:/models/Qwen3.8-27B-NVFP4:ro' vllm/vllm-openai:v0.31.0 /models/Qwen3.8-27B-NVFP4 --served-model-name gpubench-00000000-0000-0000-0000-000000000000 --host 0.0.0.0 --port 8000 --max-model-len 112640 --gpu-memory-utilization 0.93 --max-num-seqs 1 --kv-cache-dtype auto --max-num-batched-tokens 2048 --seed 0"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {
+          "kv": "auto",
+          "bt": 2048,
+          "gmu": 0.93
+        }
+      }
+    ],
+    "recommended": 0,
+    "fastestByDepth": [
+      {
+        "depth": 1024,
+        "combination": 0
+      },
+      {
+        "depth": 4096,
+        "combination": 0
+      },
+      {
+        "depth": 8192,
+        "combination": 1
+      },
+      {
+        "depth": 16384,
+        "combination": 0
+      },
+      {
+        "depth": 32768,
+        "combination": 0
+      },
+      {
+        "depth": 65536,
+        "combination": 0
+      },
+      {
+        "depth": 112640,
+        "combination": 1
+      },
+      {
+        "depth": 131072,
+        "combination": 0
+      },
+      {
+        "depth": 212992,
+        "combination": 0
+      }
+    ]
+  }
+}

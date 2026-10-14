@@ -9,6 +9,7 @@
  */
 import { contextTokensOf, promptsCalibrated, type RunResult } from '../../../contract/results';
 import { compareRows, engineName, rowLead, type CompareItem } from '../../components/compare/compare-model';
+import type { CompareAt } from '../../components/configs/depths';
 import { engineLabelOf, headlinePoint, MIB_PER_GB, modelLabelOf, prefillStat, shortGpuName, slug } from '../../components/bench/format';
 import { tuneHeadline, type TuneHeadline } from '../../components/bench/kpis';
 import { launchLabelOf } from '../../components/presets/config-label';
@@ -20,11 +21,11 @@ import { reportToMarkdown } from './markdown';
 import type { Report, ReportSection } from './report';
 import type { SaveRequest } from './save';
 
-/** The Compare page's items (2–4), their names ("A · Qwen3 8B") and the depth they are compared at. */
+/** The Compare page's items (2–4), their names ("A · Qwen3 8B") and where they are compared ("Confronta a"). */
 export interface SheetCompare {
   items: readonly CompareItem[];
   names: readonly string[];
-  depth?: number | undefined;
+  at?: CompareAt | undefined;
   /** The item the sheet is about (its run is SheetInput.run). */
   subject: number;
 }
@@ -170,14 +171,17 @@ function speedSections(run: RunResult, tuned: TuneHeadline | undefined, f: Forma
 }
 
 /**
- * "Confronto": every compared item in one table, the speeds at the same measured context (said in the
- * row), and who does best against the runner-up, in words.
+ * "Confronto": every compared item in one table, the speeds where the page compares them (said in the
+ * row; at "Contesto massimo" each number says its own context), and who does best against the
+ * runner-up, in words. A number with no winner, or not measured, says so as the page does.
  */
 function comparisonSection(c: SheetCompare, f: Formatters): ReportSection {
   const { t, dateTime } = f;
-  const rows = compareRows(c.items, c.depth, f).map((r) => {
+  const rows = compareRows(c.items, c.at, f).map((r) => {
     const lead = rowLead(r, f);
-    const cell = (v: number | undefined, i: number) => (v === undefined ? '–' : r.reread?.[i] ? `${t('longConversations.compare.reread')} (${r.format(v)})` : r.format(v));
+    const where = (i: number) => (r.compared ? ` (${tokensK(c.items[i]!.full!.depth, f)}${r.compared[i] ? '' : `, ${t('compare.smallerContext')}`})` : '');
+    const cell = (v: number | undefined, i: number) =>
+      v === undefined ? (r.missing?.[i] ?? '–') : r.reread?.[i] ? `${t('longConversations.compare.reread')} (${r.format(v)})` : `${r.format(v)}${where(i)}`;
     const who = !lead ? '–' : lead.tie ? t('compare.same') : t('sheet.compare.lead', { name: c.names[lead.winner]!, diff: lead.diff });
     return [r.context ? `${r.label} · ${r.context}` : r.label, ...r.values.map(cell), who];
   });

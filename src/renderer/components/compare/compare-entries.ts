@@ -4,6 +4,7 @@ import type { RunResult, RunSummary } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { CompareEntry } from '../../lib/compare-selection';
 import { modelLabelOf, prettyEngineLabel, summaryModelLabel } from '../bench/format';
+import type { CompareAt } from '../configs/depths';
 import { configEngineLabel } from '../configs/engine-label';
 import { configLabelOf } from '../presets/config-label';
 import { shortDate } from '../presets/format';
@@ -23,9 +24,9 @@ export function entryOfRun(run: RunResult, combo: number | undefined, f: F): Com
   return { runId: run.id, ...(combo === undefined ? {} : { combo }), label: modelLabelOf(run.model), detail: parts.join(' · '), createdAt: run.createdAt };
 }
 
-/** A configuration of Configurazioni: the test that measured it at `depth` (the newest one). */
-export function entryOfConfig(e: ConfigEntry, depth: number | undefined, f: F): CompareEntry {
-  const ref = refOfConfig(e, depth);
+/** A configuration of Configurazioni: the test that measured it where it is compared (`at`; the newest one). */
+export function entryOfConfig(e: ConfigEntry, at: CompareAt | undefined, f: F): CompareEntry {
+  const ref = refOfConfig(e, at);
   const source = e.sources.find((s) => s.runId === ref.runId && s.combo === ref.combo)!;
   const words = configLabelOf(e.engineKind, e.params, f, { tags: e.tags }).text;
   return {

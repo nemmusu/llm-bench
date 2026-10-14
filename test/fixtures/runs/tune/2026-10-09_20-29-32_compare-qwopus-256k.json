@@ -1,0 +1,5740 @@
+{
+  "schema": 1,
+  "id": "01M4H5PMD3B0EWHZC7MKQWOPUS",
+  "app": {
+    "name": "gpu-bench",
+    "version": "0.3.0"
+  },
+  "createdAt": "2026-10-09T20:29:32.571Z",
+  "finishedAt": "2026-10-09T20:48:29.603Z",
+  "status": "completed",
+  "scenario": {
+    "profile": "tune",
+    "steps": [
+      {
+        "kind": "context-sweep",
+        "depths": [],
+        "fractions": false,
+        "outputTokens": 128,
+        "reps": 2
+      }
+    ],
+    "seed": 42
+  },
+  "hardware": {
+    "hostId": "__THIS_HOST_ID__",
+    "hostLabel": "__THIS_PC__",
+    "gpus": [
+      {
+        "index": 0,
+        "uuid": "GPU-00000000-0000-0000-0000-000000000000",
+        "name": "NVIDIA GeForce RTX 5090",
+        "vendor": "nvidia",
+        "memoryTotalMiB": 32607,
+        "driverVersion": "617.14",
+        "cudaVersion": "13.4",
+        "computeCapability": "12.0",
+        "powerLimitW": 575,
+        "pcieGenMax": 5,
+        "pcieWidthMax": 16
+      }
+    ],
+    "cpu": {
+      "model": "Intel(R) Core(TM) Ultra 7 265F",
+      "cores": 20,
+      "threads": 20
+    },
+    "ramBytes": 205751443456,
+    "os": {
+      "platform": "win32",
+      "release": "10.0.26300",
+      "arch": "x64",
+      "name": "Windows 11 Pro 26H2",
+      "isWsl": false,
+      "powerPlan": "Prestazioni elevate"
+    }
+  },
+  "model": {
+    "displayName": "Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M",
+    "format": "gguf",
+    "source": "local",
+    "file": "Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+    "files": [
+      "Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf"
+    ],
+    "quant": "Q4_K_M",
+    "sizeBytes": 16547400704,
+    "sha256": "6e7180dfaaa2063194dff32eb5a75cce3f6c1ea19d74be9f04230062aece4717",
+    "weakKey": "local/Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf/Q4_K_M/16547400704",
+    "path": "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+    "facts": {
+      "architecture": "qwen35",
+      "name": "Qwopus3.8 27B Flash V2 Abliterated",
+      "paramsB": 26.896,
+      "quant": "Q4_K_M",
+      "bitsPerWeight": 4.92,
+      "contextLength": 262144,
+      "blockCount": 64,
+      "headCount": 24,
+      "headCountKv": 4,
+      "keyLength": 256,
+      "valueLength": 256,
+      "embeddingLength": 5120,
+      "fullAttentionLayers": 16,
+      "kv": {
+        "groups": [
+          {
+            "layers": 16,
+            "kvHeads": 4,
+            "keyLength": 256,
+            "valueLength": 256
+          }
+        ],
+        "recurrentLayers": 48,
+        "recurrentBytesPerSeq": 156893184
+      },
+      "vocabSize": 248320,
+      "feedForwardLength": 17408,
+      "cpuOnlyFraction": 0.0432
+    }
+  },
+  "engine": {
+    "kind": "llamacpp-native",
+    "name": "llama.cpp",
+    "version": "0.6.0-dev",
+    "build": "b11535",
+    "variant": "cuda-13.4",
+    "executable": "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe"
+  },
+  "launch": {
+    "argv": [
+      "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+      "-m",
+      "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "65464",
+      "--alias",
+      "gpubench-00000000-0000-0000-0000-000000000000",
+      "-c",
+      "262144",
+      "-ngl",
+      "all",
+      "-fa",
+      "on",
+      "-ctk",
+      "q8_0",
+      "-ctv",
+      "q8_0",
+      "-b",
+      "2048",
+      "-ub",
+      "512",
+      "-np",
+      "1",
+      "--fit",
+      "off",
+      "--no-webui"
+    ],
+    "env": {},
+    "display": {
+      "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+      "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+    },
+    "params": {
+      "contextSize": 262144,
+      "flashAttention": "on",
+      "kvCacheType": "q8_0",
+      "batchSize": 2048,
+      "ubatchSize": 512,
+      "parallel": 1,
+      "extraArgs": [],
+      "env": {}
+    },
+    "host": "127.0.0.1",
+    "port": 65464,
+    "requestExample": {
+      "prompt": "<1024 token ids>",
+      "n_predict": 32,
+      "ignore_eos": true,
+      "temperature": 0,
+      "seed": 42,
+      "cache_prompt": false,
+      "return_tokens": true,
+      "stream": true
+    }
+  },
+  "metrics": {
+    "formulaVersion": 1,
+    "load": {
+      "phases": []
+    },
+    "latency": [],
+    "contextSweep": [
+      {
+        "promptTokens": 1024,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 505.5944499997422,
+          "mean": 505.5944499997422,
+          "min": 503.7314999997616,
+          "max": 507.45739999972284,
+          "stddev": 2.634609155995562,
+          "cv": 0.005210913917264925,
+          "values": [
+            507.45739999972284,
+            503.7314999997616
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 2025.3661859711697,
+          "mean": 2025.3661859711697,
+          "min": 2017.9033747474352,
+          "max": 2032.8289971949039,
+          "stddev": 10.55400884603523,
+          "cv": 0.005210913917265064,
+          "values": [
+            2017.9033747474352,
+            2032.8289971949039
+          ]
+        },
+        "prefillTpsEngine": {
+          "n": 2,
+          "median": 2900.2524223408545,
+          "mean": 2900.2524223408545,
+          "min": 2892.8760103171708,
+          "max": 2907.6288343645383,
+          "stddev": 10.431821925545556,
+          "cv": 0.0035968668951669434,
+          "values": [
+            2892.8760103171708,
+            2907.6288343645383
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 68.75034790935803,
+          "mean": 68.75034790935803,
+          "min": 68.6574776291527,
+          "max": 68.84321818956336,
+          "stddev": 0.1313384098077705,
+          "cv": 0.0019103672025184506,
+          "values": [
+            68.84321818956336,
+            68.6574776291527
+          ]
+        },
+        "decodeTpsEngine": {
+          "n": 2,
+          "median": 69.29361528662064,
+          "mean": 69.29361528662064,
+          "min": 69.19868998230027,
+          "max": 69.388540590941,
+          "stddev": 0.13424465278226022,
+          "cv": 0.0019373307660017628,
+          "values": [
+            69.388540590941,
+            69.19868998230027
+          ]
+        },
+        "itlP50Ms": 14.436599999666214,
+        "itlP95Ms": 15.045165000949055,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 2352.950749998912,
+          "mean": 2352.950749998912,
+          "min": 2352.2800999991596,
+          "max": 2353.621399998665,
+          "stddev": 0.9484423252556974,
+          "cv": 0.0004030863481762786,
+          "values": [
+            2352.2800999991596,
+            2353.621399998665
+          ]
+        }
+      },
+      {
+        "promptTokens": 4096,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 1383.6422499995679,
+          "mean": 1383.6422499995679,
+          "min": 1383.1491999998689,
+          "max": 1384.1352999992669,
+          "stddev": 0.6972779965023713,
+          "cv": 0.0005039438456744069,
+          "values": [
+            1383.1491999998689,
+            1384.1352999992669
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 2960.303156477186,
+          "mean": 2960.303156477186,
+          "min": 2959.2482758023507,
+          "max": 2961.358037152021,
+          "stddev": 1.4918265570372278,
+          "cv": 0.0005039438456744167,
+          "values": [
+            2961.358037152021,
+            2959.2482758023507
+          ]
+        },
+        "prefillTpsEngine": {
+          "n": 2,
+          "median": 3370.8373826164593,
+          "mean": 3370.8373826164593,
+          "min": 3332.503461865779,
+          "max": 3409.1713033671394,
+          "stddev": 54.21235062454726,
+          "cv": 0.016082754660347153,
+          "values": [
+            3332.503461865779,
+            3409.1713033671394
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 67.02461890049867,
+          "mean": 67.02461890049867,
+          "min": 66.2194921715941,
+          "max": 67.82974562940325,
+          "stddev": 1.1386211394459367,
+          "cv": 0.016988103149624404,
+          "values": [
+            66.2194921715941,
+            67.82974562940325
+          ]
+        },
+        "decodeTpsEngine": {
+          "n": 2,
+          "median": 67.55352649272793,
+          "mean": 67.55352649272793,
+          "min": 66.74383923077725,
+          "max": 68.3632137546786,
+          "stddev": 1.1450707071313762,
+          "cv": 0.016950568927806338,
+          "values": [
+            66.74383923077725,
+            68.3632137546786
+          ]
+        },
+        "itlP50Ms": 14.837000000290573,
+        "itlP95Ms": 15.557134999800473,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 3279.1691499995068,
+          "mean": 3279.1691499995068,
+          "min": 3256.80179999955,
+          "max": 3301.5364999994636,
+          "stddev": 31.632209724284735,
+          "cv": 0.0096464098914475,
+          "values": [
+            3301.5364999994636,
+            3256.80179999955
+          ]
+        }
+      },
+      {
+        "promptTokens": 16384,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 5082.816250000149,
+          "mean": 5082.816250000149,
+          "min": 5009.352900000289,
+          "max": 5156.279600000009,
+          "stddev": 103.89286590716343,
+          "cv": 0.020440020019838485,
+          "values": [
+            5009.352900000289,
+            5156.279600000009
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 3224.0833587069465,
+          "mean": 3224.0833587069465,
+          "min": 3177.4847896145843,
+          "max": 3270.681927799308,
+          "stddev": 65.90032839759795,
+          "cv": 0.02044002001983844,
+          "values": [
+            3270.681927799308,
+            3177.4847896145843
+          ]
+        },
+        "prefillTpsEngine": {
+          "n": 2,
+          "median": 3386.839517646965,
+          "mean": 3386.839517646965,
+          "min": 3382.5870266721445,
+          "max": 3391.092008621785,
+          "stddev": 6.013930410460159,
+          "cv": 0.0017756762253200553,
+          "values": [
+            3391.092008621785,
+            3382.5870266721445
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 64.95660795506441,
+          "mean": 64.95660795506441,
+          "min": 64.88321608629434,
+          "max": 65.0299998238345,
+          "stddev": 0.1037917761825546,
+          "cv": 0.0015978632420947153,
+          "values": [
+            64.88321608629434,
+            65.0299998238345
+          ]
+        },
+        "decodeTpsEngine": {
+          "n": 2,
+          "median": 65.47056841239225,
+          "mean": 65.47056841239225,
+          "min": 65.39597518427104,
+          "max": 65.54516164051347,
+          "stddev": 0.1054907548702142,
+          "cv": 0.0016112698794019777,
+          "values": [
+            65.39597518427104,
+            65.54516164051347
+          ]
+        },
+        "itlP50Ms": 15.311199999414384,
+        "itlP95Ms": 15.937269999179989,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 7039.197300000116,
+          "mean": 7039.197300000116,
+          "min": 6968.049399999902,
+          "max": 7110.345200000331,
+          "stddev": 100.6183251146682,
+          "cv": 0.014294005527401048,
+          "values": [
+            6968.049399999902,
+            7110.345200000331
+          ]
+        }
+      },
+      {
+        "promptTokens": 65536,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 2,
+          "median": 26101.038450000808,
+          "mean": 26101.038450000808,
+          "min": 25654.250200001523,
+          "max": 26547.826700000092,
+          "stddev": 631.8540026579294,
+          "cv": 0.02420800244665782,
+          "values": [
+            25654.250200001523,
+            26547.826700000092
+          ]
+        },
+        "prefillTps": {
+          "n": 2,
+          "median": 2511.593885401192,
+          "mean": 2511.593885401192,
+          "min": 2468.601318690986,
+          "max": 2554.5864521113976,
+          "stddev": 60.800670922803214,
+          "cv": 0.024208002446657953,
+          "values": [
+            2554.5864521113976,
+            2468.601318690986
+          ]
+        },
+        "prefillTpsEngine": {
+          "n": 2,
+          "median": 2560.0963084231003,
+          "mean": 2560.0963084231003,
+          "min": 2548.804178520522,
+          "max": 2571.3884383256786,
+          "stddev": 15.969483256305123,
+          "cv": 0.006237844726295309,
+          "values": [
+            2571.3884383256786,
+            2548.804178520522
+          ]
+        },
+        "decodeTps": {
+          "n": 2,
+          "median": 55.69212232279081,
+          "mean": 55.69212232279081,
+          "min": 55.64666175017362,
+          "max": 55.73758289540799,
+          "stddev": 0.0642909583484688,
+          "cv": 0.0011543995033236345,
+          "values": [
+            55.73758289540799,
+            55.64666175017362
+          ]
+        },
+        "decodeTpsEngine": {
+          "n": 2,
+          "median": 56.13142677396054,
+          "mean": 56.13142677396054,
+          "min": 56.08571650160085,
+          "max": 56.17713704632024,
+          "stddev": 0.06464408711084922,
+          "cv": 0.0011516558695571536,
+          "values": [
+            56.17713704632024,
+            56.08571650160085
+          ]
+        },
+        "itlP50Ms": 17.799100000411272,
+        "itlP95Ms": 18.32942999927327,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 2,
+          "median": 28386.11360000074,
+          "mean": 28386.11360000074,
+          "min": 27937.452800000086,
+          "max": 28834.77440000139,
+          "stddev": 634.5021882660858,
+          "cv": 0.02235255580271014,
+          "values": [
+            27937.452800000086,
+            28834.77440000139
+          ]
+        }
+      },
+      {
+        "promptTokens": 262000,
+        "outputTokens": 128,
+        "ttftMs": {
+          "n": 1,
+          "median": 244183.79099999927,
+          "mean": 244183.79099999927,
+          "min": 244183.79099999927,
+          "max": 244183.79099999927,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            244183.79099999927
+          ]
+        },
+        "prefillTps": {
+          "n": 1,
+          "median": 1072.9622917517927,
+          "mean": 1072.9622917517927,
+          "min": 1072.9622917517927,
+          "max": 1072.9622917517927,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            1072.9622917517927
+          ]
+        },
+        "prefillTpsEngine": {
+          "n": 1,
+          "median": 1074.6797942331107,
+          "mean": 1074.6797942331107,
+          "min": 1074.6797942331107,
+          "max": 1074.6797942331107,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            1074.6797942331107
+          ]
+        },
+        "decodeTps": {
+          "n": 1,
+          "median": 34.48093861133662,
+          "mean": 34.48093861133662,
+          "min": 34.48093861133662,
+          "max": 34.48093861133662,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            34.48093861133662
+          ]
+        },
+        "decodeTpsEngine": {
+          "n": 1,
+          "median": 34.75280438841037,
+          "mean": 34.75280438841037,
+          "min": 34.75280438841037,
+          "max": 34.75280438841037,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            34.75280438841037
+          ]
+        },
+        "itlP50Ms": 28.83919999934733,
+        "itlP95Ms": 29.566469999030232,
+        "itlPerChunk": false,
+        "totalMs": {
+          "n": 1,
+          "median": 247907.27610000037,
+          "mean": 247907.27610000037,
+          "min": 247907.27610000037,
+          "max": 247907.27610000037,
+          "stddev": 0,
+          "cv": 0,
+          "values": [
+            247907.27610000037
+          ]
+        }
+      }
+    ],
+    "concurrency": [],
+    "sessions": [],
+    "llamaBench": [],
+    "vram": {
+      "baselineMiB": 686,
+      "peakMiB": 32063,
+      "deltaMiB": 31377,
+      "estimateMiB": 16699,
+      "processPeakMiB": 31566,
+      "sharedPeakMiB": 376,
+      "method": "process"
+    },
+    "energy": {
+      "avgPowerW": 488.9400737598182,
+      "maxPowerW": 605.33,
+      "tokensPerJoule": 0.12229951171126166
+    },
+    "thermals": {
+      "maxTempC": 81,
+      "throttleReasons": [
+        "sw_power_cap"
+      ]
+    }
+  },
+  "validity": [
+    "throttling"
+  ],
+  "notes": [],
+  "sharedGpu": [],
+  "telemetry": {
+    "intervalMs": 750,
+    "t": [
+      436,
+      1204,
+      1982,
+      2740
+    ],
+    "utilPct": [
+      6,
+      1.3,
+      16.3,
+      23.7
+    ],
+    "memUsedMiB": [
+      1115,
+      1116,
+      16206,
+      16189
+    ],
+    "powerW": [
+      53.5,
+      67.9,
+      87.8,
+      95.4
+    ],
+    "tempC": [
+      46,
+      46,
+      46.7,
+      47
+    ],
+    "smClockMHz": [
+      1087,
+      2067,
+      2587,
+      2902
+    ],
+    "marks": []
+  },
+  "logExcerpt": "",
+  "tuning": {
+    "budget": "fast",
+    "maxLaunches": 24,
+    "estimateSeconds": 1952,
+    "limitSeconds": 2929,
+    "dimensions": [
+      {
+        "key": "kv",
+        "values": [
+          "f16",
+          "q8_0",
+          "q4_0"
+        ]
+      },
+      {
+        "key": "fa",
+        "values": [
+          "on",
+          "off"
+        ]
+      },
+      {
+        "key": "ub",
+        "values": [
+          512,
+          2048
+        ]
+      }
+    ],
+    "capacity": [
+      {
+        "kvType": "f16",
+        "predictedMax": 262144,
+        "measuredMax": 245760,
+        "inferred": false,
+        "bound": "found",
+        "failedAt": 262144
+      },
+      {
+        "kvType": "q8_0",
+        "predictedMax": 262144,
+        "measuredMax": 262144,
+        "inferred": false,
+        "bound": "model"
+      },
+      {
+        "kvType": "q4_0",
+        "predictedMax": 262144,
+        "measuredMax": 262144,
+        "inferred": true,
+        "skipped": "no-gain",
+        "bound": "model"
+      }
+    ],
+    "depths": [
+      1024,
+      4096,
+      16384,
+      65536,
+      245760,
+      262144
+    ],
+    "attempts": [
+      {
+        "stage": "reference",
+        "params": {
+          "contextSize": 4096,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 4096,
+        "outcome": "ok",
+        "loadMs": 7135.376500000246,
+        "vramPeakMiB": 16144,
+        "sharedPeakMiB": 124,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 369.8733000000939,
+              "mean": 369.8733000000939,
+              "min": 369.8733000000939,
+              "max": 369.8733000000939,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                369.8733000000939
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2768.5155970970063,
+              "mean": 2768.5155970970063,
+              "min": 2768.5155970970063,
+              "max": 2768.5155970970063,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2768.5155970970063
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2777.8832746469325,
+              "mean": 2777.8832746469325,
+              "min": 2777.8832746469325,
+              "max": 2777.8832746469325,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2777.8832746469325
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 65.22086731127472,
+              "mean": 65.22086731127472,
+              "min": 65.22086731127472,
+              "max": 65.22086731127472,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                65.22086731127472
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 67.34474405840474,
+              "mean": 67.34474405840474,
+              "min": 67.34474405840474,
+              "max": 67.34474405840474,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                67.34474405840474
+              ]
+            },
+            "itlP50Ms": 14.63289999961853,
+            "itlP95Ms": 19.650399999693036,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 845.2744000004604,
+              "mean": 845.2744000004604,
+              "min": 845.2744000004604,
+              "max": 845.2744000004604,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                845.2744000004604
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "4096",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 4096 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 4096 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 1.367199999280274,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 262144,
+        "outcome": "spill",
+        "spill": "shared-memory",
+        "loadMs": 9485.909599998966,
+        "vramPeakMiB": 31566,
+        "sharedPeakMiB": 1336,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 9586.523900000378,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 32768,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 32768,
+        "outcome": "ok",
+        "loadMs": 7157.423499999568,
+        "vramPeakMiB": 17986,
+        "sharedPeakMiB": 152,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 362.0809000004083,
+              "mean": 362.0809000004083,
+              "min": 362.0809000004083,
+              "max": 362.0809000004083,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                362.0809000004083
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2828.0972567148538,
+              "mean": 2828.0972567148538,
+              "min": 2828.0972567148538,
+              "max": 2828.0972567148538,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2828.0972567148538
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2836.572954495719,
+              "mean": 2836.572954495719,
+              "min": 2836.572954495719,
+              "max": 2836.572954495719,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2836.572954495719
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 67.1275514425356,
+              "mean": 67.1275514425356,
+              "min": 67.1275514425356,
+              "max": 67.1275514425356,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                67.1275514425356
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.31342882702184,
+              "mean": 69.31342882702184,
+              "min": 69.31342882702184,
+              "max": 69.31342882702184,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.31342882702184
+              ]
+            },
+            "itlP50Ms": 14.12390000000596,
+            "itlP95Ms": 19.190499999560416,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 823.9264000002295,
+              "mean": 823.9264000002295,
+              "min": 823.9264000002295,
+              "max": 823.9264000002295,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                823.9264000002295
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "32768",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 32768 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 32768 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 19074.753200000152,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 65536,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 65536,
+        "outcome": "ok",
+        "loadMs": 7214.1803999990225,
+        "vramPeakMiB": 19980,
+        "sharedPeakMiB": 182,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 375.0142000000924,
+              "mean": 375.0142000000924,
+              "min": 375.0142000000924,
+              "max": 375.0142000000924,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                375.0142000000924
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2730.5632693368616,
+              "mean": 2730.5632693368616,
+              "min": 2730.5632693368616,
+              "max": 2730.5632693368616,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2730.5632693368616
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2739.0737971747953,
+              "mean": 2739.0737971747953,
+              "min": 2739.0737971747953,
+              "max": 2739.0737971747953,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2739.0737971747953
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 64.0271772649382,
+              "mean": 64.0271772649382,
+              "min": 64.0271772649382,
+              "max": 64.0271772649382,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                64.0271772649382
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 66.10873647611513,
+              "mean": 66.10873647611513,
+              "min": 66.10873647611513,
+              "max": 66.10873647611513,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.10873647611513
+              ]
+            },
+            "itlP50Ms": 14.901799999177456,
+            "itlP95Ms": 20.14835000038147,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 859.3470999989659,
+              "mean": 859.3470999989659,
+              "min": 859.3470999989659,
+              "max": 859.3470999989659,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                859.3470999989659
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "65536",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 65536 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 65536 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 28473.718200000003,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 131072,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 131072,
+        "outcome": "ok",
+        "loadMs": 7211.120400000364,
+        "vramPeakMiB": 24226,
+        "sharedPeakMiB": 248,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 373.5162999983877,
+              "mean": 373.5162999983877,
+              "min": 373.5162999983877,
+              "max": 373.5162999983877,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                373.5162999983877
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2741.5135564483267,
+              "mean": 2741.5135564483267,
+              "min": 2741.5135564483267,
+              "max": 2741.5135564483267,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2741.5135564483267
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2750.263208783653,
+              "mean": 2750.263208783653,
+              "min": 2750.263208783653,
+              "max": 2750.263208783653,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2750.263208783653
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 64.36816931718154,
+              "mean": 64.36816931718154,
+              "min": 64.36816931718154,
+              "max": 64.36816931718154,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                64.36816931718154
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 66.48121178628784,
+              "mean": 66.48121178628784,
+              "min": 66.48121178628784,
+              "max": 66.48121178628784,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.48121178628784
+              ]
+            },
+            "itlP50Ms": 14.772099999710917,
+            "itlP95Ms": 19.815299999900162,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 855.2170000001788,
+              "mean": 855.2170000001788,
+              "min": 855.2170000001788,
+              "max": 855.2170000001788,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                855.2170000001788
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "131072",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 131072 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 131072 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 37970.42650000006,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 196608,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 196608,
+        "outcome": "ok",
+        "loadMs": 7329.022900000215,
+        "vramPeakMiB": 28364,
+        "sharedPeakMiB": 312,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 363.18799999915063,
+              "mean": 363.18799999915063,
+              "min": 363.18799999915063,
+              "max": 363.18799999915063,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                363.18799999915063
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2819.4764144255723,
+              "mean": 2819.4764144255723,
+              "min": 2819.4764144255723,
+              "max": 2819.4764144255723,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2819.4764144255723
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2827.8699842589267,
+              "mean": 2827.8699842589267,
+              "min": 2827.8699842589267,
+              "max": 2827.8699842589267,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2827.8699842589267
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 66.96695224094917,
+              "mean": 66.96695224094917,
+              "min": 66.96695224094917,
+              "max": 66.96695224094917,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.96695224094917
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.13238852402351,
+              "mean": 69.13238852402351,
+              "min": 69.13238852402351,
+              "max": 69.13238852402351,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.13238852402351
+              ]
+            },
+            "itlP50Ms": 14.128200000151992,
+            "itlP95Ms": 19.166249999776483,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 826.1917000003159,
+              "mean": 826.1917000003159,
+              "min": 826.1917000003159,
+              "max": 826.1917000003159,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                826.1917000003159
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "196608",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 196608 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 196608 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 47483.58359999955,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 229376,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 229376,
+        "outcome": "ok",
+        "loadMs": 7321.873099999502,
+        "vramPeakMiB": 30466,
+        "sharedPeakMiB": 344,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 362.3040999993682,
+              "mean": 362.3040999993682,
+              "min": 362.3040999993682,
+              "max": 362.3040999993682,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                362.3040999993682
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2826.354987431237,
+              "mean": 2826.354987431237,
+              "min": 2826.354987431237,
+              "max": 2826.354987431237,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2826.354987431237
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2835.332002425538,
+              "mean": 2835.332002425538,
+              "min": 2835.332002425538,
+              "max": 2835.332002425538,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2835.332002425538
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 66.89280751279996,
+              "mean": 66.89280751279996,
+              "min": 66.89280751279996,
+              "max": 66.89280751279996,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.89280751279996
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.0597301922666,
+              "mean": 69.0597301922666,
+              "min": 69.0597301922666,
+              "max": 69.0597301922666,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.0597301922666
+              ]
+            },
+            "itlP50Ms": 14.197700001299381,
+            "itlP95Ms": 19.094300000928342,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 825.9062999989837,
+              "mean": 825.9062999989837,
+              "min": 825.9062999989837,
+              "max": 825.9062999989837,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                825.9062999989837
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "229376",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 229376 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 229376 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 57094.32120000012,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 245760,
+        "outcome": "ok",
+        "loadMs": 7371.080099999905,
+        "vramPeakMiB": 31478,
+        "sharedPeakMiB": 360,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 394.9210000000894,
+              "mean": 394.9210000000894,
+              "min": 394.9210000000894,
+              "max": 394.9210000000894,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                394.9210000000894
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2592.9236480201566,
+              "mean": 2592.9236480201566,
+              "min": 2592.9236480201566,
+              "max": 2592.9236480201566,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2592.9236480201566
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2600.007617209816,
+              "mean": 2600.007617209816,
+              "min": 2600.007617209816,
+              "max": 2600.007617209816,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2600.007617209816
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 67.28924411829688,
+              "mean": 67.28924411829688,
+              "min": 67.28924411829688,
+              "max": 67.28924411829688,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                67.28924411829688
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.46886709303183,
+              "mean": 69.46886709303183,
+              "min": 69.46886709303183,
+              "max": 69.46886709303183,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.46886709303183
+              ]
+            },
+            "itlP50Ms": 14.28179999999702,
+            "itlP95Ms": 18.301499999128282,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 855.7313000001013,
+              "mean": 855.7313000001013,
+              "min": 855.7313000001013,
+              "max": 855.7313000001013,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                855.7313000001013
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 66709.49399999902,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "capacity",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q8_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q8_0",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 7299.670900000259,
+        "vramPeakMiB": 25848,
+        "sharedPeakMiB": 376,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 377.9876000005752,
+              "mean": 377.9876000005752,
+              "min": 377.9876000005752,
+              "max": 377.9876000005752,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                377.9876000005752
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2709.0835783989787,
+              "mean": 2709.0835783989787,
+              "min": 2709.0835783989787,
+              "max": 2709.0835783989787,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2709.0835783989787
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2718.0693213851537,
+              "mean": 2718.0693213851537,
+              "min": 2718.0693213851537,
+              "max": 2718.0693213851537,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2718.0693213851537
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 66.41262765422152,
+              "mean": 66.41262765422152,
+              "min": 66.41262765422152,
+              "max": 66.41262765422152,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.41262765422152
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 68.56623712776033,
+              "mean": 68.56623712776033,
+              "min": 68.56623712776033,
+              "max": 68.56623712776033,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                68.56623712776033
+              ]
+            },
+            "itlP50Ms": 14.442100001499057,
+            "itlP95Ms": 19.33314999938011,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 844.862199999392,
+              "mean": 844.862199999392,
+              "min": 844.862199999392,
+              "max": 844.862199999392,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                844.862199999392
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 76410.24939999916,
+        "variant": {
+          "kv": "q8_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q8_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q8_0",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 7265.295299999416,
+        "vramPeakMiB": 25848,
+        "sharedPeakMiB": 376,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 374.58019999973476,
+              "mean": 374.58019999973476,
+              "min": 374.58019999973476,
+              "max": 374.58019999973476,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                374.58019999973476
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2733.726982901726,
+              "mean": 2733.726982901726,
+              "min": 2733.726982901726,
+              "max": 2733.726982901726,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2733.726982901726
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2742.0002677734637,
+              "mean": 2742.0002677734637,
+              "min": 2742.0002677734637,
+              "max": 2742.0002677734637,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2742.0002677734637
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 66.42745639604068,
+              "mean": 66.42745639604068,
+              "min": 66.42745639604068,
+              "max": 66.42745639604068,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.42745639604068
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 68.5696163744244,
+              "mean": 68.5696163744244,
+              "min": 68.5696163744244,
+              "max": 68.5696163744244,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                68.5696163744244
+              ]
+            },
+            "itlP50Ms": 14.421600000932813,
+            "itlP95Ms": 19.485100000165403,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 841.4253000002354,
+              "mean": 841.4253000002354,
+              "min": 841.4253000002354,
+              "max": 841.4253000002354,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                841.4253000002354
+              ]
+            }
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 505.5944499997422,
+              "mean": 505.5944499997422,
+              "min": 503.7314999997616,
+              "max": 507.45739999972284,
+              "stddev": 2.634609155995562,
+              "cv": 0.005210913917264925,
+              "values": [
+                507.45739999972284,
+                503.7314999997616
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2025.3661859711697,
+              "mean": 2025.3661859711697,
+              "min": 2017.9033747474352,
+              "max": 2032.8289971949039,
+              "stddev": 10.55400884603523,
+              "cv": 0.005210913917265064,
+              "values": [
+                2017.9033747474352,
+                2032.8289971949039
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2900.2524223408545,
+              "mean": 2900.2524223408545,
+              "min": 2892.8760103171708,
+              "max": 2907.6288343645383,
+              "stddev": 10.431821925545556,
+              "cv": 0.0035968668951669434,
+              "values": [
+                2892.8760103171708,
+                2907.6288343645383
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 68.75034790935803,
+              "mean": 68.75034790935803,
+              "min": 68.6574776291527,
+              "max": 68.84321818956336,
+              "stddev": 0.1313384098077705,
+              "cv": 0.0019103672025184506,
+              "values": [
+                68.84321818956336,
+                68.6574776291527
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 69.29361528662064,
+              "mean": 69.29361528662064,
+              "min": 69.19868998230027,
+              "max": 69.388540590941,
+              "stddev": 0.13424465278226022,
+              "cv": 0.0019373307660017628,
+              "values": [
+                69.388540590941,
+                69.19868998230027
+              ]
+            },
+            "itlP50Ms": 14.436599999666214,
+            "itlP95Ms": 15.045165000949055,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2352.950749998912,
+              "mean": 2352.950749998912,
+              "min": 2352.2800999991596,
+              "max": 2353.621399998665,
+              "stddev": 0.9484423252556974,
+              "cv": 0.0004030863481762786,
+              "values": [
+                2352.2800999991596,
+                2353.621399998665
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 26101.038450000808,
+              "mean": 26101.038450000808,
+              "min": 25654.250200001523,
+              "max": 26547.826700000092,
+              "stddev": 631.8540026579294,
+              "cv": 0.02420800244665782,
+              "values": [
+                25654.250200001523,
+                26547.826700000092
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2511.593885401192,
+              "mean": 2511.593885401192,
+              "min": 2468.601318690986,
+              "max": 2554.5864521113976,
+              "stddev": 60.800670922803214,
+              "cv": 0.024208002446657953,
+              "values": [
+                2554.5864521113976,
+                2468.601318690986
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2560.0963084231003,
+              "mean": 2560.0963084231003,
+              "min": 2548.804178520522,
+              "max": 2571.3884383256786,
+              "stddev": 15.969483256305123,
+              "cv": 0.006237844726295309,
+              "values": [
+                2571.3884383256786,
+                2548.804178520522
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.69212232279081,
+              "mean": 55.69212232279081,
+              "min": 55.64666175017362,
+              "max": 55.73758289540799,
+              "stddev": 0.0642909583484688,
+              "cv": 0.0011543995033236345,
+              "values": [
+                55.73758289540799,
+                55.64666175017362
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 56.13142677396054,
+              "mean": 56.13142677396054,
+              "min": 56.08571650160085,
+              "max": 56.17713704632024,
+              "stddev": 0.06464408711084922,
+              "cv": 0.0011516558695571536,
+              "values": [
+                56.17713704632024,
+                56.08571650160085
+              ]
+            },
+            "itlP50Ms": 17.799100000411272,
+            "itlP95Ms": 18.32942999927327,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28386.11360000074,
+              "mean": 28386.11360000074,
+              "min": 27937.452800000086,
+              "max": 28834.77440000139,
+              "stddev": 634.5021882660858,
+              "cv": 0.02235255580271014,
+              "values": [
+                27937.452800000086,
+                28834.77440000139
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "screen": "kept",
+        "atMs": 86019.88939999975,
+        "variant": {
+          "kv": "q8_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q8_0",
+          "batchSize": 2048,
+          "ubatchSize": 2048,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q8_0",
+        "contextSize": 262144,
+        "outcome": "spill",
+        "spill": "shared-memory",
+        "loadMs": 7439.566499998793,
+        "vramPeakMiB": 26896,
+        "sharedPeakMiB": 1264,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "-b",
+            "2048",
+            "-ub",
+            "2048",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 -np 1 --fit off --no-webui"
+        },
+        "atMs": 157227.91619999893,
+        "variant": {
+          "kv": "q8_0",
+          "fa": "on",
+          "ub": 2048,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q8_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q8_0",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 7274.741200000048,
+        "vramPeakMiB": 25848,
+        "sharedPeakMiB": 376,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 383.1504000015557,
+              "mean": 383.1504000015557,
+              "min": 383.1504000015557,
+              "max": 383.1504000015557,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                383.1504000015557
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2672.579749351279,
+              "mean": 2672.579749351279,
+              "min": 2672.579749351279,
+              "max": 2672.579749351279,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2672.579749351279
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2680.410752007036,
+              "mean": 2680.410752007036,
+              "min": 2680.410752007036,
+              "max": 2680.410752007036,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2680.410752007036
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 64.523998140183,
+              "mean": 64.523998140183,
+              "min": 64.523998140183,
+              "max": 64.523998140183,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                64.523998140183
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 66.6284940919265,
+              "mean": 66.6284940919265,
+              "min": 66.6284940919265,
+              "max": 66.6284940919265,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.6284940919265
+              ]
+            },
+            "itlP50Ms": 14.920400001108646,
+            "itlP95Ms": 19.773450000211596,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 863.6813000012189,
+              "mean": 863.6813000012189,
+              "min": 863.6813000012189,
+              "max": 863.6813000012189,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                863.6813000012189
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1383.6422499995679,
+              "mean": 1383.6422499995679,
+              "min": 1383.1491999998689,
+              "max": 1384.1352999992669,
+              "stddev": 0.6972779965023713,
+              "cv": 0.0005039438456744069,
+              "values": [
+                1383.1491999998689,
+                1384.1352999992669
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2960.303156477186,
+              "mean": 2960.303156477186,
+              "min": 2959.2482758023507,
+              "max": 2961.358037152021,
+              "stddev": 1.4918265570372278,
+              "cv": 0.0005039438456744167,
+              "values": [
+                2961.358037152021,
+                2959.2482758023507
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3370.8373826164593,
+              "mean": 3370.8373826164593,
+              "min": 3332.503461865779,
+              "max": 3409.1713033671394,
+              "stddev": 54.21235062454726,
+              "cv": 0.016082754660347153,
+              "values": [
+                3332.503461865779,
+                3409.1713033671394
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 67.02461890049867,
+              "mean": 67.02461890049867,
+              "min": 66.2194921715941,
+              "max": 67.82974562940325,
+              "stddev": 1.1386211394459367,
+              "cv": 0.016988103149624404,
+              "values": [
+                66.2194921715941,
+                67.82974562940325
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 67.55352649272793,
+              "mean": 67.55352649272793,
+              "min": 66.74383923077725,
+              "max": 68.3632137546786,
+              "stddev": 1.1450707071313762,
+              "cv": 0.016950568927806338,
+              "values": [
+                66.74383923077725,
+                68.3632137546786
+              ]
+            },
+            "itlP50Ms": 14.837000000290573,
+            "itlP95Ms": 15.557134999800473,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3279.1691499995068,
+              "mean": 3279.1691499995068,
+              "min": 3256.80179999955,
+              "max": 3301.5364999994636,
+              "stddev": 31.632209724284735,
+              "cv": 0.0096464098914475,
+              "values": [
+                3301.5364999994636,
+                3256.80179999955
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5082.816250000149,
+              "mean": 5082.816250000149,
+              "min": 5009.352900000289,
+              "max": 5156.279600000009,
+              "stddev": 103.89286590716343,
+              "cv": 0.020440020019838485,
+              "values": [
+                5009.352900000289,
+                5156.279600000009
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3224.0833587069465,
+              "mean": 3224.0833587069465,
+              "min": 3177.4847896145843,
+              "max": 3270.681927799308,
+              "stddev": 65.90032839759795,
+              "cv": 0.02044002001983844,
+              "values": [
+                3270.681927799308,
+                3177.4847896145843
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3386.839517646965,
+              "mean": 3386.839517646965,
+              "min": 3382.5870266721445,
+              "max": 3391.092008621785,
+              "stddev": 6.013930410460159,
+              "cv": 0.0017756762253200553,
+              "values": [
+                3391.092008621785,
+                3382.5870266721445
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 64.95660795506441,
+              "mean": 64.95660795506441,
+              "min": 64.88321608629434,
+              "max": 65.0299998238345,
+              "stddev": 0.1037917761825546,
+              "cv": 0.0015978632420947153,
+              "values": [
+                64.88321608629434,
+                65.0299998238345
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 65.47056841239225,
+              "mean": 65.47056841239225,
+              "min": 65.39597518427104,
+              "max": 65.54516164051347,
+              "stddev": 0.1054907548702142,
+              "cv": 0.0016112698794019777,
+              "values": [
+                65.39597518427104,
+                65.54516164051347
+              ]
+            },
+            "itlP50Ms": 15.311199999414384,
+            "itlP95Ms": 15.937269999179989,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7039.197300000116,
+              "mean": 7039.197300000116,
+              "min": 6968.049399999902,
+              "max": 7110.345200000331,
+              "stddev": 100.6183251146682,
+              "cv": 0.014294005527401048,
+              "values": [
+                6968.049399999902,
+                7110.345200000331
+              ]
+            }
+          },
+          {
+            "promptTokens": 262000,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 244183.79099999927,
+              "mean": 244183.79099999927,
+              "min": 244183.79099999927,
+              "max": 244183.79099999927,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                244183.79099999927
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1072.9622917517927,
+              "mean": 1072.9622917517927,
+              "min": 1072.9622917517927,
+              "max": 1072.9622917517927,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1072.9622917517927
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1074.6797942331107,
+              "mean": 1074.6797942331107,
+              "min": 1074.6797942331107,
+              "max": 1074.6797942331107,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1074.6797942331107
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 34.48093861133662,
+              "mean": 34.48093861133662,
+              "min": 34.48093861133662,
+              "max": 34.48093861133662,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.48093861133662
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 34.75280438841037,
+              "mean": 34.75280438841037,
+              "min": 34.75280438841037,
+              "max": 34.75280438841037,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.75280438841037
+              ]
+            },
+            "itlP50Ms": 28.83919999934733,
+            "itlP95Ms": 29.566469999030232,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 247907.27610000037,
+              "mean": 247907.27610000037,
+              "min": 247907.27610000037,
+              "max": 247907.27610000037,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                247907.27610000037
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "combination": 0,
+        "atMs": 166146.0208999999,
+        "variant": {
+          "kv": "q8_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q4_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q4_0",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 7259.705899998546,
+        "vramPeakMiB": 21752,
+        "sharedPeakMiB": 376,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 390.0592000000179,
+              "mean": 390.0592000000179,
+              "min": 390.0592000000179,
+              "max": 390.0592000000179,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                390.0592000000179
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2625.2425272880455,
+              "mean": 2625.2425272880455,
+              "min": 2625.2425272880455,
+              "max": 2625.2425272880455,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2625.2425272880455
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2633.8532449895056,
+              "mean": 2633.8532449895056,
+              "min": 2633.8532449895056,
+              "max": 2633.8532449895056,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2633.8532449895056
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 63.69361317429502,
+              "mean": 63.69361317429502,
+              "min": 63.69361317429502,
+              "max": 63.69361317429502,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                63.69361317429502
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 65.75608192385857,
+              "mean": 65.75608192385857,
+              "min": 65.75608192385857,
+              "max": 65.75608192385857,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                65.75608192385857
+              ]
+            },
+            "itlP50Ms": 15.099199999123812,
+            "itlP95Ms": 20.231800000183284,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 876.9210999999195,
+              "mean": 876.9210999999195,
+              "min": 876.9210999999195,
+              "max": 876.9210999999195,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                876.9210999999195
+              ]
+            }
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 507.66935000009835,
+              "mean": 507.66935000009835,
+              "min": 502.5126000009477,
+              "max": 512.826099999249,
+              "stddev": 7.292745786566273,
+              "cv": 0.014365148864245714,
+              "values": [
+                512.826099999249,
+                502.5126000009477
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2017.269047152936,
+              "mean": 2017.269047152936,
+              "min": 1996.7782451039438,
+              "max": 2037.7598492019283,
+              "stddev": 28.978370161587225,
+              "cv": 0.01436514886424581,
+              "values": [
+                1996.7782451039438,
+                2037.7598492019283
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2822.3946647726348,
+              "mean": 2822.3946647726348,
+              "min": 2784.613920350252,
+              "max": 2860.1754091950174,
+              "stddev": 53.430041158685235,
+              "cv": 0.01893074764687079,
+              "values": [
+                2784.613920350252,
+                2860.1754091950174
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 68.09263293486308,
+              "mean": 68.09263293486308,
+              "min": 67.18145647910994,
+              "max": 69.00380939061623,
+              "stddev": 1.2885981014411432,
+              "cv": 0.018924192616752048,
+              "values": [
+                67.18145647910994,
+                69.00380939061623
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 68.62934497367652,
+              "mean": 68.62934497367652,
+              "min": 67.71361794918728,
+              "max": 69.54507199816575,
+              "stddev": 1.2950335774642368,
+              "cv": 0.018869968494686345,
+              "values": [
+                67.71361794918728,
+                69.54507199816575
+              ]
+            },
+            "itlP50Ms": 14.573349999263883,
+            "itlP95Ms": 15.367810000199825,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2373.198350000195,
+              "mean": 2373.198350000195,
+              "min": 2343.127100000158,
+              "max": 2403.2696000002325,
+              "stddev": 42.52716958756462,
+              "cv": 0.01791977041765646,
+              "values": [
+                2403.2696000002325,
+                2343.127100000158
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 26436.145200001076,
+              "mean": 26436.145200001076,
+              "min": 26426.906100001186,
+              "max": 26445.384300000966,
+              "stddev": 13.06606052396532,
+              "cv": 0.0004942498395705887,
+              "values": [
+                26445.384300000966,
+                26426.906100001186
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2479.03041494342,
+              "mean": 2479.03041494342,
+              "min": 2478.1640250165547,
+              "max": 2479.8968048702855,
+              "stddev": 1.2252603848764754,
+              "cv": 0.000494249839570621,
+              "values": [
+                2478.1640250165547,
+                2479.8968048702855
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2512.2893991292804,
+              "mean": 2512.2893991292804,
+              "min": 2495.5163450494583,
+              "max": 2529.062453209103,
+              "stddev": 23.720680562102014,
+              "cv": 0.009441858318680652,
+              "values": [
+                2495.5163450494583,
+                2529.062453209103
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.05697002545962,
+              "mean": 55.05697002545962,
+              "min": 54.90119621924441,
+              "max": 55.21274383167483,
+              "stddev": 0.2202974294120259,
+              "cv": 0.0040012632244410705,
+              "values": [
+                54.90119621924441,
+                55.21274383167483
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 55.4912800079275,
+              "mean": 55.4912800079275,
+              "min": 55.335079846791004,
+              "max": 55.647480169064,
+              "stddev": 0.2209003863241009,
+              "cv": 0.0039808125942047655,
+              "values": [
+                55.335079846791004,
+                55.647480169064
+              ]
+            },
+            "itlP50Ms": 18.00069999974221,
+            "itlP95Ms": 18.637970000412317,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28747.330699999817,
+              "mean": 28747.330699999817,
+              "min": 28731.22279999964,
+              "max": 28763.438599999994,
+              "stddev": 22.780010641600352,
+              "cv": 0.0007924217688009725,
+              "values": [
+                28763.438599999994,
+                28731.22279999964
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q4_0",
+            "-ctv",
+            "q4_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "screen": "kept",
+        "atMs": 444441.1939000003,
+        "variant": {
+          "kv": "q4_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q4_0",
+          "batchSize": 2048,
+          "ubatchSize": 2048,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q4_0",
+        "contextSize": 262144,
+        "outcome": "spill",
+        "spill": "shared-memory",
+        "loadMs": 7396.603800000623,
+        "vramPeakMiB": 22822,
+        "sharedPeakMiB": 1264,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q4_0",
+            "-ctv",
+            "q4_0",
+            "-b",
+            "2048",
+            "-ub",
+            "2048",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 2048 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 2048 -np 1 --fit off --no-webui"
+        },
+        "atMs": 516387.88939999975,
+        "variant": {
+          "kv": "q4_0",
+          "fa": "on",
+          "ub": 2048,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q4_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q4_0",
+        "contextSize": 262144,
+        "outcome": "ok",
+        "loadMs": 7196.039499999955,
+        "vramPeakMiB": 21752,
+        "sharedPeakMiB": 376,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 377.73650000058115,
+              "mean": 377.73650000058115,
+              "min": 377.73650000058115,
+              "max": 377.73650000058115,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                377.73650000058115
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2710.8844392808865,
+              "mean": 2710.8844392808865,
+              "min": 2710.8844392808865,
+              "max": 2710.8844392808865,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2710.8844392808865
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2719.1375235667438,
+              "mean": 2719.1375235667438,
+              "min": 2719.1375235667438,
+              "max": 2719.1375235667438,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2719.1375235667438
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 66.29440575734817,
+              "mean": 66.29440575734817,
+              "min": 66.29440575734817,
+              "max": 66.29440575734817,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                66.29440575734817
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 68.43763299891569,
+              "mean": 68.43763299891569,
+              "min": 68.43763299891569,
+              "max": 68.43763299891569,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                68.43763299891569
+              ]
+            },
+            "itlP50Ms": 14.450699999928474,
+            "itlP95Ms": 19.491149999201298,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 845.5145999994129,
+              "mean": 845.5145999994129,
+              "min": 845.5145999994129,
+              "max": 845.5145999994129,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                845.5145999994129
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1361.0580999990925,
+              "mean": 1361.0580999990925,
+              "min": 1353.1159999985248,
+              "max": 1369.0001999996603,
+              "stddev": 11.231825534526255,
+              "cv": 0.008252274854786686,
+              "values": [
+                1353.1159999985248,
+                1369.0001999996603
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3009.52580469144,
+              "mean": 3009.52580469144,
+              "min": 2991.964500809435,
+              "max": 3027.087108573445,
+              "stddev": 24.835434122887005,
+              "cv": 0.008252274854786742,
+              "values": [
+                3027.087108573445,
+                2991.964500809435
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3399.7589650270193,
+              "mean": 3399.7589650270193,
+              "min": 3395.7124156564228,
+              "max": 3403.8055143976153,
+              "stddev": 5.722685000709553,
+              "cv": 0.0016832619781514636,
+              "values": [
+                3395.7124156564228,
+                3403.8055143976153
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 67.88580840926232,
+              "mean": 67.88580840926232,
+              "min": 67.85449431836285,
+              "max": 67.9171225001618,
+              "stddev": 0.04428481204341597,
+              "cv": 0.0006523427072774428,
+              "values": [
+                67.9171225001618,
+                67.85449431836285
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 68.4242948559336,
+              "mean": 68.4242948559336,
+              "min": 68.39210690968663,
+              "max": 68.45648280218056,
+              "stddev": 0.04552063012739246,
+              "cv": 0.0006652699925258348,
+              "values": [
+                68.45648280218056,
+                68.39210690968663
+              ]
+            },
+            "itlP50Ms": 14.61684999987483,
+            "itlP95Ms": 15.222460000310093,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3232.174599999562,
+              "mean": 3232.174599999562,
+              "min": 3223.3976999986917,
+              "max": 3240.951500000432,
+              "stddev": 12.412411016823105,
+              "cv": 0.003840266245772981,
+              "values": [
+                3223.3976999986917,
+                3240.951500000432
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5051.49835000094,
+              "mean": 5051.49835000094,
+              "min": 5020.440400000662,
+              "max": 5082.556300001219,
+              "stddev": 43.922574109899536,
+              "cv": 0.008694959607359143,
+              "values": [
+                5020.440400000662,
+                5082.556300001219
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3243.5167196750467,
+              "mean": 3243.5167196750467,
+              "min": 3223.5747196732614,
+              "max": 3263.458719676832,
+              "stddev": 28.202246863369123,
+              "cv": 0.008694959607359316,
+              "values": [
+                3263.458719676832,
+                3223.5747196732614
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3384.551960205931,
+              "mean": 3384.551960205931,
+              "min": 3380.3349263244204,
+              "max": 3388.768994087442,
+              "stddev": 5.96378650821945,
+              "cv": 0.0017620608512851986,
+              "values": [
+                3388.768994087442,
+                3380.3349263244204
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 64.89277955965747,
+              "mean": 64.89277955965747,
+              "min": 64.85360167541535,
+              "max": 64.93195744389958,
+              "stddev": 0.055405895240281715,
+              "cv": 0.0008538067812204863,
+              "values": [
+                64.85360167541535,
+                64.93195744389958
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 65.40549034505722,
+              "mean": 65.40549034505722,
+              "min": 65.36505104346622,
+              "max": 65.44592964664822,
+              "stddev": 0.05718980876288849,
+              "cv": 0.0008743885025733226,
+              "values": [
+                65.36505104346622,
+                65.44592964664822
+              ]
+            },
+            "itlP50Ms": 15.33504999987781,
+            "itlP95Ms": 15.90597500083968,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7009.768250000663,
+              "mean": 7009.768250000663,
+              "min": 6979.941200001165,
+              "max": 7039.595300000161,
+              "stddev": 42.18181863487025,
+              "cv": 0.006017576777216031,
+              "values": [
+                6979.941200001165,
+                7039.595300000161
+              ]
+            }
+          },
+          {
+            "promptTokens": 262000,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 241533.80659999885,
+              "mean": 241533.80659999885,
+              "min": 241533.80659999885,
+              "max": 241533.80659999885,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                241533.80659999885
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1084.7342808366986,
+              "mean": 1084.7342808366986,
+              "min": 1084.7342808366986,
+              "max": 1084.7342808366986,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1084.7342808366986
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1086.0262355585767,
+              "mean": 1086.0262355585767,
+              "min": 1086.0262355585767,
+              "max": 1086.0262355585767,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1086.0262355585767
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 34.202103569398865,
+              "mean": 34.202103569398865,
+              "min": 34.202103569398865,
+              "max": 34.202103569398865,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.202103569398865
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 34.472190368362284,
+              "mean": 34.472190368362284,
+              "min": 34.472190368362284,
+              "max": 34.472190368362284,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.472190368362284
+              ]
+            },
+            "itlP50Ms": 29.062699999660254,
+            "itlP95Ms": 29.701630000025034,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 245302.0907999985,
+              "mean": 245302.0907999985,
+              "min": 245302.0907999985,
+              "max": 245302.0907999985,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                245302.0907999985
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q4_0",
+            "-ctv",
+            "q4_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "combination": 1,
+        "atMs": 525978.6359000001,
+        "variant": {
+          "kv": "q4_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 245760,
+        "outcome": "ok",
+        "loadMs": 7429.646900000051,
+        "vramPeakMiB": 31506,
+        "sharedPeakMiB": 360,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 369.2752999998629,
+              "mean": 369.2752999998629,
+              "min": 369.2752999998629,
+              "max": 369.2752999998629,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                369.2752999998629
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2772.998898113088,
+              "mean": 2772.998898113088,
+              "min": 2772.998898113088,
+              "max": 2772.998898113088,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2772.998898113088
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2781.5127191731517,
+              "mean": 2781.5127191731517,
+              "min": 2781.5127191731517,
+              "max": 2781.5127191731517,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2781.5127191731517
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 67.12686826515457,
+              "mean": 67.12686826515457,
+              "min": 67.12686826515457,
+              "max": 67.12686826515457,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                67.12686826515457
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.30337117586163,
+              "mean": 69.30337117586163,
+              "min": 69.30337117586163,
+              "max": 69.30337117586163,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.30337117586163
+              ]
+            },
+            "itlP50Ms": 14.107999999076128,
+            "itlP95Ms": 19.215500000864267,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 831.2401000000536,
+              "mean": 831.2401000000536,
+              "min": 831.2401000000536,
+              "max": 831.2401000000536,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                831.2401000000536
+              ]
+            }
+          },
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 537.993049999699,
+              "mean": 537.993049999699,
+              "min": 515.288200000301,
+              "max": 560.697899999097,
+              "stddev": 32.1095068007954,
+              "cv": 0.05968386915186612,
+              "values": [
+                515.288200000301,
+                560.697899999097
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 1906.7664206321083,
+              "mean": 1906.7664206321083,
+              "min": 1826.2954079222504,
+              "max": 1987.2374333419664,
+              "stddev": 113.80319755217886,
+              "cv": 0.05968386915186612,
+              "values": [
+                1987.2374333419664,
+                1826.2954079222504
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2730.1360761618885,
+              "mean": 2730.1360761618885,
+              "min": 2575.821986552398,
+              "max": 2884.450165771379,
+              "stddev": 218.23307839099866,
+              "cv": 0.07993487221992158,
+              "values": [
+                2884.450165771379,
+                2575.821986552398
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 69.94743426129234,
+              "mean": 69.94743426129234,
+              "min": 69.84434610018663,
+              "max": 70.05052242239806,
+              "stddev": 0.14578867555580735,
+              "cv": 0.0020842605178512485,
+              "values": [
+                69.84434610018663,
+                70.05052242239806
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 70.50599686865098,
+              "mean": 70.50599686865098,
+              "min": 70.40018656049439,
+              "max": 70.61180717680756,
+              "stddev": 0.14963837283391854,
+              "cv": 0.0021223495798901627,
+              "values": [
+                70.40018656049439,
+                70.61180717680756
+              ]
+            },
+            "itlP50Ms": 14.158250000327826,
+            "itlP95Ms": 14.891225000750273,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2353.6824000002816,
+              "mean": 2353.6824000002816,
+              "min": 2333.6544000003487,
+              "max": 2373.7104000002146,
+              "stddev": 28.32386922711352,
+              "cv": 0.012033853516986884,
+              "values": [
+                2333.6544000003487,
+                2373.7104000002146
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 25981.63329999987,
+              "mean": 25981.63329999987,
+              "min": 25356.713700000197,
+              "max": 26606.552899999544,
+              "stddev": 883.769773712308,
+              "cv": 0.03401517385407454,
+              "values": [
+                25356.713700000197,
+                26606.552899999544
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2523.857327038311,
+              "mean": 2523.857327038311,
+              "min": 2463.1526017788315,
+              "max": 2584.56205229779,
+              "stddev": 85.8494457620883,
+              "cv": 0.034015173854074654,
+              "values": [
+                2584.56205229779,
+                2463.1526017788315
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2602.263748453597,
+              "mean": 2602.263748453597,
+              "min": 2601.949627960826,
+              "max": 2602.577868946368,
+              "stddev": 0.44423346109614326,
+              "cv": 0.00017071039065895234,
+              "values": [
+                2602.577868946368,
+                2601.949627960826
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 58.20316452511216,
+              "mean": 58.20316452511216,
+              "min": 58.073323744382584,
+              "max": 58.33300530584173,
+              "stddev": 0.18362259305687356,
+              "cv": 0.0031548558322399864,
+              "values": [
+                58.073323744382584,
+                58.33300530584173
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 58.66431823060344,
+              "mean": 58.66431823060344,
+              "min": 58.52977771030596,
+              "max": 58.79885875090093,
+              "stddev": 0.19026902849344032,
+              "cv": 0.0032433519084891127,
+              "values": [
+                58.52977771030596,
+                58.79885875090093
+              ]
+            },
+            "itlP50Ms": 17.0691499998793,
+            "itlP95Ms": 17.662269999552517,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28168.044700000435,
+              "mean": 28168.044700000435,
+              "min": 27548.77199999988,
+              "max": 28787.31740000099,
+              "stddev": 875.7838511481889,
+              "cv": 0.031091396668657494,
+              "values": [
+                27548.77199999988,
+                28787.31740000099
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "screen": "kept",
+        "atMs": 801386.2478999998,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "off",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 245760,
+        "outcome": "spill",
+        "spill": "shared-memory",
+        "loadMs": 10554.177500000224,
+        "vramPeakMiB": 31558,
+        "sharedPeakMiB": 7436,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "off",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa off -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa off -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "atMs": 872364.8840999994,
+        "variant": {
+          "kv": "f16",
+          "fa": "off",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "variant",
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 2048,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 245760,
+        "outcome": "spill",
+        "spill": "shared-memory",
+        "loadMs": 9132.645200001076,
+        "vramPeakMiB": 31360,
+        "sharedPeakMiB": 2152,
+        "points": [],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "2048",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 2048 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 2048 -np 1 --fit off --no-webui"
+        },
+        "atMs": 882920.6146999989,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 2048,
+          "b": 2048
+        }
+      },
+      {
+        "stage": "sweep",
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "contextSize": 245760,
+        "outcome": "ok",
+        "loadMs": 7384.903000000864,
+        "vramPeakMiB": 31506,
+        "sharedPeakMiB": 360,
+        "points": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 32,
+            "ttftMs": {
+              "n": 1,
+              "median": 393.3104999996722,
+              "mean": 393.3104999996722,
+              "min": 393.3104999996722,
+              "max": 393.3104999996722,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                393.3104999996722
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 2603.5409682702434,
+              "mean": 2603.5409682702434,
+              "min": 2603.5409682702434,
+              "max": 2603.5409682702434,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2603.5409682702434
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 2610.506779924591,
+              "mean": 2610.506779924591,
+              "min": 2610.506779924591,
+              "max": 2610.506779924591,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                2610.506779924591
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 67.15752316972059,
+              "mean": 67.15752316972059,
+              "min": 67.15752316972059,
+              "max": 67.15752316972059,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                67.15752316972059
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 69.34452091604112,
+              "mean": 69.34452091604112,
+              "min": 69.34452091604112,
+              "max": 69.34452091604112,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                69.34452091604112
+              ]
+            },
+            "itlP50Ms": 14.127600001171231,
+            "itlP95Ms": 18.837199999950826,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 855.0082000009716,
+              "mean": 855.0082000009716,
+              "min": 855.0082000009716,
+              "max": 855.0082000009716,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                855.0082000009716
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1408.3273000000045,
+              "mean": 1408.3273000000045,
+              "min": 1376.4275000002235,
+              "max": 1440.2270999997854,
+              "stddev": 45.11312979667948,
+              "cv": 0.0320331288022886,
+              "values": [
+                1376.4275000002235,
+                1440.2270999997854
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2909.9077858213404,
+              "mean": 2909.9077858213404,
+              "min": 2843.99592258791,
+              "max": 2975.8196490547703,
+              "stddev": 93.21345090599732,
+              "cv": 0.03203312880228856,
+              "values": [
+                2975.8196490547703,
+                2843.99592258791
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3356.472000309588,
+              "mean": 3356.472000309588,
+              "min": 3354.2482504024933,
+              "max": 3358.6957502166833,
+              "stddev": 3.144857277939656,
+              "cv": 0.000936953228762101,
+              "values": [
+                3358.6957502166833,
+                3354.2482504024933
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 69.1571696686701,
+              "mean": 69.1571696686701,
+              "min": 69.00260215871765,
+              "max": 69.31173717862255,
+              "stddev": 0.21859146887699338,
+              "cv": 0.0031607925819442653,
+              "values": [
+                69.31173717862255,
+                69.00260215871765
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 69.70507891399086,
+              "mean": 69.70507891399086,
+              "min": 69.55149609071688,
+              "max": 69.85866173726485,
+              "stddev": 0.2171989116216212,
+              "cv": 0.003115969668288061,
+              "values": [
+                69.85866173726485,
+                69.55149609071688
+              ]
+            },
+            "itlP50Ms": 14.354100001044571,
+            "itlP95Ms": 14.883809999283404,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3245.139500000514,
+              "mean": 3245.139500000514,
+              "min": 3209.1765000000596,
+              "max": 3281.1025000009686,
+              "stddev": 50.85936234426636,
+              "cv": 0.015672473354152665,
+              "values": [
+                3209.1765000000596,
+                3281.1025000009686
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5160.352349999361,
+              "mean": 5160.352349999361,
+              "min": 5039.077199999243,
+              "max": 5281.6274999994785,
+              "stddev": 171.50896190899795,
+              "cv": 0.03323590140293796,
+              "values": [
+                5039.077199999243,
+                5281.6274999994785
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3176.731544281754,
+              "mean": 3176.731544281754,
+              "min": 3102.0741239327494,
+              "max": 3251.3889646307584,
+              "stddev": 105.58153638935124,
+              "cv": 0.033235901402937966,
+              "values": [
+                3251.3889646307584,
+                3102.0741239327494
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3397.4841795730686,
+              "mean": 3397.4841795730686,
+              "min": 3394.5262435580867,
+              "max": 3400.4421155880505,
+              "stddev": 4.183153229019225,
+              "cv": 0.0012312502451578403,
+              "values": [
+                3400.4421155880505,
+                3394.5262435580867
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 66.72147426962994,
+              "mean": 66.72147426962994,
+              "min": 66.69124265213331,
+              "max": 66.75170588712656,
+              "stddev": 0.04275396347620292,
+              "cv": 0.0006407826557223352,
+              "values": [
+                66.75170588712656,
+                66.69124265213331
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 67.24634478424753,
+              "mean": 67.24634478424753,
+              "min": 67.21887674106081,
+              "max": 67.27381282743426,
+              "stddev": 0.03884567920651281,
+              "cv": 0.000577662315046935,
+              "values": [
+                67.27381282743426,
+                67.21887674106081
+              ]
+            },
+            "itlP50Ms": 14.893649999052286,
+            "itlP95Ms": 15.452805000171065,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7064.856749999337,
+              "mean": 7064.856749999337,
+              "min": 6942.80169999972,
+              "max": 7186.911799998954,
+              "stddev": 172.61190706558466,
+              "cv": 0.024432470915365816,
+              "values": [
+                6942.80169999972,
+                7186.911799998954
+              ]
+            }
+          },
+          {
+            "promptTokens": 245616,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 210907.75650000013,
+              "mean": 210907.75650000013,
+              "min": 210907.75650000013,
+              "max": 210907.75650000013,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                210907.75650000013
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1164.5659888283901,
+              "mean": 1164.5659888283901,
+              "min": 1164.5659888283901,
+              "max": 1164.5659888283901,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1164.5659888283901
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1167.4540859666693,
+              "mean": 1167.4540859666693,
+              "min": 1167.4540859666693,
+              "max": 1167.4540859666693,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1167.4540859666693
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 39.77607759579849,
+              "mean": 39.77607759579849,
+              "min": 39.77607759579849,
+              "max": 39.77607759579849,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                39.77607759579849
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 40.08919846658816,
+              "mean": 40.08919846658816,
+              "min": 40.08919846658816,
+              "max": 40.08919846658816,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                40.08919846658816
+              ]
+            },
+            "itlP50Ms": 24.993899999186397,
+            "itlP95Ms": 25.48743999954313,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 214148.56819999963,
+              "mean": 214148.56819999963,
+              "min": 214148.56819999963,
+              "max": 214148.56819999963,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                214148.56819999963
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "combination": 2,
+        "atMs": 892055.0844999999,
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      }
+    ],
+    "combinations": [
+      {
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q8_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q8_0",
+        "maxContext": 262144,
+        "vramPeakMiB": 25848,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 505.5944499997422,
+              "mean": 505.5944499997422,
+              "min": 503.7314999997616,
+              "max": 507.45739999972284,
+              "stddev": 2.634609155995562,
+              "cv": 0.005210913917264925,
+              "values": [
+                507.45739999972284,
+                503.7314999997616
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2025.3661859711697,
+              "mean": 2025.3661859711697,
+              "min": 2017.9033747474352,
+              "max": 2032.8289971949039,
+              "stddev": 10.55400884603523,
+              "cv": 0.005210913917265064,
+              "values": [
+                2017.9033747474352,
+                2032.8289971949039
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2900.2524223408545,
+              "mean": 2900.2524223408545,
+              "min": 2892.8760103171708,
+              "max": 2907.6288343645383,
+              "stddev": 10.431821925545556,
+              "cv": 0.0035968668951669434,
+              "values": [
+                2892.8760103171708,
+                2907.6288343645383
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 68.75034790935803,
+              "mean": 68.75034790935803,
+              "min": 68.6574776291527,
+              "max": 68.84321818956336,
+              "stddev": 0.1313384098077705,
+              "cv": 0.0019103672025184506,
+              "values": [
+                68.84321818956336,
+                68.6574776291527
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 69.29361528662064,
+              "mean": 69.29361528662064,
+              "min": 69.19868998230027,
+              "max": 69.388540590941,
+              "stddev": 0.13424465278226022,
+              "cv": 0.0019373307660017628,
+              "values": [
+                69.388540590941,
+                69.19868998230027
+              ]
+            },
+            "itlP50Ms": 14.436599999666214,
+            "itlP95Ms": 15.045165000949055,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2352.950749998912,
+              "mean": 2352.950749998912,
+              "min": 2352.2800999991596,
+              "max": 2353.621399998665,
+              "stddev": 0.9484423252556974,
+              "cv": 0.0004030863481762786,
+              "values": [
+                2352.2800999991596,
+                2353.621399998665
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1383.6422499995679,
+              "mean": 1383.6422499995679,
+              "min": 1383.1491999998689,
+              "max": 1384.1352999992669,
+              "stddev": 0.6972779965023713,
+              "cv": 0.0005039438456744069,
+              "values": [
+                1383.1491999998689,
+                1384.1352999992669
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2960.303156477186,
+              "mean": 2960.303156477186,
+              "min": 2959.2482758023507,
+              "max": 2961.358037152021,
+              "stddev": 1.4918265570372278,
+              "cv": 0.0005039438456744167,
+              "values": [
+                2961.358037152021,
+                2959.2482758023507
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3370.8373826164593,
+              "mean": 3370.8373826164593,
+              "min": 3332.503461865779,
+              "max": 3409.1713033671394,
+              "stddev": 54.21235062454726,
+              "cv": 0.016082754660347153,
+              "values": [
+                3332.503461865779,
+                3409.1713033671394
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 67.02461890049867,
+              "mean": 67.02461890049867,
+              "min": 66.2194921715941,
+              "max": 67.82974562940325,
+              "stddev": 1.1386211394459367,
+              "cv": 0.016988103149624404,
+              "values": [
+                66.2194921715941,
+                67.82974562940325
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 67.55352649272793,
+              "mean": 67.55352649272793,
+              "min": 66.74383923077725,
+              "max": 68.3632137546786,
+              "stddev": 1.1450707071313762,
+              "cv": 0.016950568927806338,
+              "values": [
+                66.74383923077725,
+                68.3632137546786
+              ]
+            },
+            "itlP50Ms": 14.837000000290573,
+            "itlP95Ms": 15.557134999800473,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3279.1691499995068,
+              "mean": 3279.1691499995068,
+              "min": 3256.80179999955,
+              "max": 3301.5364999994636,
+              "stddev": 31.632209724284735,
+              "cv": 0.0096464098914475,
+              "values": [
+                3301.5364999994636,
+                3256.80179999955
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5082.816250000149,
+              "mean": 5082.816250000149,
+              "min": 5009.352900000289,
+              "max": 5156.279600000009,
+              "stddev": 103.89286590716343,
+              "cv": 0.020440020019838485,
+              "values": [
+                5009.352900000289,
+                5156.279600000009
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3224.0833587069465,
+              "mean": 3224.0833587069465,
+              "min": 3177.4847896145843,
+              "max": 3270.681927799308,
+              "stddev": 65.90032839759795,
+              "cv": 0.02044002001983844,
+              "values": [
+                3270.681927799308,
+                3177.4847896145843
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3386.839517646965,
+              "mean": 3386.839517646965,
+              "min": 3382.5870266721445,
+              "max": 3391.092008621785,
+              "stddev": 6.013930410460159,
+              "cv": 0.0017756762253200553,
+              "values": [
+                3391.092008621785,
+                3382.5870266721445
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 64.95660795506441,
+              "mean": 64.95660795506441,
+              "min": 64.88321608629434,
+              "max": 65.0299998238345,
+              "stddev": 0.1037917761825546,
+              "cv": 0.0015978632420947153,
+              "values": [
+                64.88321608629434,
+                65.0299998238345
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 65.47056841239225,
+              "mean": 65.47056841239225,
+              "min": 65.39597518427104,
+              "max": 65.54516164051347,
+              "stddev": 0.1054907548702142,
+              "cv": 0.0016112698794019777,
+              "values": [
+                65.39597518427104,
+                65.54516164051347
+              ]
+            },
+            "itlP50Ms": 15.311199999414384,
+            "itlP95Ms": 15.937269999179989,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7039.197300000116,
+              "mean": 7039.197300000116,
+              "min": 6968.049399999902,
+              "max": 7110.345200000331,
+              "stddev": 100.6183251146682,
+              "cv": 0.014294005527401048,
+              "values": [
+                6968.049399999902,
+                7110.345200000331
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 26101.038450000808,
+              "mean": 26101.038450000808,
+              "min": 25654.250200001523,
+              "max": 26547.826700000092,
+              "stddev": 631.8540026579294,
+              "cv": 0.02420800244665782,
+              "values": [
+                25654.250200001523,
+                26547.826700000092
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2511.593885401192,
+              "mean": 2511.593885401192,
+              "min": 2468.601318690986,
+              "max": 2554.5864521113976,
+              "stddev": 60.800670922803214,
+              "cv": 0.024208002446657953,
+              "values": [
+                2554.5864521113976,
+                2468.601318690986
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2560.0963084231003,
+              "mean": 2560.0963084231003,
+              "min": 2548.804178520522,
+              "max": 2571.3884383256786,
+              "stddev": 15.969483256305123,
+              "cv": 0.006237844726295309,
+              "values": [
+                2571.3884383256786,
+                2548.804178520522
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.69212232279081,
+              "mean": 55.69212232279081,
+              "min": 55.64666175017362,
+              "max": 55.73758289540799,
+              "stddev": 0.0642909583484688,
+              "cv": 0.0011543995033236345,
+              "values": [
+                55.73758289540799,
+                55.64666175017362
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 56.13142677396054,
+              "mean": 56.13142677396054,
+              "min": 56.08571650160085,
+              "max": 56.17713704632024,
+              "stddev": 0.06464408711084922,
+              "cv": 0.0011516558695571536,
+              "values": [
+                56.17713704632024,
+                56.08571650160085
+              ]
+            },
+            "itlP50Ms": 17.799100000411272,
+            "itlP95Ms": 18.32942999927327,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28386.11360000074,
+              "mean": 28386.11360000074,
+              "min": 27937.452800000086,
+              "max": 28834.77440000139,
+              "stddev": 634.5021882660858,
+              "cv": 0.02235255580271014,
+              "values": [
+                27937.452800000086,
+                28834.77440000139
+              ]
+            }
+          },
+          {
+            "promptTokens": 262000,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 244183.79099999927,
+              "mean": 244183.79099999927,
+              "min": 244183.79099999927,
+              "max": 244183.79099999927,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                244183.79099999927
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1072.9622917517927,
+              "mean": 1072.9622917517927,
+              "min": 1072.9622917517927,
+              "max": 1072.9622917517927,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1072.9622917517927
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1074.6797942331107,
+              "mean": 1074.6797942331107,
+              "min": 1074.6797942331107,
+              "max": 1074.6797942331107,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1074.6797942331107
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 34.48093861133662,
+              "mean": 34.48093861133662,
+              "min": 34.48093861133662,
+              "max": 34.48093861133662,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.48093861133662
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 34.75280438841037,
+              "mean": 34.75280438841037,
+              "min": 34.75280438841037,
+              "max": 34.75280438841037,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.75280438841037
+              ]
+            },
+            "itlP50Ms": 28.83919999934733,
+            "itlP95Ms": 29.566469999030232,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 247907.27610000037,
+              "mean": 247907.27610000037,
+              "min": 247907.27610000037,
+              "max": 247907.27610000037,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                247907.27610000037
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {
+          "kv": "q8_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "params": {
+          "contextSize": 262144,
+          "flashAttention": "on",
+          "kvCacheType": "q4_0",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "q4_0",
+        "maxContext": 262144,
+        "vramPeakMiB": 21752,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 507.66935000009835,
+              "mean": 507.66935000009835,
+              "min": 502.5126000009477,
+              "max": 512.826099999249,
+              "stddev": 7.292745786566273,
+              "cv": 0.014365148864245714,
+              "values": [
+                512.826099999249,
+                502.5126000009477
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2017.269047152936,
+              "mean": 2017.269047152936,
+              "min": 1996.7782451039438,
+              "max": 2037.7598492019283,
+              "stddev": 28.978370161587225,
+              "cv": 0.01436514886424581,
+              "values": [
+                1996.7782451039438,
+                2037.7598492019283
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2822.3946647726348,
+              "mean": 2822.3946647726348,
+              "min": 2784.613920350252,
+              "max": 2860.1754091950174,
+              "stddev": 53.430041158685235,
+              "cv": 0.01893074764687079,
+              "values": [
+                2784.613920350252,
+                2860.1754091950174
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 68.09263293486308,
+              "mean": 68.09263293486308,
+              "min": 67.18145647910994,
+              "max": 69.00380939061623,
+              "stddev": 1.2885981014411432,
+              "cv": 0.018924192616752048,
+              "values": [
+                67.18145647910994,
+                69.00380939061623
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 68.62934497367652,
+              "mean": 68.62934497367652,
+              "min": 67.71361794918728,
+              "max": 69.54507199816575,
+              "stddev": 1.2950335774642368,
+              "cv": 0.018869968494686345,
+              "values": [
+                67.71361794918728,
+                69.54507199816575
+              ]
+            },
+            "itlP50Ms": 14.573349999263883,
+            "itlP95Ms": 15.367810000199825,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2373.198350000195,
+              "mean": 2373.198350000195,
+              "min": 2343.127100000158,
+              "max": 2403.2696000002325,
+              "stddev": 42.52716958756462,
+              "cv": 0.01791977041765646,
+              "values": [
+                2403.2696000002325,
+                2343.127100000158
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1361.0580999990925,
+              "mean": 1361.0580999990925,
+              "min": 1353.1159999985248,
+              "max": 1369.0001999996603,
+              "stddev": 11.231825534526255,
+              "cv": 0.008252274854786686,
+              "values": [
+                1353.1159999985248,
+                1369.0001999996603
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3009.52580469144,
+              "mean": 3009.52580469144,
+              "min": 2991.964500809435,
+              "max": 3027.087108573445,
+              "stddev": 24.835434122887005,
+              "cv": 0.008252274854786742,
+              "values": [
+                3027.087108573445,
+                2991.964500809435
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3399.7589650270193,
+              "mean": 3399.7589650270193,
+              "min": 3395.7124156564228,
+              "max": 3403.8055143976153,
+              "stddev": 5.722685000709553,
+              "cv": 0.0016832619781514636,
+              "values": [
+                3395.7124156564228,
+                3403.8055143976153
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 67.88580840926232,
+              "mean": 67.88580840926232,
+              "min": 67.85449431836285,
+              "max": 67.9171225001618,
+              "stddev": 0.04428481204341597,
+              "cv": 0.0006523427072774428,
+              "values": [
+                67.9171225001618,
+                67.85449431836285
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 68.4242948559336,
+              "mean": 68.4242948559336,
+              "min": 68.39210690968663,
+              "max": 68.45648280218056,
+              "stddev": 0.04552063012739246,
+              "cv": 0.0006652699925258348,
+              "values": [
+                68.45648280218056,
+                68.39210690968663
+              ]
+            },
+            "itlP50Ms": 14.61684999987483,
+            "itlP95Ms": 15.222460000310093,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3232.174599999562,
+              "mean": 3232.174599999562,
+              "min": 3223.3976999986917,
+              "max": 3240.951500000432,
+              "stddev": 12.412411016823105,
+              "cv": 0.003840266245772981,
+              "values": [
+                3223.3976999986917,
+                3240.951500000432
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5051.49835000094,
+              "mean": 5051.49835000094,
+              "min": 5020.440400000662,
+              "max": 5082.556300001219,
+              "stddev": 43.922574109899536,
+              "cv": 0.008694959607359143,
+              "values": [
+                5020.440400000662,
+                5082.556300001219
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3243.5167196750467,
+              "mean": 3243.5167196750467,
+              "min": 3223.5747196732614,
+              "max": 3263.458719676832,
+              "stddev": 28.202246863369123,
+              "cv": 0.008694959607359316,
+              "values": [
+                3263.458719676832,
+                3223.5747196732614
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3384.551960205931,
+              "mean": 3384.551960205931,
+              "min": 3380.3349263244204,
+              "max": 3388.768994087442,
+              "stddev": 5.96378650821945,
+              "cv": 0.0017620608512851986,
+              "values": [
+                3388.768994087442,
+                3380.3349263244204
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 64.89277955965747,
+              "mean": 64.89277955965747,
+              "min": 64.85360167541535,
+              "max": 64.93195744389958,
+              "stddev": 0.055405895240281715,
+              "cv": 0.0008538067812204863,
+              "values": [
+                64.85360167541535,
+                64.93195744389958
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 65.40549034505722,
+              "mean": 65.40549034505722,
+              "min": 65.36505104346622,
+              "max": 65.44592964664822,
+              "stddev": 0.05718980876288849,
+              "cv": 0.0008743885025733226,
+              "values": [
+                65.36505104346622,
+                65.44592964664822
+              ]
+            },
+            "itlP50Ms": 15.33504999987781,
+            "itlP95Ms": 15.90597500083968,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7009.768250000663,
+              "mean": 7009.768250000663,
+              "min": 6979.941200001165,
+              "max": 7039.595300000161,
+              "stddev": 42.18181863487025,
+              "cv": 0.006017576777216031,
+              "values": [
+                6979.941200001165,
+                7039.595300000161
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 26436.145200001076,
+              "mean": 26436.145200001076,
+              "min": 26426.906100001186,
+              "max": 26445.384300000966,
+              "stddev": 13.06606052396532,
+              "cv": 0.0004942498395705887,
+              "values": [
+                26445.384300000966,
+                26426.906100001186
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2479.03041494342,
+              "mean": 2479.03041494342,
+              "min": 2478.1640250165547,
+              "max": 2479.8968048702855,
+              "stddev": 1.2252603848764754,
+              "cv": 0.000494249839570621,
+              "values": [
+                2478.1640250165547,
+                2479.8968048702855
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2512.2893991292804,
+              "mean": 2512.2893991292804,
+              "min": 2495.5163450494583,
+              "max": 2529.062453209103,
+              "stddev": 23.720680562102014,
+              "cv": 0.009441858318680652,
+              "values": [
+                2495.5163450494583,
+                2529.062453209103
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 55.05697002545962,
+              "mean": 55.05697002545962,
+              "min": 54.90119621924441,
+              "max": 55.21274383167483,
+              "stddev": 0.2202974294120259,
+              "cv": 0.0040012632244410705,
+              "values": [
+                54.90119621924441,
+                55.21274383167483
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 55.4912800079275,
+              "mean": 55.4912800079275,
+              "min": 55.335079846791004,
+              "max": 55.647480169064,
+              "stddev": 0.2209003863241009,
+              "cv": 0.0039808125942047655,
+              "values": [
+                55.335079846791004,
+                55.647480169064
+              ]
+            },
+            "itlP50Ms": 18.00069999974221,
+            "itlP95Ms": 18.637970000412317,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28747.330699999817,
+              "mean": 28747.330699999817,
+              "min": 28731.22279999964,
+              "max": 28763.438599999994,
+              "stddev": 22.780010641600352,
+              "cv": 0.0007924217688009725,
+              "values": [
+                28763.438599999994,
+                28731.22279999964
+              ]
+            }
+          },
+          {
+            "promptTokens": 262000,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 241533.80659999885,
+              "mean": 241533.80659999885,
+              "min": 241533.80659999885,
+              "max": 241533.80659999885,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                241533.80659999885
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1084.7342808366986,
+              "mean": 1084.7342808366986,
+              "min": 1084.7342808366986,
+              "max": 1084.7342808366986,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1084.7342808366986
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1086.0262355585767,
+              "mean": 1086.0262355585767,
+              "min": 1086.0262355585767,
+              "max": 1086.0262355585767,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1086.0262355585767
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 34.202103569398865,
+              "mean": 34.202103569398865,
+              "min": 34.202103569398865,
+              "max": 34.202103569398865,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.202103569398865
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 34.472190368362284,
+              "mean": 34.472190368362284,
+              "min": 34.472190368362284,
+              "max": 34.472190368362284,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                34.472190368362284
+              ]
+            },
+            "itlP50Ms": 29.062699999660254,
+            "itlP95Ms": 29.701630000025034,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 245302.0907999985,
+              "mean": 245302.0907999985,
+              "min": 245302.0907999985,
+              "max": 245302.0907999985,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                245302.0907999985
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "262144",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "q4_0",
+            "-ctv",
+            "q4_0",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 262144 -ngl all -fa on -ctk q4_0 -ctv q4_0 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {
+          "kv": "q4_0",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      },
+      {
+        "params": {
+          "contextSize": 245760,
+          "flashAttention": "on",
+          "kvCacheType": "f16",
+          "batchSize": 2048,
+          "ubatchSize": 512,
+          "parallel": 1,
+          "extraArgs": [],
+          "env": {}
+        },
+        "kvType": "f16",
+        "maxContext": 245760,
+        "vramPeakMiB": 31506,
+        "sweep": [
+          {
+            "promptTokens": 1024,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 537.993049999699,
+              "mean": 537.993049999699,
+              "min": 515.288200000301,
+              "max": 560.697899999097,
+              "stddev": 32.1095068007954,
+              "cv": 0.05968386915186612,
+              "values": [
+                515.288200000301,
+                560.697899999097
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 1906.7664206321083,
+              "mean": 1906.7664206321083,
+              "min": 1826.2954079222504,
+              "max": 1987.2374333419664,
+              "stddev": 113.80319755217886,
+              "cv": 0.05968386915186612,
+              "values": [
+                1987.2374333419664,
+                1826.2954079222504
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2730.1360761618885,
+              "mean": 2730.1360761618885,
+              "min": 2575.821986552398,
+              "max": 2884.450165771379,
+              "stddev": 218.23307839099866,
+              "cv": 0.07993487221992158,
+              "values": [
+                2884.450165771379,
+                2575.821986552398
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 69.94743426129234,
+              "mean": 69.94743426129234,
+              "min": 69.84434610018663,
+              "max": 70.05052242239806,
+              "stddev": 0.14578867555580735,
+              "cv": 0.0020842605178512485,
+              "values": [
+                69.84434610018663,
+                70.05052242239806
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 70.50599686865098,
+              "mean": 70.50599686865098,
+              "min": 70.40018656049439,
+              "max": 70.61180717680756,
+              "stddev": 0.14963837283391854,
+              "cv": 0.0021223495798901627,
+              "values": [
+                70.40018656049439,
+                70.61180717680756
+              ]
+            },
+            "itlP50Ms": 14.158250000327826,
+            "itlP95Ms": 14.891225000750273,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 2353.6824000002816,
+              "mean": 2353.6824000002816,
+              "min": 2333.6544000003487,
+              "max": 2373.7104000002146,
+              "stddev": 28.32386922711352,
+              "cv": 0.012033853516986884,
+              "values": [
+                2333.6544000003487,
+                2373.7104000002146
+              ]
+            }
+          },
+          {
+            "promptTokens": 4096,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 1408.3273000000045,
+              "mean": 1408.3273000000045,
+              "min": 1376.4275000002235,
+              "max": 1440.2270999997854,
+              "stddev": 45.11312979667948,
+              "cv": 0.0320331288022886,
+              "values": [
+                1376.4275000002235,
+                1440.2270999997854
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2909.9077858213404,
+              "mean": 2909.9077858213404,
+              "min": 2843.99592258791,
+              "max": 2975.8196490547703,
+              "stddev": 93.21345090599732,
+              "cv": 0.03203312880228856,
+              "values": [
+                2975.8196490547703,
+                2843.99592258791
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3356.472000309588,
+              "mean": 3356.472000309588,
+              "min": 3354.2482504024933,
+              "max": 3358.6957502166833,
+              "stddev": 3.144857277939656,
+              "cv": 0.000936953228762101,
+              "values": [
+                3358.6957502166833,
+                3354.2482504024933
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 69.1571696686701,
+              "mean": 69.1571696686701,
+              "min": 69.00260215871765,
+              "max": 69.31173717862255,
+              "stddev": 0.21859146887699338,
+              "cv": 0.0031607925819442653,
+              "values": [
+                69.31173717862255,
+                69.00260215871765
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 69.70507891399086,
+              "mean": 69.70507891399086,
+              "min": 69.55149609071688,
+              "max": 69.85866173726485,
+              "stddev": 0.2171989116216212,
+              "cv": 0.003115969668288061,
+              "values": [
+                69.85866173726485,
+                69.55149609071688
+              ]
+            },
+            "itlP50Ms": 14.354100001044571,
+            "itlP95Ms": 14.883809999283404,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 3245.139500000514,
+              "mean": 3245.139500000514,
+              "min": 3209.1765000000596,
+              "max": 3281.1025000009686,
+              "stddev": 50.85936234426636,
+              "cv": 0.015672473354152665,
+              "values": [
+                3209.1765000000596,
+                3281.1025000009686
+              ]
+            }
+          },
+          {
+            "promptTokens": 16384,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 5160.352349999361,
+              "mean": 5160.352349999361,
+              "min": 5039.077199999243,
+              "max": 5281.6274999994785,
+              "stddev": 171.50896190899795,
+              "cv": 0.03323590140293796,
+              "values": [
+                5039.077199999243,
+                5281.6274999994785
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 3176.731544281754,
+              "mean": 3176.731544281754,
+              "min": 3102.0741239327494,
+              "max": 3251.3889646307584,
+              "stddev": 105.58153638935124,
+              "cv": 0.033235901402937966,
+              "values": [
+                3251.3889646307584,
+                3102.0741239327494
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 3397.4841795730686,
+              "mean": 3397.4841795730686,
+              "min": 3394.5262435580867,
+              "max": 3400.4421155880505,
+              "stddev": 4.183153229019225,
+              "cv": 0.0012312502451578403,
+              "values": [
+                3400.4421155880505,
+                3394.5262435580867
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 66.72147426962994,
+              "mean": 66.72147426962994,
+              "min": 66.69124265213331,
+              "max": 66.75170588712656,
+              "stddev": 0.04275396347620292,
+              "cv": 0.0006407826557223352,
+              "values": [
+                66.75170588712656,
+                66.69124265213331
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 67.24634478424753,
+              "mean": 67.24634478424753,
+              "min": 67.21887674106081,
+              "max": 67.27381282743426,
+              "stddev": 0.03884567920651281,
+              "cv": 0.000577662315046935,
+              "values": [
+                67.27381282743426,
+                67.21887674106081
+              ]
+            },
+            "itlP50Ms": 14.893649999052286,
+            "itlP95Ms": 15.452805000171065,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 7064.856749999337,
+              "mean": 7064.856749999337,
+              "min": 6942.80169999972,
+              "max": 7186.911799998954,
+              "stddev": 172.61190706558466,
+              "cv": 0.024432470915365816,
+              "values": [
+                6942.80169999972,
+                7186.911799998954
+              ]
+            }
+          },
+          {
+            "promptTokens": 65536,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 2,
+              "median": 25981.63329999987,
+              "mean": 25981.63329999987,
+              "min": 25356.713700000197,
+              "max": 26606.552899999544,
+              "stddev": 883.769773712308,
+              "cv": 0.03401517385407454,
+              "values": [
+                25356.713700000197,
+                26606.552899999544
+              ]
+            },
+            "prefillTps": {
+              "n": 2,
+              "median": 2523.857327038311,
+              "mean": 2523.857327038311,
+              "min": 2463.1526017788315,
+              "max": 2584.56205229779,
+              "stddev": 85.8494457620883,
+              "cv": 0.034015173854074654,
+              "values": [
+                2584.56205229779,
+                2463.1526017788315
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 2,
+              "median": 2602.263748453597,
+              "mean": 2602.263748453597,
+              "min": 2601.949627960826,
+              "max": 2602.577868946368,
+              "stddev": 0.44423346109614326,
+              "cv": 0.00017071039065895234,
+              "values": [
+                2602.577868946368,
+                2601.949627960826
+              ]
+            },
+            "decodeTps": {
+              "n": 2,
+              "median": 58.20316452511216,
+              "mean": 58.20316452511216,
+              "min": 58.073323744382584,
+              "max": 58.33300530584173,
+              "stddev": 0.18362259305687356,
+              "cv": 0.0031548558322399864,
+              "values": [
+                58.073323744382584,
+                58.33300530584173
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 2,
+              "median": 58.66431823060344,
+              "mean": 58.66431823060344,
+              "min": 58.52977771030596,
+              "max": 58.79885875090093,
+              "stddev": 0.19026902849344032,
+              "cv": 0.0032433519084891127,
+              "values": [
+                58.52977771030596,
+                58.79885875090093
+              ]
+            },
+            "itlP50Ms": 17.0691499998793,
+            "itlP95Ms": 17.662269999552517,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 2,
+              "median": 28168.044700000435,
+              "mean": 28168.044700000435,
+              "min": 27548.77199999988,
+              "max": 28787.31740000099,
+              "stddev": 875.7838511481889,
+              "cv": 0.031091396668657494,
+              "values": [
+                27548.77199999988,
+                28787.31740000099
+              ]
+            }
+          },
+          {
+            "promptTokens": 245616,
+            "outputTokens": 128,
+            "ttftMs": {
+              "n": 1,
+              "median": 210907.75650000013,
+              "mean": 210907.75650000013,
+              "min": 210907.75650000013,
+              "max": 210907.75650000013,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                210907.75650000013
+              ]
+            },
+            "prefillTps": {
+              "n": 1,
+              "median": 1164.5659888283901,
+              "mean": 1164.5659888283901,
+              "min": 1164.5659888283901,
+              "max": 1164.5659888283901,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1164.5659888283901
+              ]
+            },
+            "prefillTpsEngine": {
+              "n": 1,
+              "median": 1167.4540859666693,
+              "mean": 1167.4540859666693,
+              "min": 1167.4540859666693,
+              "max": 1167.4540859666693,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                1167.4540859666693
+              ]
+            },
+            "decodeTps": {
+              "n": 1,
+              "median": 39.77607759579849,
+              "mean": 39.77607759579849,
+              "min": 39.77607759579849,
+              "max": 39.77607759579849,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                39.77607759579849
+              ]
+            },
+            "decodeTpsEngine": {
+              "n": 1,
+              "median": 40.08919846658816,
+              "mean": 40.08919846658816,
+              "min": 40.08919846658816,
+              "max": 40.08919846658816,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                40.08919846658816
+              ]
+            },
+            "itlP50Ms": 24.993899999186397,
+            "itlP95Ms": 25.48743999954313,
+            "itlPerChunk": false,
+            "totalMs": {
+              "n": 1,
+              "median": 214148.56819999963,
+              "mean": 214148.56819999963,
+              "min": 214148.56819999963,
+              "max": 214148.56819999963,
+              "stddev": 0,
+              "cv": 0,
+              "values": [
+                214148.56819999963
+              ]
+            }
+          }
+        ],
+        "command": {
+          "argv": [
+            "C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe",
+            "-m",
+            "C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "65464",
+            "--alias",
+            "gpubench-00000000-0000-0000-0000-000000000000",
+            "-c",
+            "245760",
+            "-ngl",
+            "all",
+            "-fa",
+            "on",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
+            "-b",
+            "2048",
+            "-ub",
+            "512",
+            "-np",
+            "1",
+            "--fit",
+            "off",
+            "--no-webui"
+          ],
+          "powershell": "& 'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host '127.0.0.1' --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui",
+          "bash": "'C:\\Users\\user\\AppData\\Roaming\\GPU Bench\\engines\\llamacpp\\b11535-cuda-13.4\\llama-server.exe' -m 'C:\\models\\qwopus-flash-v2\\Qwopus3.8-27B-Flash-V2-abliterated.Q4_K_M.gguf' --host 127.0.0.1 --port 65464 --alias gpubench-00000000-0000-0000-0000-000000000000 -c 245760 -ngl all -fa on -ctk f16 -ctv f16 -b 2048 -ub 512 -np 1 --fit off --no-webui"
+        },
+        "outcome": "ok",
+        "tags": [],
+        "variant": {
+          "kv": "f16",
+          "fa": "on",
+          "ub": 512,
+          "b": 2048
+        }
+      }
+    ],
+    "recommended": 0,
+    "fastestByDepth": [
+      {
+        "depth": 1024,
+        "combination": 2
+      },
+      {
+        "depth": 4096,
+        "combination": 2
+      },
+      {
+        "depth": 16384,
+        "combination": 2
+      },
+      {
+        "depth": 65536,
+        "combination": 2
+      },
+      {
+        "depth": 245760,
+        "combination": 2
+      },
+      {
+        "depth": 262144,
+        "combination": 0
+      }
+    ]
+  }
+}
