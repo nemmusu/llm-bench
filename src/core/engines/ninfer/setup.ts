@@ -85,6 +85,7 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
   const common = { deps, createClient: o.createClient, saved: async () => (await o.settings.get()).ninfer, gpus: o.gpus };
   // Native, tests and E2E only: a fake Linux host runs every program (endpoints.ninferHost).
   const host = deps.endpoints.ninferHost ? { launcherPrefix: deps.endpoints.ninferHost } : {};
+  const hostPrefix = deps.endpoints.ninferHost ?? [];
   const native = new NinferAdapter({ ...common, kind: 'ninfer-native', ...(o.ownership ? { ownership: o.ownership } : {}), ...host });
   const wsl = new NinferAdapter({ ...common, kind: 'ninfer-wsl', wsl: { argv, processes } });
   const repoBytes = (repo: string) => githubRepoBytes(deps.fetch, deps.endpoints.githubApi, repo);
@@ -221,7 +222,7 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
 
   /** Runs a program where a build is: its distro (WSL) or this system (the fake Linux host in tests). */
   const runnerOf = (kind: NinferKind, distro: string | undefined): DistroRun =>
-    kind === 'ninfer-wsl' ? distroRunner(deps.proc, argv, distro as string) : (cmd, args, opts) => deps.proc.run(...hostArgv(deps.endpoints.ninferHost ?? [], [cmd, ...args]), opts);
+    kind === 'ninfer-wsl' ? distroRunner(deps.proc, argv, distro as string) : (cmd, args, opts) => deps.proc.run(...hostArgv(hostPrefix, [cmd, ...args]), opts);
 
   /** A build that is there (not "missing"), else VALIDATION. */
   const installedBuild = async (build: NinferBuildId): Promise<NinferBuildInfo> => {
@@ -234,9 +235,12 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
     const info = await installedBuild(build);
     const mode = removeModeOf(info);
     const base: NinferRemovePlan = { build, mode, dir: info.dir, ...(info.distro ? { distro: info.distro } : {}) };
-    if (mode !== 'delete') return base;
-    const size = await folderBytes(runnerOf(info.kind, info.distro), info.dir).catch(() => undefined);
-    return { ...base, ...(size !== undefined ? { sizeBytes: size } : {}), command: removeCommand(info.dir, info.distro) };
+    if (mode === 'forget') return base;
+    // By hand: the command to copy; by LLM Bench: the command it runs, and how much it frees.
+    const command = removeCommand(info.dir, info.distro);
+    if (mode === 'manual') return { ...base, command };
+    const size = await folderBytes(runnerOf(info.kind, info.distro), info.dir);
+    return { ...base, ...(size !== undefined ? { sizeBytes: size } : {}), command };
   };
 
   /** Deleted (LLM Bench built it) or forgotten (the user's): either way LLM Bench no longer uses it. */
@@ -252,7 +256,8 @@ export function createNinferServices(o: NinferServicesOptions): NinferServices {
       else delete ninfer.native;
       await o.settings.update({ ninfer });
     } else {
-      await o.settings.update({ customEngines: (saved.customEngines ?? []).filter((e) => e.id !== info.customEngineId) });
+      // NInfer-all is there only as a saved engine (one found in its folder is saved as it is found).
+      await o.settings.update({ customEngines: (saved.customEngines as CustomEngine[]).filter((e) => e.id !== info.customEngineId) });
     }
     adapters[info.kind].forget();
     deps.log.info('NInfer build removed', { build, mode, dir: info.dir });

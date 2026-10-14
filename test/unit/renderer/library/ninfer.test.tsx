@@ -261,7 +261,7 @@ describe('NInfer card', () => {
   it('"Dimentica" a build of the user\'s own (its files stay); one built by hand in ~/ninfer-all goes by hand; refused while in use; no size known', async () => {
     const api = ninferApi({ builds: [ready({ built: undefined, dir: '/opt/mine' }), readyAll()] });
     api.on('GET /api/engines/ninfer/builds/official/remove', () => ({ build: 'official', mode: 'forget', dir: '/opt/mine', distro: 'Ubuntu-24.04' }));
-    api.on('GET /api/engines/ninfer/builds/all/remove', () => ({ build: 'all', mode: 'manual', dir: '/home/u/ninfer-all' }));
+    api.on('GET /api/engines/ninfer/builds/all/remove', () => ({ build: 'all', mode: 'manual', dir: '/home/u/ninfer-all', distro: 'Ubuntu-24.04', command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/u/ninfer-all' }));
     let n = 0;
     api.on('POST /api/engines/ninfer/builds/*/remove', () => {
       if (n++ === 0) throw new ApiError({ code: 'ENGINE_IN_USE', message: 'busy', params: { engine: 'NInfer' } }, 409);
@@ -280,7 +280,7 @@ describe('NInfer card', () => {
     const all = await allRow();
     await userEvent.click(within(all).getByRole('button', { name: 'Rimuovi' }));
     const manual = await screen.findByRole('dialog', { name: 'Rimuovere NInfer-all?' });
-    expect(await within(manual).findByText(/Quella in \/home\/u\/ninfer-all non l’ha compilata LLM Bench/)).toBeTruthy();
+    expect(await within(manual).findByText(/Quella in \/home\/u\/ninfer-all · Ubuntu-24\.04 non l’ha compilata LLM Bench/)).toBeTruthy();
     expect(manual.textContent).toContain('rm -rf /home/u/ninfer-all');
     expect(within(manual).queryByRole('button', { name: 'Elimina la cartella' })).toBeNull();
     await userEvent.click(within(manual).getAllByRole('button', { name: 'Chiudi' }).at(-1)!);

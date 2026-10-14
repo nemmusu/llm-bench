@@ -89,6 +89,13 @@ describe('DockerApi over a real named pipe / unix socket', () => {
     expect(await c.imageInspect('ghcr.io/ggml-org/llama.cpp:server-cuda')).toBeUndefined();
     api.state.images.set('x/y', {});
     expect(await c.imageInspect('x/y')).toEqual({ id: '', repoTags: [], repoDigests: [], size: 0 });
+    // The list: every image once, an odd entry without id or size read as empty.
+    api.state.images.delete('x/y');
+    api.state.images.set('z/w', { Size: null });
+    expect(await c.listImages()).toEqual([
+      { id: 'sha256:1', repoTags: ['vllm/vllm-openai:v0.31.0'], repoDigests: ['vllm/vllm-openai@sha256:2'], size: 99 },
+      { id: '', repoTags: [], repoDigests: [], size: 0 },
+    ]);
   });
 
   it('pulls with aggregated progress and stores the image', async () => {

@@ -350,7 +350,7 @@ export class DockerApi {
     const { status, data, res } = await this.json<unknown[]>('GET', '/images/json');
     if (status !== 200 || !Array.isArray(data)) throw this.fail('image list', res);
     return data.map((x) => {
-      const d = (x ?? {}) as Record<string, unknown>;
+      const d = x as Record<string, unknown>;
       return { id: str(d.Id) ?? '', repoTags: asStrings(d.RepoTags), repoDigests: asStrings(d.RepoDigests), size: num(d.Size) ?? 0 };
     });
   }

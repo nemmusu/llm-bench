@@ -668,6 +668,23 @@ describe('composition details', () => {
     await app.request('/api/docker/pull', { method: 'POST', headers: H, body: JSON.stringify({ image: 'ghcr.io/ggml-org/llama.cpp:server-cuda' }) });
     for (let i = 0; i < 50 && !events.includes('engine.install'); i++) await new Promise((r) => setTimeout(r, 10));
     expect(events).toContain('engine.install');
+
+    // Nothing is updated or removed under a benchmark or a server.
+    const code = async (route: string) => ((await (await app.request(route, { method: 'POST', headers: H, body: '{}' })).json()) as { error?: { code: string } }).error?.code;
+    s.bench.active = () => ({ runId: 'r', phase: 'decode', progress: 0.5 }) as never;
+    expect(await code('/api/engines/vllm-docker/update')).toBe('ENGINE_UPDATE_FAILED');
+    expect(await code('/api/engines/ninfer/builds/official/remove')).toBe('ENGINE_IN_USE');
+    s.bench.active = () => undefined as never;
+    s.serve.busy = () => true;
+    expect(await code('/api/engines/vllm-docker/update')).toBe('ENGINE_UPDATE_FAILED');
+    expect(await code('/api/engines/ninfer/builds/official/remove')).toBe('ENGINE_IN_USE');
+    // Free again: the update starts, its progress goes to the event hub.
+    s.serve.busy = () => false;
+    const kinds: string[] = [];
+    ctx.hub.subscribe((e) => kinds.push((e as { kind?: string }).kind ?? ''));
+    await app.request('/api/engines/vllm-docker/update', { method: 'POST', headers: H, body: '{}' });
+    for (let i = 0; i < 100 && !kinds.includes('update:vllm-docker'); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(kinds).toContain('update:vllm-docker');
   });
 });
 

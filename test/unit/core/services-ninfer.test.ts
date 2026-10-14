@@ -73,6 +73,11 @@ describe('NInfer in the services', () => {
       expect(await s.updates.labelOf('ninfer-wsl')).toBe('NInfer (WSL)');
       expect(await s.updates.labelOf('ninfer-native')).toBe('NInfer');
       expect(await s.updates.check('ninfer-wsl')).toMatchObject({ target: 'ninfer-wsl', state: 'none', reason: 'tools', ninfer: { artifacts: [] } });
+      // A NInfer variant is updated through its own checkout; NInfer-all is looked for where it usually is.
+      await ctx.settings.update({ customEngines: [{ schema: 1, id: 'v1', name: 'V', base: 'ninfer', run: { mode: 'ninfer', path: '/home/u/v', distro: 'Ubuntu' }, extraArgs: [], env: {}, notes: '' }] as never });
+      expect(await s.updates.check('custom:v1')).toMatchObject({ target: 'custom:v1' });
+      expect(await (s.bench as unknown as { deps: { findNinferAll(kind: string): Promise<unknown> } }).deps.findNinferAll('ninfer-wsl')).toBeUndefined();
+      await ctx.settings.update({ customEngines: [] });
       const app = createApp(ctx, { token: 't', port: () => 1, modules: serviceModules(s) });
       const res = await app.request('/api/engines/ninfer/distros', { headers: { authorization: 'Bearer t', host: '127.0.0.1:1' } });
       expect(await res.json()).toEqual({ wsl: false, distros: [] });

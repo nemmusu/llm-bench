@@ -164,6 +164,16 @@ describe('model page', () => {
     expect(await screen.findByText('In questo repository non ci sono file di modello che LLM Bench sa usare.')).toBeTruthy();
   });
 
+  it('files that cannot be listed for another reason: its own words and "Riprova"', async () => {
+    const api = libApi(world({ search: [] }));
+    let n = 0;
+    api.on('GET /api/models/hub/*/*/files', () => (n++ === 0 ? fail('NETWORK', 502) : [{ path: 'x.bin', sizeBytes: 1, kind: 'other' }]));
+    renderLib(PAGE, api);
+    expect(await screen.findByText('Connessione a internet non disponibile')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    expect(await screen.findByText('In questo repository non ci sono file di modello che LLM Bench sa usare.')).toBeTruthy();
+  });
+
   it('a private repo with a token already saved: check the name or the token; any other error keeps its own words', async () => {
     const api = libApi(world({ search: [], settings: { ...world().settings, hasHfToken: true } }));
     let code: 'HF_AUTH_REQUIRED' | 'NETWORK' = 'HF_AUTH_REQUIRED';

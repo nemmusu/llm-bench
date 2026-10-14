@@ -740,7 +740,7 @@ export type NinferBuildPathResult = z.infer<typeof ninferBuildPathResultSchema>;
  *   says how, `sizeBytes` how much it frees;
  * - 'forget': a build of the user's own: LLM Bench only stops using it, the files stay;
  * - 'manual': one built by hand in NInfer-all's usual folder, which LLM Bench would find again: delete
- *   that folder yourself.
+ *   that folder yourself (`command` is the one to copy).
  */
 export const ninferRemovePlanSchema = z.object({
   build: ninferBuildIdSchema,

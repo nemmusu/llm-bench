@@ -72,7 +72,7 @@ export function NinferRemove({ info, name }: { info: NinferBuildInfo; name: stri
             {p?.mode === 'manual' && (
               <>
                 <p>{t('ninfer.remove.manualBody', { dir: where })}</p>
-                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: p.distro ? `wsl -d ${p.distro} -- rm -rf ${p.dir}` : `rm -rf ${p.dir}`, bash: `rm -rf ${p.dir}` }} />
+                <CodeBlock single label={t('ninfer.remove.command')} commands={{ powershell: p.command ?? '', bash: p.command ?? '' }} />
               </>
             )}
             {remove.isError && <ErrorCallout error={remove.error} />}

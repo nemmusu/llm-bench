@@ -204,7 +204,7 @@ describe("NInfer's builds on its card", () => {
     // Built by LLM Bench (its record is there): deleted, with its size and the command first.
     expect(await r.deps.removePlan('official')).toEqual({ build: 'official', mode: 'delete', dir: '/home/user/ninfer', distro: 'Ubuntu-24.04', sizeBytes: 2048 * 1024, command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/user/ninfer' });
     // Built by hand where LLM Bench looks for NInfer-all: it would be found again, so by hand.
-    expect(await r.deps.removePlan('all')).toEqual({ build: 'all', mode: 'manual', dir: '/home/user/ninfer-all', distro: 'Ubuntu-24.04' });
+    expect(await r.deps.removePlan('all')).toEqual({ build: 'all', mode: 'manual', dir: '/home/user/ninfer-all', distro: 'Ubuntu-24.04', command: 'wsl -d Ubuntu-24.04 -- rm -rf /home/user/ninfer-all' });
     await expect(r.deps.remove('all')).rejects.toMatchObject({ code: 'VALIDATION', params: { reason: 'manual' } });
     expect(r.saved().customEngines).toEqual([all]);
 
@@ -225,8 +225,9 @@ describe("NInfer's builds on its card", () => {
 
   it('removing on Linux (a fake host runs every program): the official build LLM Bench made, deleted there; a failed deletion is said', async () => {
     const host = [...WSL_ARGV, '--host'];
-    const r = setup({ checkouts: ['/home/user/ninfer'], builds: ['/home/user/ninfer/build/apps/ninfer-serve'], built: { '/home/user/ninfer': COMMIT } }, { ninfer: { native: { path: '/home/user/ninfer' } } }, 'linux', undefined, undefined, host);
-    expect(await r.deps.removePlan('official')).toMatchObject({ mode: 'delete', dir: '/home/user/ninfer', command: 'rm -rf /home/user/ninfer', sizeBytes: 1_843_200 * 1024 });
+    const r = setup({ checkouts: ['/home/user/ninfer'], builds: ['/home/user/ninfer/build/apps/ninfer-serve'], built: { '/home/user/ninfer': COMMIT }, sizes: { '/home/user/ninfer': 0 } }, { ninfer: { native: { path: '/home/user/ninfer' } } }, 'linux', undefined, undefined, host);
+    // du says nothing useful: no size, the rest as usual.
+    expect(await r.deps.removePlan('official')).toEqual({ build: 'official', mode: 'delete', dir: '/home/user/ninfer', command: 'rm -rf /home/user/ninfer' });
     await r.deps.remove('official');
     expect(r.saved().ninfer).toEqual({});
   }, 90_000);

@@ -76,6 +76,9 @@ describe('engines: llama.cpp', () => {
     expect(api.calls.some((c) => c.method === 'PUT' && c.path === '/api/settings')).toBe(false);
     act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'download', bytesDone: 1, bytesTotal: 5 }));
     expect(await within(llama).findByRole('progressbar', { name: 'Aggiornamento di llama.cpp' })).toBeTruthy();
+    // Stopped without saying why: still said.
+    act(() => api.emit({ type: 'engine.install', kind: 'llamacpp-native', stage: 'error', bytesDone: 0 }));
+    expect(await within(llama).findByText('Installazione del motore non riuscita')).toBeTruthy();
   });
 
   it('the newest already installed but another in use: "Usa" it', async () => {
@@ -378,11 +381,15 @@ describe('engines: vLLM and others', () => {
       }),
     );
     api.on('POST /api/docker/images/remove', () => fail('DOCKER_IMAGE_IN_USE', 409));
+    api.on('PUT /api/settings', () => fail('VALIDATION'));
     renderLib('/engines', api);
     const vllm = await card('vLLM (Docker)');
     const busy = await within(vllm).findByRole('button', { name: 'La sta usando un server o un test: fermalo, poi potrai rimuoverla' });
     await userEvent.click(busy);
     expect(screen.queryByRole('alertdialog')).toBeNull();
+    // A choice that cannot be saved is said in the card.
+    await userEvent.click(within(vllm).getByRole('button', { name: 'Usa questa' }));
+    expect(await within(vllm).findByText('Alcuni valori non sono validi')).toBeTruthy();
     const sglang = await card('SGLang (Docker)');
     const list = await within(sglang).findByRole('list', { name: 'Versioni di SGLang' });
     expect(await within(list).findByText('v0.4.0')).toBeTruthy();

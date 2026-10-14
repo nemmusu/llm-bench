@@ -291,6 +291,35 @@ describe('ImageService', () => {
     expect(api.requests.filter((r) => r.method === 'DELETE').map((r) => r.query)).toContain('?force=false');
   });
 
+  it('knows a container uses an image whatever name it was started with: an id, a bare repository, a digest, a name Docker made up', async () => {
+    api = await startFakeDockerApi({
+      images: {
+        ...containerd,
+        'lmsysorg/sglang:latest': { Id: 'sha256:e2', RepoTags: ['lmsysorg/sglang:latest'], RepoDigests: [], Size: 1 },
+      },
+      containers: [
+        { Id: 'c1', Image: 'sha256:e1', State: 'running' },
+        { Id: 'c2', Image: 'lmsysorg/sglang', State: 'running' },
+        { Id: 'c3', Image: `docker.io/vllm/vllm-openai@${AMD64}`, State: 'running' },
+        { Id: 'c4', Image: 'Not A Valid Name', State: 'running' },
+      ],
+    });
+    const svc = new ImageService({ api: new DockerApiProvider({ resolve: async () => [sock(api!.socketPath)] }), cli: {} as DockerCli });
+    expect((await svc.local('lmsysorg/sglang')).map((i) => [i.id, i.running])).toEqual([
+      ['sha256:e1', true],
+      ['sha256:e2', true],
+    ]);
+    expect((await svc.local('vllm/vllm-openai')).map((i) => [i.id, i.running])).toEqual([
+      [INDEX, false],
+      ['sha256:d1', true],
+    ]);
+    // By digest: the running one is refused.
+    await expect(svc.remove(`vllm/vllm-openai@${AMD64}`)).rejects.toMatchObject({ code: 'DOCKER_IMAGE_IN_USE', params: { reason: 'running' } });
+    // An API that fails for another reason is not hidden behind the CLI.
+    const broken = new ImageService({ api: brokenApi('INTERNAL'), cli: {} as DockerCli });
+    await expect(broken.local('a/b')).rejects.toMatchObject({ code: 'INTERNAL' });
+  });
+
   it('the API client reports a failed list or removal', async () => {
     api = await startFakeDockerApi({ mode: 'starting' });
     const c = new DockerApi({ kind: 'socket', path: api.socketPath, source: 'default' });
