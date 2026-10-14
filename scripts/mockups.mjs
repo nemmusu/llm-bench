@@ -3,6 +3,7 @@
 //   node scripts/mockups.mjs              build, then screenshot everything
 //   node scripts/mockups.mjs --no-build   reuse the current out/ folder
 //   node scripts/mockups.mjs --only=result,run
+//   node scripts/mockups.mjs --only=readme     the README's screenshots, into docs/screenshots
 //
 // How it works: the core starts in browser mode (`node out/core/index.cjs`) with a throw-away
 // GPUBENCH_DATA_DIR inside the same fake world the E2E tests use (fake nvidia-smi RTX 5090, fake
@@ -17,7 +18,7 @@ import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -31,6 +32,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 const only = [...args].find((a) => a.startsWith('--only='))?.slice(7).split(',');
 const outDir = path.join(root, '.qa', 'mockups');
+/** --only=readme: the README's screenshots (readmeScenes), on a library whose files have their real sizes. */
+const README = only?.includes('readme') ?? false;
+const README_DIR = path.join(root, 'docs', 'screenshots');
+
+/** README scenes: a fake GGUF as big as the real one, so no "128 KB" model shows (sparse: no disk space used). */
+function realSize(file, gb) {
+  if (!README) return;
+  if (process.platform === 'win32') execFileSync('fsutil', ['sparse', 'setflag', file], { stdio: 'ignore', windowsHide: true });
+  truncateSync(file, Math.round(gb * 1e9));
+}
 
 // Seeded runs (test/fixtures/runs).
 const RESULT_ID = '01K6Y7Q2ZC4M8N3B5V9R1T0XWE';
@@ -494,6 +505,10 @@ async function openEngineChoice(page) {
 
 /** Slow enough that the live screen is mid-run when it is photographed. */
 const LIVE_PROFILE = { loadMsCold: 2600, loadMsWarm: 900, prefillTps: 8900, decodeTps: 46, tokensPerChunk: 1 };
+/** README: the reference model at the speeds of the score's reference (resources/score-reference.json), an RTX 5090 with llama.cpp. */
+const README_REF_PROFILE = { loadMsCold: 4200, loadMsWarm: 1500, prefillTps: 12_000, decodeTps: 250, tokensPerChunk: 1 };
+/** README: Gemma 4 12B Q4_K_M live, about as fast as on an RTX 5090 (still slow enough to be photographed mid-run). */
+const README_LIVE_PROFILE = { ...LIVE_PROFILE, prefillTps: 9200, decodeTps: 92 };
 /**
  * "Trova le impostazioni migliori" (test/fakes/fake-engine/profiles.mjs): q4_0 holds the largest context,
  * a larger micro-batch reads faster, f16 runs out of memory early. Loads slowed down so the live
@@ -646,7 +661,11 @@ function spillRuns(base, modelPath) {
 /** Fake world (see test/e2e/global-setup.ts) and a data folder with models, runs and settings. */
 async function fakeWorld(dataDir) {
   const cli = path.join(root, 'test', 'fakes', 'fake-engine', 'cli.mjs');
-  const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n` });
+  // README scenes: the latest release is the build the fake engine says it is (b11438 → b10997, the older ones
+  // shifted the same way), so the Engines card and the runs agree.
+  const releasesFile = path.join(root, 'test', 'fixtures', 'github', 'llamacpp-releases.json');
+  const releases = README ? JSON.parse(readFileSync(releasesFile, 'utf8').replace(/b(1143[3-8])/g, (_m, n) => `b${Number(n) - 441}`)) : undefined;
+  const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n`, ...(releases ? { releases } : {}) });
   const hub = await startFakeHub({
     repos: [
       ...demoRepos(),
@@ -683,6 +702,9 @@ async function fakeWorld(dataDir) {
   writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
   writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
+  realSize(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), 5.03);
+  realSize(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), 7.3);
+  realSize(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), 17.6);
   seedNinfer(models);
   // Every format in the library: a safetensors model for vLLM / SGLang, a download stopped at 1 of 4
   // files (the NInfer artifact comes from seedNinfer; the Bonsai quant below shows the fork badge). In a
@@ -712,12 +734,25 @@ async function fakeWorld(dataDir) {
   sidecar(gemma, UPDATES_REPO);
   // A PrismML Bonsai model (ternary weights: only the PrismML fork of llama.cpp reads them).
   writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
+  realSize(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), 2.2);
   const results = path.join(dataDir, 'results');
   mkdirSync(results, { recursive: true });
   const seeds = path.join(root, 'test', 'fixtures', 'runs');
   const hostId = thisHostId();
   for (const f of readdirSync(seeds).filter((x) => x.endsWith('.json'))) {
-    writeFileSync(path.join(results, f), readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname()));
+    const text = readFileSync(path.join(seeds, f), 'utf8').replaceAll('__THIS_HOST_ID__', hostId).replaceAll('__THIS_PC__', os.hostname());
+    // README scenes: the app scores only a Standard run of the reference model (readmeScenes makes one); these are other models.
+    const unscored = README ? JSON.parse(text) : undefined;
+    if (unscored) delete unscored.metrics.score;
+    writeFileSync(path.join(results, f), unscored ? JSON.stringify(unscored) : text);
+  }
+  // README scenes: the reference model of the score on the PC, as LLM Bench's own download leaves it.
+  if (README) {
+    const ref = path.join(models, ...REFERENCE.repo.split('/'));
+    mkdirSync(ref, { recursive: true });
+    writeFileSync(path.join(ref, REFERENCE.file), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 96 * 1024 }));
+    realSize(path.join(ref, REFERENCE.file), REFERENCE.sizeBytes / 1e9);
+    writeFileSync(path.join(ref, '.gpubench-download.json'), JSON.stringify({ repo: REFERENCE.repo, files: {} }));
   }
   // The Qwen3 8B tests point at the library copy of this fake world, so their presets find the model.
   const fullFile = path.join(results, readdirSync(results).find((f) => f.includes(RESULT_ID)));
@@ -1034,38 +1069,7 @@ async function serverScenes(browser, info, written) {
   const want = (name) => !only || only.includes(name);
   if (!names.some(want)) return;
   await idle(info);
-  // llama.cpp, once (the fake release's llama-server is the fake engine).
-  const installed = async () => (await api(info, 'GET', '/api/engines')).some((e) => e.kind === 'llamacpp-native' && e.installed);
-  if (!(await installed())) {
-    await api(info, 'POST', '/api/engines/llamacpp-native/install', {});
-    for (let i = 0; i < 240 && !(await installed()); i++) await sleep(500);
-  }
-  const models = await api(info, 'GET', '/api/models/local');
-  const qwen = models.find((m) => /Qwen3[ -]8B/.test(m.identity.displayName));
-  const gemma = models.find((m) => /gemma/i.test(m.identity.displayName));
-  for (const p of await api(info, 'GET', '/api/servers/presets')) await api(info, 'DELETE', `/api/servers/presets/${p.id}`);
-  const chat = await api(info, 'POST', '/api/servers/presets', {
-    name: 'Chat veloce',
-    engine: { kind: 'llamacpp-native' },
-    model: { localId: qwen.id },
-    modelLabel: 'Qwen3 8B · Q4_K_M',
-    params: { contextSize: 32768, kvCacheType: 'q8_0', flashAttention: 'on', extraArgs: ['--metrics'] },
-    port: 8080,
-    autoStart: true,
-    source: { kind: 'config' },
-  });
-  await api(info, 'POST', '/api/servers/presets', {
-    name: 'Revisione codice',
-    engine: { kind: 'llamacpp-native' },
-    model: { localId: gemma.id },
-    modelLabel: 'Gemma 4 12B · Q4_K_M',
-    params: { contextSize: 65536, kvCacheType: 'q4_0', flashAttention: 'on' },
-    port: 8090,
-    source: { kind: 'custom' },
-  });
-  await stopServers(info);
-  await api(info, 'POST', `/api/servers/presets/${chat.id}/start`);
-  await api(info, 'POST', '/api/servers', { engine: { kind: 'llamacpp-native' }, model: { localId: gemma.id }, params: { contextSize: 16384, extraArgs: [], env: {} }, port: 8081, network: 'lan' });
+  await demoServers(info);
 
   const chooseQwen = async (page) => {
     await page.getByRole('button', { name: /^Cambia modello:/ }).click();
@@ -1151,6 +1155,49 @@ async function serverScenes(browser, info, written) {
   } finally {
     await stopServers(info).catch(() => undefined);
   }
+}
+
+/** llama.cpp, once (the fake release's llama-server is the fake engine). */
+async function installLlama(info) {
+  const installed = async () => (await api(info, 'GET', '/api/engines')).some((e) => e.kind === 'llamacpp-native' && e.installed);
+  if (!(await installed())) {
+    await api(info, 'POST', '/api/engines/llamacpp-native/install', {});
+    for (let i = 0; i < 240 && !(await installed()); i++) await sleep(500);
+  }
+}
+
+/**
+ * Two servers started through the API like the page does (Qwen3 8B on 8080 from a preset, Gemma 4 12B on
+ * 8081 shared on the local network) and two presets (one "Avvia all'apertura"), llama.cpp installed first.
+ */
+async function demoServers(info) {
+  await installLlama(info);
+  const models = await api(info, 'GET', '/api/models/local');
+  const qwen = models.find((m) => /Qwen3[ -]8B/.test(m.identity.displayName));
+  const gemma = models.find((m) => /gemma/i.test(m.identity.displayName));
+  for (const p of await api(info, 'GET', '/api/servers/presets')) await api(info, 'DELETE', `/api/servers/presets/${p.id}`);
+  const chat = await api(info, 'POST', '/api/servers/presets', {
+    name: 'Chat veloce',
+    engine: { kind: 'llamacpp-native' },
+    model: { localId: qwen.id },
+    modelLabel: 'Qwen3 8B · Q4_K_M',
+    params: { contextSize: 32768, kvCacheType: 'q8_0', flashAttention: 'on', extraArgs: ['--metrics'] },
+    port: 8080,
+    autoStart: true,
+    source: { kind: 'config' },
+  });
+  await api(info, 'POST', '/api/servers/presets', {
+    name: 'Revisione codice',
+    engine: { kind: 'llamacpp-native' },
+    model: { localId: gemma.id },
+    modelLabel: 'Gemma 4 12B · Q4_K_M',
+    params: { contextSize: 65536, kvCacheType: 'q4_0', flashAttention: 'on' },
+    port: 8090,
+    source: { kind: 'custom' },
+  });
+  await stopServers(info);
+  await api(info, 'POST', `/api/servers/presets/${chat.id}/start`);
+  await api(info, 'POST', '/api/servers', { engine: { kind: 'llamacpp-native' }, model: { localId: gemma.id }, params: { contextSize: 16384, extraArgs: [], env: {} }, port: 8081, network: 'lan' });
 }
 
 /** A downloaded NInfer artifact in the library: the .ninfer file, its manifest and its checksums. */
@@ -1509,19 +1556,48 @@ async function dockerScenes(browser, info, world, written) {
 /** The tray menu (a native menu Playwright cannot photograph) drawn from the real trayMenu() as a list: 75. */
 async function trayScene(browser, written) {
   if (only && !only.includes('tray-docker')) return;
+  const trayMenu = await loadTrayMenu();
+  const menus = [
+    ['Docker non risponde', { ...TRAY_STATE, docker: { state: 'not-responding', control: true } }],
+    ['Docker spento', { ...TRAY_STATE, servers: [], presets: TRAY_STATE.presets.map((p) => ({ ...p, running: false })), docker: { state: 'stopped', control: true } }],
+    ['Riavvio in corso', { ...TRAY_STATE, docker: { state: 'not-responding', busy: 'restarting', control: true } }],
+  ];
+  for (const theme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width: 1040, height: 620 }, deviceScaleFactor: 1, colorScheme: theme });
+    const page = await context.newPage();
+    await page.setContent(trayHtml(trayMenu, menus, theme === 'dark'));
+    const file = path.join(outDir, `75-tray-docker-${theme}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    written.push(file);
+    await context.close();
+  }
+}
+
+/** One server on from its preset, two presets: what the tray menu lists (Docker's state added per menu). */
+const TRAY_STATE = {
+  servers: [{ id: 's1', modelName: 'Qwen3 8B', port: 8080, url: 'http://127.0.0.1:8080/v1', status: 'ready', network: 'local', presetName: 'Chat veloce' }],
+  presets: [
+    { id: 'p1', name: 'Chat veloce', port: 8080, running: true },
+    { id: 'p2', name: 'Revisione codice', port: 8090, running: false },
+  ],
+  closeBehavior: 'tray-if-servers',
+  launchAtLogin: false,
+  language: 'it',
+};
+
+/** The real trayMenu() of src/main/tray-menu.ts, bundled on the fly. */
+async function loadTrayMenu() {
   const { build } = await import('esbuild');
   const out = await build({ entryPoints: [path.join(root, 'src', 'main', 'tray-menu.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' });
   const tmp = path.join(os.tmpdir(), `llmbench-tray-${process.pid}.mjs`);
   writeFileSync(tmp, out.outputFiles[0].text);
   const { trayMenu } = await import(pathToFileURL(tmp).href);
   rmSync(tmp, { force: true });
-  const server = { id: 's1', modelName: 'Qwen3 8B', port: 8080, url: 'http://127.0.0.1:8080/v1', status: 'ready', network: 'local', presetName: 'Chat veloce' };
-  const base = { servers: [server], presets: [{ id: 'p1', name: 'Chat veloce', port: 8080, running: true }, { id: 'p2', name: 'Revisione codice', port: 8090, running: false }], closeBehavior: 'tray-if-servers', launchAtLogin: false, language: 'it' };
-  const menus = [
-    ['Docker non risponde', { ...base, docker: { state: 'not-responding', control: true } }],
-    ['Docker spento', { ...base, servers: [], presets: base.presets.map((p) => ({ ...p, running: false })), docker: { state: 'stopped', control: true } }],
-    ['Riavvio in corso', { ...base, docker: { state: 'not-responding', busy: 'restarting', control: true } }],
-  ];
+  return trayMenu;
+}
+
+/** Menus drawn as lists side by side, each under its caption (none: no caption), Windows 11 style. */
+function trayHtml(trayMenu, menus, dark) {
   const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
   const render = (items) =>
     items
@@ -1531,26 +1607,146 @@ async function trayScene(browser, written) {
         return `<div class="${cls}">${esc(i.label)}${i.submenu ? '<span class="chev">›</span>' : ''}</div>`;
       })
       .join('');
-  for (const theme of ['light', 'dark']) {
-    const dark = theme === 'dark';
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-      body{margin:0;padding:32px;font:14px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;background:${dark ? '#1f1f1f' : '#e8ecf2'};color:${dark ? '#f3f3f3' : '#1b1b1b'};display:flex;gap:28px;align-items:flex-start}
-      figure{margin:0;display:flex;flex-direction:column;gap:10px}
-      figcaption{font-size:12px;font-weight:600;color:${dark ? '#bdbdbd' : '#4a5568'}}
-      .menu{width:300px;padding:4px;border-radius:8px;background:${dark ? '#2c2c2c' : '#f9f9f9'};border:1px solid ${dark ? '#3d3d3d' : '#dcdcdc'};box-shadow:0 8px 24px rgba(0,0,0,${dark ? 0.5 : 0.16})}
-      .item{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:4px}
-      .item.heading{color:${dark ? '#9d9d9d' : '#6b6b6b'};font-weight:600}
-      .item.off{color:${dark ? '#6f6f6f' : '#a6a6a6'}}
-      .sep{height:1px;margin:4px 8px;background:${dark ? '#3d3d3d' : '#e0e0e0'}}
-      .chev{color:${dark ? '#9d9d9d' : '#6b6b6b'}}
-    </style></head><body>${menus.map(([caption, state]) => `<figure><figcaption>${esc(caption)}</figcaption><div class="menu">${render(trayMenu(state, 'it'))}</div></figure>`).join('')}</body></html>`;
-    const context = await browser.newContext({ viewport: { width: 1040, height: 620 }, deviceScaleFactor: 1, colorScheme: theme });
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    body{margin:0;padding:32px;font:14px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;background:${dark ? '#1f1f1f' : '#e8ecf2'};color:${dark ? '#f3f3f3' : '#1b1b1b'};display:flex;gap:28px;align-items:flex-start}
+    figure{margin:0;display:flex;flex-direction:column;gap:10px}
+    figcaption{font-size:12px;font-weight:600;color:${dark ? '#bdbdbd' : '#4a5568'}}
+    .menu{width:300px;padding:4px;border-radius:8px;background:${dark ? '#2c2c2c' : '#f9f9f9'};border:1px solid ${dark ? '#3d3d3d' : '#dcdcdc'};box-shadow:0 8px 24px rgba(0,0,0,${dark ? 0.5 : 0.16})}
+    .item{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:4px}
+    .item.heading{color:${dark ? '#9d9d9d' : '#6b6b6b'};font-weight:600}
+    .item.off{color:${dark ? '#6f6f6f' : '#a6a6a6'}}
+    .sep{height:1px;margin:4px 8px;background:${dark ? '#3d3d3d' : '#e0e0e0'}}
+    .chev{color:${dark ? '#9d9d9d' : '#6b6b6b'}}
+  </style></head><body>${menus.map(([caption, state]) => `<figure>${caption ? `<figcaption>${esc(caption)}</figcaption>` : ''}<div class="menu">${render(trayMenu(state, 'it'))}</div></figure>`).join('')}</body></html>`;
+}
+
+/**
+ * The README's screenshots (--only=readme): docs/screenshots/<name>.png and <name>-dark.png at 1440×900,
+ * cropped to the part each section talks about (the hero keeps the whole window). llama.cpp is
+ * installed first; the library's models have their real sizes (realSize). The live run goes last: it
+ * would show in the sidebar of every other screen.
+ */
+async function readmeScenes(browser, info, world, written) {
+  if (!README) return;
+  mkdirSync(README_DIR, { recursive: true });
+  await idle(info);
+  await stopServers(info);
+  await installLlama(info);
+  /** Everything right of the sidebar, below the title bar. */
+  const MAIN = { x: 233, y: 41, width: 1207, height: 859 };
+  /** Picks a model, a duration and starts the run like a user; its id. */
+  const startRun = async (model, profile) => {
+    await putSettings(info, { theme: 'light', language: 'it', expertMode: false, onboardingDone: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', locale: 'it-IT' });
     const page = await context.newPage();
-    await page.setContent(html);
-    const file = path.join(outDir, `75-tray-docker-${theme}.png`);
+    await page.goto(`${info.url}#/`);
+    await page.getByText('Pronto a misurare').first().waitFor({ timeout: 30000 });
+    await chooseModel(page, model);
+    await page.getByRole('radio', { name: profile }).click();
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    await page
+      .getByRole('heading', { level: 1, name: 'Test in corso' })
+      .waitFor({ timeout: 60000 })
+      .catch(async (e) => {
+        await page.getByRole('dialog').getByText('Dettagli tecnici').first().click().catch(() => undefined);
+        await page.screenshot({ path: path.join(outDir, 'readme-run-FAILED.png') });
+        throw e;
+      });
+    await context.close();
+    return (await api(info, 'GET', '/api/runs/active')).active.runId;
+  };
+  // The result to show: a Standard run of the reference model, the one the app gives the LLM Bench score to,
+  // at the speeds the score is calibrated on (an RTX 5090 with llama.cpp: about 1 000). The GPU is read once a
+  // second meanwhile: each read spawns the fake nvidia-smi and delays the core by a few ms, a lot against a
+  // 60 ms first token (the run would call its numbers unstable).
+  writeFileSync(world.profileFile, JSON.stringify(README_REF_PROFILE));
+  await putSettings(info, { telemetryIntervalMs: 1000 });
+  let scoredId;
+  try {
+    scoredId = await startRun(/^Qwen3[ -]4B/, /Standard/);
+    while ((await api(info, 'GET', '/api/runs/active')).active) await sleep(1000);
+    const run = await api(info, 'GET', `/api/runs/${scoredId}`);
+    console.log(`readme: the scored run ${run.status}, score ${run.metrics.score?.value}, validity ${run.validity.join(' ')}`);
+  } finally {
+    writeFileSync(world.profileFile, JSON.stringify(LIVE_PROFILE));
+    await putSettings(info, { telemetryIntervalMs: 250 });
+  }
+  const shot = async (name, route, wait, opts = {}) => {
+    for (const theme of ['light', 'dark']) {
+      await putSettings(info, { theme, language: 'it', density: 'comfortable', expertMode: false, onboardingDone: true, modelRecipes: [] });
+      const height = opts.height ?? 900;
+      const context = await browser.newContext({ viewport: { width: 1440, height }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: theme, locale: 'it-IT' });
+      const page = await context.newPage();
+      await page.goto(`${info.url}#${route}`);
+      await page.getByText(wait).first().waitFor({ timeout: 60000 });
+      await page.evaluate(() => document.fonts.ready);
+      if (opts.act) await opts.act(page);
+      await page.waitForTimeout(opts.settle ?? 1200);
+      await page.mouse.move(1436, height - 4);
+      const file = path.join(README_DIR, `${name}${theme === 'dark' ? '-dark' : ''}.png`);
+      await page.screenshot({ path: file, ...(opts.clip ? { clip: opts.clip } : {}) });
+      written.push(file);
+      await context.close();
+    }
+  };
+  // The Benchmark page, ready: the hero of the README (its time estimate for this model on this card in).
+  await shot('benchmark', '/', 'Pronto a misurare', { act: (page) => page.getByText(/≈ \d/).first().waitFor({ timeout: 30000 }) });
+  // The first start: after the system check, the setup LLM Bench suggests for this card.
+  await shot('primo-avvio', '/welcome', 'Ecco cosa ho trovato', {
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Continua', exact: true }).click();
+      await page.getByRole('button', { name: 'Usa questa configurazione' }).waitFor({ timeout: 30000 });
+    },
+    clip: { x: 330, y: 60, width: 780, height: 760 },
+  });
+  // Down to the main measures (a taller window: the header takes two lines here).
+  await shot('risultato', `/results/${scoredId}`, 'Punteggio LLM Bench', { height: 960, clip: { ...MAIN, height: 905 } });
+  await shot('risultati', '/results', 'Risultati', { clip: MAIN });
+  // Down to the speeds (the first table rows).
+  await shot('confronta', `/compare?ids=${GPTOSS_ID},${MOE_ID},${GEMMA_ID},${RESULT_ID}`, 'Chi va più veloce', { clip: { ...MAIN, height: 772 } });
+  // A model's versions, each with its verdict and the one LLM Bench picked (the formats' cards, not the page's header).
+  await shot('modello-versioni', '/models/hub/nerkyor/Qwen3.8-27B-Coder390-GGUF-NInfer', 'Per vLLM / SGLang (safetensors)', { settle: 2000, clip: { x: 249, y: 162, width: 850, height: 714 } });
+  // The engines' cards (llama.cpp, Docker, vLLM), below the system check.
+  await shot('motori', '/engines', 'Motori', {
+    settle: 2000,
+    act: async (page) => {
+      await page.getByRole('region', { name: /^llama\.cpp/ }).first().evaluate((el) => {
+        el.scrollIntoView({ block: 'start' });
+        document.getElementById('main')?.scrollBy(0, -20);
+      });
+    },
+    clip: { ...MAIN, height: 670 },
+  });
+  try {
+    await demoServers(info);
+    // The first server: its address, its model name, how to use it.
+    await shot('server', '/servers', 'Server attivi', { clip: { ...MAIN, height: 653 } });
+  } finally {
+    await stopServers(info);
+  }
+  // The tray menu (native: drawn from the real trayMenu()), Docker on.
+  const trayMenu = await loadTrayMenu();
+  for (const theme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width: 364, height: 200 }, deviceScaleFactor: 1, colorScheme: theme });
+    const page = await context.newPage();
+    await page.setContent(trayHtml(trayMenu, [['', { ...TRAY_STATE, docker: { state: 'running', control: true } }]], theme === 'dark'));
+    const file = path.join(README_DIR, `area-di-notifica${theme === 'dark' ? '-dark' : ''}.png`);
     await page.screenshot({ path: file, fullPage: true });
     written.push(file);
     await context.close();
+  }
+  // Last (it would show in the sidebar of every other screen), a Standard run of Gemma 4 12B photographed
+  // while it writes: every gauge has its number.
+  writeFileSync(world.profileFile, JSON.stringify(README_LIVE_PROFILE));
+  try {
+    const runId = await startRun(/^Gemma 4 12B/, /Standard/);
+    for (let i = 0; i < 600 && (await api(info, 'GET', '/api/runs/active')).active?.phase !== 'decode'; i++) await sleep(500);
+    // The gauges fill at the next request this page sees.
+    const measured = (page) => page.getByText('in attesa della prima misura').first().waitFor({ state: 'detached', timeout: 60000 });
+    await shot('test-in-corso', `/run/${runId}`, 'Test in corso', { act: measured, settle: 1500, clip: MAIN });
+  } finally {
+    await idle(info);
+    writeFileSync(world.profileFile, JSON.stringify(LIVE_PROFILE));
   }
 }
 
@@ -1645,6 +1841,7 @@ async function main() {
       server: () => serverScenes(browser, info, written),
       docker: () => dockerScenes(browser, info, world, written),
       tray: () => trayScene(browser, written),
+      readme: () => readmeScenes(browser, info, world, written),
     };
     // One group that no longer matches the app is reported at the end; the next groups still render.
     for (const [name, run] of Object.entries(groups)) {
