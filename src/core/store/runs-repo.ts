@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AppError } from '../../contract/errors';
 import {
   contextTokensOf,
+  fullContextPoint,
   promptsCalibrated,
   RESULT_SCHEMA_VERSION,
   runResultSchema,
@@ -11,6 +12,7 @@ import {
   type LatencyPoint,
   type RunResult,
   type RunSummary,
+  type TuneCombination,
 } from '../../contract/results';
 import { readJsonFile, writeFileAtomic } from './atomic';
 import { flaggedSummary, inferSpills, spillFactsOf, withInferredSpill, type InferredSpill, type SpillFacts } from './legacy-spill';
@@ -81,13 +83,39 @@ export function contextOf(launch: Pick<RunResult['launch'], 'params' | 'argv'>):
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/**
+ * The recommended combination of a one-user tune run (goal 'single', and its "Ricontrollo rapido",
+ * which measures it again down to its deepest prompt): the run's context and speeds are its own.
+ */
+function oneUserRecommendation(run: RunResult): TuneCombination | undefined {
+  const t = run.tuning;
+  return t?.recommended !== undefined && t.goal !== 'multi' ? t.combinations[t.recommended] : undefined;
+}
+
+/**
+ * Where a one-user tune run's speeds are read, generation, prompt reading and TTFT alike (as every view
+ * of it reads them): its recommended combination with the context full, said as that whole context
+ * ("a 256K di contesto" next to "Contesto 262.144"); when the search never filled it (time limit,
+ * launch cap…), the combination's deepest point and that point's own tokens. Undefined without points.
+ */
+function tunedPointOf(combo: TuneCombination, calibrated: boolean): { point: LatencyPoint; tokens: number } | undefined {
+  const full = fullContextPoint(combo);
+  if (full) return { point: full, tokens: combo.maxContext };
+  const deepest = [...combo.sweep].sort((a, b) => b.promptTokens - a.promptTokens)[0];
+  return deepest && { point: deepest, tokens: contextTokensOf(deepest, calibrated) };
+}
+
 export function summaryOf(run: RunResult, file: string): RunSummary {
   const m = run.metrics;
-  // Runs without latency points (tune runs) are described by their context sweep: 1K for the headline, the deepest for reading.
+  // Calibrated text prompts: the speeds' context is what the engine counted.
+  const calibrated = promptsCalibrated(run);
+  const oneUser = oneUserRecommendation(run);
+  const tuned = oneUser && tunedPointOf(oneUser, calibrated);
+  // Other runs without latency points (a tune of goal 'multi') are described by their context sweep: 1K for the headline, the deepest for reading.
   // Raw run JSON from before the context sweep has no such field (parsed runs always do).
   const points = m.latency.length ? m.latency : (m.contextSweep ?? []);
-  const head = headlinePoint(points);
-  const largest = [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0];
+  const head = tuned?.point ?? headlinePoint(points);
+  const largest = tuned?.point ?? [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0];
   const t = run.tuning;
   const recommended = t?.recommended !== undefined ? t.combinations[t.recommended] : undefined;
   const gpu = run.hardware.gpus[0];
@@ -96,11 +124,9 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
   const prefill = largest ? (largest.prefillTpsEngine ?? largest.prefillTps).median : undefined;
   // The engine's own VRAM when the OS could attribute it; otherwise the total-minus-baseline estimate.
   const vramMiB = recommended?.vramPeakMiB ?? m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
-  const context = contextOf(run.launch);
+  const context = oneUser?.maxContext ?? contextOf(run.launch);
   const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
   const usersStep = run.scenario.steps.find((s) => s.kind === 'concurrency');
-  // Calibrated text prompts: the speeds' context is what the engine counted.
-  const calibrated = promptsCalibrated(run);
   const usersPrompt = busiest?.promptTokens ?? (usersStep?.kind === 'concurrency' ? usersStep.promptTokens : undefined);
   return {
     id: run.id,
@@ -132,8 +158,8 @@ export function summaryOf(run: RunResult, file: string): RunSummary {
     ...(engineBuildOf(e) !== undefined ? { engineBuild: engineBuildOf(e) } : {}),
     ...(busiest ? { parallelUsers: busiest.level, parallelTps: busiest.aggregateTps, parallelPerUserTps: busiest.perRequestDecodeTpsP50 } : {}),
     ...(busiest && usersPrompt !== undefined ? { parallelPromptTokens: usersPrompt } : {}),
-    ...(head ? { decodeTokens: contextTokensOf(head, calibrated), speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
-    ...(prefill ? { prefillTokens: contextTokensOf(largest!, calibrated) } : {}),
+    ...(head ? { decodeTokens: tuned?.tokens ?? contextTokensOf(head, calibrated), speedBasis: m.latency.length ? ('prompt' as const) : ('depth' as const) } : {}),
+    ...(prefill ? { prefillTokens: tuned?.tokens ?? contextTokensOf(largest!, calibrated) } : {}),
     validity: run.validity,
     ...(run.error?.code === 'ENGINE_MODEL_UNSUPPORTED' && typeof run.error.params?.value === 'string' ? { unreadable: run.error.params.value } : {}),
     file,

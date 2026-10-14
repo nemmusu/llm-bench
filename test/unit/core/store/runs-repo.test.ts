@@ -83,12 +83,55 @@ describe('summaryOf', () => {
       metrics: { ...makeRun().metrics, latency: [], contextSweep: sweep },
       tuning: { budget: 'fast', maxLaunches: 24, dimensions: [], capacity: [], depths: [], attempts: [], combinations: [combination, { ...combination, kvType: 'f16' }], recommended: 0, fastestByDepth: [] },
     });
-    expect(summaryOf(run, 'f')).toMatchObject({ profile: 'tune', decodeTps: 150, prefillTps: 5000, contextSize: 40960, kvCacheType: 'q4_0', tunedCombinations: 2, vramPeakMiB: 13950 });
+    // Every speed with the context full (its 40 816-token point), said as the whole context.
+    expect(summaryOf(run, 'f')).toMatchObject({ profile: 'tune', decodeTps: 100, prefillTps: 5000, ttftMs: 51, contextSize: 40960, kvCacheType: 'q4_0', tunedCombinations: 2, vramPeakMiB: 13950 });
+    expect(summaryOf(run, 'f')).toMatchObject({ decodeTokens: 40960, prefillTokens: 40960, speedBasis: 'depth' });
     // Raw, unparsed JSON of an older run has no context sweep at all.
     const old = makeRun({ metrics: { ...makeRun().metrics, latency: [] } });
     delete (old.metrics as Partial<typeof old.metrics>).contextSweep;
     expect(summaryOf(old, 'f')).not.toHaveProperty('decodeTps');
     expect(summaryOf(old, 'f')).not.toHaveProperty('tunedCombinations');
+  });
+
+  it('a one-user tune that never filled its context (NInfer, RTX 5090): every speed at its deepest point, with the tokens the engine read', () => {
+    // The real search: rk8v4 at 262 144 tokens recommended, its deepest point 64K (the 262 000-token prompt refused as too long).
+    const params = launchParamsSchema.parse({ contextSize: 262_144, parallel: 1, ninfer: { kvCapacity: 262_144, kvDtype: 'rk8v4', spec: 'mtp', draftTokens: 4 } });
+    const at = (tokens: number, reported: number, decode: number, prefill: number) => ({ ...latencyPoint(tokens, decode, prefill), ttftMs: stat(reported / prefill * 1000), promptTokensReported: reported });
+    const sweep = [at(1024, 1038, 84.9, 3226), at(65_536, 65_325.5, 83.0, 3150)];
+    const combination = { params, kvType: 'rk8v4' as const, maxContext: 262_144, sweep, command: { argv: [], powershell: '', bash: '' }, outcome: 'ok' as const, tags: [] };
+    const tuning = { budget: 'fast' as const, maxLaunches: 24, dimensions: [], capacity: [], depths: [1024, 65_536], attempts: [], combinations: [combination], recommended: 0, fastestByDepth: [] };
+    const run = makeRun({
+      notes: [{ code: 'text_prompts_calibrated', params: { charsPerToken: 4.3, overhead: 19 } }],
+      scenario: { profile: 'tune', seed: 42, steps: [] },
+      engine: { kind: 'ninfer-wsl', name: 'NInfer' },
+      // A launch record that says another context: the recommended combination's is the run's.
+      launch: { ...makeRun().launch, params: { ...params, contextSize: 4096 } },
+      metrics: { ...makeRun().metrics, latency: [], contextSweep: sweep },
+      tuning,
+    });
+    // It said "Generazione 84,9 a 1,0K di contesto", "Lettura prompt 3.150 a 63,8K di contesto" next to "Contesto 262.144".
+    expect(summaryOf(run, 'f')).toMatchObject({ decodeTps: 83, prefillTps: 3150, ttftMs: 65_325.5 / 3150 * 1000, decodeTokens: 65_326, prefillTokens: 65_326, speedBasis: 'depth', contextSize: 262_144 });
+    // With the context full (the 262 000-token prompt read a little shorter): there, said as the whole context.
+    const full = at(262_000, 261_214, 30.1, 1400);
+    run.tuning!.combinations[0] = { ...combination, sweep: [...sweep, full] };
+    expect(summaryOf(run, 'f')).toMatchObject({ decodeTps: 30.1, prefillTps: 1400, ttftMs: 261_214 / 1400 * 1000, decodeTokens: 262_144, prefillTokens: 262_144, contextSize: 262_144 });
+    // "Ricontrollo rapido" re-measures the recommendation down to its deepest prompt: the same rule.
+    run.tuning!.budget = 'recheck';
+    expect(summaryOf(run, 'f')).toMatchObject({ decodeTps: 30.1, decodeTokens: 262_144 });
+    // A recommendation with no point at all: what the run's own sweep says, at the recommendation's context.
+    run.tuning!.combinations[0] = { ...combination, sweep: [] };
+    expect(summaryOf(run, 'f')).toMatchObject({ decodeTps: 84.9, decodeTokens: 1038, prefillTps: 3150, prefillTokens: 65_326, contextSize: 262_144 });
+  });
+
+  it('goal "Più utenti" and a search that recommended nothing keep their own description', () => {
+    const sweep = [latencyPoint(1024, 150, 9000), latencyPoint(40816, 100, 5000)];
+    const combination = { params: launchParamsSchema.parse({ contextSize: 40960 }), kvType: 'q4_0' as const, maxContext: 40960, sweep, command: { argv: [], powershell: '', bash: '' }, outcome: 'ok' as const, tags: [] };
+    const tuning = { budget: 'fast' as const, maxLaunches: 24, dimensions: [], capacity: [], depths: [], attempts: [], combinations: [combination], fastestByDepth: [] };
+    const base = { scenario: { profile: 'tune' as const, seed: 42, steps: [] }, launch: { ...makeRun().launch, params: launchParamsSchema.parse({ contextSize: 8192 }) }, metrics: { ...makeRun().metrics, latency: [], contextSweep: sweep } };
+    const multi = makeRun({ ...base, tuning: { ...tuning, recommended: 0, goal: 'multi', multi: { users: 4, perUserContext: 8192, promptTokens: 8048, outputTokens: 128, turns: 3 } } });
+    expect(summaryOf(multi, 'f')).toMatchObject({ decodeTps: 150, decodeTokens: 1024, prefillTps: 5000, prefillTokens: 40816, contextSize: 8192 });
+    const none = makeRun({ ...base, tuning });
+    expect(summaryOf(none, 'f')).toMatchObject({ decodeTps: 150, decodeTokens: 1024, contextSize: 8192 });
   });
 
   it('headline numbers from the 512 point, prefill from the largest, VRAM delta', () => {
