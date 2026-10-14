@@ -21,10 +21,11 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
   it('holds the users with q8_0 (q4_0 known), splits the pool, keeps the faster ubatch, measures users 1…4 and the conversations', async () => {
     const { t, phases } = await tune(multi(), machine());
     expect(t).toMatchObject({ goal: 'multi', multi: { users: 4, perUserContext: 8192, promptTokens: 8048, outputTokens: 128, turns: 3 } });
+    // q4_0 was known to hold them (q8_0 does), then its own screenings loaded there: not "deduced" any more.
     expect(t.capacity).toEqual([
       { kvType: 'f16', predictedMax: 32768, inferred: false },
       { kvType: 'q8_0', predictedMax: 32768, measuredMax: 32768, inferred: false },
-      { kvType: 'q4_0', predictedMax: 32768, measuredMax: 32768, inferred: true, skipped: 'no-gain' },
+      { kvType: 'q4_0', predictedMax: 32768, measuredMax: 32768, inferred: false, skipped: 'no-gain' },
     ]);
     expect(t.attempts[0]).toMatchObject({ stage: 'capacity', kvType: 'f16', contextSize: 32768, outcome: 'oom' });
     // Every launch: 4 slots and the whole context of the 4 users; screening = level 4 + the conversations.

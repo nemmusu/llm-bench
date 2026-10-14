@@ -23,7 +23,7 @@ import type { ConcurrencyPoint, SessionsPoint, SessionsStep, TuneCombination, Tu
 import { sessionExtras } from './scenarios';
 import { maxDepth } from './sweep';
 import { compareUsers, recommendedForUsers, usersWithoutErrors, type UsersMeasure } from './tune-rank';
-import { MIN_SWEEP_MS, PROBE_DEPTH, PROBE_OUTPUT, Tuner, type Capacity, type DimValue, type Dimension, type LabEngine, type Live, type TunerDeps, type TunerInput, type Variant } from './tuner';
+import { lastToTry, MIN_SWEEP_MS, PROBE_DEPTH, PROBE_OUTPUT, Tuner, type Capacity, type DimValue, type Dimension, type LabEngine, type Live, type TunerDeps, type TunerInput, type Variant } from './tuner';
 
 /** Messages per conversation and new text of every later message, in the short conversations. */
 export const MULTI_TURNS = 3;
@@ -149,8 +149,8 @@ export class MultiTuner extends Tuner {
     let fitting = false;
     for (const kv of this.input.space.kvLadder) {
       const cap = this.capacity.get(kv) as Capacity;
-      // A less precise type than one that holds the users holds them too.
-      const holds = this.capacityDone.has(kv) ? cap.measuredMax !== undefined : fitting || cap.candidates.length > 0;
+      // A less precise type than one that holds the users holds them too; one being checked is expected to.
+      const holds = this.capacityEnded.has(kv) ? cap.measuredMax !== undefined : fitting || cap.candidates.length > 0;
       if (!holds) continue;
       fitting = true;
       // A capacity launch already screened the base settings.
@@ -166,7 +166,6 @@ export class MultiTuner extends Tuner {
 
   /** Does this KV type hold every user's context? One launch, screened at once when it does. */
   private async holdsUsers(kv: TuneKvType, ctx: number): Promise<void> {
-    this.capacityDone.add(kv);
     const cap = this.capacity.get(kv) as Capacity;
     const ladder = this.input.space.kvLadder;
     if (this.bestPrecise(kv) !== undefined) {
@@ -311,7 +310,7 @@ export class MultiTuner extends Tuner {
         const variant: Variant = { ...current.variant, [dim.key]: values[i] as DimValue };
         this.screened(kv);
         if (dim.prune?.(values[i] as DimValue) && !this.estimateAllows(variant, current)) continue;
-        const last = d === dims.length - 1 && i === values.length - 1;
+        const last = i === values.length - 1 && lastToTry(dims, d, variant);
         let won = false;
         const key = this.key(variant, current.ctx);
         const live = await this.launch('variant', variant, current.ctx, async (engine, l) => {
@@ -320,7 +319,7 @@ export class MultiTuner extends Tuner {
           // Out of memory, or not measured (the time limit): nothing to compare.
           if (l.att.outcome !== 'ok' || !mine) return;
           won = compareUsers(mine.measure, current.measure) > 0;
-          // The last value tried, and the winner: users 1 … N on this same launch.
+          // The last value tried (no later dimension has another value for it), and the winner: users 1 … N on this same launch.
           if (won && last) await this.fullWork(engine, l, mine);
         });
         if (!live) return best;

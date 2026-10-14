@@ -57,10 +57,11 @@ describe('capacity: quick checks, the estimate rounded to 8K, a search down to 8
     expect(checks.find((a) => a.contextSize === 245_760)).toMatchObject({ spill: 'shared-memory', sharedPeakMiB: 4666 });
     // 376 MiB at 256K is the natural growth, not a spill.
     expect(checks.find((a) => a.kvType === 'q8_0')).toMatchObject({ outcome: 'ok', sharedPeakMiB: 376 });
+    // q4_0 was not searched (q8_0 already reached the model's context), then its screenings loaded there.
     expect(t.capacity).toEqual([
       { kvType: 'f16', predictedMax: 247_552, measuredMax: 212_992, inferred: false, bound: 'found', failedAt: 229_376 },
       { kvType: 'q8_0', predictedMax: 262_144, measuredMax: 262_144, inferred: false, bound: 'model' },
-      { kvType: 'q4_0', predictedMax: 262_144, measuredMax: 262_144, inferred: true, skipped: 'no-gain', bound: 'model' },
+      { kvType: 'q4_0', predictedMax: 262_144, measuredMax: 262_144, inferred: false, skipped: 'no-gain', bound: 'model' },
     ]);
   });
 
@@ -108,6 +109,8 @@ describe('time: the forecast, the limit and every request within it', () => {
     const lab = realLab();
     const { t } = await tune(real(), lab);
     expect(t.stoppedBy).toBeUndefined();
+    // Starts of 9.9 s where 11.8 were expected.
+    expect(t.expectedLoadSeconds).toBe(12);
     expect(lab.t).toBeLessThan(t.limitSeconds! * 1000);
     expect(lab.t).toBeLessThanOrEqual(t.estimateSeconds! * 1000);
     expect(lab.t).toBeGreaterThan(0.6 * t.estimateSeconds! * 1000);
@@ -173,7 +176,9 @@ describe('time: the forecast, the limit and every request within it', () => {
     await tuner.run();
     expect(new Set(seen.map((s) => s.total)).size).toBe(1);
     expect(seen.at(-1)!.remaining).toBe(0);
-    expect(seen[Math.floor(seen.length / 2)]!.remaining).toBeLessThan(before.remainingMs);
+    // Once the speeds are measured (here slower than expected: more is left than first forecast), it shrinks.
+    expect(seen[Math.floor((seen.length * 3) / 4)]!.remaining).toBeLessThan(seen[Math.floor(seen.length / 4)]!.remaining);
+    expect(seen[Math.floor(seen.length / 2)]!.remaining).toBeLessThan(seen[Math.floor(seen.length / 4)]!.remaining);
   });
 
   it('a request taking longer than predicted is expected to need a quarter of what it took so far', async () => {

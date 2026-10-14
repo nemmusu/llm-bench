@@ -3,15 +3,15 @@
  * this model here. Instead of a whole search, the previous recommended combination and its runner-up
  * are loaded again exactly as they were, at their largest context:
  *  - does that context still load fully on the GPU (no out of memory, no spill)?
- *  - a short sweep (1K, the middle, the deepest prompt; goal 'multi': users 1 … N) compared with the
- *    previous numbers, noise-aware (tune-rank.ts).
+ *  - a short sweep (the deepest prompt first, then 1K and the middle; goal 'multi': users 1 … N)
+ *    compared with the previous numbers, noise-aware (tune-rank.ts).
  * Nothing is chosen anew: the recommendation stays the previous one (measured again) when it still
  * fits, and `suggestFull` says when a full search should be run instead (numbers moved, or it does
  * not fit any more).
  */
 import type { ConcurrencyPoint, LatencyPoint, TuneCombination, TuneRecheck, Tuning } from '../../contract/results';
 import { movedLevels, movedPoints, usersWithoutErrors } from './tune-rank';
-import { screenDepths, Tuner, type LabEngine, type Live, type TunerDeps, type TunerInput } from './tuner';
+import { PROBE_DEPTH, PROBE_OUTPUT, screenDepths, Tuner, type LabEngine, type Live, type TunerDeps, type TunerInput } from './tuner';
 
 type Check = TuneRecheck['checks'][number];
 
@@ -52,14 +52,25 @@ export class RecheckTuner extends Tuner {
     return todo.reduce((ms, { combination: c }) => ms + this.checkMs(c), 0);
   }
 
-  /** One re-check: its launch, then the short sweep, or users 1 … N with prompts of its context (prompts read one after the other). */
+  /** One re-check: its launch and 1K probe, then its measurements. */
   private checkMs(c: TuneCombination): number {
+    return this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) + this.measuresMs(c);
+  }
+
+  /** The measurements of one re-check: the short sweep, or users 1 … N with prompts of its context (prompts read one after the other). */
+  private measuresMs(c: TuneCombination): number {
     const out = this.input.sweep.outputTokens;
     const users = usersMeasured(c);
-    if (!users) return this.launchMs(screenDepths(c.maxContext, out), this.rules.screenReps);
-    let ms = this.loadMs();
+    if (!users) return screenDepths(c.maxContext, out).reduce((ms, d) => ms + this.repsFor(d, this.rules.screenReps) * this.requestMs(d), 0);
+    let ms = 0;
     for (let n = 1; n <= users; n++) ms += n * this.requestMs(c.maxContext / users, out);
     return ms;
+  }
+
+  /** The re-check being loaded still has its measurements to make (plannedMs counts the ones after it). */
+  protected override currentWorkMs(): number {
+    // Set before every launch.
+    return this.measuresMs(this.previous as TuneCombination);
   }
 
   override async run(): Promise<Tuning> {
@@ -82,7 +93,7 @@ export class RecheckTuner extends Tuner {
     return this.snapshot();
   }
 
-  /** 1K, the middle and the deepest prompt of the combination's context. */
+  /** The deepest prompt of the combination's context (the context full), then 1K and the middle. */
   private shortSweep(engine: LabEngine, live: Live): Promise<void> {
     return this.sweepWork(engine, live, [], screenDepths);
   }

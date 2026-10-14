@@ -77,6 +77,8 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
     expect(t.fastestByDepth.at(-1)).toEqual({ depth: 40960, combination: 0 });
     expect(t.stoppedBy).toBeUndefined();
     expect(t.maxLaunches).toBe(BUDGETS.fast.maxLaunches);
+    // Nothing known about this model's starts: the default one was expected.
+    expect(t.expectedLoadSeconds).toBe(10);
     // Every launch was stopped; the live view saw each launch before its outcome.
     expect(lab.stopped).toHaveLength(t.attempts.filter((a) => a.outcome !== 'oom').length);
     expect(updates.some((u) => u.current !== undefined)).toBe(true);
@@ -87,11 +89,19 @@ describe('Tuner: llama.cpp, the user’s ladder (f16 → q8_0 → q4_0)', () => 
 
   it('a less precise KV type that cannot add context is not searched (its capacity is inferred)', async () => {
     const roomy: FakeProfile = { ...TUNE_PROFILE, memory: { ...TUNE_PROFILE.memory!, totalMiB: 60_000 } };
-    const { t } = await tune({}, new Lab({ profile: roomy }));
+    const { t, updates } = await tune({}, new Lab({ profile: roomy }));
+    // Deduced at first ("Dedotto senza avviare il motore")…
+    const searched = updates.filter((u) => u.t.attempts.length === 1).at(-1)!.t;
+    expect(searched.capacity.map((c) => [c.kvType, c.inferred])).toEqual([
+      ['f16', false],
+      ['q8_0', true],
+      ['q4_0', true],
+    ]);
+    // … then their own screenings loaded at 40K: launched there after all.
     expect(t.capacity).toEqual([
       { kvType: 'f16', predictedMax: 40960, measuredMax: 40960, inferred: false, bound: 'model' },
-      { kvType: 'q8_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain', bound: 'model' },
-      { kvType: 'q4_0', predictedMax: 40960, measuredMax: 40960, inferred: true, skipped: 'no-gain', bound: 'model' },
+      { kvType: 'q8_0', predictedMax: 40960, measuredMax: 40960, inferred: false, skipped: 'no-gain', bound: 'model' },
+      { kvType: 'q4_0', predictedMax: 40960, measuredMax: 40960, inferred: false, skipped: 'no-gain', bound: 'model' },
     ]);
     expect(t.attempts.filter((a) => a.stage === 'capacity').map(brief)).toEqual(['capacity f16@40960 on/512 ok']);
     // Still measured (the fastest number wins), f16 first.

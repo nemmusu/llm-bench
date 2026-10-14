@@ -4,12 +4,14 @@
  * repetitions): a tie passes the decision to the next criterion, so noise never picks a winner.
  *
  *   goal 'single', at a depth: higher generation speed → higher prompt reading speed → lower time to
- *   first token → more precise KV cache → the earlier (cheaper, default) configuration.
+ *   first token → more precise KV cache → the earlier (cheaper, default) configuration. The
+ *   recommendation is read with the largest context full (the depth every view shows).
  *   goal 'multi', with all N users busy: fewer failed requests → higher per-user generation speed (p50)
  *   → higher total tok/s → lower TTFT p95 → lower TTFT of the later messages (cache reuse) → more
  *   precise KV cache → the earlier configuration.
  */
 import {
+  fullContextPoint,
   nominalDepth,
   type ConcurrencyPoint,
   type LatencyPoint,
@@ -83,16 +85,21 @@ export function pointAt(sweep: readonly LatencyPoint[], depth: number): LatencyP
   return sweep.find((p) => nominalDepth(p.promptTokens) === depth);
 }
 
-/** Index of the best combination among `candidates` at `depth` (all must have a point there). */
-function bestAt(combos: readonly TuneCombination[], candidates: readonly number[], depth: number): number {
+/** Index of the best combination among `candidates` by the point `at` picks in each (all must have one). */
+function bestBy(combos: readonly TuneCombination[], candidates: readonly number[], at: (c: TuneCombination) => LatencyPoint | undefined): number {
   let best = candidates[0] as number;
   for (const i of candidates.slice(1)) {
     const a = combos[i] as TuneCombination;
     const b = combos[best] as TuneCombination;
-    const c = comparePoints(pointAt(a.sweep, depth) as LatencyPoint, pointAt(b.sweep, depth) as LatencyPoint) || kvPrecisionRank(b.kvType) - kvPrecisionRank(a.kvType);
+    const c = comparePoints(at(a) as LatencyPoint, at(b) as LatencyPoint) || kvPrecisionRank(b.kvType) - kvPrecisionRank(a.kvType);
     if (c > 0) best = i;
   }
   return best;
+}
+
+/** Index of the best combination among `candidates` at `depth` (all must have a point there). */
+function bestAt(combos: readonly TuneCombination[], candidates: readonly number[], depth: number): number {
+  return bestBy(combos, candidates, (c) => pointAt(c.sweep, depth));
 }
 
 /** Nominal depths measured by at least one combination, ascending. */
@@ -111,15 +118,18 @@ export function fastestByDepth(combos: readonly TuneCombination[]): { depth: num
 
 /**
  * The default configuration: among the fitting combinations that reach the largest context, the
- * fastest at the deepest point they all measured (the same depth for complete sweeps; combinations
- * "misurate in parte" may stop earlier). Undefined when no combination was measured. `exclude`: a
- * combination left out (the runner-up is the best of the others).
+ * fastest with that context full (fullContextPoint: the number every view shows; a combination
+ * "misurata in parte" that never got there is left out when another did); when none got there, the
+ * fastest at the deepest point they all measured. Undefined when no combination was measured.
+ * `exclude`: a combination left out (the runner-up is the best of the others).
  */
 export function recommendedCombination(combos: readonly TuneCombination[], exclude?: number): number | undefined {
   const ok = combos.map((c, i) => (c.outcome === 'ok' && c.sweep.length > 0 && i !== exclude ? i : -1)).filter((i) => i >= 0);
   if (ok.length === 0) return undefined;
   const largest = Math.max(...ok.map((i) => (combos[i] as TuneCombination).maxContext));
   const top = ok.filter((i) => (combos[i] as TuneCombination).maxContext === largest);
+  const full = top.filter((i) => fullContextPoint(combos[i] as TuneCombination) !== undefined);
+  if (full.length > 0) return bestBy(combos, full, fullContextPoint);
   const sets = top.map((i) => new Set((combos[i] as TuneCombination).sweep.map((p) => nominalDepth(p.promptTokens))));
   const deepest = Math.max(...[...(sets[0] as Set<number>)].filter((d) => sets.every((s) => s.has(d))));
   // Nothing measured by all of them (one only has its 1K check, another a sweep that started deeper): the more precise cache, then the earlier one.

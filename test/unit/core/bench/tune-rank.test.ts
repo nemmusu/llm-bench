@@ -81,8 +81,23 @@ describe('fastest per depth and the recommendation', () => {
     // A screening cut by the time limit is compared on the depths both have.
     expect(screenBetter([point(1024, 60), point(65_536, 50)], [point(1024, 50), point(65_536, 40), point(262_000, 30)])).toBe(true);
     expect(screenBetter([point(2048, 60)], [point(1024, 50)])).toBe(false);
-    // A sweep cut short is compared where both have a point.
-    const short = combo('q4_0', 65536, [point(1024, 300), point(4096, 290)]);
-    expect(recommendedCombination([q4, short])).toBe(1);
+    // A sweep cut short is compared where both have a point …
+    const short = combo('q4_0', 65536, [point(1024, 300), point(4096, 290)], { partial: 'budget' });
+    expect(recommendedCombination([short, { ...short, sweep: [point(1024, 200), point(4096, 310)] }])).toBe(1);
+    // … unless another reached the context full: that is the number every view shows, it is recommended.
+    expect(recommendedCombination([q4, short])).toBe(0);
+  });
+
+  it('recommended: read with the largest context full, wherever each one’s deepest prompt landed', () => {
+    // NInfer refused a 256K text prompt: the sweep sent it again shorter (250 000 tokens, still the context full).
+    const rk = combo('rk8v4', 262_144, [point(1024, 86), point(65_536, 83), point(262_000, 70)]);
+    const nv = combo('nvfp4', 262_144, [point(1024, 122), point(65_536, 75), point(250_000, 72)]);
+    expect(recommendedCombination([rk, nv])).toBe(1);
+    // A tie at the context full goes to the more precise cache, then the earlier one.
+    expect(recommendedCombination([{ ...nv, sweep: [point(262_000, 70)] }, rk])).toBe(1);
+    // Partly measured, the deepest prompt measured first: it is compared there, the others are not looked at.
+    const cut = combo('nvfp4', 262_144, [point(1024, 50), point(262_000, 71)], { partial: 'budget' });
+    expect(recommendedCombination([rk, cut])).toBe(0);
+    expect(recommendedCombination([rk, { ...cut, sweep: [point(1024, 50), point(262_000, 75)] }])).toBe(1);
   });
 });

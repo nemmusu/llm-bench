@@ -170,9 +170,9 @@ describe('a tune run’s clock', () => {
     expect(t.stoppedBy).toBe('budget');
     expect(t.limitSeconds).toBe(BUDGETS.fast.minMs / 1000);
     const screen = t.attempts.find((a) => a.stage === 'variant')!;
-    expect(screen.points[1]).toMatchObject({ promptTokens: 1024, decodeTps: { n: 1 } });
-    // The screening's 1K point was asked twice, made once; the deeper one not at all.
-    expect(screen.skipped).toEqual([{ depth: 4016, predictedMs: expect.any(Number) }]);
+    expect(screen.points[1]).toMatchObject({ promptTokens: 4016, decodeTps: { n: 1 } });
+    // The screening's deepest point (the context full, measured first) was asked twice, made once; the 1K one not at all.
+    expect(screen.skipped).toEqual([{ depth: 1024, predictedMs: expect.any(Number) }]);
     expect(t.combinations).toHaveLength(1);
     expect(t.combinations[0]).toMatchObject({ partial: 'budget', maxContext: 4096 });
     // The run reads as that partly measured combination.

@@ -18,20 +18,25 @@
  *     reference's 1K probe (the same depth: slowing down on deep prompts is normal). No deep prompt is
  *     sent while searching. The top candidate first (the estimate is usually close), then a binary
  *     search between the largest that loaded and the smallest that did not, down to steps of 8K
- *     (or 1/8 of the context). A less precise type that cannot add context is not searched.
- *     vLLM's memory share starts at the highest that fits the free VRAM and steps down while vLLM
- *     refuses to start with it.
+ *     (or 1/8 of the context). An engine that says how many tokens fit (vLLM's KV cache report,
+ *     NInfer's reservation) has that context tried next: when it loads it is the limit, when it does
+ *     not (it spills, it is too slow) the search goes on below it like after any other failure. A
+ *     less precise type that cannot add context is not searched. vLLM's memory share starts at the
+ *     highest that fits the free VRAM and steps down while vLLM refuses to start with it.
  *  4. Coordinate descent at each type's largest context, one dimension at a time (flash attention →
  *     ubatch → batch → speculative decoding; vLLM: batched tokens, block size, fp8 format): each value
- *     is screened at three depths (1K, the middle of the grid and the deepest; "Veloce" on contexts
- *     above 64K: 1K and the middle only, the deepest prompt taking minutes) and kept when it is faster
- *     (see tune-rank.ts); a value that runs out of memory or spills at that context is dropped —
- *     context comes first. Values that won in earlier runs on this GPU are tried first.
+ *     is screened at three depths (the deepest first, then 1K and the middle of the grid; "Veloce" on
+ *     contexts above 64K: 1K and the middle only, the deepest prompt taking minutes) and kept when it
+ *     is faster (see tune-rank.ts); a value that runs out of memory or spills at that context is
+ *     dropped — context comes first. Values that won in earlier runs on this GPU are tried first. The
+ *     last value a type tries (no later dimension has another value for it) is swept on its screening
+ *     launch when it wins.
  *  5. Full context sweep of each type's best combination (and of any screened variant that was the
  *     fastest at one of its depths): what its screening measured is reused, so each deep prompt of a
- *     combination is measured once. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the
- *     exact maximum, without 200K (minutes per request); "Accurata" doubles and measures 200K when
- *     the context reaches it.
+ *     combination is measured once; the deepest prompt (the context full: every speed of a combination
+ *     is read there) comes first, then the depths in between, so a search the time limit stops still
+ *     has it. "Veloce" on contexts above 64K: 1K, 4K, 16K, 64K… (×4) plus the exact maximum, without
+ *     200K (minutes per request); "Accurata" doubles and measures 200K when the context reaches it.
  *  6. Last resorts: nothing fits even at 4K with q4_0 → part of the model on the CPU (--n-cpu-moe for
  *     MoE models, fewer -ngl otherwise). vLLM: fewer CUDA graphs, then --enforce-eager, when that is
  *     the only way to a larger context.
@@ -47,10 +52,13 @@
  * memory. Either way the search goes on (the binary search steps down).
  *
  * Time: the search forecasts itself from the predicted contexts, the expected speeds (earlier runs of
- * this model, else its size) and the launches; its time limit is that estimate × 1.5. Every request is
- * predicted from the speeds measured so far: one longer than a minute is made once (n = 1), one that
- * would end past the limit (plus a grace) is not started (recorded), a started one is never cut. When
- * the limit or the launch cap stops the search, what was measured at each type's largest context
+ * this model, else its size) and the launches; its time limit is that estimate × 1.5. The first launch
+ * that loads measures how long an engine start really takes (and its 1K speed): once, the limit is
+ * raised to (the time so far + the rest as now predicted) × 1.5 when that is more (never lowered; a
+ * limit the request set stays). Every request is predicted from the speeds measured so far: one longer
+ * than a minute is made once (n = 1), one that would end past the limit (plus a grace) is not started
+ * (recorded; when it is the deepest prompt the shorter ones still are), a started one is never cut.
+ * When the limit or the launch cap stops the search, what was measured at each type's largest context
  * becomes a combination "misurata in parte", ranked by the same rules. The engine work itself goes
  * through TuneLab (the runner).
  */
@@ -269,6 +277,33 @@ export function screenDepths(ctx: number, outputTokens: number, step: GridStep =
   return [...new Set([shallow, ...(middle !== undefined ? [middle] : []), deepest])];
 }
 
+/**
+ * Depths in the order a launch measures them: `deepest` first when it is among them (the context full:
+ * every speed of a combination is read there, so a search the time limit stops still has it), then the
+ * others in their order.
+ */
+export function fullContextFirst(depths: readonly number[], deepest: number): number[] {
+  return depths.includes(deepest) ? [deepest, ...depths.filter((d) => d !== deepest)] : [...depths];
+}
+
+/** The middle of the largest context that loads and the smallest that does not, rounded down to 8K. */
+export function capacityMiddle(lo: number, hi: number): number {
+  return Math.floor((lo + hi) / 2 / CAPACITY_STEP) * CAPACITY_STEP;
+}
+
+/**
+ * The largest context that loads (`lo`) and the smallest that does not (`hi`) are as close as the
+ * capacity search goes: at most 8K or 1/8 of `lo` apart, or no multiple of 8K between them.
+ */
+export function capacitySettled(lo: number, hi: number): boolean {
+  return hi - lo <= Math.max(CAPACITY_STEP, lo * CAPACITY_PRECISION) || capacityMiddle(lo, hi) <= lo;
+}
+
+/** No dimension after the `d`-th has another value to try for `variant`: when it wins, the descent ends with it. */
+export function lastToTry(dims: readonly Dimension[], d: number, variant: Variant): boolean {
+  return dims.slice(d + 1).every((x) => x.values(variant).every((v) => v === variant[x.key]));
+}
+
 /** Errors that mean "this configuration does not fit", not "something is broken". */
 export function memoryError(e: AppErrorData): boolean {
   return e.code === 'ENGINE_OOM' || (e.code === 'MODEL_TOO_LARGE' && e.params?.reason === 'kv-cache');
@@ -407,8 +442,11 @@ export interface Capacity {
   skipped?: 'estimate' | 'no-gain' | 'budget' | 'cancelled' | 'failed';
   /** The run ended while this type was being searched (see Tuner.interrupted). */
   cut?: 'cancelled' | 'failed';
-  /** The engine reported how many tokens its KV cache holds (vLLM): the limit is known, nothing to refine. */
-  hinted?: boolean;
+  /**
+   * The context the engine said its KV cache holds (vLLM's report, NInfer's reservation), rounded down
+   * to 1K: when it loads it is the limit, nothing to refine.
+   */
+  hinted?: number;
 }
 
 export interface Screen {
@@ -496,6 +534,8 @@ export class Tuner {
   private estimateMs = 0;
   /** The time limit (ms from the start). */
   protected limitMs = 0;
+  /** The limit was set again with the first start measured here (see rebase). */
+  private rebased = false;
   /** Speeds measured so far (latest per nominal depth), seeded with the expected ones. */
   private readonly anchors = new Map<number, SpeedAnchor>();
   private readonly loads: number[] = [];
@@ -590,6 +630,24 @@ export class Tuner {
     this.limitMs = Math.max(this.rules.minMs, this.input.limitMs ?? own);
   }
 
+  /**
+   * The first launch that loaded measured an engine start and its 1K speed (a start expected to take
+   * 15 s can take 100 s, a model read from a slow disk): the limit becomes (the time so far + the rest
+   * as now predicted) × TIME_MARGIN when that is more. Once; never lowered; a limit the request set stays.
+   */
+  private rebase(): void {
+    if (this.rebased) return;
+    this.rebased = true;
+    if (this.input.limitMs !== undefined) return;
+    const ms = this.deps.now() - this.started + this.currentWorkMs() + this.plannedMs();
+    this.limitMs = Math.max(this.limitMs, Math.round(ms * TIME_MARGIN));
+  }
+
+  /** Expected ms of the work of the launch in progress that plannedMs does not count (asked after its 1K probe). */
+  protected currentWorkMs(): number {
+    return 0;
+  }
+
   /** The capacity candidates of every KV type (goal 'multi': whether it holds the users). */
   protected predict(): void {
     for (const kv of this.input.space.kvLadder) this.capacity.set(kv, this.predictCapacity(kv));
@@ -675,11 +733,30 @@ export class Tuner {
     try {
       const p = await engine.measure(depth, out, n, kind, { more: () => this.fitsInTime(one), timeoutMs: this.timeoutMs(depth, out) });
       this.learn(p);
-      live.att.points.push(p);
+      // The record stays shallow to deep whatever the order measured (its last point is its deepest).
+      const at = live.att.points.findIndex((q) => q.promptTokens > p.promptTokens);
+      live.att.points.splice(at < 0 ? live.att.points.length : at, 0, p);
       return p;
     } finally {
       this.settle();
     }
+  }
+
+  /**
+   * `depths` on a loaded engine within the time limit (measureAt), the context full first (`deepest`,
+   * when it is among them): when even it would end past the limit the others are still tried; past
+   * any other that would, the deeper ones are left. Returns the points shallow to deep.
+   */
+  private async measureDepths(engine: LabEngine, live: Live, depths: readonly number[], deepest: number, reps: number, kind: 'tune-screen' | 'context-sweep'): Promise<LatencyPoint[]> {
+    const order = fullContextFirst(depths, deepest);
+    this.queue = order.map((d) => this.repsFor(d, reps) * this.requestMs(d));
+    const points: LatencyPoint[] = [];
+    for (const d of order) {
+      const p = await this.measureAt(engine, live, d, reps, kind);
+      if (p) points.push(p);
+      else if (d !== deepest) break;
+    }
+    return points.sort((a, b) => a.promptTokens - b.promptTokens);
   }
 
   /** Expected ms of a launch measuring `depths` with `reps` repetitions each (the probe included). */
@@ -709,10 +786,13 @@ export class Tuner {
     return 1 + this.input.space.dimensions.reduce((n, d) => n + d.values(base).filter((v) => v !== base[d.key]).length, 0);
   }
 
-  /** The largest context a KV type is expected to reach: measured, else predicted; undefined = none. */
+  /**
+   * The largest context a KV type is expected to reach: measured once its capacity search ended, else
+   * (not started, or under way) predicted; undefined = none.
+   */
   private expectedMax(kv: TuneKvType, previous: number | undefined): number | undefined {
     const cap = this.capacity.get(kv) as Capacity;
-    if (this.capacityDone.has(kv)) return cap.measuredMax;
+    if (this.capacityEnded.has(kv)) return cap.measuredMax;
     const ladder = this.input.space.kvLadder;
     if (cap.candidates.length === 0) return kv === ladder[ladder.length - 1] && previous === undefined ? this.min : previous;
     return Math.max(cap.predictedMax ?? this.cap, previous ?? 0);
@@ -885,17 +965,17 @@ export class Tuner {
   }
 
   /**
-   * The largest context that loads and the smallest that does not are far apart (more than 8K and
-   * more than 1/8 of the first): their middle, rounded down to 8K, becomes a candidate. False = done.
+   * The largest context that loads and the smallest that does not are far apart (see capacitySettled):
+   * their middle, rounded down to 8K, becomes a candidate. False = done. The context the engine said
+   * fits is exact when it loads; when it did not (NInfer's reservation at a context that spills) the
+   * search goes on below it like below any other context that did not fit.
    */
   private refine(cap: Capacity, okIdx: number, failIdx: number): boolean {
-    if (okIdx < 0 || failIdx < 0 || cap.hinted) return false;
+    if (okIdx < 0 || failIdx < 0 || this.hintHeld(cap)) return false;
     const lo = cap.candidates[okIdx] as number;
     const hi = cap.candidates[failIdx] as number;
-    if (hi - lo <= Math.max(CAPACITY_STEP, lo * CAPACITY_PRECISION)) return false;
-    const mid = Math.floor((lo + hi) / 2 / CAPACITY_STEP) * CAPACITY_STEP;
-    if (mid <= lo) return false;
-    cap.candidates.push(mid);
+    if (capacitySettled(lo, hi)) return false;
+    cap.candidates.push(capacityMiddle(lo, hi));
     cap.candidates.sort((a, b) => a - b);
     return true;
   }
@@ -904,15 +984,21 @@ export class Tuner {
     return cap.candidates.reduce((m, c, i) => (cap.status.get(c) === true ? i : m), -1);
   }
 
+  /** The context the engine said its KV cache holds loaded: it is the limit. */
+  private hintHeld(cap: Capacity): boolean {
+    return cap.hinted !== undefined && cap.status.get(cap.hinted) === true;
+  }
+
   /**
-   * vLLM reports how many tokens its KV cache holds: candidates above are impossible, the exact
-   * capacity (rounded down to 1K) becomes one. True when that added a candidate.
+   * The engine reported how many tokens its KV cache holds (vLLM, NInfer's reservation): candidates
+   * above are impossible, the exact capacity (rounded down to 1K) becomes one. True when that added a
+   * candidate.
    */
   private applyHint(cap: Capacity, hint: number | undefined): boolean {
     if (hint === undefined) return false;
-    cap.hinted = true;
-    for (const c of cap.candidates) if (c > hint) cap.status.set(c, false);
     const exact = Math.floor(hint / 1024) * 1024;
+    cap.hinted = exact;
+    for (const c of cap.candidates) if (c > hint) cap.status.set(c, false);
     if (exact < this.min || exact > this.cap || cap.candidates.includes(exact)) return false;
     cap.candidates.push(exact);
     cap.candidates.sort((a, b) => a - b);
@@ -1017,6 +1103,7 @@ export class Tuner {
       this.settle();
       this.learn(probe);
       att.points.push(probe);
+      this.rebase();
       const hint = engine.capacityHint();
       if (hint !== undefined) {
         live.hint = hint;
@@ -1081,17 +1168,10 @@ export class Tuner {
     return true;
   }
 
-  /** Screening (screenAt) with the budget's repetitions, within the time limit. */
+  /** Screening (screenAt) with the budget's repetitions, within the time limit; the deepest prompt first when it is screened. */
   private async screenWork(engine: LabEngine, live: Live): Promise<void> {
     const ctx = live.att.contextSize;
-    const depths = this.screenAt(ctx);
-    this.queue = depths.map((d) => this.repsFor(d, this.rules.screenReps) * this.requestMs(d));
-    const points: LatencyPoint[] = [];
-    for (const d of depths) {
-      const p = await this.measureAt(engine, live, d, this.rules.screenReps, 'tune-screen');
-      if (!p) break;
-      points.push(p);
-    }
+    const points = await this.measureDepths(engine, live, this.screenAt(ctx), maxDepth(ctx, this.input.sweep.outputTokens), this.rules.screenReps, 'tune-screen');
     if (this.collapsed(live.att, points)) return;
     this.screens.set(this.key(live.variant, ctx), { variant: live.variant, ctx, attempt: live.index, points });
   }
@@ -1151,8 +1231,8 @@ export class Tuner {
         const variant: Variant = { ...current.variant, [dim.key]: values[i] as DimValue };
         this.descentLeft.set(kv, Math.max(0, (this.descentLeft.get(kv) as number) - 1));
         if (dim.prune?.(values[i] as DimValue) && !this.estimateAllows(variant, current)) continue;
-        // The last value tried, and the winner: its full sweep runs on this same launch.
-        const last = d === dims.length - 1 && i === values.length - 1;
+        // The last value tried (no later dimension has another value for it), and the winner: its full sweep runs on this same launch.
+        const last = i === values.length - 1 && lastToTry(dims, d, variant);
         let won = false;
         const live = await this.launch('variant', variant, current.ctx, async (engine, l) => {
           await this.screenWork(engine, l);
@@ -1177,21 +1257,16 @@ export class Tuner {
 
   /**
    * The full sweep on a loaded engine, within the time limit: depths `reuse` already has (the same
-   * configuration's screening, on this launch or another) are not measured again.
+   * configuration's screening, on this launch or another) are not measured again; the deepest prompt
+   * (the context full) is measured first, then the depths in between.
    */
   protected async sweepWork(engine: LabEngine, live: Live, reuse: readonly LatencyPoint[], depthsOf?: (ctx: number, out: number) => number[]): Promise<void> {
     this.deps.onPhase?.('context-sweep');
     const { outputTokens, reps } = this.input.sweep;
     const ctx = live.att.contextSize;
     const have = new Set(reuse.map((p) => p.promptTokens));
-    const depths = (depthsOf ? depthsOf(ctx, outputTokens) : sweepDepths(ctx, outputTokens, { step: this.gridOf(ctx) })).filter((d) => !have.has(d));
-    this.queue = depths.map((d) => this.repsFor(d, reps) * this.requestMs(d));
-    const points: LatencyPoint[] = [];
-    for (const d of depths) {
-      const p = await this.measureAt(engine, live, d, reps, 'context-sweep');
-      if (!p) break;
-      points.push(p);
-    }
+    const all = depthsOf ? depthsOf(ctx, outputTokens) : sweepDepths(ctx, outputTokens, { step: this.gridOf(ctx) });
+    const points = await this.measureDepths(engine, live, all.filter((d) => !have.has(d)), maxDepth(ctx, outputTokens), reps, 'context-sweep');
     const sweep = [...reuse, ...points].sort((a, b) => a.promptTokens - b.promptTokens);
     if (this.collapsed(live.att, sweep)) {
       // It does not hold its deepest prompts after all: not a candidate any more.
@@ -1387,14 +1462,16 @@ export class Tuner {
     const known = failed !== undefined ? { failedAt: failed } : {};
     // The run ended while nothing tried for this type had loaded (at least one had failed: see interrupted).
     if (c.measuredMax === undefined) return c.cut ? { bound: c.cut, ...known } : {};
-    // The very next context up did not fit: this is the limit.
-    if (failed !== undefined && failed === above[0]) return { bound: 'found', ...known };
+    const next = failed !== undefined && failed === above[0];
+    // The very next context up did not fit, as close as the search goes (or the engine said this is its capacity): this is the limit.
+    if (next && (capacitySettled(c.measuredMax, failed) || this.hintHeld(c))) return { bound: 'found', ...known };
     if (c.measuredMax >= this.cap) return { bound: 'model' };
     // The run ended before the search of this type did.
     if (c.cut) return { bound: c.cut, ...known };
-    // A search leaves contexts untried above its largest only when the time limit or the launch cap cut it.
+    // A search leaves contexts untried above its largest (or between it and the smallest that did not fit) only when the time limit or the launch cap cut it.
     if (c.skipped === 'budget') return { bound: 'budget', ...known };
-    return { bound: 'estimate' };
+    // The next context up loaded for its check but did not hold its deepest prompt: the descent stepped down to this one.
+    return next ? { bound: 'found', ...known } : { bound: 'estimate' };
   }
 
   /**
@@ -1430,13 +1507,15 @@ export class Tuner {
       maxLaunches: this.rules.maxLaunches,
       estimateSeconds: Math.round(this.estimateMs / 1000),
       limitSeconds: Math.round(this.limitMs / 1000),
+      expectedLoadSeconds: Math.round((this.input.expect?.loadMs ?? DEFAULT_LOAD_MS) / 1000),
       ...(this.stoppedBy ? { stoppedBy: this.stoppedBy } : {}),
       dimensions: this.dimensionsTried(),
       capacity: [...this.capacity.values()].map((c) => ({
         kvType: c.kv,
         ...(c.predictedMax ? { predictedMax: c.predictedMax } : {}),
         ...(c.measuredMax !== undefined ? { measuredMax: c.measuredMax } : {}),
-        inferred: c.inferred,
+        // Deduced without a launch, then a later launch of this type (a screening, a sweep) loaded there after all.
+        inferred: c.inferred && !this.loadedAt(c.kv, c.measuredMax),
         ...(c.skipped ? { skipped: c.skipped } : {}),
         ...this.boundOf(c),
       })),
@@ -1448,6 +1527,11 @@ export class Tuner {
       ...(this.fidelity ? { fidelity: this.fidelity } : {}),
     };
     return { ...t, ...this.goalFields() };
+  }
+
+  /** A launch of this KV type (any stage) loaded at exactly this context and held it. */
+  private loadedAt(kv: TuneKvType, ctx: number | undefined): boolean {
+    return this.attempts.some((a) => a.kvType === kv && a.contextSize === ctx && a.outcome === 'ok');
   }
 
   /** Searched dimensions with the values each KV type would try (the start-up setting: the ones tried so far). */
