@@ -210,7 +210,10 @@ export function buildNinfer({ name = 'qwen3.8-27b', components = ['text', 'mtp']
 
 /**
  * Metadata + tensors of a small decoder-only model that look like a real llama.cpp conversion.
- * `layers`, `kvHeads`… shape the KV facts; tensors are tiny so files stay a few KB.
+ * `layers`, `kvHeads`… shape the KV facts; tensors are tiny so files stay a few KB. `sizeFromLabel`:
+ * the tensors hold no parameters (a dimension of 0), so the app reads the count from general.size_label
+ * as it does for a file whose tensors do not say: "8 miliardi di parametri" in a screenshot, not what
+ * the tiny tensors add up to.
  */
 export function llamaLikeGguf({
   arch = 'qwen3',
@@ -226,6 +229,7 @@ export function llamaLikeGguf({
   vocab = 32,
   extra = {},
   tied = false,
+  sizeFromLabel = false,
 } = {}) {
   const metadata = {
     'general.architecture': arch,
@@ -252,5 +256,5 @@ export function llamaLikeGguf({
     tensors.push({ name: `blk.${i}.attn_q.weight`, shape: [embd, embd], type: 8 });
     tensors.push({ name: `blk.${i}.ffn_up.weight`, shape: [embd, embd * 3], type: 8 });
   }
-  return { metadata, tensors };
+  return { metadata, tensors: sizeFromLabel ? tensors.map((t) => ({ ...t, shape: [0, ...t.shape.slice(1)] })) : tensors };
 }

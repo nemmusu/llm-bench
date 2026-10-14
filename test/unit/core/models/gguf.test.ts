@@ -13,6 +13,7 @@ import {
 } from '../../../../src/core/models/gguf';
 import { gv, llamaLikeGguf, writeGguf } from '../../../fixtures/gguf/writer';
 import { tempDir } from './helpers';
+import { buildGguf as buildFakeGguf, llamaLikeGguf as fakeLlamaGguf } from '../../../fakes/fake-hub/model-files.mjs';
 
 describe('factsFromGguf (pure)', () => {
   it('maps a plain GQA transformer', () => {
@@ -250,6 +251,17 @@ describe('local GGUF files', () => {
     expect(facts.blockCount).toBe(2);
     expect(facts.cpuOnlyFraction).toBeCloseTo(2176 / 65536, 4);
     expect(facts.bitsPerWeight).toBeGreaterThan(0);
+  });
+
+  it("the fake world's demo GGUF: tensors that hold no parameters, its count read from its size label like a file whose tensors do not say", async () => {
+    const file = path.join(t.dir, 'Qwen3-8B-Q4_K_M.gguf');
+    const spec = fakeLlamaGguf({ name: 'Qwen3 8B', sizeLabel: '8B', sizeFromLabel: true });
+    writeFileSync(file, buildFakeGguf({ ...spec, totalSize: 96 * 1024 }));
+    const facts = await readLocalGgufFacts([file]);
+    expect(facts).toMatchObject({ paramsB: 8, quant: 'Q4_K_M', blockCount: 4 });
+    // Its size on disk says nothing about bits per weight: the quantization's own figure is used.
+    expect(facts.bitsPerWeight).toBeUndefined();
+    expect(spec.tensors).toHaveLength(fakeLlamaGguf().tensors.length);
   });
 
   it('sums parameters and bytes over split shards; tied embeddings stay on the GPU', async () => {

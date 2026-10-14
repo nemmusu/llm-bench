@@ -42,6 +42,8 @@ export interface LlamaLikeOptions {
   vocab?: number;
   extra?: Record<string, GgufValue>;
   tied?: boolean;
+  /** Tensors with no parameters: the count is read from general.size_label (a realistic one for screenshots). */
+  sizeFromLabel?: boolean;
 }
 
 export declare const GGUF_TYPE: Readonly<Record<'UINT8' | 'INT8' | 'UINT16' | 'INT16' | 'UINT32' | 'INT32' | 'FLOAT32' | 'BOOL' | 'STRING' | 'ARRAY' | 'UINT64' | 'INT64' | 'FLOAT64', number>>;

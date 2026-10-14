@@ -94,6 +94,7 @@ export interface FakeHub {
   setAccepted(repo: string, accepted: boolean): void;
 }
 
-export declare function demoRepos(): FakeRepoSpec[];
-export declare function formatRepos(): FakeRepoSpec[];
+/** `realParams`: each GGUF's parameter count is read from its size label (screenshots), not from what its tiny tensors add up to. */
+export declare function demoRepos(opts?: { realParams?: boolean }): FakeRepoSpec[];
+export declare function formatRepos(opts?: { realParams?: boolean }): FakeRepoSpec[];
 export declare function startFakeHub(opts?: FakeHubOptions): Promise<FakeHub>;

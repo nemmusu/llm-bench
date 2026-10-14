@@ -30,6 +30,9 @@ import { demoRepos, formatRepos, startFakeHub } from '../test/fakes/fake-hub/hub
 import { buildGguf, buildNinfer, buildSafetensors, llamaLikeGguf } from '../test/fakes/fake-hub/model-files.mjs';
 import { SPILL_PROFILE, TUNE_PROFILE } from '../test/fakes/fake-engine/profiles.mjs';
 
+/** A demo GGUF whose parameter count is read from its size label ("8 miliardi di parametri", not what its tiny tensors add up to). */
+const demoGguf = (o) => llamaLikeGguf({ ...o, sizeFromLabel: true });
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 const only = [...args].find((a) => a.startsWith('--only='))?.slice(7).split(',');
@@ -192,7 +195,7 @@ function idleGpu() {
  * the same, and neither has the vision part the repo offers.
  */
 const UPDATES_REPO = 'unsloth/gemma-4-E4B-it-GGUF';
-const gemmaE4b = (seed, kb) => ({ ...llamaLikeGguf({ arch: 'gemma4', name: 'Gemma 4 E4B it', sizeLabel: '4B' }), seed, totalSize: kb * 1024 });
+const gemmaE4b = (seed, kb) => ({ ...demoGguf({ arch: 'gemma4', name: 'Gemma 4 E4B it', sizeLabel: '4B' }), seed, totalSize: kb * 1024 });
 const updatesRepo = () => ({
   id: UPDATES_REPO,
   downloads: 64_000,
@@ -670,8 +673,8 @@ async function fakeWorld(dataDir) {
   const github = await startFakeGithub({ serverBinaryData: `import(${JSON.stringify(pathToFileURL(cli).href)});\n`, ...(releases ? { releases } : {}) });
   const hub = await startFakeHub({
     repos: [
-      ...demoRepos(),
-      ...formatRepos(),
+      ...demoRepos({ realParams: true }),
+      ...formatRepos({ realParams: true }),
       updatesRepo(),
       {
         id: REFERENCE.repo,
@@ -684,7 +687,7 @@ async function fakeWorld(dataDir) {
         baseModel: 'Qwen/Qwen3-4B',
         tags: ['gguf', 'text-generation'],
         readme: '---\nlicense: apache-2.0\n---\n# Qwen3-4B-GGUF\n\nQwen3 4B quantized for llama.cpp. The **reference** model of the LLM Bench score.\n',
-        files: [{ path: REFERENCE.file, gguf: { ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 192 * 1024 } }],
+        files: [{ path: REFERENCE.file, gguf: { ...demoGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 192 * 1024 } }],
       },
     ],
   });
@@ -700,10 +703,10 @@ async function fakeWorld(dataDir) {
   await new Promise((resolve) => dockerHub.listen(0, '127.0.0.1', resolve));
   const models = path.join(dataDir, 'models', 'local');
   mkdirSync(models, { recursive: true });
-  writeFileSync(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 8B', sizeLabel: '8B' }), totalSize: 96 * 1024 }));
-  writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
+  writeFileSync(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), buildGguf({ ...demoGguf({ name: 'Qwen3 8B', sizeLabel: '8B' }), totalSize: 96 * 1024 }));
+  writeFileSync(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), buildGguf({ ...demoGguf({ name: 'Gemma 4 12B', sizeLabel: '12B' }), totalSize: 128 * 1024 }));
   // 64 layers × 8 KV heads × 128: 256 MiB of KV per 1K tokens, 64 GB at its 256K (the spill scenes).
-  writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
+  writeFileSync(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), buildGguf({ ...demoGguf({ name: 'Qwen3 27B', sizeLabel: '27B', layers: 64, ctx: 262_144 }), totalSize: 160 * 1024 }));
   realSize(path.join(models, 'Qwen3-8B-Q4_K_M.gguf'), 5.03);
   realSize(path.join(models, 'gemma-4-12b-it-Q4_K_M.gguf'), 7.3);
   realSize(path.join(models, 'Qwen3-27B-Q4_K_M.gguf'), 17.6);
@@ -727,7 +730,7 @@ async function fakeWorld(dataDir) {
   const bonsai = path.join(lib, 'prism-ml', 'Ternary-Bonsai-2-27B-gguf');
   mkdirSync(bonsai, { recursive: true });
   sidecar(bonsai, 'prism-ml/Ternary-Bonsai-2-27B-gguf');
-  writeFileSync(path.join(bonsai, 'Ternary-Bonsai-2-27B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ arch: 'qwen35', name: 'Bonsai 27B', sizeLabel: '27B', fileType: 141 }), totalSize: 64 * 1024 }));
+  writeFileSync(path.join(bonsai, 'Ternary-Bonsai-2-27B-PQ2_0.gguf'), buildGguf({ ...demoGguf({ arch: 'qwen35', name: 'Bonsai 27B', sizeLabel: '27B', fileType: 141 }), totalSize: 64 * 1024 }));
   // A copy of the Gemma repo: an older Q4_K_M (another size), the same Q8_0, no vision part.
   const gemma = path.join(lib, 'unsloth', 'gemma-4-E4B-it-GGUF');
   mkdirSync(gemma, { recursive: true });
@@ -735,7 +738,7 @@ async function fakeWorld(dataDir) {
   writeFileSync(path.join(gemma, 'gemma-4-E4B-it-Q8_0.gguf'), buildGguf(gemmaE4b(32, 256)));
   sidecar(gemma, UPDATES_REPO);
   // A PrismML Bonsai model (ternary weights: only the PrismML fork of llama.cpp reads them).
-  writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...llamaLikeGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
+  writeFileSync(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), buildGguf({ ...demoGguf({ name: 'Ternary Bonsai 8B', sizeLabel: '8B' }), totalSize: 64 * 1024 }));
   realSize(path.join(models, 'Ternary-Bonsai-8B-PQ2_0.gguf'), 2.2);
   const results = path.join(dataDir, 'results');
   mkdirSync(results, { recursive: true });
@@ -752,7 +755,7 @@ async function fakeWorld(dataDir) {
   if (README) {
     const ref = path.join(models, ...REFERENCE.repo.split('/'));
     mkdirSync(ref, { recursive: true });
-    writeFileSync(path.join(ref, REFERENCE.file), buildGguf({ ...llamaLikeGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 96 * 1024 }));
+    writeFileSync(path.join(ref, REFERENCE.file), buildGguf({ ...demoGguf({ name: 'Qwen3 4B', sizeLabel: '4B' }), totalSize: 96 * 1024 }));
     realSize(path.join(ref, REFERENCE.file), REFERENCE.sizeBytes / 1e9);
     writeFileSync(path.join(ref, '.gpubench-download.json'), JSON.stringify({ repo: REFERENCE.repo, files: {} }));
   }

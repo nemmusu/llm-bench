@@ -9,7 +9,10 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import http from 'node:http';
-import { buildGguf, buildSafetensors, llamaLikeGguf, seededBytes } from './model-files.mjs';
+import { buildGguf, buildSafetensors, llamaLikeGguf as tinyGguf, seededBytes } from './model-files.mjs';
+
+/** llamaLikeGguf, its parameter count read from its size label when `realParams` (screenshots). */
+const gguf = (realParams) => (o) => tinyGguf({ ...o, sizeFromLabel: realParams });
 
 const LFS_EXT = /\.(gguf|safetensors|bin|pth|pt|onnx)$/i;
 
@@ -89,7 +92,8 @@ function paramsRange(v) {
 }
 
 /** Real-looking demo catalogue: GGUF repos (single + split + mmproj/mtp), safetensors, gated, private. */
-export function demoRepos() {
+export function demoRepos({ realParams = false } = {}) {
+  const llamaLikeGguf = gguf(realParams);
   const qwen = (fileType, seed) => ({ ...llamaLikeGguf({ name: 'Qwen3 0.6B', sizeLabel: '0.6B', fileType }), seed });
   return [
     {
@@ -215,7 +219,8 @@ const GB = 1e9;
  * sub-folder, safetensors model folders and an NInfer artifact; an NInfer-only repo; a safetensors repo
  * with a README, pictures and a video; an MLX repo. Sizes are the real ones (reportedSize), the bytes tiny.
  */
-export function formatRepos() {
+export function formatRepos({ realParams = false } = {}) {
+  const llamaLikeGguf = gguf(realParams);
   const config = (q) => JSON.stringify({ architectures: ['Qwen3ForCausalLM'], model_type: 'qwen3', hidden_size: 5120, num_hidden_layers: 64, num_attention_heads: 40, num_key_value_heads: 8, head_dim: 128, max_position_embeddings: 262144, intermediate_size: 17408, vocab_size: 151936, torch_dtype: 'bfloat16', ...(q ? { quantization_config: q } : {}) });
   const big = (path, gb) => ({ path, size: 1024, reportedSize: Math.round(gb * GB), lfs: true });
   const coder = (seed) => ({ ...llamaLikeGguf({ arch: 'qwen35', name: 'Qwen3.8 27B Coder', sizeLabel: '27B', layers: 64, ctx: 262144, extra: { 'qwen35.nextn_predict_layers': 1 } }), seed, totalSize: 96 * 1024 });
