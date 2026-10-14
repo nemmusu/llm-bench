@@ -29,6 +29,7 @@ export default defineConfig({
         test: {
           name: 'renderer',
           environment: 'happy-dom',
+          setupFiles: ['test/unit/renderer/setup.ts'],
           include: ['test/unit/renderer/**/*.test.{ts,tsx}'],
         },
       },
