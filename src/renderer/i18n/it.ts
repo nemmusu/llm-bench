@@ -3089,6 +3089,8 @@ export const it = {
     },
     incomplete: 'Incompleto · {have} di {total} file',
     incompleteHelp: 'Il download si è fermato a metà: finché mancano dei file non posso usarlo. Riprendi il download dalla pagina del modello oppure eliminalo.',
+    incompleteHelpOwn: 'Il download si è fermato a metà: finché mancano dei file non posso usarlo. Riprendi il download dalla pagina del modello, oppure eliminalo dalla sua cartella.',
+    resumeIncomplete: 'Riprendi il download',
     localSections: {
       gguf: 'Per llama.cpp (GGUF)',
       safetensors: 'Per vLLM / SGLang (safetensors)',

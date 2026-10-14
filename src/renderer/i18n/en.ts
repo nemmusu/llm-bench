@@ -3084,6 +3084,8 @@ export const en: Messages = {
     },
     incomplete: 'Incomplete · {have} of {total} files',
     incompleteHelp: 'The download stopped halfway: while files are missing I cannot use it. Resume the download from the model page or delete it.',
+    incompleteHelpOwn: 'The download stopped halfway: while files are missing I cannot use it. Resume the download from the model page, or delete it from its folder.',
+    resumeIncomplete: 'Resume the download',
     localSections: {
       gguf: 'For llama.cpp (GGUF)',
       safetensors: 'For vLLM / SGLang (safetensors)',

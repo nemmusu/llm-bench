@@ -110,10 +110,11 @@ describe('models: on your PC', () => {
 
   it('groups the library by format; a download stopped halfway is listed as incomplete, without run actions', async () => {
     const st = localModel('st', { identity: { displayName: 'Qwen/Qwen3-8B-FP8', format: 'safetensors', quant: 'FP8', repo: 'Qwen/Qwen3-8B-FP8' } });
-    const partial = localModel('orca', { identity: { displayName: 'orcarouter/OrcaSAQ-2-27B', format: 'safetensors', facts: undefined }, incomplete: { have: 1, total: 4 }, origin: 'library' });
+    const partial = localModel('orca', { identity: { displayName: 'orcarouter/OrcaSAQ-2-27B', format: 'safetensors', facts: undefined, repo: 'orcarouter/OrcaSAQ-2-27B' }, incomplete: { have: 1, total: 4 }, origin: 'library' });
+    const own = localModel('own', { identity: { displayName: 'my-partial', format: 'safetensors', facts: undefined, repo: undefined }, incomplete: { have: 2, total: 3 }, origin: 'custom' });
     const nf = localModel('nf', { identity: { displayName: 'qwen3_8_27b_nvfp4', format: 'ninfer', quant: 'NVFP4' } });
     const bonsai = localModel('bonsai', { identity: { displayName: 'Ternary-Bonsai-2-27B-PQ2_0', file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf', quant: 'PQ2_0' } });
-    const api = libApi(world({ local: [bonsai, st, partial, nf] }));
+    const api = libApi(world({ local: [bonsai, st, partial, own, nf] }));
     renderLib('/models', api);
     const sections = await screen.findAllByRole('heading', { level: 2 });
     expect(sections.map((h) => h.textContent)).toEqual(expect.arrayContaining(['Per llama.cpp (GGUF)', 'Per vLLM / SGLang (safetensors)', 'Per NInfer (RTX 5090)']));
@@ -123,10 +124,16 @@ describe('models: on your PC', () => {
     expect(within(vllm).queryByRole('button', { name: 'Avvia server: orcarouter/OrcaSAQ-2-27B' })).toBeNull();
     expect(within(vllm).getByRole('button', { name: 'Elimina: orcarouter/OrcaSAQ-2-27B' })).toBeTruthy();
     expect(within(vllm).getByRole('button', { name: 'Fai il benchmark: Qwen/Qwen3-8B-FP8' })).toBeTruthy();
+    // Of a folder of the user's, from a repo nobody knows: no resume, and it says to delete it from its folder.
+    expect(within(vllm).queryByRole('button', { name: 'Riprendi il download: my-partial' })).toBeNull();
+    await userEvent.hover(within(vllm).getByText('Incompleto · 2 di 3 file'));
+    expect((await screen.findAllByText(/oppure eliminalo dalla sua cartella/)).length).toBeGreaterThan(0);
     expect(within(screen.getByRole('list', { name: 'Per NInfer (RTX 5090)' })).getByText('qwen3_8_27b_nvfp4')).toBeTruthy();
     // A Bonsai quant only the PrismML fork reads: one click to set that engine up.
     const fork = within(screen.getByRole('list', { name: 'Per llama.cpp (GGUF)' })).getByRole('link', { name: /Richiede il fork PrismML di llama.cpp/ });
-    expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');
+    expect(fork.getAttribute('href')).toContain('customTemplate=prismml-bonsai');    // Resumed on its model page, which fetches only what is missing.
+    await userEvent.click(within(vllm).getByRole('button', { name: 'Riprendi il download: orcarouter/OrcaSAQ-2-27B' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'OrcaSAQ-2-27B' })).toBeTruthy();
   });
 
   it('a GGUF-NInfer artifact without a manifest: "senza manifest", and "Funziona con NInfer-all" one click away', async () => {

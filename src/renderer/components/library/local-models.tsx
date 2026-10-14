@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { FolderOpen, Gauge, HardDrive, Server, SquareTerminal, Trash2, TriangleAlert } from 'lucide-react';
+import { Download, FolderOpen, Gauge, HardDrive, Server, SquareTerminal, Trash2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import type { EngineConfig, EngineKind, EngineStatus } from '../../../contract/engines';
 import type { LocalModel, ModelUpdate } from '../../../contract/models';
@@ -79,6 +79,9 @@ function LocalRow({
   };
   const meta = [id.quant, id.facts?.paramsB !== undefined ? t('models.params', { n: number(id.facts.paramsB, 1) }) : undefined, bytes(id.sizeBytes ?? 0)].filter(Boolean).join(' · ');
   const incomplete = m.incomplete;
+  const [owner, name] = id.repo?.split('/') ?? [];
+  // Resumed where it was downloaded from: the model page fetches only the files still missing.
+  const resume = owner && name ? () => void navigate({ to: '/models/hub/$owner/$name', params: { owner, name } }) : undefined;
   return (
     <li className="flex flex-wrap items-center gap-4 px-card py-4" data-incomplete={incomplete ? 'true' : undefined}>
       <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-3 text-fg-2">
@@ -95,7 +98,7 @@ function LocalRow({
         </p>
         <div className="mt-0.5 flex flex-wrap gap-1.5">
           {incomplete ? (
-            <Tooltip content={t('models.incompleteHelp')}>
+            <Tooltip content={t(m.origin === 'library' ? 'models.incompleteHelp' : 'models.incompleteHelpOwn')}>
               <Badge tone="warning" size="sm" tabIndex={0} className="focus-ring">
                 <TriangleAlert aria-hidden />
                 {t('models.incomplete', { have: incomplete.have, total: incomplete.total })}
@@ -131,6 +134,12 @@ function LocalRow({
         {inDocker !== undefined && !incomplete && <DockerVolumeAction model={m} copied={inDocker} />}
       </div>
       <div className="flex items-center gap-1">
+        {incomplete && resume && (
+          <Button variant="secondary" onClick={resume} aria-label={`${t('models.resumeIncomplete')}: ${id.displayName}`}>
+            <Download aria-hidden />
+            {t('models.resumeIncomplete')}
+          </Button>
+        )}
         {!incomplete && (
           <>
             <Button variant="secondary" onClick={bench} aria-label={`${t('models.benchmark')}: ${id.displayName}`}>
