@@ -16,7 +16,8 @@ export function Section({ title, hint, children }: { title: string; hint?: strin
 export function Row({ label, hint, control, htmlFor }: { label: string; hint?: ReactNode; control: ReactNode; htmlFor?: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3 first:pt-0 last:pb-0">
-      <div className="flex max-w-md min-w-0 flex-col gap-0.5">
+      {/* The text gives way first: a short control (a switch, a menu) stays on its right instead of dropping below a long hint. */}
+      <div className="flex max-w-md min-w-0 flex-1 basis-60 flex-col gap-0.5">
         {htmlFor ? (
           <label htmlFor={htmlFor} className="text-sm font-medium">
             {label}
