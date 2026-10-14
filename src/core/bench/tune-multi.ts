@@ -15,7 +15,9 @@
  *     (tune-rank.ts compareUsers: fewer failed requests → per-user generation p50 → total tok/s →
  *     TTFT p95 → later messages' TTFT).
  *  3. Full measurement of each type's best: users 1, 2, … N in this order (middle levels are skipped
- *     only when the time budget is short; N is always measured) and the conversations.
+ *     only when the time budget is short; N is always measured) and the conversations. "Solo N
+ *     utenti insieme" (usersMode 'exact'): nothing more, the best's own screening (N users at once
+ *     and the conversations) is its measurement: no lower level, no launch of its own.
  *  4. Recommended: the combination that serves N users best (then the more precise KV).
  */
 import type { AppErrorData } from '../../contract/errors';
@@ -39,6 +41,8 @@ interface UsersScreen {
   measure: UsersMeasure;
   /** ms the users level took (it sizes the full measurement against the time budget). */
   levelMs: number;
+  /** The screening's launch ("solo N utenti": it becomes the combination as it is). */
+  live: Live;
 }
 
 /** A launch whose KV pool cannot hold every user's context (vLLM reports its pool). */
@@ -56,10 +60,13 @@ export class MultiTuner extends Tuner {
   private readonly turns: number;
   private fittingUsers: number | undefined;
   private readonly usersScreens = new Map<string, UsersScreen>();
+  /** "Solo N utenti insieme": only N users at once are measured (no users 1 … N). */
+  private readonly exact: boolean;
 
   constructor(input: TunerInput, deps: TunerDeps) {
     super(input, deps);
     const m = input.multi as NonNullable<TunerInput['multi']>;
+    this.exact = m.usersMode === 'exact';
     this.asked = m.users;
     this.users = m.users;
     this.perUser = Math.min(m.perUserContext, this.cap);
@@ -118,8 +125,11 @@ export class MultiTuner extends Tuner {
       this.descended.add(kv);
       this.descentLeft.delete(kv);
       if (best && !this.combined.has(this.key(best.variant, best.ctx))) {
-        const live = await this.launch('sweep', best.variant, best.ctx, (e, l) => this.fullWork(e, l, best));
-        if (live?.users) this.addCombination(live);
+        if (this.exact) this.combineScreen(best);
+        else {
+          const live = await this.launch('sweep', best.variant, best.ctx, (e, l) => this.fullWork(e, l, best));
+          if (live?.users) this.addCombination(live);
+        }
       }
       this.swept.add(kv);
     }
@@ -156,7 +166,8 @@ export class MultiTuner extends Tuner {
       // A capacity launch already screened the base settings.
       const screens = this.descentLeft.get(kv) ?? this.screensOf(kv) - (cap.launched.size > 0 ? 1 : 0);
       if (!this.descended.has(kv)) ms += screens * screen;
-      if (!this.swept.has(kv)) {
+      // "Solo N utenti": the best's screening is its measurement (nothing more to run).
+      if (!this.swept.has(kv) && !this.exact) {
         ms += load;
         for (let n = 1; n <= this.users; n++) ms += this.levelMs(n);
       }
@@ -243,7 +254,13 @@ export class MultiTuner extends Tuner {
     const step = this.sessionsStep(level);
     const sessions = step ? await engine.sessions(step) : [];
     if (sessions.length) att.sessions = [...(att.sessions ?? []), ...sessions];
-    this.usersScreens.set(this.key(live.variant, att.contextSize), { variant: live.variant, ctx: att.contextSize, attempt: live.index, measure: { point, sessions: sessions[0] }, levelMs });
+    this.usersScreens.set(this.key(live.variant, att.contextSize), { variant: live.variant, ctx: att.contextSize, attempt: live.index, measure: { point, sessions: sessions[0] }, levelMs, live });
+  }
+
+  /** "Solo N utenti insieme": a screening (N users at once and the conversations) becomes the combination as it is. */
+  private combineScreen(s: UsersScreen): void {
+    s.live.users = { concurrency: [s.measure.point], sessions: s.measure.sessions ? [s.measure.sessions] : [] };
+    this.addCombination(s.live);
   }
 
   /**
@@ -264,8 +281,8 @@ export class MultiTuner extends Tuner {
     live.att.concurrency = [...(live.att.concurrency ?? []), ...points];
     let sessions: SessionsPoint[] = screened.measure.sessions && screened.attempt === live.index ? [screened.measure.sessions] : [];
     const step = this.sessionsStep(level);
+    // Part of measuring the users: the live screen stays on that phase.
     if (!sessions.length && step) {
-      this.deps.onPhase?.('sessions');
       sessions = await engine.sessions(step);
       live.att.sessions = [...(live.att.sessions ?? []), ...sessions];
     }
@@ -319,8 +336,9 @@ export class MultiTuner extends Tuner {
           // Out of memory, or not measured (the time limit): nothing to compare.
           if (l.att.outcome !== 'ok' || !mine) return;
           won = compareUsers(mine.measure, current.measure) > 0;
-          // The last value tried (no later dimension has another value for it), and the winner: users 1 … N on this same launch.
-          if (won && last) await this.fullWork(engine, l, mine);
+          // The last value tried (no later dimension has another value for it), and the winner: users 1 … N on this same launch
+          // ("solo N utenti": its screening is its measurement, see combineScreen).
+          if (won && last && !this.exact) await this.fullWork(engine, l, mine);
         });
         if (!live) return best;
         if (live.att.outcome !== 'ok' || !this.usersScreens.has(key)) continue;
@@ -373,6 +391,7 @@ export class MultiTuner extends Tuner {
         promptTokens: this.prompt,
         outputTokens: this.out,
         turns,
+        ...(this.exact ? { usersMode: 'exact' as const } : {}),
         ...(this.fittingUsers !== undefined ? { fittingUsers: this.fittingUsers } : {}),
       },
     };

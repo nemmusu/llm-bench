@@ -156,7 +156,8 @@ describe('live screen of a search: when the context is full', () => {
     const rows = within(screen.getByRole('table', { name: 'Prove fatte' })).getAllByRole('row').slice(1);
     expect(rows[1]!.textContent).toMatch(/60,0a 64K, contesto pieno$/);
     expect(rows[2]!.textContent).toMatch(/68,0a 32K di contesto$/);
-    expect(rows[3]!.textContent).toMatch(/81,0a 1K di contesto$/);
+    // The 1K check after the start: said once, in the column's header.
+    expect(rows[3]!.textContent).toMatch(/Cache KV q4_0 · flash attention–81,0$/);
 
     // The sweep's deepest point: the line of what is measured now, its row and the gauges say the context is full.
     act(() => api.emit({ type: 'run.step', runId: RUN, current: { kind: 'context-sweep', depth: 64 * K - 144, outputTokens: 128, rep: 1, reps: 2 } }));

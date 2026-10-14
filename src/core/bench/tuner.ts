@@ -81,6 +81,7 @@ import {
   type TuneKvType,
   type TuneStage,
   type TuneTag,
+  type TuneUsersMode,
   type Tuning,
 } from '../../contract/results';
 import { availableNowMiB } from '../models/fit';
@@ -407,8 +408,8 @@ export interface TunerInput {
   fidelity: boolean;
   /** Absent = 'single'. */
   goal?: TuneGoal;
-  /** Goal 'multi': users at once, context per user, messages per conversation. */
-  multi?: { users: number; perUserContext: number; turns: number };
+  /** Goal 'multi': users at once, context per user, messages per conversation, users 1 … N or N only ('exact'). */
+  multi?: { users: number; perUserContext: number; turns: number; usersMode?: TuneUsersMode };
   /** Values tried first because they won before on this GPU (reported as is). */
   learned?: Tuning['learned'];
   /** Budget 'recheck'. */

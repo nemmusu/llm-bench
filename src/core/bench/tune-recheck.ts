@@ -3,7 +3,7 @@
  * this model here. Instead of a whole search, the previous recommended combination and its runner-up
  * are loaded again exactly as they were, at their largest context:
  *  - does that context still load fully on the GPU (no out of memory, no spill)?
- *  - a short sweep (the deepest prompt first, then 1K and the middle; goal 'multi': users 1 … N)
+ *  - a short sweep (the deepest prompt first, then 1K and the middle; goal 'multi': the users levels measured before)
  *    compared with the previous numbers, noise-aware (tune-rank.ts).
  * Nothing is chosen anew: the recommendation stays the previous one (measured again) when it still
  * fits, and `suggestFull` says when a full search should be run instead (numbers moved, or it does
@@ -19,6 +19,11 @@ type Check = TuneRecheck['checks'][number];
 export function usersMeasured(c: Pick<TuneCombination, 'concurrency'>): number | undefined {
   const levels = (c.concurrency ?? []).map((p) => p.level);
   return levels.length ? Math.max(...levels) : undefined;
+}
+
+/** The users levels a combination was measured with, in order: 1 … N, or N alone ("solo N utenti insieme"). */
+export function levelsMeasured(c: Pick<TuneCombination, 'concurrency'>): number[] {
+  return [...new Set((c.concurrency ?? []).map((p) => p.level))].sort((a, b) => a - b);
 }
 
 /** The overall answer from the checks (see TuneRecheck.result). */
@@ -57,14 +62,17 @@ export class RecheckTuner extends Tuner {
     return this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) + this.measuresMs(c);
   }
 
-  /** The measurements of one re-check: the short sweep, or users 1 … N with prompts of its context (prompts read one after the other). */
+  /**
+   * The measurements of one re-check: the short sweep, or the users levels it was measured with, each
+   * user's prompt as before (prompts read one after the other).
+   */
   private measuresMs(c: TuneCombination): number {
     const out = this.input.sweep.outputTokens;
     const users = usersMeasured(c);
     if (!users) return screenDepths(c.maxContext, out).reduce((ms, d) => ms + this.repsFor(d, this.rules.screenReps) * this.requestMs(d), 0);
-    let ms = 0;
-    for (let n = 1; n <= users; n++) ms += n * this.requestMs(c.maxContext / users, out);
-    return ms;
+    // llama.cpp's context is every user's together, vLLM's one user's: the prompt says what each one sent.
+    const prompt = c.concurrency?.[0]?.promptTokens ?? this.recheck.multi?.promptTokens ?? c.maxContext / users;
+    return levelsMeasured(c).reduce((ms, n) => ms + n * this.requestMs(prompt, out), 0);
   }
 
   /** The re-check being loaded still has its measurements to make (plannedMs counts the ones after it). */
@@ -79,7 +87,7 @@ export class RecheckTuner extends Tuner {
     for (const { role, combination: previous } of this.recheck.checks) {
       const users = usersMeasured(previous);
       this.previous = previous;
-      const live = await this.launch('recheck', previous.variant ?? { kv: previous.kvType }, previous.maxContext, (e, l) => (users ? this.usersWork(e, l, users) : this.shortSweep(e, l)), previous.params);
+      const live = await this.launch('recheck', previous.variant ?? { kv: previous.kvType }, previous.maxContext, (e, l) => (users ? this.usersWork(e, l) : this.shortSweep(e, l)), previous.params);
       const check: Check = { role, previous, fits: false, ...(live ? { outcome: live.att.outcome } : {}), moved: [] };
       if (live?.sweep || live?.users) {
         check.fits = true;
@@ -98,15 +106,16 @@ export class RecheckTuner extends Tuner {
     return this.sweepWork(engine, live, [], screenDepths);
   }
 
-  /** Users 1 … N in this order, one request each. */
-  private async usersWork(engine: LabEngine, live: Live, users: number): Promise<void> {
+  /** The users levels measured before (1 … N, or N alone) in this order, one request each. */
+  private async usersWork(engine: LabEngine, live: Live): Promise<void> {
     this.deps.onPhase?.('concurrency');
     // The same prompts as before (every point of a level says its prompt and answer length).
-    const first = (this.previous as TuneCombination).concurrency?.[0] as ConcurrencyPoint;
+    const previous = this.previous as TuneCombination;
+    const first = previous.concurrency?.[0] as ConcurrencyPoint;
     const promptTokens = first.promptTokens ?? this.recheck.multi?.promptTokens ?? live.att.contextSize;
     const outputTokens = first.outputTokens ?? this.input.sweep.outputTokens;
     const points: ConcurrencyPoint[] = [];
-    for (let n = 1; n <= users; n++) points.push(await engine.concurrency(n, promptTokens, outputTokens, 1));
+    for (const n of levelsMeasured(previous)) points.push(await engine.concurrency(n, promptTokens, outputTokens, 1));
     live.att.concurrency = points;
     live.users = { concurrency: points, sessions: [] };
   }

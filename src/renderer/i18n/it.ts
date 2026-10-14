@@ -1963,6 +1963,11 @@ export const it = {
     },
   },
   tune: {
+    phases: {
+      usersCapacity: { label: 'Utenti che ci stanno', status: 'Controllo con ogni tipo di cache KV se la scheda regge tutti gli utenti, ognuno con il suo contesto.' },
+      usersVariants: { label: 'Impostazioni', status: 'Provo le impostazioni una alla volta con tutti gli utenti al lavoro e tengo quella che li serve meglio.' },
+      recheck: { label: 'Ricarico', status: 'Ricarico le configurazioni della ricerca di prima, con le stesse impostazioni, e rifaccio qualche misura.' },
+    },
     kvAuto: 'automatica',
     recommended: 'Consigliata',
     options: {
@@ -1989,6 +1994,10 @@ export const it = {
       usersHint: 'Da 2 a {max}.',
       perUserContext: 'Contesto per utente (token)',
       perUserContextHelp: 'Quanto testo il server tiene a mente per ognuno, domanda e risposta insieme (1K = 1.024 token, circa 750 parole).',
+      usersMode: 'Come misuro gli utenti',
+      usersModeHelp: 'Da 1 a N: misuro con 1 utente, poi 2, … fino a N, così vedi quanto rallenta ognuno man mano che ne arrivano altri. Solo N insieme: misuro subito tutti gli N utenti al lavoro, ci vuole meno. Le configurazioni si confrontano sempre con tutti gli N al lavoro.',
+      usersRamp: 'Da 1 a {n} utenti',
+      usersExact: 'Solo {n} utenti insieme',
       recheck: 'Ricontrollo rapido',
       recheckTime: 'due prove',
       recheckDesc: 'L’ultima ricerca è stata fatta con {build}; ora usi {current}. Ricarico solo la configurazione consigliata e la seconda migliore e controllo se i numeri sono ancora quelli.',
@@ -2239,7 +2248,8 @@ export const it = {
       subtitle: 'Ordinata per velocità di generazione di ognuno con {n} utenti insieme (prompt da {prompt} token a testa); a pari merito decide la velocità in tutto, poi il primo token più lento.',
       caption: 'Classifica delle configurazioni con {n} utenti',
       measuresCaption: 'Utenti insieme con {settings}',
-      measuresNote: 'Utenti 1, 2, … {n} in quest’ordine, un messaggio a testa per livello.',
+      measuresNote: 'Utenti {levels} in quest’ordine, un messaggio a testa per livello.',
+      measuresNoteOne: 'Solo {n} utenti insieme, un messaggio a testa.',
       columns: {
         perUser: 'Per utente (tok/s)',
         total: 'In tutto (tok/s)',

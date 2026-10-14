@@ -18,6 +18,7 @@ import {
   SLOW_SHARE_BYTES_PER_SEC,
   tuneExpectOf,
   tuneGoalOf,
+  tuneMultiOf,
   tunedServerParams,
   tuneRunsFor,
   type TunePrepared,
@@ -74,6 +75,10 @@ describe('the question of a tune request', () => {
     expect(tuneGoalOf({ tune: { budget: 'fast', fidelity: false } })).toEqual({ goal: 'single' });
     expect(tuneGoalOf({ tune: { budget: 'fast', fidelity: false, goal: 'multi' } })).toEqual({ goal: 'multi', users: 4, perUserContext: 8192 });
     expect(tuneGoalOf({ tune: { budget: 'fast', fidelity: false, goal: 'multi', users: 8, perUserContext: 16384 } })).toEqual({ goal: 'multi', users: 8, perUserContext: 16384 });
+    // What the tuner gets: users 1 … N unless only N are asked ("solo N utenti insieme").
+    expect(tuneMultiOf({})).toBeUndefined();
+    expect(tuneMultiOf({ tune: { budget: 'fast', fidelity: false, goal: 'multi', usersMode: 'ramp' } })).toEqual({ users: 4, perUserContext: 8192, turns: 3 });
+    expect(tuneMultiOf({ tune: { budget: 'fast', fidelity: false, goal: 'multi', users: 2, usersMode: 'exact' } })).toEqual({ users: 2, perUserContext: 8192, turns: 3, usersMode: 'exact' });
   });
 
   it('tune runs of the same question; summaries carry goal, users, budget and build', () => {

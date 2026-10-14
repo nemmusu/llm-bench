@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { TUNE_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
+import { MULTI_PROFILE, TUNE_PROFILE } from '../../fakes/fake-engine/profiles.mjs';
 import { expect, launchApp, ROOT, test } from '../fixtures';
 import { goToHash } from '../ui/helpers';
 import { h1, scan, skipWelcome } from './bench-helpers';
@@ -146,5 +146,42 @@ test('a NInfer search saved before the context full was measured reads at the la
   } finally {
     await gb.close();
     rmSync(userData, { recursive: true, force: true });
+  }
+});
+
+test('"Più utenti", only 2 users at once: no lower levels, the phases and the result say so', async () => {
+  const gb = await launchApp({ env: { FAKE_ENGINE_PROFILE: JSON.stringify(MULTI_PROFILE) } });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+    await page.getByRole('radio', { name: 'Più utenti' }).click();
+    await page.getByRole('textbox', { name: 'Utenti insieme' }).fill('2');
+    await expect(page.getByRole('radio', { name: 'Da 1 a 2 utenti' })).toBeChecked();
+    await page.getByRole('radio', { name: 'Solo 2 utenti insieme' }).click();
+    await scan(page, 'benchmark, several users, only N');
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    await page.getByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' }).getByRole('button', { name: 'Scarica e avvia' }).click();
+
+    // The live screen lists the phases of this search, in its own words (no users 1 … N phase).
+    await expect(h1(page, 'Test in corso')).toBeVisible({ timeout: 30_000 });
+    const steps = page.getByRole('list', { name: 'Fasi del test' });
+    await expect(steps.getByText('Utenti che ci stanno')).toBeVisible();
+    await expect(steps.getByText('Impostazioni')).toBeVisible();
+    await expect(steps.getByText('Più utenti')).toHaveCount(0);
+    await expect(steps.getByText('Contesto per gradi')).toHaveCount(0);
+
+    // The result: every configuration with 2 users at once only.
+    await expect(h1(page, /Qwen3-0\.6B/)).toBeVisible({ timeout: 180_000 });
+    await expect(page.getByText(/^Con 2 utenti da 8K a testa la più veloce per utente è/)).toBeVisible();
+    const ranking = page.getByRole('table', { name: 'Classifica delle configurazioni con 2 utenti' });
+    await ranking.getByRole('button', { name: 'Misure' }).first().click();
+    const measures = page.getByRole('table', { name: /^Utenti insieme con / });
+    await expect(measures.getByRole('row')).toHaveCount(2);
+    await expect(measures.getByRole('row').nth(1).getByRole('rowheader')).toHaveText('2');
+    await expect(page.getByText(/^Solo 2 utenti insieme, un messaggio a testa\./)).toBeVisible();
+    await scan(page, 'tune result, only 2 users at once');
+  } finally {
+    await gb.close();
   }
 });

@@ -274,17 +274,18 @@ export function Measures({ combo, title }: { combo: TuneCombination; title: stri
   );
 }
 
-/** Goal "Più utenti": users 1 … N in order with what each one got, its memory and the exact command. */
+/** Goal "Più utenti": users 1 … N in order (or N alone) with what each one got, its memory and the exact command. */
 function UsersMeasures({ combo, title }: { combo: TuneCombination; title: string }) {
   const { t, number, integer } = useI18n();
   const points = combo.concurrency as NonNullable<TuneCombination['concurrency']>;
-  const n = Math.max(...points.map((p) => p.level));
+  const levels = [...new Set(points.map((p) => p.level))].sort((a, b) => a - b);
   return (
     <div className="flex flex-col gap-3">
       <UsersTable caption={t('tune.users.measuresCaption', { settings: title })} points={points} framed />
       <p className="text-xs text-fg-3 tabular-nums">
         {[
-          t('tune.users.measuresNote', { n }),
+          // The levels really measured: a short budget skips middle ones, "solo N utenti insieme" measures N alone.
+          levels.length === 1 ? t('tune.users.measuresNoteOne', { n: levels[0] as number }) : t('tune.users.measuresNote', { levels: levels.map((l) => integer(l)).join(', ') }),
           combo.vramPeakMiB === undefined ? undefined : t('tune.measures.vram', { size: number(combo.vramPeakMiB / MIB_PER_GB, 1) }),
           t('tune.measures.maxContext', { n: integer(combo.maxContext) }),
         ]

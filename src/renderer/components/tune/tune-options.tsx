@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { RunPlan, StartRunRequest } from '../../../contract/api';
 import { defaultYarnTarget } from '../../../contract/recipes';
-import { TUNE_MAX_USERS, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal } from '../../../contract/results';
+import { TUNE_MAX_USERS, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal, type TuneUsersMode } from '../../../contract/results';
 import { YarnChoice } from '../recipes/yarn-choice';
 import { useI18n } from '../../i18n';
 import { Field, Input } from '../ui/input';
@@ -32,7 +32,13 @@ export function tuneRequestOf(v: TuneRequest, o: { expert: boolean; previous: Ru
     fidelity: o.expert && v.fidelity && v.goal !== 'multi' && budget !== 'recheck',
     ...(o.expert && v.yarnTarget !== undefined && v.goal !== 'multi' && budget !== 'recheck' ? { yarnTarget: v.yarnTarget } : {}),
     ...(v.goal === 'multi'
-      ? { goal: 'multi' as const, users: v.users ?? TUNE_MULTI_DEFAULTS.users, perUserContext: v.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext }
+      ? {
+          goal: 'multi' as const,
+          users: v.users ?? TUNE_MULTI_DEFAULTS.users,
+          perUserContext: v.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext,
+          // "Solo N utenti insieme"; users 1 … N is the default and is not sent.
+          ...(v.usersMode === 'exact' ? { usersMode: 'exact' as const } : {}),
+        }
       : {}),
   };
 }
@@ -84,7 +90,8 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
       ? t('tune.options.recheckDesc', { build: buildLabel(previous.build, f), current: buildLabel(previous.currentBuild, f) })
       : t(budget === 'thorough' ? 'tune.options.thoroughDesc' : 'tune.options.fastDesc');
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-2/60 p-3">
+    // A container: in a narrow card (the profile column of Benchmark) the users and their context go one under the other.
+    <div className="@container flex flex-col gap-3 rounded-lg border border-border bg-surface-2/60 p-3">
       {children}
       <div className="flex flex-col gap-1.5">
         <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-2">
@@ -104,7 +111,7 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
         <p className="text-xs text-fg-3">{t(goal === 'multi' ? 'tune.options.multiDesc' : 'tune.options.singleDesc')}</p>
       </div>
       {goal === 'multi' && (
-        <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
+        <div className="grid gap-3 @xs:grid-cols-[8rem_1fr]">
           <Field
             label={t('tune.options.users')}
             aside={<HelpTip term={t('tune.options.users')}>{t('tune.options.usersHelp')}</HelpTip>}
@@ -134,10 +141,29 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
             </span>
             <SegmentedControl
               size="sm"
+              fullWidth
+              // Never past the card's edge: the sizes go on a second row when the card is narrow.
+              className="flex-wrap"
               label={t('tune.options.perUserContext')}
               value={String(perUser)}
               onValueChange={(v) => onChange({ ...value, goal: 'multi', users, perUserContext: Number(v) })}
               options={TUNE_PER_USER_CONTEXTS.map((c) => ({ value: String(c), label: depthLabel(c, f) }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5 @xs:col-span-2">
+            <span className="inline-flex items-center gap-1 text-sm font-medium text-fg">
+              {t('tune.options.usersMode')}
+              <HelpTip term={t('tune.options.usersMode')}>{t('tune.options.usersModeHelp')}</HelpTip>
+            </span>
+            <SegmentedControl<TuneUsersMode>
+              layout="list"
+              label={t('tune.options.usersMode')}
+              value={value.usersMode ?? 'ramp'}
+              onValueChange={(m) => onChange({ ...value, goal: 'multi', users, perUserContext: perUser, usersMode: m })}
+              options={[
+                { value: 'ramp', label: t('tune.options.usersRamp', { n: users }) },
+                { value: 'exact', label: t('tune.options.usersExact', { n: users }) },
+              ]}
             />
           </div>
         </div>

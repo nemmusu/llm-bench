@@ -1958,6 +1958,11 @@ export const en: Messages = {
     },
   },
   tune: {
+    phases: {
+      usersCapacity: { label: 'Users that fit', status: 'Checking with every KV cache type whether the card holds all the users, each with their own context.' },
+      usersVariants: { label: 'Settings', status: 'Trying the settings one at a time with every user busy, and keeping the one that serves them best.' },
+      recheck: { label: 'Reload', status: 'Loading the configurations of the earlier search again, with the same settings, and measuring a few things again.' },
+    },
     kvAuto: 'automatic',
     recommended: 'Recommended',
     options: {
@@ -1984,6 +1989,10 @@ export const en: Messages = {
       usersHint: 'From 2 to {max}.',
       perUserContext: 'Context per user (tokens)',
       perUserContextHelp: 'How much text the server keeps in mind for each one, question and answer together (1K = 1,024 tokens, about 750 words).',
+      usersMode: 'How users are measured',
+      usersModeHelp: 'From 1 to N: measured with 1 user, then 2, … up to N, so you see how much each one slows down as more arrive. Only N at once: all N users busy straight away, which takes less time. Configurations are always compared with all N busy.',
+      usersRamp: 'From 1 to {n} users',
+      usersExact: 'Only {n} users at once',
       recheck: 'Quick recheck',
       recheckTime: 'two attempts',
       recheckDesc: 'The last search was run with {build}; you are now using {current}. I reload only the recommended configuration and the runner-up and check whether the numbers are still the same.',
@@ -2234,7 +2243,8 @@ export const en: Messages = {
       subtitle: 'Ranked by each user’s generation speed with {n} users at once (prompts of {prompt} tokens each); in a tie, the total speed decides, then the slowest first token.',
       caption: 'Ranking of the configurations with {n} users',
       measuresCaption: 'Users at once with {settings}',
-      measuresNote: 'Users 1, 2, … {n} in this order, one message each per level.',
+      measuresNote: 'Users {levels} in this order, one message each per level.',
+      measuresNoteOne: 'Only {n} users at once, one message each.',
       columns: {
         perUser: 'Per user (tok/s)',
         total: 'Total (tok/s)',

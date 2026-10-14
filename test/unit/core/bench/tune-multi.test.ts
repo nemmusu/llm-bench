@@ -48,6 +48,35 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
     expect(phases).toEqual(expect.arrayContaining(['tune-capacity', 'tune-variants', 'concurrency']));
   });
 
+  it('"solo 4 utenti insieme": the same search and recommendation, every combination measured with 4 users only, no launch of its own', async () => {
+    const ramp = await tune(multi(), machine());
+    const exact = await tune({ ...multi(), multi: { users: 4, perUserContext: 8192, turns: 3, usersMode: 'exact' as const } }, machine());
+    const t = exact.t;
+    expect(t.multi).toMatchObject({ users: 4, usersMode: 'exact' });
+    expect(ramp.t.multi?.usersMode).toBeUndefined();
+    // Never fewer users than asked, and no launch only to measure them.
+    expect(t.attempts.flatMap((a) => a.concurrency ?? []).every((p) => p.level === 4)).toBe(true);
+    expect(t.attempts.some((a) => a.stage === 'sweep')).toBe(false);
+    expect(t.attempts.length).toBeLessThanOrEqual(ramp.t.attempts.length);
+    expect(exact.phases).not.toContain('concurrency');
+    // The ranking is the same: the same combination recommended, each with its 4 users and conversations.
+    const rec = t.combinations[t.recommended!]!;
+    const was = ramp.t.combinations[ramp.t.recommended!]!;
+    expect(rec.variant).toEqual(was.variant);
+    expect(rec.concurrency!.map((p) => p.level)).toEqual([4]);
+    expect(rec.sessions).toHaveLength(1);
+    expect(t.combinations.map((c) => c.kvType)).toEqual(ramp.t.combinations.map((c) => c.kvType));
+    for (const c of t.combinations) expect(t.attempts[t.attempts.findIndex((a) => a.combination === t.combinations.indexOf(c))]!.concurrency!.at(-1)).toEqual(c.concurrency![0]);
+    // The forecast never counts the levels 1 … 4.
+    expect(t.estimateSeconds!).toBeLessThan(ramp.t.estimateSeconds!);
+  });
+
+  it('"solo N utenti": when N do not fit, the most that do are measured (and said), still at once only', async () => {
+    const { t } = await tune({ ...multi(16), multi: { users: 16, perUserContext: 8192, turns: 3, usersMode: 'exact' as const }, space: multiSpace(16) }, machine());
+    expect(t.multi).toMatchObject({ users: 16, fittingUsers: 8, usersMode: 'exact' });
+    expect(t.combinations[t.recommended!]!.concurrency!.map((p) => p.level)).toEqual([8]);
+  });
+
   it('keeps --cache-reuse when the later messages come back faster with it, and measures the conversations of a dedicated launch', async () => {
     const lab = machine({ laterTtft: (p) => (p.extraArgs.includes('--cache-reuse') ? 40 : 100) });
     const { t } = await tune({ ...multi(), space: llamaSpace({ budget: 'fast', params: P(), users: 4, flags: new Set(['--cache-reuse']) }) }, lab);

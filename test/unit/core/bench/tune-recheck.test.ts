@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LaunchParams } from '../../../../src/contract/engines';
 import type { TuneCombination, Tuning } from '../../../../src/contract/results';
-import { recheckResult, usersMeasured } from '../../../../src/core/bench/tune-recheck';
+import { levelsMeasured, recheckResult, usersMeasured } from '../../../../src/core/bench/tune-recheck';
 import { runnerUp } from '../../../../src/core/bench/tune-rank';
 import { llamaSpace } from '../../../../src/core/bench/tune-space';
 import { BUDGETS, Tuner, type RecheckInput } from '../../../../src/core/bench/tuner';
@@ -128,6 +128,15 @@ describe('RecheckTuner: goal "Più utenti"', () => {
     const slower = await tune({ ...multi, budget: 'recheck', recheck: recheckOf(before) }, new Lab({ profile: MULTI_PROFILE, decode: () => 50 }));
     expect(slower.t.recheck!.result).toBe('changed');
     expect(slower.t.recheck!.checks[0]!.moved.map((m) => m.metric)).toEqual(expect.arrayContaining(['perUserDecode', 'aggregate']));
+  });
+
+  it('"solo 4 utenti insieme": only 4 users again, as before; the question keeps saying so', async () => {
+    const exact = { ...multi, multi: { ...multi.multi, usersMode: 'exact' as const } };
+    const before = (await tune(exact, new Lab({ profile: MULTI_PROFILE }))).t;
+    const { t } = await tune({ ...exact, budget: 'recheck', recheck: recheckOf(before) }, new Lab({ profile: MULTI_PROFILE }));
+    expect(t).toMatchObject({ multi: { usersMode: 'exact' }, recheck: { result: 'same' } });
+    expect(t.combinations[t.recommended!]!.concurrency!.map((p) => [p.level, p.promptTokens])).toEqual([[4, 8048]]);
+    expect(levelsMeasured({ concurrency: [...t.combinations[0]!.concurrency!, ...t.combinations[0]!.concurrency!] })).toEqual([4]);
   });
 
   it('cache reuse is carried over; a combination without prompt lengths re-uses what the run asked', async () => {

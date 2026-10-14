@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import { scenarioSchema, type Scenario } from '../../../../src/contract/results';
 import {
+  autoLaunchParams,
   buildScenario,
   DEFAULT_EXPECTATIONS,
   estimateSeconds,
@@ -91,6 +92,22 @@ describe('fitScenario', () => {
     const { scenario } = fitScenario(custom, { engineKind: 'vllm-docker' });
     expect(scenario.steps[0]).toMatchObject({ promptTokens: [512, 4096] });
     expect(scenario.steps[1]).toMatchObject({ levels: [1, 2, 4] });
+  });
+  it('"solo N utenti insieme": a single level is measured alone, the server gets that many slots, the estimate counts only it', () => {
+    const only = (levels: number[]): Scenario => ({
+      profile: 'custom',
+      seed: 1,
+      steps: [{ kind: 'concurrency', levels, promptTokens: 512, outputTokens: 128, requestsPerWorker: 4 }],
+    });
+    const two = only([2]);
+    expect(scenarioSchema.parse(two)).toEqual(two);
+    expect(fitScenario(two, { engineKind: 'llamacpp-native', maxConcurrency: 4 }).scenario.steps[0]).toMatchObject({ levels: [2] });
+    expect(autoLaunchParams('llamacpp-native', two, params()).parallel).toBe(2);
+    expect(estimateSeconds(two)).toBeLessThan(estimateSeconds(only([1, 2])));
+    // More users than the slots: said, not measured with fewer.
+    const fitted = fitScenario(only([8]), { engineKind: 'llamacpp-native', maxConcurrency: 4 });
+    expect(fitted.scenario.steps).toEqual([]);
+    expect(fitted.warnings).toContainEqual({ code: 'concurrency_level_skipped', params: { level: 8, parallel: 4 } });
   });
   it('removes whole steps when nothing fits, llama-bench outside native, loads on external', () => {
     const tiny = fitScenario(buildScenario('standard'), { engineKind: 'vllm-docker', contextSize: 300 });

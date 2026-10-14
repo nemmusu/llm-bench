@@ -16,7 +16,7 @@ import { finishedStages } from '../components/bench/load-progress';
 import { TuneLive } from '../components/tune/tune-live';
 import { stageText } from '../components/tune/tune-format';
 import { useConfigLabel } from '../components/presets/config-label';
-import { detailLine, displayPhase, phaseBands, phaseStates, relevantPhases, remainingSeconds } from '../components/bench/phases';
+import { detailLine, displayPhase, phaseBands, phaseKey, phaseStates, relevantPhases, remainingSeconds, type TuneShape } from '../components/bench/phases';
 import { readRunContext, type RunContext } from '../components/bench/run-context';
 import { timelineOption } from '../components/charts/builders';
 import { ChartCard } from '../components/charts/chart-card';
@@ -105,7 +105,15 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   }, [live.log.length, logOpen]);
 
   const scenario = ctx?.plan?.scenario ?? ctx?.request.scenario ?? info?.scenario;
-  const phases = relevantPhases(scenario, ctx?.pre, { fidelity: ctx?.request.tune?.fidelity === true || live.phase === 'fidelity' });
+  // A tune run's shape: from its request, else (a reopened screen) from its live search.
+  const asked = ctx?.request.tune;
+  const shape: TuneShape = {
+    goal: asked?.goal ?? live.tuning?.goal,
+    budget: asked?.budget ?? live.tuning?.budget,
+    usersMode: asked?.usersMode ?? live.tuning?.multi?.usersMode,
+  };
+  const phases = relevantPhases(scenario, ctx?.pre, { fidelity: asked?.fidelity === true || live.phase === 'fidelity', tune: shape });
+  const words = (p: RunPhase) => phaseKey(p, scenario?.profile === 'tune' ? shape : undefined);
   const current: RunPhase = displayPhase(live.phase, live.detail);
   const tune = scenario?.profile === 'tune';
   const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
@@ -132,7 +140,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const bands = phaseBands(
     live.marks.map((m) => ({ t: Math.max(0, (m.t - t0) / 1000), label: m.phase })),
     endSec,
-  ).map((b) => ({ start: b.start, end: b.end, label: t(`phases.${b.phase}.label`) }));
+  ).map((b) => ({ start: b.start, end: b.end, label: t(`${words(b.phase)}.label`) }));
 
   const samples = live.samples;
   const build = useCallback(
@@ -206,7 +214,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
           <div className="px-card pt-6 pb-5">
             <Stepper
               label={t('run.phasesLabel')}
-              steps={phases.map((p) => ({ id: p, label: t(`phases.${p}.label`), state: states[p]! }))}
+              steps={phases.map((p) => ({ id: p, label: t(`${words(p)}.label`), state: states[p]! }))}
               stateLabels={{
                 done: t('phases.state.done'),
                 current: t('phases.state.current'),
@@ -219,7 +227,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
             <div className="flex items-start gap-3" aria-live="polite">
               <Loader aria-hidden className="mt-0.5 size-5 shrink-0 animate-spin text-accent [animation-duration:2.4s]" />
               <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-md font-medium text-fg">{t(`phases.${current}.status`)}</p>
+                <p className="text-md font-medium text-fg">{t(`${words(current)}.status`)}</p>
                 {stage && <p className="text-sm font-medium text-accent-text">{stage}</p>}
                 {nowLine ? (
                   <p className="text-sm text-fg-2 tabular-nums">{nowLine}</p>

@@ -480,6 +480,15 @@ export const TUNE_GOALS = ['single', 'multi'] as const;
 export const tuneGoalSchema = z.enum(TUNE_GOALS);
 export type TuneGoal = z.infer<typeof tuneGoalSchema>;
 
+/**
+ * How "Più utenti" measures its users: 'ramp' = users 1, 2, … N in this order (how each one slows down
+ * as more arrive); 'exact' = only N users at once ("solo N utenti insieme", quicker). Absent = 'ramp'.
+ * The screenings and the ranking are the same: every configuration is compared with N users busy.
+ */
+export const TUNE_USERS_MODES = ['ramp', 'exact'] as const;
+export const tuneUsersModeSchema = z.enum(TUNE_USERS_MODES);
+export type TuneUsersMode = z.infer<typeof tuneUsersModeSchema>;
+
 /** "Più utenti": users at once and context per user when the request leaves them unset. */
 export const TUNE_MULTI_DEFAULTS = { users: 4, perUserContext: 8192 } as const;
 /** Context-per-user presets offered by the UI (any value from 1024 up is accepted). */
@@ -611,8 +620,9 @@ export const tuneCombinationSchema = z.object({
   /** Every searched dimension's value (see tuneVariantSchema); absent on runs before phase 3. */
   variant: tuneVariantSchema.optional(),
   /**
-   * Goal 'multi': users at once, levels 1..N in this order (promptTokens = perUserContext − output −
-   * margin, one request per user per level). `sweep` is empty for these combinations.
+   * Goal 'multi': users at once, levels 1..N in this order (usersMode 'exact': level N only;
+   * promptTokens = perUserContext − output − margin, one request per user per level). `sweep` is
+   * empty for these combinations.
    */
   concurrency: z.array(concurrencyPointSchema).optional(),
   /** Goal 'multi': N conversations at once, a few messages each (prefix-cache reuse, queue wait). */
@@ -701,6 +711,8 @@ export const tuningSchema = z.object({
       outputTokens: z.number().int().positive(),
       /** Messages per conversation of the sessions measurement. */
       turns: z.number().int().positive(),
+      /** 'exact': only N users at once were measured (no lower levels). Absent = 'ramp' (users 1 … N). */
+      usersMode: tuneUsersModeSchema.optional(),
       /**
        * Nothing held N users at perUserContext, not even the most compact KV cache: the most users that
        * did fit (each with the full perUserContext), measured instead of N. Absent = N fit.

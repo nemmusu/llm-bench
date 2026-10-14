@@ -72,6 +72,13 @@ export function tuneGoalOf(req: Pick<StartRunRequest, 'tune'>): { goal: TuneGoal
   return { goal: 'multi', users: req.tune.users ?? TUNE_MULTI_DEFAULTS.users, perUserContext: req.tune.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext };
 }
 
+/** Goal 'multi' of a request for the tuner: users, context per user, messages per conversation, and 'exact' when only N users are measured. */
+export function tuneMultiOf(req: Pick<StartRunRequest, 'tune'>): TunerInput['multi'] {
+  const goal = tuneGoalOf(req);
+  if (goal.users === undefined) return undefined;
+  return { users: goal.users, perUserContext: goal.perUserContext as number, turns: MULTI_TURNS, ...(req.tune?.usersMode === 'exact' ? { usersMode: 'exact' as const } : {}) };
+}
+
 const sameGpu = (r: RunSummary, here: Pick<HereIdentity, 'gpuUuid' | 'gpuName'>): boolean =>
   here.gpuUuid && r.gpuUuid ? r.gpuUuid === here.gpuUuid : here.gpuName !== undefined && r.gpuName === here.gpuName;
 
@@ -223,9 +230,9 @@ export async function buildTuneSetup(
 ): Promise<TunerInput> {
   const kind = req.engine.kind;
   const budget = req.tune?.budget ?? 'fast';
-  const goal = tuneGoalOf(req);
-  const users = goal.users;
-  const g = (await deps.telemetry.snapshot().catch(() => []))[0];
+  const multi = tuneMultiOf(req);
+  const users = multi?.users;
+  const g =(await deps.telemetry.snapshot().catch(() => []))[0];
   const gpu = g?.memTotalMiB && g.memUsedMiB !== null ? { totalMiB: g.memTotalMiB, freeMiB: g.memTotalMiB - g.memUsedMiB } : undefined;
   const os = (await deps.fingerprint().catch(() => undefined))?.os;
   const facts = p.model.identity.facts;
@@ -258,7 +265,7 @@ export async function buildTuneSetup(
     // The forecast and the time limit.
     expect,
     fidelity: req.tune?.fidelity ?? false,
-    ...(users !== undefined ? { goal: 'multi' as const, multi: { users, perUserContext: goal.perUserContext as number, turns: MULTI_TURNS } } : {}),
+    ...(multi ? { goal: 'multi' as const, multi } : {}),
     ...(past ? { learned: past.learned } : {}),
     ...(recheck ? { recheck } : {}),
   };

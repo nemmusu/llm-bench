@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RunPlan, StartRunRequest } from '../../../../src/contract/api';
 import type { ConcurrencyPoint, RunResult, SessionsPoint, TuneCombination, TuneRecheck, Tuning } from '../../../../src/contract/results';
+import { phaseKey, relevantPhases } from '../../../../src/renderer/components/bench/phases';
 import { FitSummary } from '../../../../src/renderer/components/bench/plan-card';
 import { prefixCacheSentences } from '../../../../src/renderer/components/bench/sessions-view';
 import { buildLabel } from '../../../../src/renderer/components/tune/tune-format';
@@ -205,7 +206,7 @@ describe('"Più utenti": result page', () => {
     // The measurements of a row: users 1 … 4 in order.
     await userEvent.click(within(table).getAllByRole('button', { name: 'Misure' })[0]!);
     expect(screen.getByRole('table', { name: /^Utenti insieme con / })).toBeTruthy();
-    expect(screen.getByText(/Utenti 1, 2, … 4 in quest’ordine/)).toBeTruthy();
+    expect(screen.getByText(/Utenti 1, 2, 3, 4 in quest’ordine/)).toBeTruthy();
     // The conversations of the recommendation, with what the engine counted in its prefix cache.
     expect(screen.getByText(/il motore ha trovato nella sua cache del prefisso il 66% dei token dei messaggi/)).toBeTruthy();
     expect(screen.getByText('Prove scartate')).toBeTruthy();
@@ -234,7 +235,8 @@ describe('"Più utenti": result page', () => {
     expect(within(rec).queryByText('VRAM picco')).toBeNull();
     expect(within(rec).queryByText('Contesto per utente')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Misure' }));
-    expect(screen.getByText(/^Utenti 1, 2, … 4 in quest’ordine, un messaggio a testa per livello\. · avviato con contesto/)).toBeTruthy();
+    // Measured with 4 users only: said so, never "1, 2, … 4".
+    expect(screen.getByText(/^Solo 4 utenti insieme, un messaggio a testa\. · avviato con contesto/)).toBeTruthy();
   });
 });
 
@@ -378,6 +380,48 @@ describe('Benchmark: what the search is for, and the quick recheck', () => {
     expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/runs')!.body).toMatchObject({ tune: { budget: 'recheck', fidelity: false, goal: 'multi', users: 12, perUserContext: 16384 } });
   });
 
+  it('"Più utenti": only N users at once, or 1 … N; the live screen lists the phases this search has, in its own words', async () => {
+    const api = benchApi({}, { onboardingDone: true });
+    api.world.plan = () => planFor({ estimatedSeconds: 300, scenario: { profile: 'tune', seed: 42, steps: [{ kind: 'context-sweep', depths: [], fractions: false, outputTokens: 128, reps: 2 }] } });
+    renderApp('/', api);
+    await screen.findByRole('heading', { name: 'Pronto a misurare la tua RTX 5090' });
+    await userEvent.click(screen.getByRole('radio', { name: /Trova le impostazioni migliori/ }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Più utenti' }));
+    // 1 … N is the default; the choice names the users typed.
+    expect(screen.getByRole('radio', { name: 'Da 1 a 4 utenti' }).getAttribute('aria-checked')).toBe('true');
+    const usersBox = screen.getByRole('textbox', { name: 'Utenti insieme' });
+    await userEvent.clear(usersBox);
+    await userEvent.type(usersBox, '2');
+    await userEvent.click(screen.getByRole('radio', { name: 'Solo 2 utenti insieme' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Che cos’è «Come misuro gli utenti»?' }));
+    expect((await screen.findAllByText(/Solo N insieme: misuro subito tutti gli N utenti al lavoro/)).length).toBeGreaterThan(0);
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/api/runs/plan' && (c.body as StartRunRequest).tune?.usersMode === 'exact')).toBe(true));
+    await userEvent.click(screen.getByRole('button', { name: 'Avvia benchmark' }));
+    expect(await h1('Test in corso')).toBeTruthy();
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/runs')!.body).toMatchObject({ tune: { goal: 'multi', users: 2, usersMode: 'exact' } });
+    const steps = screen.getByRole('list', { name: 'Fasi del test' });
+    expect(within(steps).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      expect.stringContaining('Preparazione'),
+      expect.stringContaining('Utenti che ci stanno'),
+      expect.stringContaining('Impostazioni'),
+      expect.stringContaining('Pulizia'),
+    ]);
+  });
+
+  it('the phases and their words of every kind of search', () => {
+    const tune = { profile: 'tune' as const, seed: 1, steps: [] };
+    expect(relevantPhases(tune, {}, { tune: { goal: 'multi' } })).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'concurrency', 'cleanup']);
+    expect(relevantPhases(tune, {}, { tune: { goal: 'multi', usersMode: 'exact' } })).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'cleanup']);
+    expect(relevantPhases(tune, {}, { tune: { goal: 'multi', budget: 'recheck' } })).toEqual(['prepare', 'tune-capacity', 'concurrency', 'cleanup']);
+    expect(relevantPhases(tune, {}, { tune: { budget: 'recheck' } })).toEqual(['prepare', 'tune-capacity', 'context-sweep', 'cleanup']);
+    expect(relevantPhases(tune, {}, { fidelity: true })).toEqual(['prepare', 'tune-capacity', 'tune-variants', 'context-sweep', 'fidelity', 'cleanup']);
+    expect(['tune-capacity', 'tune-variants', 'concurrency'].map((p) => phaseKey(p as never, { goal: 'multi' }))).toEqual(['tune.phases.usersCapacity', 'tune.phases.usersVariants', 'phases.concurrency']);
+    expect(phaseKey('tune-capacity', { goal: 'multi', budget: 'recheck' })).toBe('tune.phases.recheck');
+    expect(phaseKey('tune-capacity', { budget: 'recheck' })).toBe('tune.phases.recheck');
+    expect(phaseKey('tune-capacity')).toBe('phases.tune-capacity');
+    expect(phaseKey('tune-variants', { goal: 'single' })).toBe('phases.tune-variants');
+  });
+
   it('the request: recheck only when offered, defaults of the goal, users typed', () => {
     const previous = { runId: 'x', createdAt: 'y', budget: 'fast' as const, sameBuild: false };
     expect(recheckOffered(undefined)).toBe(false);
@@ -387,6 +431,10 @@ describe('Benchmark: what the search is for, and the quick recheck', () => {
     expect(tuneRequestOf({ budget: 'recheck', fidelity: true }, { expert: true, previous })).toEqual({ budget: 'recheck', fidelity: false });
     expect(tuneRequestOf({ budget: 'thorough', fidelity: true }, { expert: true, previous })).toEqual({ budget: 'thorough', fidelity: true });
     expect(tuneRequestOf({ budget: 'fast', fidelity: true, goal: 'multi' }, { expert: true, previous })).toEqual({ budget: 'fast', fidelity: false, goal: 'multi', users: 4, perUserContext: 8192 });
+    // Users 1 … N is the default and is not sent; only N is.
+    expect(tuneRequestOf({ budget: 'fast', fidelity: false, goal: 'multi', usersMode: 'ramp' }, { expert: false, previous })).toEqual({ budget: 'fast', fidelity: false, goal: 'multi', users: 4, perUserContext: 8192 });
+    expect(tuneRequestOf({ budget: 'fast', fidelity: false, goal: 'multi', users: 2, usersMode: 'exact' }, { expert: false, previous })).toMatchObject({ users: 2, usersMode: 'exact' });
+    expect(tuneRequestOf({ budget: 'fast', fidelity: false, usersMode: 'exact' }, { expert: false, previous })).toEqual({ budget: 'fast', fidelity: false });
     expect(['3', ' 32 ', '1', '33', 'x', '2.5', ''].map(parseUsers)).toEqual([3, 32, undefined, undefined, undefined, undefined, undefined]);
   });
 

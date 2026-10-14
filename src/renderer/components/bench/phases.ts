@@ -1,6 +1,6 @@
 /** Phase logic of the live screen: which phases a run has, their state, plain-language details. */
 import { RUN_PHASES, type RunPhase } from '../../../contract/events';
-import type { Scenario, Step } from '../../../contract/results';
+import type { Scenario, Step, TuneBudget, TuneGoal, TuneUsersMode } from '../../../contract/results';
 import type { StepState } from '../ui/stepper';
 
 /** Steps done by the app before the run (inline install / download). */
@@ -38,15 +38,42 @@ const MEASURING: readonly RunPhase[] = ['cold-load', 'warm-load', 'prefill', 'de
  * The phases this run goes through, in order. Without a scenario (screen reopened while a run
  * was already going) every measuring phase is listed.
  */
-export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {}, opts: { fidelity?: boolean } = {}): RunPhase[] {
+export function relevantPhases(scenario: Scenario | undefined, pre: PreSteps = {}, opts: { fidelity?: boolean; tune?: TuneShape } = {}): RunPhase[] {
   // Install and download happen before the run itself: listed first, already done once it starts.
   const before = (['install', 'download'] as const).filter((p) => pre[p]);
   if (scenario?.profile === 'tune') {
+    const tune = opts.tune ?? {};
+    const multi = tune.goal === 'multi';
+    // "Ricontrollo rapido": the earlier combinations loaded again, then their short sweep (or their users).
+    if (tune.budget === 'recheck') return [...before, 'prepare', 'tune-capacity', multi ? 'concurrency' : 'context-sweep', 'cleanup'];
+    // "Più utenti": do the users fit, one setting at a time with all of them busy, then users 1 … N ("solo N": nothing more).
+    if (multi) return [...before, 'prepare', 'tune-capacity', 'tune-variants', ...(tune.usersMode === 'exact' ? [] : (['concurrency'] as const)), 'cleanup'];
     // "Trova le impostazioni migliori": largest context per cache, one setting at a time, then the sweeps.
     return [...before, 'prepare', 'tune-capacity', 'tune-variants', 'context-sweep', ...(opts.fidelity ? (['fidelity'] as const) : []), 'cleanup'];
   }
   const has = new Set<RunPhase>(['prepare', 'cleanup', ...(scenario ? scenario.steps.flatMap(phasesOfStep) : MEASURING)]);
   return [...before, ...RUN_PHASES.filter((p) => has.has(p))];
+}
+
+/** What a tune run is (from its request, else from its live search): the phases and their words depend on it. */
+export interface TuneShape {
+  goal?: TuneGoal | undefined;
+  budget?: TuneBudget | undefined;
+  usersMode?: TuneUsersMode | undefined;
+}
+
+/**
+ * The words of a phase (`<key>.label`, `<key>.status`): a tune run's own where the phase means something
+ * else there ("Più utenti": whether the users fit, the settings with all of them busy; "Ricontrollo
+ * rapido": the earlier combinations loaded again), else the phase's.
+ */
+export function phaseKey(phase: RunPhase, tune?: TuneShape): `phases.${RunPhase}` | 'tune.phases.usersCapacity' | 'tune.phases.usersVariants' | 'tune.phases.recheck' {
+  if (tune?.budget === 'recheck' && phase === 'tune-capacity') return 'tune.phases.recheck';
+  if (tune?.goal === 'multi' && tune.budget !== 'recheck') {
+    if (phase === 'tune-capacity') return 'tune.phases.usersCapacity';
+    if (phase === 'tune-variants') return 'tune.phases.usersVariants';
+  }
+  return `phases.${phase}`;
 }
 
 /** llama-bench is reported as phase "decode" with detail "llama-bench". */
