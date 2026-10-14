@@ -11,6 +11,9 @@ export default defineConfig({
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify('0.0.0-test') },
   test: {
+    // Dates are written in local time and the expectations were taken in Italy: the same zone everywhere
+    // (a Linux container runs in UTC).
+    env: { TZ: 'Europe/Rome' },
     projects: [
       {
         extends: true,

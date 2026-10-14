@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { launchParamsSchema } from '../../../../src/contract/engines';
 import type { Platform } from '../../../../src/core/deps';
-import { CommandAdapter, commandValues, diagnoseCommand, findProgram } from '../../../../src/core/engines/command/adapter';
+import { CommandAdapter, commandValues, diagnoseCommand, findProgram, type IsFile } from '../../../../src/core/engines/command/adapter';
 import type { LaunchPlan, ModelTarget } from '../../../../src/core/engines/types';
 import { createInferenceClient } from '../../../../src/core/inference/client';
 import { systemClock } from '../../../../src/core/node-deps';
@@ -29,7 +29,7 @@ const platform = process.platform as Platform;
 const NODE = process.execPath;
 const q = (s: string) => `"${s}"`;
 
-function adapter(over: { platform?: Platform; env?: Record<string, string | undefined> } = {}) {
+function adapter(over: { platform?: Platform; env?: Record<string, string | undefined>; isFile?: IsFile } = {}) {
   const records: OwnedRecord[] = [];
   const removed: number[] = [];
   const proc = createProcessRunner({ clock: systemClock, platform, baseEnv: { ...process.env, FAKE_ENGINE_PROFILE: JSON.stringify({ loadMsWarm: 100, decodeTps: 400, prefillTps: 20000 }) } });
@@ -46,6 +46,7 @@ function adapter(over: { platform?: Platform; env?: Record<string, string | unde
     },
     pollMs: 30,
     readyTimeoutMs: 20_000,
+    ...(over.isFile ? { isFile: over.isFile } : {}),
   });
   return { a, records, removed };
 }
@@ -60,14 +61,20 @@ function model(): ModelTarget {
 
 describe('command templates: the program', () => {
   it('finds the program on disk or on PATH, never by running it', async () => {
+    // Windows' rules (drive paths, `;`, PATHEXT) whatever this PC runs: its disk is a list of files.
+    const exe = String.raw`C:\srv\srv.exe`;
+    const onPath = String.raw`D:\bin\srv.EXE`;
+    const onWin: IsFile = async (f) => f === exe || f === onPath;
+    expect(await findProgram(exe, 'win32', {}, onWin)).toBe(exe);
+    expect(await findProgram(String.raw`C:\srv\missing`, 'win32', {}, onWin)).toBeUndefined();
+    expect(await findProgram('srv', 'win32', { Path: String.raw`C:\empty;D:\bin`, PATHEXT: '.COM;.EXE' }, onWin)).toBe(onPath);
+    expect(await findProgram('srv', 'win32', { PATH: String.raw`D:\bin` }, onWin)).toBe(onPath);
+    // The real disk, with this PC's own rules.
     const dir = tmp();
-    const exe = path.join(dir, 'srv.exe');
-    writeFileSync(exe, 'x');
-    expect(await findProgram(exe, 'win32', {})).toBe(path.win32.resolve(exe));
-    expect(await findProgram(path.join(dir, 'missing'), 'win32', {})).toBeUndefined();
-    expect(await findProgram('srv', 'win32', { Path: `${tmp()};${dir}`, PATHEXT: '.COM;.EXE' })).toBe(path.win32.join(dir, 'srv.EXE'));
-    expect(await findProgram('srv', 'win32', { PATH: dir })).toBe(path.win32.join(dir, 'srv.EXE'));
+    const host: Platform = process.platform === 'win32' ? 'win32' : 'linux';
     writeFileSync(path.join(dir, 'tool'), 'x');
+    expect(await findProgram(path.join(dir, 'tool'), host, {})).toBe(path.resolve(dir, 'tool'));
+    expect(await findProgram(path.join(dir, 'missing'), host, {})).toBeUndefined();
     // A PATH without drive letters (they hold a colon, Linux's separator).
     const rel = path.relative(process.cwd(), dir);
     expect(await findProgram('tool', 'linux', { PATH: `/nonexistent:${rel}` })).toBe(path.posix.join(rel, 'tool'));
@@ -80,10 +87,9 @@ describe('command templates: the program', () => {
     expect(await a.detect({ kind: 'command', command: 'srv --model {model}' })).toMatchObject({ problems: ['VALIDATION'], problemParams: { reason: 'port_missing' } });
     expect(await a.detect({ kind: 'command', command: 'no-such-program-gpubench --port {port}' })).toMatchObject({ problems: ['ENGINE_NOT_INSTALLED'], problemParams: { reason: 'program_missing' } });
     expect(await a.detect({ kind: 'command', command: `${q(NODE)} --port {port}` })).toMatchObject({ available: true, installed: true, location: NODE, variant: 'openai' });
-    const bat = path.join(tmp(), 'run.bat');
-    writeFileSync(bat, '@echo off');
-    const { a: win } = adapter({ platform: 'win32', env: {} });
-    expect(await win.detect({ kind: 'command', command: `${q(bat)} --port {port}` })).toMatchObject({ problems: ['VALIDATION'], problemParams: { reason: 'command_batch' } });
+    const bat = String.raw`C:\tools\run.bat`;
+    const { a: win } = adapter({ platform: 'win32', env: {}, isFile: async (f) => f === bat });
+    expect(await win.detect({ kind: 'command', command: `"${bat}" --port {port}` })).toMatchObject({ problems: ['VALIDATION'], problemParams: { reason: 'command_batch' } });
     expect(await a.capabilities()).toMatchObject({ tokenIdsInPrompt: false, timings: false, variant: 'openai' });
   });
 

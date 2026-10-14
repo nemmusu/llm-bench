@@ -32,16 +32,21 @@ export interface CommandAdapterOptions {
   ownership?: Pick<OwnershipRegistry, 'add' | 'remove'>;
   readyTimeoutMs?: number;
   pollMs?: number;
+  /** Whether a path is a file (the real disk by default): tests check Windows' rules on any system. */
+  isFile?: IsFile;
 }
+
+export type IsFile = (f: string) => Promise<boolean>;
+
+const isFileOnDisk: IsFile = async (f) => (await fs.stat(f).catch(() => undefined))?.isFile() === true;
 
 /** Context passed as {ctx} when the run sets none. */
 export const COMMAND_DEFAULT_CONTEXT = 4096;
 const PROBE_TIMEOUT_MS = 5000;
 
 /** `name` as a file: a path (relative to the working folder) or a name found on PATH (Windows: with PATHEXT). */
-export async function findProgram(name: string, platform: Platform, env: Record<string, string | undefined>): Promise<string | undefined> {
+export async function findProgram(name: string, platform: Platform, env: Record<string, string | undefined>, isFile: IsFile = isFileOnDisk): Promise<string | undefined> {
   const p = platform === 'win32' ? path.win32 : path.posix;
-  const isFile = async (f: string) => (await fs.stat(f).catch(() => undefined))?.isFile() === true;
   if (p.isAbsolute(name) || /[\\/]/.test(name)) {
     const full = p.resolve(name);
     return (await isFile(full)) ? full : undefined;
@@ -98,7 +103,7 @@ export class CommandAdapter implements EngineAdapter {
     if (problem !== undefined) throw new AppError('VALIDATION', `Command template: ${problem}`, { params: { reason: problem } });
     const name = (splitCommandLine(template) as string[])[0] as string;
     const { platform, env } = this.o.deps;
-    const found = await findProgram(name, platform, env);
+    const found = await findProgram(name, platform, env, this.o.isFile);
     if (!found) throw new AppError('ENGINE_NOT_INSTALLED', `Program not found: ${name}`, { params: { path: name, reason: 'program_missing' } });
     // Without a shell a .bat/.cmd cannot start: the template says `cmd /c script.bat …` instead.
     if (platform === 'win32' && /\.(bat|cmd)$/i.test(found)) {

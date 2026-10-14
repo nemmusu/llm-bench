@@ -49,7 +49,7 @@ const inner = [
 console.log(`\n▶ validate di ${head} in Linux${fast ? ' (senza E2E)' : ''}`);
 const started = Date.now();
 const status = run('docker', [
-  'run', '--rm', '--init', '--shm-size=2g',
+  'run', '--rm', '--init', '--shm-size=2g', '-e', 'TZ=Europe/Rome',
   '-v', `${work}:/in:ro`,
   '-v', 'llm-bench-ci-npm:/root/.npm',
   '-v', 'llm-bench-ci-electron:/root/.cache/electron',

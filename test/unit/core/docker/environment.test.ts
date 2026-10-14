@@ -9,6 +9,7 @@ import {
   defaultLaunchDetached,
   desktopExecutables,
   DockerEnvironment,
+  pathExists,
   type StartProgress,
 } from '../../../../src/core/docker/environment';
 import { DOCKER_FIXTURES, fail, ok, recordingLog, scriptedProc, steppingClock } from './helpers';
@@ -352,30 +353,37 @@ describe('helpers', () => {
 });
 
 describe('DockerEnvironment edge cases', () => {
-  it('finds Docker Desktop with the real file system', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  it('finds Docker Desktop in Program Files (Windows paths, whatever this PC runs)', async () => {
+    const pf = String.raw`C:\Program Files`;
+    const exe = path.win32.join(pf, 'Docker', 'Docker', 'Docker Desktop.exe');
+    const launched: string[] = [];
+    let up = false;
+    const proc = scriptedProc((a) => (a[0] === 'desktop' ? fail(1, "'desktop' is not a docker command") : up ? running() : DOWN));
+    const e = new DockerEnvironment({
+      cli: new DockerCli({ proc, platform: 'win32', env: {}, override: ['docker'] }),
+      clock: steppingClock(),
+      platform: 'win32',
+      env: { ProgramFiles: pf },
+      exists: async (p) => p === exe,
+      launchDetached: async (cmd) => {
+        launched.push(cmd);
+        up = true;
+      },
+    });
+    await e.startDesktop(new AbortController().signal);
+    expect(launched).toEqual([exe]);
+  });
+
+  it('pathExists looks at the real disk', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
     const os = await import('node:os');
-    const pf = mkdtempSync(path.join(os.tmpdir(), 'gb-pf-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-pe-'));
     try {
-      mkdirSync(path.join(pf, 'Docker', 'Docker'), { recursive: true });
-      writeFileSync(path.join(pf, 'Docker', 'Docker', 'Docker Desktop.exe'), '');
-      const launched: string[] = [];
-      let up = false;
-      const proc = scriptedProc((a) => (a[0] === 'desktop' ? fail(1, "'desktop' is not a docker command") : up ? running() : DOWN));
-      const e = new DockerEnvironment({
-        cli: new DockerCli({ proc, platform: 'win32', env: {}, override: ['docker'] }),
-        clock: steppingClock(),
-        platform: 'win32',
-        env: { ProgramFiles: pf },
-        launchDetached: async (cmd) => {
-          launched.push(cmd);
-          up = true;
-        },
-      });
-      await e.startDesktop(new AbortController().signal);
-      expect(launched).toEqual([path.win32.join(pf, 'Docker', 'Docker', 'Docker Desktop.exe')]);
+      writeFileSync(path.join(dir, 'Docker Desktop.exe'), '');
+      expect(await pathExists(path.join(dir, 'Docker Desktop.exe'))).toBe(true);
+      expect(await pathExists(path.join(dir, 'missing.exe'))).toBe(false);
     } finally {
-      rmSync(pf, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

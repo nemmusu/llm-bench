@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { ServerEvent } from '../../../../src/contract/events';
@@ -9,12 +10,14 @@ import { HELPER_IMAGE, ModelVolumes, modelVolumeName, parseDuBytes } from '../..
 import type { Clock, ExitInfo, ManagedProcess, RunOutput } from '../../../../src/core/deps';
 import { errorResponse } from '../../../../src/core/server/http-error';
 
+// A models folder as this PC writes it: the copy mounts it with the host's own path rules.
+const MODELS = process.platform === 'win32' ? String.raw`C:\models\q` : '/models/q';
 const model: LocalModel = {
   id: 'abc123',
   identity: { displayName: 'Qwen3 4B', format: 'gguf', source: 'local', files: [], weakKey: 'k' },
-  paths: ['C:\\models\\q\\Qwen3-4B-Q4_K_M.gguf', 'C:\\models\\q\\mmproj.gguf'],
-  auxiliary: [{ kind: 'mmproj', path: 'C:\\models\\q\\mmproj.gguf' }],
-  dir: 'C:\\models\\q',
+  paths: [path.join(MODELS, 'Qwen3-4B-Q4_K_M.gguf'), path.join(MODELS, 'mmproj.gguf')],
+  auxiliary: [{ kind: 'mmproj', path: path.join(MODELS, 'mmproj.gguf') }],
+  dir: MODELS,
   origin: 'library',
   modifiedAt: '2026-01-01T00:00:00Z',
 };
@@ -102,7 +105,7 @@ describe('ModelVolumes', () => {
     expect(await p).toBe('gpubench-model-abc123');
     expect(pulled).toBe(HELPER_IMAGE);
     expect(f.spawned[0]).toEqual([
-      'run', '--rm', '--label', 'gpubench=1', '-v', 'C:\\models\\q:/src:ro', '-v', 'gpubench-model-abc123:/dst', HELPER_IMAGE, 'cp', '/src/Qwen3-4B-Q4_K_M.gguf', '/dst/',
+      'run', '--rm', '--label', 'gpubench=1', '-v', `${MODELS}:/src:ro`, '-v', 'gpubench-model-abc123:/dst', HELPER_IMAGE, 'cp', '/src/Qwen3-4B-Q4_K_M.gguf', '/dst/',
     ]);
     expect(progress[0]).toBe(0);
     expect(progress).toContain(1000);
