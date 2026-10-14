@@ -267,6 +267,26 @@ I motori sono i programmi che fanno girare i modelli. Ognuno ha la sua scheda ne
 - **Motori personalizzati**: sotto **Motori personalizzati** premi **Aggiungi motore**: un fork di llama.cpp, vLLM o SGLang, una **Variante di NInfer** o un **Programma con API OpenAI**. Dici a LLM Bench dove si trova e lui lo prova (`--version`, `--help`) prima di usarlo.
 - **NInfer (solo RTX 5090)**: un motore fatto per i modelli Qwen 3.6 e 3.8 su una sola RTX 5090, che legge i modelli `.ninfer`. Funziona su Linux, oppure dentro WSL 2 su Windows. La sua scheda ha due versioni: **NInfer** ufficiale e **NInfer-all**, che legge anche i modelli GGUF-NInfer (LLM Bench la sceglie da solo quando un modello ne ha bisogno). **Scarica e compila** controlla prima cosa serve (git, CMake, un compilatore C++, CUDA…) ed elenca quello che manca con il comando da copiare. NInfer-all sulla RTX 5090 vuole **CUDA 13.1 o più recente**. Con i modelli `.ninfer` la pagina Benchmark offre impostazioni pronte.
 
+### Un tuo programma con API OpenAI
+
+Qualsiasi programma che risponde come OpenAI (`/v1/models`, `/v1/completions` o `/v1/chat/completions`) si può misurare, anche se LLM Bench non lo conosce.
+
+1. **Motori → Aggiungi motore → Programma con API OpenAI**, dagli un nome.
+2. Scrivi il **comando che avvia il server**, come in un terminale, oppure premi uno degli esempi (**Un server come llama.cpp**, **Un server come vLLM**, **Uno script Python, con preparazione e pulizia**) e modificalo. A destra vedi tutti i comandi con valori di esempio mentre scrivi.
+3. Usa i **segnaposto**: LLM Bench scrive il valore al loro posto. `{port}` serve sempre (la porta la sceglie LLM Bench); `{model}`, `{modelDir}`, `{host}` e `{alias}` dicono dov'è il modello e come rispondere. Gli altri portano le impostazioni di LLM Bench: `{ctx}` il contesto, `{kv}` il tipo di cache KV, `{parallel}` gli utenti insieme, `{gpuLayers}` i layer sulla GPU, `{batch}` e `{ubatch}`. Per esempio:
+
+   ```
+   mio-server --model {model} --port {port} --context {ctx} --cache {kv}
+   ```
+
+   Con `{kv}` spunti i tipi che accetta (scritti come li vuole il tuo programma). Un segnaposto che LLM Bench non conosce viene rifiutato quando salvi, dicendo quale.
+4. **Comandi prima e dopo il server** (facoltativi, uno per riga): quelli prima partono in ordine prima di ogni avvio e devono finire senza errori (preparare una cartella, scaricare, scaldare); quelli dopo partono dopo ogni arresto, per fare pulizia. Quello che scrivono finisce nel log del test; se uno di quelli prima non riesce, il test si ferma e dice quale.
+5. **Prova** controlla i comandi e cerca i loro programmi, senza avviare niente. **Salva**, poi **Usa nel Benchmark**.
+
+Nella pagina Benchmark, la modalità esperto mostra **solo le impostazioni che i tuoi comandi usano**, con i loro nomi di sempre; il resto delle impostazioni di un motore non vale. **Trova le impostazioni migliori** c'è quando un comando usa `{ctx}`: prova i contesti e, con `{kv}`, i tipi di cache che hai spuntato (con `{ubatch}` / `{batch}` anche quelli). Risultati e Configurazioni mostrano le impostazioni arrivate al tuo programma.
+
+Ogni comando parte da solo, **senza shell**: un valore con spazi resta un solo argomento e nessuna shell lo legge, e un ambiente attivato in un comando non è attivo nel successivo (scrivi invece il percorso completo del programma dell'ambiente, per esempio `C:\envs\mio\python.exe`). Un file `.bat` o `.cmd` si avvia con `cmd /c file.bat …`.
+
 ## Impostazioni utili
 
 - **Lingua**: English o Italiano, anche dal globo nella barra del titolo.

@@ -267,6 +267,26 @@ Engines are the programs that run the models. Each one has a card on the **Engin
 - **Custom engines:** under **Custom engines**, press **Add engine**: a fork of llama.cpp, vLLM or SGLang, a **NInfer variant**, or a **Program with an OpenAI API**. Tell LLM Bench where it is and it tries it (`--version`, `--help`) before using it.
 - **NInfer (RTX 5090 only):** an engine made for Qwen 3.6 and 3.8 models on a single RTX 5090, reading `.ninfer` models. It runs on Linux, or inside WSL 2 on Windows. Its card has two builds: the official **NInfer** and **NInfer-all**, which also reads GGUF-NInfer models (LLM Bench picks it by itself when a model needs it). **Download and build** checks what is needed first (git, CMake, a C++ compiler, CUDA…) and lists what is missing with the command to copy. NInfer-all on the RTX 5090 needs **CUDA 13.1 or newer**. Ready-made settings appear on the Benchmark page for `.ninfer` models.
 
+### A program of your own with an OpenAI API
+
+Any program that answers like OpenAI (`/v1/models`, `/v1/completions` or `/v1/chat/completions`) can be measured, even one LLM Bench does not know.
+
+1. **Engines → Add engine → Program with an OpenAI API**, give it a name.
+2. Write the **command that starts the server**, as in a terminal, or press one of the examples (**A server like llama.cpp**, **A server like vLLM**, **A Python script, with preparation and clean-up**) and change it. On the right you see every command filled in with example values while you type.
+3. Use the **placeholders**: LLM Bench writes the value in their place. `{port}` is required (LLM Bench picks a free port); `{model}`, `{modelDir}`, `{host}` and `{alias}` say where the model is and how to answer. The others carry LLM Bench's settings: `{ctx}` the context, `{kv}` the KV cache type, `{parallel}` the users at once, `{gpuLayers}` the layers on the GPU, `{batch}` and `{ubatch}`. For example:
+
+   ```
+   my-server --model {model} --port {port} --context {ctx} --cache {kv}
+   ```
+
+   With `{kv}` you tick the types it accepts (written as your program spells them). A placeholder LLM Bench does not know is refused when you save, naming it.
+4. **Commands before and after the server** (optional, one per line): the ones before run in order before every start and must end without errors (prepare a folder, download, warm up); the ones after run after every stop, to clean up. Their output is in the test's log; if one before fails, the test stops and says which one.
+5. **Test** checks the commands and looks for their programs, without starting anything. **Save**, then **Use in Benchmark**.
+
+On the Benchmark page, expert mode shows **only the settings your commands take**, with their usual names; nothing else of an engine applies. **Find the best settings** is offered when a command takes `{ctx}`: it tries contexts and, with `{kv}`, the KV types you ticked (with `{ubatch}` / `{batch}` also those). Results and Configurations show the settings that reached your program.
+
+Each command runs on its own, **without a shell**: values with spaces stay one argument and are never read by a shell, and an environment activated in one command is not active in the next (write the full path of the environment's program instead, for example `C:\envs\my\python.exe`). A `.bat` or `.cmd` file starts with `cmd /c file.bat …`.
+
 ## Settings worth knowing
 
 - **Language:** English or Italiano, also from the globe in the title bar.
