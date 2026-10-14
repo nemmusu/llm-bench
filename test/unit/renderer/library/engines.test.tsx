@@ -371,6 +371,16 @@ describe('engines: vLLM and others', () => {
     await waitFor(() => expect(api.calls.filter((c) => c.path === '/api/docker/images/remove').map((c) => c.body)).toEqual([{ image: 'vllm/vllm-openai:v0.9.0' }, { image: 'sha256:idx031' }]));
   });
 
+  it('the version in use is listed first even when Docker Hub no longer has it, with "Scarica" when it is not on the PC', async () => {
+    const api = libApi(world({ settings: { ...world().settings, lastEngine: { kind: 'sglang-docker', image: 'lmsysorg/sglang:v0.4.9' } } }));
+    renderLib('/engines', api);
+    const list = await within(await card('SGLang (Docker)')).findByRole('list', { name: 'Versioni di SGLang' });
+    const first = (await within(list).findAllByRole('listitem'))[0]!;
+    expect(within(first).getByText('v0.4.9')).toBeTruthy();
+    expect(within(first).getByText('In uso')).toBeTruthy();
+    expect(within(first).getByRole('button', { name: 'Scarica' })).toBeTruthy();
+  });
+
   it('a version a server uses cannot be removed, and says why; one Docker Hub no longer lists stays usable; a failed removal is explained', async () => {
     const api = libApi(
       world({

@@ -43,8 +43,12 @@ export function ImageTagList({ repo, engine, tags, current, dockerUp, label, all
   const [confirm, setConfirm] = useState<{ ref: string; image: LocalImage }>();
   // Versions on the PC that Docker Hub no longer lists (or beyond the pages read): still usable and removable.
   const others: VllmTag[] = (local.data ?? []).filter((i) => i.tags.length && !tags.some((tg) => localImageFor(tg, [i]))).map((i) => ({ name: i.tags[0] as string }));
-  // The ones on the PC first: what can be used or removed right away.
-  const sorted = [...tags, ...others].sort((a, b) => Number(!!localImageFor(b, local.data)) - Number(!!localImageFor(a, local.data)));
+  // The version in use is always listed ("In uso"), even when Docker Hub no longer has it.
+  const currentTag = current?.startsWith(`${repo}:`) ? current.slice(repo.length + 1) : undefined;
+  if (currentTag && ![...tags, ...others].some((tg) => tg.name === currentTag)) others.push({ name: currentTag });
+  // The one in use, then the ones on the PC: what can be used or removed right away.
+  const rank = (tg: VllmTag) => (tg.name === currentTag ? 2 : localImageFor(tg, local.data) ? 1 : 0);
+  const sorted = [...tags, ...others].sort((a, b) => rank(b) - rank(a));
   const shown = all ? sorted : sorted.slice(0, PREVIEW);
   return (
     <>

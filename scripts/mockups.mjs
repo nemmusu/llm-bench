@@ -687,7 +687,7 @@ async function fakeWorld(dataDir) {
     ],
   });
   // SGLang v0.5.20 is on the PC (the "Aggiorna" scenes use it); the release in use elsewhere is not.
-  const dockerApi = await startFakeDockerApi({ images: { 'lmsysorg/sglang:v0.5.20': { Id: 'sha256:sglang0520', RepoDigests: [`lmsysorg/sglang@sha256:${'5'.repeat(64)}`] } } });
+  const dockerApi = await startFakeDockerApi({ images: { 'lmsysorg/sglang:v0.5.20': { Id: 'sha256:sglang0520', RepoTags: ['lmsysorg/sglang:v0.5.20'], Size: 14_100_000_000, RepoDigests: [`lmsysorg/sglang@sha256:${'5'.repeat(64)}`] } } });
   makeGitFork();
   // Docker Hub tags (vLLM and SGLang cards): recorded listings, never the real site.
   const tagFixture = (name) => readFileSync(path.join(root, 'test', 'fixtures', 'docker', name));
