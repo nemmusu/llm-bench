@@ -33,7 +33,12 @@ export function SheetDialog({ open, onOpenChange, run, compare }: SheetDialogPro
   const save = async () => {
     try {
       const common = { service, address, notes, appVersion: __APP_VERSION__, now: new Date() };
-      const req = sheetRequest(compare ? { ...common, run: compare.items[about]!.run, compare: { ...compare, subject: about } } : { ...common, run: run! }, format, f);
+      // A search's combination compared: the sheet is about that one.
+      const req = sheetRequest(
+        compare ? { ...common, run: compare.items[about]!.run, combo: compare.items[about]!.comboIndex, compare: { ...compare, subject: about } } : { ...common, run: run! },
+        format,
+        f,
+      );
       const where = await saveTextFile(req);
       if (!where) return;
       toast.success(t('sheet.saved', { file: where }));

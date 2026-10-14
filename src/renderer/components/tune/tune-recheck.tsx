@@ -1,11 +1,13 @@
 /**
  * "Ricontrollo rapido": the previous recommendation and its runner-up loaded again with the engine
  * version in use now. What happened in words, then for each one a "Prima / Ora" table per measure
- * (units in the headers), each difference worded as on the Compare page and marked beyond or within
- * the measurement noise (the core decides that). A full search is offered whenever anything changed.
+ * (units in the headers), the context full first (where a combination's speeds are read), each
+ * difference worded as on the Compare page and marked beyond or within the measurement noise (the
+ * core decides that). A full search is offered whenever anything changed.
  */
 import type { ReactNode } from 'react';
-import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunResult, type TuneCombination, type TuneRecheck, type Tuning } from '../../../contract/results';
+import { sweepDepths } from '../../../contract/configs';
+import { nominalDepth, type ConcurrencyPoint, type LatencyPoint, type RunResult, type Stat, type TuneCombination, type TuneRecheck, type Tuning } from '../../../contract/results';
 import { useI18n, type Formatters, type MessageKey } from '../../i18n';
 import { deltaWords, type DeltaKind } from '../bench/compare-words';
 import { prefillStat } from '../bench/format';
@@ -16,6 +18,7 @@ import { Callout, type CalloutTone } from '../ui/callout';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { buildLabel, comboText, depthLabel, outcomeText } from './tune-format';
+import { sameWithinNoise } from './tune-logic';
 import { DiscardedAttempts } from './tune-sections';
 
 type Check = TuneRecheck['checks'][number];
@@ -42,10 +45,10 @@ interface MetricSpec {
   format: (v: number, f: F) => string;
 }
 
-const SINGLE: readonly (MetricSpec & { value: (p: LatencyPoint) => number })[] = [
-  { metric: 'decode', higherIsBetter: true, kind: 'speed', value: (p) => p.decodeTps.median, format: (v, f) => f.number(v, 1) },
-  { metric: 'prefill', higherIsBetter: true, kind: 'speed', value: (p) => prefillStat(p).median, format: (v, f) => f.integer(v) },
-  { metric: 'ttft', higherIsBetter: false, kind: 'time', value: (p) => p.ttftMs.median, format: (v, f) => f.number(v / 1000, 2) },
+const SINGLE: readonly (MetricSpec & { stat: (p: LatencyPoint) => Stat })[] = [
+  { metric: 'decode', higherIsBetter: true, kind: 'speed', stat: (p) => p.decodeTps, format: (v, f) => f.number(v, 1) },
+  { metric: 'prefill', higherIsBetter: true, kind: 'speed', stat: prefillStat, format: (v, f) => f.integer(v) },
+  { metric: 'ttft', higherIsBetter: false, kind: 'time', stat: (p) => p.ttftMs, format: (v, f) => f.number(v / 1000, 2) },
 ];
 
 const USERS: readonly (MetricSpec & { value: (p: ConcurrencyPoint) => number })[] = [
@@ -54,32 +57,48 @@ const USERS: readonly (MetricSpec & { value: (p: ConcurrencyPoint) => number })[
   { metric: 'ttftP95', higherIsBetter: false, kind: 'time', value: (p) => p.ttftP95Ms, format: (v, f) => f.number(v / 1000, 2) },
 ];
 
+/** A combination's sweep by grid depth, its point with the context full at the context (sweepDepths). */
+function byDepth(combo: Pick<TuneCombination, 'sweep' | 'maxContext'>): { depth: number; point: LatencyPoint }[] {
+  const depths = sweepDepths(combo.sweep.map((p) => p.promptTokens), combo.maxContext);
+  return combo.sweep.map((point, i) => ({ depth: depths[i]!, point }));
+}
+
 /**
  * The "Prima / Ora" rows of a check: every depth (goal "Più utenti": every level) measured both times,
- * the measures in a fixed order. Empty when it was not measured again.
+ * the context full first ("256K, contesto pieno": where a combination's speeds are read), the
+ * measures in a fixed order. Empty when it was not measured again.
  */
 export function recheckRows(check: Check, now: TuneCombination | undefined, f: F): RecheckRow[] {
   if (!now) return [];
   const moved = new Set(check.moved.map((m) => `${m.at}|${m.metric}`));
-  const row = (at: number, atText: string, spec: MetricSpec, a: number, b: number): RecheckRow => ({
+  const row = (at: number, atText: string, spec: MetricSpec, a: number, b: number, beyond: boolean): RecheckRow => ({
     key: `${at}|${spec.metric}`,
     at: atText,
     metric: f.t(`tune.recheck.metrics.${spec.metric}` as MessageKey),
     before: spec.format(a, f),
     after: spec.format(b, f),
     change: deltaWords(a, b, { higherIsBetter: spec.higherIsBetter, kind: spec.kind }, f)?.text ?? '–',
-    moved: moved.has(`${at}|${spec.metric}`),
+    moved: beyond,
   });
   if (now.concurrency?.length) {
     return now.concurrency.flatMap((p) => {
       const q = check.previous.concurrency?.find((x) => x.level === p.level);
-      return q ? USERS.map((spec) => row(p.level, String(p.level), spec, spec.value(q), spec.value(p))) : [];
+      return q ? USERS.map((spec) => row(p.level, String(p.level), spec, spec.value(q), spec.value(p), moved.has(`${p.level}|${spec.metric}`))) : [];
     });
   }
-  return now.sweep.flatMap((p) => {
-    const at = nominalDepth(p.promptTokens);
-    const q = check.previous.sweep.find((x) => nominalDepth(x.promptTokens) === at);
-    return q ? SINGLE.map((spec) => row(at, depthLabel(at, f), spec, spec.value(q), spec.value(p))) : [];
+  const before = byDepth(check.previous);
+  const full = nominalDepth(now.maxContext);
+  const after = byDepth(now).sort((a, b) => Number(b.depth === full) - Number(a.depth === full));
+  return after.flatMap(({ depth, point: p }) => {
+    const q = before.find((x) => x.depth === depth)?.point;
+    if (!q) return [];
+    // The core compared the points of the same grid depth; the context full sent shorter one of the two times, here, with its rule.
+    const nominal = nominalDepth(p.promptTokens);
+    const same = nominalDepth(q.promptTokens) === nominal;
+    const label = depth === full ? f.t('tune.recheck.atFull', { ctx: depthLabel(depth, f) }) : depthLabel(depth, f);
+    return SINGLE.map((spec) =>
+      row(depth, label, spec, spec.stat(q).median, spec.stat(p).median, same ? moved.has(`${nominal}|${spec.metric}`) : !sameWithinNoise(spec.stat(q), spec.stat(p))),
+    );
   });
 }
 

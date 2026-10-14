@@ -1,33 +1,35 @@
-/** "n test": the tests behind a configuration, each with its own numbers at the compared depth and a link to it. */
+/** "n test": the tests behind a configuration, each with its own numbers where the table compares and a link to it. */
 import { Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import type { ConfigEntry, ConfigSource } from '../../../contract/configs';
 import { useI18n } from '../../i18n';
+import { notMeasuredAt } from '../../lib/speed-at';
 import { MIB_PER_GB, summaryModelLabel } from '../bench/format';
 import { configLabelOf } from '../presets/config-label';
 import { tokensShort } from '../presets/format';
 import { columnHelper, DataTable, type DataTableColumn } from '../ui/data-table';
 import { Dialog, DialogContent } from '../ui/dialog';
+import { AT_MAX, pointFor, type CompareAt } from './depths';
 import { configEngineLabel } from './engine-label';
 import { NUMERIC, UnitHeader } from './unit-header';
 
 export interface SourcesDialogProps {
   entry: ConfigEntry | undefined;
-  /** The "Confronta a" depth of the table. */
-  depth: number;
+  /** The "Confronta a" of the table: a depth, or each test at its own largest context with the context full. */
+  at: CompareAt;
   onOpenChange: (open: boolean) => void;
 }
 
-export function SourcesDialog({ entry, depth, onOpenChange }: SourcesDialogProps) {
+export function SourcesDialog({ entry, at, onOpenChange }: SourcesDialogProps) {
   const f = useI18n();
   const { t, number, integer, dateTime } = f;
   const sources = useMemo(() => entry?.sources ?? [], [entry]);
   const columns = useMemo(() => {
     const col = columnHelper<ConfigSource>();
-    const at = (s: ConfigSource) => s.points.find((p) => p.depth === depth);
+    const point = (s: ConfigSource) => pointFor(s, at);
     const any = (pick: (s: ConfigSource) => unknown) => sources.some((s) => pick(s) !== undefined);
     const dash = <span className="text-fg-3">–</span>;
-    const numeric = (id: string, header: string, pick: (s: ConfigSource) => number | undefined, show: (v: number) => string): DataTableColumn<ConfigSource> =>
+    const numeric = (id: string, header: string, pick: (s: ConfigSource) => number | undefined, show: (v: number) => string, missing?: (s: ConfigSource) => string | undefined): DataTableColumn<ConfigSource> =>
       col.accessor(pick, {
         id,
         header: () => <UnitHeader text={header} />,
@@ -35,9 +37,13 @@ export function SourcesDialog({ entry, depth, onOpenChange }: SourcesDialogProps
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          return v === undefined ? dash : show(v);
+          if (v !== undefined) return show(v);
+          const why = missing?.(c.row.original);
+          return why ? <span className="text-xs text-fg-3 italic">{why}</span> : dash;
         },
       });
+    // Contesto massimo: a test whose largest context was never filled says so.
+    const notFull = (s: ConfigSource) => (at === AT_MAX && s.contextSize !== undefined ? notMeasuredAt(s.contextSize, f) : undefined);
     const list: DataTableColumn<ConfigSource>[] = [
       col.accessor('date', {
         header: t('configs.sources.test'),
@@ -56,10 +62,16 @@ export function SourcesDialog({ entry, depth, onOpenChange }: SourcesDialogProps
           );
         },
       }),
-      numeric('decode', t('configs.sources.decodeAt', { depth: tokensShort(depth, f) }), (s) => at(s)?.decodeTps, (v) => number(v, 1)),
+      numeric(
+        'decode',
+        at === AT_MAX ? t('configs.sources.decodeAtMax') : t('configs.sources.decodeAt', { depth: tokensShort(at, f) }),
+        (s) => point(s)?.decodeTps,
+        (v) => number(v, 1),
+        notFull,
+      ),
     ];
-    if (any((s) => at(s)?.prefillTps)) list.push(numeric('prefill', t('configs.columns.prefill'), (s) => at(s)?.prefillTps, integer));
-    if (any((s) => at(s)?.ttftMs)) list.push(numeric('ttft', t('configs.columns.ttft'), (s) => at(s)?.ttftMs, integer));
+    if (any((s) => point(s)?.prefillTps)) list.push(numeric('prefill', t('configs.columns.prefill'), (s) => point(s)?.prefillTps, integer));
+    if (any((s) => point(s)?.ttftMs)) list.push(numeric('ttft', t('configs.columns.ttft'), (s) => point(s)?.ttftMs, integer));
     if (any((s) => s.contextSize)) list.push(numeric('context', t('configs.columns.context'), (s) => s.contextSize, integer));
     if (any((s) => s.vramPeakMiB)) list.push(numeric('vram', t('configs.columns.vram'), (s) => s.vramPeakMiB, (v) => number(v / MIB_PER_GB, 1)));
     if (any((s) => s.parallel)) {
@@ -84,7 +96,7 @@ export function SourcesDialog({ entry, depth, onOpenChange }: SourcesDialogProps
       );
     }
     return list;
-  }, [sources, depth, f, t, number, integer, dateTime]);
+  }, [sources, at, f, t, number, integer, dateTime]);
 
   const title = t('configs.sources.title');
   return (

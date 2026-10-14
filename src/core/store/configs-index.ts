@@ -14,6 +14,7 @@ import {
   engineReleaseOf,
   gpuKeyOf,
   modelKeyOf,
+  sweepDepths,
   type ConfigEntry,
   type ConfigGpu,
   type ConfigParams,
@@ -53,12 +54,13 @@ const median = (values: readonly number[]): number => {
 /**
  * Depth points of latency points: medians of decode, prefill (the engine's figure when it reports
  * one) and TTFT, at the nominal depth (the deepest prompt of a 32K context is "32K", so sweeps of
- * different contexts line up); the first point of a depth wins, points without any measurement are dropped.
+ * different contexts line up), or at `depths` (a sweep's point with the context full stands at the
+ * context: sweepDepths); the first point of a depth wins, points without any measurement are dropped.
  */
-export function depthPointsOf(points: readonly LatencyPoint[]): ConfigSource['points'] {
+export function depthPointsOf(points: readonly LatencyPoint[], depths: readonly number[] = points.map((p) => nominalDepth(p.promptTokens))): ConfigSource['points'] {
   const out = new Map<number, ConfigSource['points'][number]>();
-  for (const p of points) {
-    const depth = nominalDepth(p.promptTokens);
+  for (const [i, p] of points.entries()) {
+    const depth = depths[i]!;
     if (out.has(depth)) continue;
     const prefill = p.prefillTpsEngine ?? p.prefillTps;
     const point = {
@@ -88,12 +90,13 @@ function paramsOf(run: RunResult, launch: Launch): ConfigParams {
 
 const union = (...lists: readonly ConfigTag[][]): ConfigTag[] => [...new Set(lists.flat())];
 
-/** A normal run as one source: its prompt lengths and context sweep are its depths. */
+/** A normal run as one source: its prompt lengths and context sweep (its deepest with the context full at the context) are its depths. */
 function runSource(run: RunResult): RunConfigSource[] {
   const m = run.metrics;
-  const points = depthPointsOf([...m.latency, ...m.contextSweep]);
-  if (!points.length) return [];
   const params = paramsOf(run, run.launch);
+  const depths = [...m.latency.map((p) => nominalDepth(p.promptTokens)), ...sweepDepths(m.contextSweep.map((p) => p.promptTokens), params.contextSize)];
+  const points = depthPointsOf([...m.latency, ...m.contextSweep], depths);
+  if (!points.length) return [];
   const vram = m.vram.processPeakMiB ?? m.vram.deltaMiB ?? m.vram.peakMiB;
   const busiest = m.concurrency.filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
   const source: ConfigSource = {
@@ -119,13 +122,14 @@ function runSource(run: RunResult): RunConfigSource[] {
 
 /**
  * The tune combinations of a run as sources: one per combination that loaded and was swept, with
- * its own params (and command line), its largest context, VRAM peak and sweep points.
+ * its own params (and command line), its largest context, VRAM peak and sweep points (the one with
+ * the context full at the context).
  */
 export function comboSources(run: RunResult): RunConfigSource[] {
   const out: RunConfigSource[] = [];
   (run.tuning?.combinations ?? []).forEach((combo: TuneCombination, index) => {
     if (combo.outcome !== 'ok') return;
-    const points = depthPointsOf(combo.sweep);
+    const points = depthPointsOf(combo.sweep, sweepDepths(combo.sweep.map((p) => p.promptTokens), combo.maxContext));
     // "Più utenti" combinations have no sweep: their users at once are what they measured.
     const busiest = (combo.concurrency ?? []).filter((p) => p.level > 1).sort((a, b) => b.level - a.level)[0];
     if (!points.length && !busiest) return;

@@ -1842,6 +1842,7 @@ export const it = {
       combosOne: '1 combinazione',
       short: 'Impostazioni migliori',
       kv: 'cache {kv}',
+      notFull: 'Misurata con il contesto riempito a {depth}: la ricerca si è fermata prima di riempire il contesto massimo, {ctx}.',
     },
   },
   tune: {
@@ -2099,6 +2100,9 @@ export const it = {
       attemptsHelp: 'Ogni prova avvia il motore con impostazioni diverse. «Memoria esaurita» e «Usa la RAM condivisa» vogliono dire che quella combinazione non ci sta tutta nella memoria video.',
       count: '{n} di {max} al massimo',
       noAttempts: 'La prima prova parte tra poco.',
+      atFull: 'a {tokens}, contesto pieno',
+      full: 'contesto pieno',
+      gaugeFull: 'contesto pieno: {tokens} token',
     },
     users: {
       best: 'Con {users} utenti da {ctx} a testa la più veloce per utente è {settings}.',
@@ -2143,6 +2147,7 @@ export const it = {
       caption: 'Prima e ora: {settings}',
       moved: 'oltre il rumore',
       withinNoise: 'entro il rumore',
+      atFull: '{ctx}, contesto pieno',
       noiseHelp: 'Una differenza entro il rumore della misura (meno del 2%, o di due volte la variazione tra le ripetizioni) non conta come cambiamento.',
       columns: {
         at: 'Contesto riempito (token)',
@@ -2256,8 +2261,10 @@ export const it = {
     contextAtLeast: 'Contesto ≥ {n}',
     compareAt: 'Confronta a',
     compareAtHelp:
-      'Quanti token di testo ha già davanti il modello: la lunghezza del prompt, o quanto è pieno il contesto. Più è pieno, più va piano. Confronto solo numeri misurati davvero a questa profondità, senza stime.',
+      'Contesto massimo: ogni configurazione con il suo contesto più grande, riempito fino in fondo, cioè quanto va quando lo usi tutto. Oppure una lunghezza uguale per tutte: quanti token di testo ha già davanti il modello (il prompt, o quanto è pieno il contesto). Più è pieno, più va piano. Confronto solo numeri misurati davvero, senza stime.',
+    atMax: 'Contesto massimo',
     depth: '{n} token',
+    reachesOnly: 'arriva solo a {ctx}',
     count: '{n} configurazioni',
     countOne: '1 configurazione',
     columns: {
@@ -2276,7 +2283,6 @@ export const it = {
     },
     configHelp:
       'Le impostazioni con cui è partito il motore, quando sono diverse da quelle predefinite. Cache KV: la memoria del contesto (f16 piena, q8_0 e q4_0 compresse per farne stare di più). Flash attention: un calcolo più veloce e leggero. ub e b: quanti token legge alla volta. Slot paralleli: quante richieste serve insieme. Contesto condiviso fra gli utenti: una sola memoria del contesto per tutti, chi ha una conversazione lunga può usarne di più; contesto diviso per utente: ognuno ha la sua parte, sempre uguale. Riuso cache: rilegge meno testo quando una parte del messaggio è già stata letta prima.',
-    notMeasured: 'non misurata a questa profondità',
     defaults: 'Impostazioni predefinite',
     perUser: '{tps} ciascuno',
     total: '{tps} in tutto',
@@ -2289,6 +2295,7 @@ export const it = {
       title: 'Test di questa configurazione',
       test: 'Test',
       decodeAt: 'Generazione a {depth} (tok/s)',
+      decodeAtMax: 'Generazione al contesto massimo (tok/s)',
     },
     emptyTitle: 'Ancora nessuna configurazione',
     emptyBody: 'Qui vedrai ogni modo in cui hai avviato un modello, dal più veloce, pronto da riusare. Fai un benchmark per cominciare.',
@@ -2411,6 +2418,7 @@ export const it = {
     depth: {
       label: 'Confronta a',
       all: 'misurato da tutti',
+      allFull: 'misurato da tutti, con il contesto pieno',
       missing: 'non misurato da {items}',
       none: 'nessuna lunghezza in comune',
       help: 'Quanti token di testo ci sono già nel contesto quando il modello scrive (o quanto è lungo il prompt che legge). Più è pieno, più va piano: per questo confronto solo numeri misurati alla stessa lunghezza, mai stime. Nell’elenco trovi solo le lunghezze misurate da almeno due elementi.',
@@ -2857,9 +2865,14 @@ export const it = {
     summary: {
       sessions: '{model} con {engine} su {gpu}: legge il contesto a {read} token/s e scrive a {write} token/s per conversazione (prova con {depth} token).',
       basic: '{model} con {engine} su {gpu}: legge il testo a {read} token/s e scrive a {write} token/s.',
+      tuneFull: '{model} con {engine} su {gpu}: con il contesto pieno ({ctx}) legge il testo a {read} token/s e scrive a {write} token/s.',
+      tuneAt: '{model} con {engine} su {gpu}: con il contesto riempito a {depth} (il massimo è {ctx}) legge il testo a {read} token/s e scrive a {write} token/s.',
     },
     basic: {
       prompt: 'Prompt (token)',
+      depth: 'Contesto riempito (token)',
+      depthFull: '{n} (contesto pieno)',
+      notFull: 'La ricerca si è fermata prima di riempire il contesto massimo ({ctx}): questi numeri sono con il contesto riempito a {depth}.',
       read: 'Lettura (token/s)',
       firstWait: 'Attesa prima risposta',
       write: 'Scrittura (token/s)',

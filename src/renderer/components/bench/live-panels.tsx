@@ -7,7 +7,7 @@ import { Collapsible } from 'radix-ui';
 import { useState, type ReactNode } from 'react';
 import type { EngineKind } from '../../../contract/engines';
 import type { CurrentStep, LivePoint, RunLaunch } from '../../../contract/events';
-import type { LatencyPoint, Scenario } from '../../../contract/results';
+import { fillsContext, type LatencyPoint, type Scenario } from '../../../contract/results';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useConfigLabel } from '../presets/config-label';
@@ -84,10 +84,12 @@ export interface LivePointsProps {
   scenario: Scenario | undefined;
   /** Tune runs: only the points of the launch in progress. */
   tune?: boolean;
+  /** Tune runs: the context of the launch in progress (its depth with the context full says so). */
+  fullAt?: number | undefined;
 }
 
 /** "Misure finora": rows fill in as the repetitions come in; the one in progress is highlighted. */
-export function LivePoints({ points, current, scenario, tune }: LivePointsProps) {
+export function LivePoints({ points, current, scenario, tune, fullAt }: LivePointsProps) {
   const f = useI18n();
   const { t, number, integer } = f;
   const latencyLike = points.filter((p): p is LatencyLive => p.stepKind !== 'concurrency' && p.stepKind !== 'sessions');
@@ -111,7 +113,16 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
   const showUsers = users.length > 0 || now === 'concurrency';
   const title = t('run.points.title');
 
-  const rowsOf = (list: readonly LatencyPoint[], wanted: readonly number[], isCurrent: (n: number) => boolean, total: number | undefined): MeasureRow[] =>
+  // A depth that fills the launch's context: "262.144 · contesto pieno".
+  const depthCell = (n: number) =>
+    fullAt !== undefined && fillsContext(n, fullAt) ? (
+      <>
+        {integer(n)} <span className="text-xs font-normal text-fg-3">· {t('tune.live.full')}</span>
+      </>
+    ) : (
+      integer(n)
+    );
+  const rowsOf = (list: readonly LatencyPoint[], wanted: readonly number[], isCurrent: (n: number) => boolean, total: number | undefined, first: (n: number) => ReactNode = integer): MeasureRow[] =>
     [...new Set([...wanted, ...list.map((p) => p.promptTokens)])]
       .sort((a, b) => a - b)
       .map((n) => {
@@ -121,7 +132,7 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
           current: isCurrent(n),
           muted: !p && !isCurrent(n),
           cells: [
-            integer(n),
+            first(n),
             p ? integer(prefillStat(p).median) : '–',
             p ? integer(p.ttftMs.median) : '–',
             p ? number(p.decodeTps.median, 1) : '–',
@@ -158,7 +169,7 @@ export function LivePoints({ points, current, scenario, tune }: LivePointsProps)
           <MeasureTable
             caption={t(tune ? 'run.points.byAttempt' : 'run.points.byDepth')}
             columns={head(t('run.points.depth'))}
-            rows={rowsOf(depths, currentDepth === undefined ? [] : [currentDepth], (n) => n === currentDepth, sweepStep?.kind === 'context-sweep' && !tune ? sweepStep.reps : undefined)}
+            rows={rowsOf(depths, currentDepth === undefined ? [] : [currentDepth], (n) => n === currentDepth, sweepStep?.kind === 'context-sweep' && !tune ? sweepStep.reps : undefined, depthCell)}
           />
         </Section>
       )}

@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import { engineKindSchema, type EngineKind, type LaunchParams } from './engines';
 import { ninferFlags } from './ninfer';
-import { profileSchema } from './results';
+import { fillsContext, nominalDepth, profileSchema } from './results';
 
 // ---- normalized launch settings ------------------------------------------------------------------
 
@@ -666,6 +666,18 @@ export const depthPointSchema = z.object({
   n: z.number().int().positive(),
 });
 export type DepthPoint = z.infer<typeof depthPointSchema>;
+
+/**
+ * The grid depth of each prompt of one launch's context sweep (nominalDepth), its deepest standing for
+ * the launch's context when it fills it (fillsContext, and fits in it): 261 200 tokens of a 256K
+ * context, or a text prompt sent again shorter (255 000), are both "256K", where its speeds with the
+ * context full are read.
+ */
+export function sweepDepths(prompts: readonly number[], contextSize: number | undefined): number[] {
+  const deepest = Math.max(0, ...prompts);
+  const full = contextSize !== undefined && deepest <= contextSize && fillsContext(deepest, contextSize);
+  return prompts.map((p) => (full && p === deepest ? nominalDepth(contextSize) : nominalDepth(p)));
+}
 
 /** A test that measured the configuration: a normal run, or one combination of a tune run. */
 export const configSourceSchema = z.object({

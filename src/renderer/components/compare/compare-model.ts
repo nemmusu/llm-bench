@@ -4,9 +4,9 @@
  * measured (the same grid depth; "Confronta a"), never estimated; the best number of each row is
  * marked and every other one says how far it is, in words ("2,2 volte più lento", "−16%").
  */
-import { configParamsOf } from '../../../contract/configs';
+import { configParamsOf, sweepDepths } from '../../../contract/configs';
 import type { LaunchParams } from '../../../contract/engines';
-import { nominalDepth, spilledRun, type ConcurrencyPoint, type EngineIdentity, type LatencyPoint, type RunResult, type SessionsPoint, type TuneCombination } from '../../../contract/results';
+import { fullContextPoint, nominalDepth, spilledRun, type ConcurrencyPoint, type EngineIdentity, type LatencyPoint, type RunResult, type SessionsPoint, type TuneCombination } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import { contextWords, firstTokenWords, usersWords, type ContextBasis } from '../../lib/speed-at';
 import { deltaWords, REREAD_SHARE, type DeltaKind } from '../bench/compare-words';
@@ -42,18 +42,27 @@ export interface CompareItem {
 }
 
 export interface DepthPoint {
-  /** The grid depth (32 624 tokens of a 32K context count as 32K). */
+  /**
+   * The grid depth (32 624 tokens of a 32K context count as 32K; a sweep's point with the context full
+   * stands at the context: 261 200 or 255 000 tokens of a 256K context are "256K").
+   */
   depth: number;
   point: LatencyPoint;
   basis: ContextBasis;
 }
 
-const byDepth = (points: readonly LatencyPoint[], basis: ContextBasis): DepthPoint[] => points.map((point) => ({ depth: nominalDepth(point.promptTokens), point, basis }));
+const byPrompt = (points: readonly LatencyPoint[]): DepthPoint[] => points.map((point) => ({ depth: nominalDepth(point.promptTokens), point, basis: 'prompt' }));
+
+/** A context sweep at `context` tokens by grid depth, its deepest point with the context full at the context (sweepDepths). */
+function bySweep(points: readonly LatencyPoint[], context: number | undefined): DepthPoint[] {
+  const depths = sweepDepths(points.map((p) => p.promptTokens), context);
+  return points.map((point, i) => ({ depth: depths[i]!, point, basis: 'depth' }));
+}
 
 /** Speed points of a run: the latency step (prompt lengths) first, then the context sweep for the depths it adds. */
-function runPoints(run: RunResult): DepthPoint[] {
+function runPoints(run: RunResult, context: number | undefined): DepthPoint[] {
   const out = new Map<number, DepthPoint>();
-  for (const p of [...byDepth(run.metrics.latency, 'prompt'), ...byDepth(contextSweepOf(run), 'depth')]) if (!out.has(p.depth)) out.set(p.depth, p);
+  for (const p of [...byPrompt(run.metrics.latency), ...bySweep(contextSweepOf(run), context)]) if (!out.has(p.depth)) out.set(p.depth, p);
   return [...out.values()];
 }
 
@@ -84,7 +93,7 @@ export function itemOf(run: RunResult, ref: CompareRef = { runId: run.id }): Com
   const item: CompareItem = {
     ref: index === undefined ? { runId: run.id } : { runId: run.id, combo: index },
     run,
-    points: (combo?.sweep.length ? byDepth(combo.sweep, 'depth') : own ? runPoints(run) : []).sort((a, b) => a.depth - b.depth),
+    points: (combo?.sweep.length ? bySweep(combo.sweep, combo.maxContext) : own ? runPoints(run, maxContext) : []).sort((a, b) => a.depth - b.depth),
     concurrency,
     sessions: combo?.sessions ?? (own ? sessionsOf(run) : []),
     params,
@@ -152,10 +161,22 @@ export function depthChoices(items: readonly Pick<CompareItem, 'points'>[]): Dep
 export const EVERYDAY_DEPTH = 512;
 
 /**
- * The depth to start from: the one most items measured; among those, the closest to everyday prompts
- * (512 tokens, the result page's headline), the deeper on a tie.
+ * The depth where every item is a combination of a one-user search measured with its context full,
+ * when it is the same for all (two 256K combinations: "256K", where the search reads their speeds).
  */
-export function defaultDepth(choices: readonly DepthChoice[]): number | undefined {
+export function fullDepth(items: readonly Pick<CompareItem, 'combo'>[]): number | undefined {
+  const depths = new Set(items.map((it) => (it.combo && fullContextPoint(it.combo) ? nominalDepth(it.combo.maxContext) : undefined)));
+  const [only] = depths;
+  return depths.size === 1 ? only : undefined;
+}
+
+/**
+ * The depth to start from: `full` (the context full of every combination compared, see fullDepth)
+ * when every item measured it; else the one most items measured, among those the closest to everyday
+ * prompts (512 tokens, the result page's headline), the deeper on a tie.
+ */
+export function defaultDepth(choices: readonly DepthChoice[], full?: number): number | undefined {
+  if (choices.some((c) => c.depth === full && c.measured === c.total)) return full;
   const top = Math.max(0, ...choices.map((c) => c.measured));
   const distance = (d: number) => Math.abs(Math.log2(d / EVERYDAY_DEPTH));
   const best = choices.filter((c) => c.measured === top).sort((a, b) => distance(a.depth) - distance(b.depth) || b.depth - a.depth)[0];

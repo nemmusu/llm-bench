@@ -411,8 +411,8 @@ describe('picking what to compare', () => {
     const api = world([again]);
     renderApp('/results?view=configs', api);
     await screen.findByRole('table', { name: 'Configurazioni provate' });
-    // The headers say the context every number of the column was measured at.
-    expect(screen.getByRole('columnheader', { name: /Generazione/ }).textContent).toContain('(tok/s) a 512 token');
+    // The headers say the context every number of the column was measured at: each one's own, full.
+    expect(screen.getByRole('columnheader', { name: /Generazione/ }).textContent).toContain('(tok/s) al contesto massimo');
     // The older test of the configuration is picked: the configuration counts as picked.
     setCompareSelection([{ runId: IDS.full, label: 'Qwen3 8B' }]);
     const toggle = await screen.findByRole('button', { name: /^Confronta Qwen3 8B · Q4_K_M · llama\.cpp b11438 \(CUDA 13\.4\) · Contesto 8\.192/ });

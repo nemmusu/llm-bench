@@ -31,6 +31,8 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     const attempts = page.getByRole('table', { name: 'Prove fatte' });
     await expect(attempts.getByText('Caricato').first()).toBeVisible({ timeout: 60_000 });
     await expect(attempts.getByText('Memoria esaurita').first()).toBeVisible({ timeout: 60_000 });
+    // Every speed of an attempt says how full the context was ("a 1K di contesto", "a 40K, contesto pieno").
+    await expect(attempts.getByText(/^a [\d,]+K(?: di contesto|, contesto pieno)$/).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Configurazione del server' })).toBeVisible();
     await expect(page.getByText(/cache KV (f16|q8_0|q4_0)/).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Misure finora' })).toBeVisible();
@@ -84,6 +86,16 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     await expect(page.getByLabel('Contesto (token)')).toHaveValue('40960');
     await expect(page.getByLabel('Micro-batch')).toHaveValue('2048');
     await expect(page.getByRole('region', { name: 'Anteprima comando' })).toContainText('q4_0');
+
+    // Risultati → Configurazioni: every combination at its own largest context, with the context full.
+    await page.getByRole('link', { name: 'Risultati' }).click();
+    await page.getByRole('tab', { name: 'Configurazioni' }).click();
+    const configs = page.getByRole('table', { name: 'Configurazioni provate' });
+    await expect(page.getByRole('combobox', { name: 'Confronta a' })).toContainText('Contesto massimo');
+    await expect(page.getByRole('columnheader', { name: /Generazione/ })).toContainText('al contesto massimo');
+    const winner = configs.getByRole('row', { name: /q4_0.*ub 2048/ });
+    await expect(winner).toContainText('40.960');
+    await expect(winner).not.toContainText('non misurata');
   } finally {
     await gb.close();
   }

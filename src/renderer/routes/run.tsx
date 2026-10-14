@@ -8,7 +8,7 @@ import type { ActiveRun, ActiveRunResponse } from '../../contract/api';
 import type { RunPhase } from '../../contract/events';
 import { MIB_PER_GB, prettyEngineLabel } from '../components/bench/format';
 import { initialLive, liveReducer, seedFromActive, type LiveState } from '../components/bench/live-state';
-import { engineKindOfLabel, nowText } from '../components/bench/live-now';
+import { engineKindOfLabel, fullCaption, nowText } from '../components/bench/live-now';
 import { LiveConfig, LivePoints } from '../components/bench/live-panels';
 import { LoadLine } from '../components/bench/load-line';
 import { LiveSpillBanner } from '../components/bench/spill';
@@ -111,7 +111,9 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
   const label = useConfigLabel();
   const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f) : undefined;
-  const nowLine = live.current ? nowText(live.current, f) : undefined;
+  // A search's launch in progress: its measurement with the context full (where its speeds are read) says so.
+  const fullAt = tune ? live.tuneCurrent?.contextSize : undefined;
+  const nowLine = live.current ? nowText(live.current, f, fullAt) : undefined;
   const states = phaseStates(phases, current);
   const at = Math.max(0, phases.indexOf(current));
   const startedAt = ctx?.startedAt ?? (info ? Date.parse(info.startedAt) : undefined);
@@ -244,7 +246,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
               label={t('metrics.decode.label')}
               help={t('metrics.decode.help')}
               unit="tok/s"
-              caption={waiting(live.decodeTps) ?? liveCaption(live.decodeAt, f)}
+              caption={waiting(live.decodeTps) ?? fullCaption(live.decodeAt, fullAt, f) ?? liveCaption(live.decodeAt, f)}
               format={() => dash(live.decodeTps, (v) => number(v, 1))}
             />
             <RadialGauge
@@ -254,7 +256,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
               label={t('metrics.prefill.label')}
               help={t('metrics.prefill.help')}
               unit="tok/s"
-              caption={waiting(live.prefillTps) ?? liveCaption(live.prefillAt, f)}
+              caption={waiting(live.prefillTps) ?? fullCaption(live.prefillAt, fullAt, f) ?? liveCaption(live.prefillAt, f)}
               format={() => dash(live.prefillTps, integer)}
             />
             <RadialGauge
@@ -296,7 +298,7 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
         {tune && <TuneLive tuning={live.tuning} current={live.tuneCurrent} engineKind={engineKind} />}
 
         <div className="grid items-start gap-section xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
-          <LivePoints points={live.points} current={live.current} scenario={scenario} tune={tune} />
+          <LivePoints points={live.points} current={live.current} scenario={scenario} tune={tune} fullAt={fullAt} />
           <LiveConfig launch={live.launch} engineKind={engineKind} />
         </div>
 

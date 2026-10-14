@@ -1,7 +1,8 @@
 /**
  * Risultati → Configurazioni: every way a model was started on this card, fastest first. One row
- * per configuration (engine, model, settings), its numbers at the "Confronta a" depth (medians of
- * its tests), the tests behind it, and the preset to start it again in one click.
+ * per configuration (engine, model, settings), its numbers where "Confronta a" says (each one at its
+ * own largest context with the context full, or one depth for all; medians of its tests), the tests
+ * behind it, and the preset to start it again in one click.
  */
 import { Link } from '@tanstack/react-router';
 import { Fragment, useMemo, useState } from 'react';
@@ -16,7 +17,7 @@ import { countKey, MIB_PER_GB, shortGpuName, summaryModelLabel } from '../bench/
 import { SpillBadge } from '../bench/spill';
 import { entryOfConfig } from '../compare/compare-entries';
 import { CompareToggle } from '../compare/compare-tray';
-import { headerAt } from '../../lib/speed-at';
+import { contextShort, headerAt, headerAtMax, notMeasuredAt, tokensK } from '../../lib/speed-at';
 import { configLabelOf } from '../presets/config-label';
 import { shortDate, tokensShort } from '../presets/format';
 import { PresetActions } from '../presets/preset-actions';
@@ -27,7 +28,7 @@ import { EmptyState } from '../ui/empty-state';
 import { HelpTip } from '../ui/help-tip';
 import { Select } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
-import { defaultDepth, depthChoices, pointAt, sourceFor } from './depths';
+import { AT_MAX, defaultAt, depthChoices, depthFor, pointFor, sourceFor, type CompareAt } from './depths';
 import { configEngineLabel } from './engine-label';
 import { SourcesDialog } from './sources-dialog';
 import { NUMERIC, UnitHeader } from './unit-header';
@@ -46,7 +47,7 @@ interface Filters {
 
 const NO_FILTERS: Filters = { model: ALL, engine: ALL, minContext: ALL };
 
-/** A table row: the configuration and its numbers at the compared depth (none when not measured there). */
+/** A table row: the configuration and its numbers where they are compared (none when not measured there). */
 interface Row {
   entry: ConfigEntry;
   point: DepthPoint | undefined;
@@ -72,7 +73,7 @@ export function ConfigsView() {
   const f = useI18n();
   const { t, number, integer, date } = f;
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [picked, setPicked] = useState<number | undefined>(undefined);
+  const [picked, setPicked] = useState<CompareAt | undefined>(undefined);
   const [open, setOpen] = useState<ConfigEntry | undefined>(undefined);
   const query: ConfigsQuery = {
     ...(filters.gpu ? { gpu: filters.gpu } : {}),
@@ -84,26 +85,32 @@ export function ConfigsView() {
   const data = res.data;
   const entries = useMemo(() => data?.configs ?? [], [data]);
   const choices = useMemo(() => depthChoices(entries), [entries]);
-  const depth = picked !== undefined && choices.includes(picked) ? picked : defaultDepth(entries, choices);
+  const at = picked === AT_MAX || (picked !== undefined && choices.includes(picked)) ? picked : defaultAt(entries, choices);
   const set = (patch: Partial<Filters>) => setFilters((cur) => ({ ...cur, ...patch }));
-  // New rows for every depth: the table caches cell values per row, so the numbers must come with them.
-  const rows = useMemo(() => entries.map((entry): Row => ({ entry, point: pointAt(entry, depth) })), [entries, depth]);
+  // New rows for every choice: the table caches cell values per row, so the numbers must come with them.
+  const rows = useMemo(() => entries.map((entry): Row => ({ entry, point: pointFor(entry, at) })), [entries, at]);
 
   const columns = useMemo(() => {
     const col = columnHelper<Row>();
     const dash = <span className="text-fg-3">–</span>;
-    // Every number of a speed column is measured at the compared depth: the header says which (a table
-    // has configurations, each measured at least one depth, so there is one).
-    const at = (label: string) => headerAt(label, depth as number, f);
+    // Every number of a speed column is measured where the table compares: the header says where (a
+    // table has configurations, each measured at least one depth, so there is a choice).
+    const header = (label: string) => (at === AT_MAX ? headerAtMax(label, f) : headerAt(label, at as number, f));
+    // Not measured there: its largest context, never filled ("non misurata a 256K"; a server without a
+    // known context: the deepest it measured); a depth beyond its context it cannot reach ("arriva solo a 32K").
+    const missing = (e: ConfigEntry): string => {
+      if (at === AT_MAX) return notMeasuredAt(e.contextSize ?? depthFor(e, at)!, f);
+      return e.contextSize !== undefined && e.contextSize < (at as number) ? t('configs.reachesOnly', { ctx: tokensK(e.contextSize, f) }) : notMeasuredAt(at as number, f);
+    };
     /** A number at the compared depth; the column only when some configuration has it. */
-    const atDepth = (id: string, header: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<Row>[] =>
+    const atDepth = (id: string, label: MessageKey, pick: (p: DepthPoint) => number | undefined, show: (v: number) => string): DataTableColumn<Row>[] =>
       rows.some((r) => r.point !== undefined && pick(r.point) !== undefined)
         ? [
             col.accessor(
               (r) => r.point && pick(r.point),
               {
                 id,
-                header: () => <UnitHeader text={at(t(header))} />,
+                header: () => <UnitHeader text={header(t(label))} />,
                 meta: NUMERIC,
                 sortUndefined: 'last',
                 cell: (c) => {
@@ -170,15 +177,21 @@ export function ConfigsView() {
         : []),
       col.accessor((r) => r.point?.decodeTps, {
         id: 'decode',
-        header: () => <UnitHeader text={at(t('configs.columns.decode'))} />,
+        header: () => <UnitHeader text={header(t('configs.columns.decode'))} />,
         meta: NUMERIC,
         sortUndefined: 'last',
         cell: (c) => {
           const v = c.getValue();
-          return v === undefined ? (
-            <span className="text-xs whitespace-normal text-fg-3 italic">{t('configs.notMeasured')}</span>
-          ) : (
-            <b className="font-semibold">{number(v, 1)}</b>
+          const { entry, point } = c.row.original;
+          if (v === undefined) return <span className="text-xs whitespace-normal text-fg-3 italic">{missing(entry)}</span>;
+          const value = <b className="font-semibold">{number(v, 1)}</b>;
+          // A server whose context is not known: the depth its largest measurement was made at.
+          if (at !== AT_MAX || entry.contextSize !== undefined) return value;
+          return (
+            <span className="flex flex-col items-end leading-5">
+              {value}
+              <span className="text-xs whitespace-nowrap text-fg-3">{contextShort({ kind: 'write', tokens: point!.depth, basis: 'depth' }, f)}</span>
+            </span>
           );
         },
       }),
@@ -224,13 +237,13 @@ export function ConfigsView() {
         header: () => <span className="sr-only">{t('configs.columns.actions')}</span>,
         cell: (c) => (
           <span className="flex items-start gap-2">
-            <RowPreset entry={c.row.original.entry} depth={depth} />
-            <CompareToggle compact entry={entryOfConfig(c.row.original.entry, depth, f)} also={c.row.original.entry.sources.map((s) => (s.combo === undefined ? { runId: s.runId } : { runId: s.runId, combo: s.combo }))} />
+            <RowPreset entry={c.row.original.entry} depth={depthFor(c.row.original.entry, at)} />
+            <CompareToggle compact entry={entryOfConfig(c.row.original.entry, depthFor(c.row.original.entry, at), f)} also={c.row.original.entry.sources.map((s) => (s.combo === undefined ? { runId: s.runId } : { runId: s.runId, combo: s.combo }))} />
           </span>
         ),
       }),
     ] as DataTableColumn<Row>[];
-  }, [rows, entries, depth, f, t, number, integer, date]);
+  }, [rows, entries, at, f, t, number, integer, date]);
 
   const gpuOptions = (data?.gpus ?? []).map((g) => ({
     value: g.key,
@@ -275,17 +288,17 @@ export function ConfigsView() {
               ...CONTEXT_STEPS.map((n) => ({ value: String(n), label: t('configs.contextAtLeast', { n: tokensShort(n, f) }) })),
             ]}
           />
-          {depth !== undefined && (
+          {at !== undefined && (
             <span className="inline-flex items-center gap-2">
               <span aria-hidden className="text-sm font-medium text-fg">
                 {t('configs.compareAt')}
               </span>
               <Select
                 aria-label={t('configs.compareAt')}
-                value={String(depth)}
-                onValueChange={(v) => setPicked(Number(v))}
-                className="w-36"
-                options={choices.map((d) => ({ value: String(d), label: t('configs.depth', { n: tokensShort(d, f) }) }))}
+                value={String(at)}
+                onValueChange={(v) => setPicked(v === AT_MAX ? AT_MAX : Number(v))}
+                className="w-44"
+                options={[{ value: AT_MAX, label: t('configs.atMax') }, ...choices.map((d) => ({ value: String(d), label: t('configs.depth', { n: tokensShort(d, f) }) }))]}
               />
               <HelpTip term={t('configs.compareAt')}>{t('configs.compareAtHelp')}</HelpTip>
             </span>
@@ -325,7 +338,7 @@ export function ConfigsView() {
           )}
         </Card>
       )}
-      {depth !== undefined && <SourcesDialog entry={open} depth={depth} onOpenChange={(v) => !v && setOpen(undefined)} />}
+      {at !== undefined && <SourcesDialog entry={open} at={at} onOpenChange={(v) => !v && setOpen(undefined)} />}
     </div>
   );
 }

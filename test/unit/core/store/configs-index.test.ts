@@ -153,6 +153,23 @@ describe('sources of a run', () => {
     expect(sourcesOf(run('T2', '2026-10-02T10:00:00.000Z', [], { tuning: tuning([]) }))).toBeUndefined();
   });
 
+  it('a sweep\'s point with the context full stands at the context, even sent again shorter: it lines up with the others', () => {
+    const r = run('F1', '2026-10-02T10:00:00.000Z', [], {
+      scenario: { profile: 'tune', seed: 42, steps: [] },
+      tuning: tuning([
+        combo({ contextSize: 262144 }, [point(1024, 85), point(65536, 83), point(255000, 80)]),
+        combo({ contextSize: 262144, kvCacheType: 'q8_0' }, [point(1024, 122), point(65536, 75)]),
+      ]),
+    });
+    expect(sourcesOf(r)!.sources.map((x) => x.source.points.map((p) => p.depth))).toEqual([
+      [1024, 65536, 262144],
+      [1024, 65536],
+    ]);
+    // A normal run's context sweep too (its prompts stay prompts).
+    const normal = run('F2', '2026-10-02T11:00:00.000Z', ['-c', '8192'], { metrics: { ...makeRun().metrics, latency: [point(512, 200)], contextSweep: [point(1024, 190), point(7500, 170)] } });
+    expect(sourcesOf(normal)!.sources[0]!.source.points.map((p) => p.depth)).toEqual([512, 1024, 8192]);
+  });
+
   it('a "Più utenti" combination is a source by its users at once (no sweep); the layout and cache reuse are part of it', () => {
     const users = (perUser: number) => [concurrency(1, 90, 90), concurrency(2, 160, 80), concurrency(4, 280, perUser)];
     const r = run('M1', '2026-10-02T10:00:00.000Z', [], {

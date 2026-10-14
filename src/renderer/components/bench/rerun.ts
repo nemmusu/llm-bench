@@ -4,10 +4,10 @@
  * params of the run, or of one combination of a "Trova le impostazioni migliori" run.
  */
 import type { StartRunRequest, StartServerRequest } from '../../../contract/api';
-import { configParamsOf } from '../../../contract/configs';
+import { configParamsOf, sweepDepths } from '../../../contract/configs';
 import { isDockerKind, type ApiFlavor, type EngineConfig, type LaunchParams } from '../../../contract/engines';
 import type { LocalModel } from '../../../contract/models';
-import { nominalDepth, type LatencyPoint, type Profile, type RunResult } from '../../../contract/results';
+import { nominalDepth, type Profile, type RunResult } from '../../../contract/results';
 import { serverNinfer } from '../engines/ninfer-format';
 import { hasCustomParams } from './expert-form';
 import { headlinePoint, isManagedExecutable, modelLabelOf } from './format';
@@ -52,7 +52,6 @@ export function findLocalModel(run: Pick<RunResult, 'model'>, local: readonly Lo
   );
 }
 
-const measured = (points: readonly LatencyPoint[]) => points.filter((p) => p.decodeTps.n > 0);
 
 /**
  * A build LLM Bench installed: in this PC's engines folder, or in the same layout elsewhere (a test
@@ -64,15 +63,6 @@ function managedBuild(exe: string, enginesDir: string | undefined): boolean {
 
 function provenanceOf(run: RunResult, params: LaunchParams, combo: number | undefined, at: number | undefined): PresetProvenance {
   const combination = combo === undefined ? undefined : run.tuning?.combinations[combo];
-  // Runs saved before the context sweep existed have no such list.
-  const points = measured(combination ? combination.sweep : [...run.metrics.latency, ...(run.metrics.contextSweep ?? [])]);
-  // Depths as the Configurazioni view names them (the deepest prompt of a 32K context is "32K").
-  const point =
-    at !== undefined
-      ? points.find((p) => nominalDepth(p.promptTokens) === at)
-      : combination
-        ? [...points].sort((a, b) => b.promptTokens - a.promptTokens)[0]
-        : headlinePoint(measured(run.metrics.latency)) ?? points[0];
   const contextSize =
     combination?.maxContext ??
     configParamsOf({
@@ -83,12 +73,25 @@ function provenanceOf(run: RunResult, params: LaunchParams, combo: number | unde
       blockCount: run.model.facts?.blockCount,
       modelContext: run.model.facts?.contextLength,
     }).contextSize;
+  // Depths as the Configurazioni view names them: the deepest prompt of a 32K context is "32K", a
+  // sweep's point with the context full stands at the context. Runs saved before the context sweep existed have no such list.
+  const latency = combination ? [] : run.metrics.latency;
+  const sweep = combination ? combination.sweep : (run.metrics.contextSweep ?? []);
+  const depths = [...latency.map((p) => nominalDepth(p.promptTokens)), ...sweepDepths(sweep.map((p) => p.promptTokens), contextSize)];
+  const points = [...latency, ...sweep].map((point, i) => ({ point, depth: depths[i]! })).filter((x) => x.point.decodeTps.n > 0);
+  const headline = headlinePoint(latency.filter((p) => p.decodeTps.n > 0));
+  const hit =
+    at !== undefined
+      ? points.find((x) => x.depth === at)
+      : combination
+        ? [...points].sort((a, b) => b.point.promptTokens - a.point.promptTokens)[0]
+        : (points.find((x) => x.point === headline) ?? points[0]);
   return {
     runId: run.id,
     ...(combination ? { combo } : {}),
     label: modelLabelOf(run.model),
     date: run.createdAt,
-    ...(point ? { decodeTps: point.decodeTps.median, depth: nominalDepth(point.promptTokens) } : {}),
+    ...(hit ? { decodeTps: hit.point.decodeTps.median, depth: hit.depth } : {}),
     ...(contextSize !== undefined ? { contextSize } : {}),
   };
 }

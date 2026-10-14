@@ -1,5 +1,6 @@
 /** The headline numbers of a run, picked once for the result page, the compare page and the exports. */
-import { contextTokensOf, promptsCalibrated, type ConcurrencyPoint, type RunResult, type Stat } from '../../../contract/results';
+import { contextTokensOf, fullContextPoint, promptsCalibrated, type ConcurrencyPoint, type LatencyPoint, type RunResult, type Stat, type TuneCombination } from '../../../contract/results';
+import { recommendedIndex } from '../tune/tune-logic';
 import { headlinePoint, peakConcurrency, prefillStat, vramFigure, type VramFigure } from './format';
 
 /** Average words per token (Italian/English prose) used for the plain-language sentence. */
@@ -50,6 +51,32 @@ export function kpisOf(run: Pick<RunResult, 'metrics'> & { notes?: RunResult['no
   if (conc) out.concurrency = conc;
   if (m.score) out.score = m.score.value;
   return out;
+}
+
+/** The headline of a one-user "Trova le impostazioni migliori" run (see tuneHeadline). */
+export interface TuneHeadline {
+  /** Index of the combination in tuning.combinations. */
+  index: number;
+  combo: TuneCombination;
+  point: LatencyPoint;
+  /** Measured with its context full; false = the search stopped before filling it (its deepest point). */
+  full: boolean;
+}
+
+/**
+ * A one-user search's speeds, read where the search reads them: its recommended combination (or the
+ * one at `index`) with its context full; a search that stopped before filling it gives its deepest
+ * point, and says so. undefined for "Più utenti", a run without a search, or nothing measured.
+ */
+export function tuneHeadline(run: Pick<RunResult, 'tuning'>, index?: number): TuneHeadline | undefined {
+  const t = run.tuning;
+  if (!t || t.goal === 'multi') return undefined;
+  const i = index ?? recommendedIndex(t);
+  const combo = i === undefined ? undefined : t.combinations[i];
+  if (!combo?.sweep.length) return undefined;
+  const full = fullContextPoint(combo);
+  const point = full ?? combo.sweep.reduce((a, b) => (b.promptTokens > a.promptTokens ? b : a));
+  return { index: i!, combo, point, full: full !== undefined };
 }
 
 /** Plain-language key for the speed sentence: faster than reading, or about as fast. */

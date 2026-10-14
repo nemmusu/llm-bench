@@ -1837,6 +1837,7 @@ export const en: Messages = {
       combosOne: '1 combination',
       short: 'Best settings',
       kv: '{kv} cache',
+      notFull: 'Measured with the context filled to {depth}: the search stopped before filling the largest context, {ctx}.',
     },
   },
   tune: {
@@ -2094,6 +2095,9 @@ export const en: Messages = {
       attemptsHelp: 'Every attempt starts the engine with different settings. “Out of memory” and “Uses shared RAM” mean that combination does not fit entirely in graphics memory.',
       count: '{n} of up to {max}',
       noAttempts: 'The first attempt starts shortly.',
+      atFull: 'at {tokens}, context full',
+      full: 'context full',
+      gaugeFull: 'context full: {tokens} tokens',
     },
     users: {
       best: 'With {users} users with {ctx} each, the fastest per user is {settings}.',
@@ -2138,6 +2142,7 @@ export const en: Messages = {
       caption: 'Before and now: {settings}',
       moved: 'beyond noise',
       withinNoise: 'within noise',
+      atFull: '{ctx}, context full',
       noiseHelp: 'A difference within the measurement noise (less than 2%, or twice the variation between repetitions) does not count as a change.',
       columns: {
         at: 'Context filled (tokens)',
@@ -2251,8 +2256,10 @@ export const en: Messages = {
     contextAtLeast: 'Context ≥ {n}',
     compareAt: 'Compare at',
     compareAtHelp:
-      'How many tokens of text the model already has in front of it: the prompt length, or how full the context is. The fuller, the slower. Only numbers really measured at this depth are compared, never estimates.',
+      'Largest context: every configuration with its own largest context, filled to the end, that is how fast it goes when you use all of it. Or one length for all: how many tokens of text the model already has in front of it (the prompt, or how full the context is). The fuller, the slower. Only numbers really measured are compared, never estimates.',
+    atMax: 'Largest context',
     depth: '{n} tokens',
+    reachesOnly: 'only reaches {ctx}',
     count: '{n} configurations',
     countOne: '1 configuration',
     columns: {
@@ -2271,7 +2278,6 @@ export const en: Messages = {
     },
     configHelp:
       'The settings the engine started with, when they differ from the defaults. KV cache: the context memory (f16 full, q8_0 and q4_0 compressed to fit more). Flash attention: a faster, lighter computation. ub and b: how many tokens it reads at a time. Parallel slots: how many requests it serves at once. Context shared by the users: one context memory for everyone, a long conversation can use more of it; context split per user: everyone gets an equal part of their own. Cache reuse: less text is read again when part of a message was already read before.',
-    notMeasured: 'not measured at this depth',
     defaults: 'Default settings',
     perUser: '{tps} each',
     total: '{tps} total',
@@ -2284,6 +2290,7 @@ export const en: Messages = {
       title: 'Tests for this configuration',
       test: 'Test',
       decodeAt: 'Generation at {depth} (tok/s)',
+      decodeAtMax: 'Generation at the largest context (tok/s)',
     },
     emptyTitle: 'No configurations yet',
     emptyBody: 'Every way you started a model shows up here, fastest first, ready to reuse. Run a benchmark to begin.',
@@ -2406,6 +2413,7 @@ export const en: Messages = {
     depth: {
       label: 'Compare at',
       all: 'measured by all',
+      allFull: 'measured by all, with the context full',
       missing: 'not measured by {items}',
       none: 'no length in common',
       help: 'How many tokens of text are already in the context when the model writes (or how long the prompt it reads is). The fuller, the slower: that is why only numbers measured at the same length are compared, never estimates. The list only has the lengths measured by at least two items.',
@@ -2852,9 +2860,14 @@ export const en: Messages = {
     summary: {
       sessions: '{model} with {engine} on {gpu}: reads the context at {read} tokens/s and writes at {write} tokens/s per conversation (tested with {depth} tokens).',
       basic: '{model} with {engine} on {gpu}: reads text at {read} tokens/s and writes at {write} tokens/s.',
+      tuneFull: '{model} with {engine} on {gpu}: with the context full ({ctx}) it reads text at {read} tokens/s and writes at {write} tokens/s.',
+      tuneAt: '{model} with {engine} on {gpu}: with the context filled to {depth} (the largest is {ctx}) it reads text at {read} tokens/s and writes at {write} tokens/s.',
     },
     basic: {
       prompt: 'Prompt (tokens)',
+      depth: 'Context filled (tokens)',
+      depthFull: '{n} (context full)',
+      notFull: 'The search stopped before filling the largest context ({ctx}): these numbers are with the context filled to {depth}.',
       read: 'Reading (tokens/s)',
       firstWait: 'First answer wait',
       write: 'Writing (tokens/s)',

@@ -4,11 +4,12 @@
  */
 import { runAppLabel, type RunResult, type Stat } from '../../../contract/results';
 import { engineLabelOf, modelLabelOf, MIB_PER_GB, prefillStat, shortGpuName } from '../../components/bench/format';
-import { kpisOf, sentenceKey } from '../../components/bench/kpis';
+import { kpisOf, sentenceKey, tuneHeadline } from '../../components/bench/kpis';
 import { noteText } from '../../components/bench/notes';
 import { launchSummaryParts } from '../../components/bench/summary';
 import { validityBody } from '../../components/bench/validity';
 import { errorText, type Formatters } from '../../i18n';
+import { headerAt, headerAtMax } from '../speed-at';
 
 export interface ReportTable {
   head: string[];
@@ -49,6 +50,9 @@ const DASH = '–';
 export function reportOf(run: RunResult, f: Formatters): Report {
   const { t, number, integer, percent, duration, dateTime, bytes } = f;
   const k = kpisOf(run);
+  // A search's speeds are its recommended combination's with the context full (or as full as it got, said).
+  const tuned = tuneHeadline(run);
+  const speed = (label: string) => (!tuned ? label : tuned.full ? headerAtMax(label, f) : headerAt(label, tuned.point.promptTokens, f));
   const m = run.metrics;
   const gpu = run.hardware.gpus[0];
   const med = (s: Stat | undefined, digits: number) => (s ? number(s.median, digits) : DASH);
@@ -68,9 +72,9 @@ export function reportOf(run: RunResult, f: Formatters): Report {
       head: [t('result.details.measure'), t('result.details.value')],
       numericFrom: 1,
       rows: [
-        [`${t('metrics.decode.label')} (tok/s)`, med(k.decode, 1)],
-        [`${t('metrics.prefill.label')} (tok/s)`, med(k.prefill, 0)],
-        [`${t('metrics.ttft.label')} (ms)`, med(k.ttft, 0)],
+        [speed(`${t('metrics.decode.label')} (tok/s)`), med(tuned?.point.decodeTps ?? k.decode, 1)],
+        [speed(`${t('metrics.prefill.label')} (tok/s)`), med(tuned ? prefillStat(tuned.point) : k.prefill, 0)],
+        [speed(`${t('metrics.ttft.label')} (ms)`), med(tuned?.point.ttftMs ?? k.ttft, 0)],
         [`${t('metrics.coldLoad.label')} (s)`, k.coldMs ? number(k.coldMs.median / 1000, 2) : DASH],
         [`${t('metrics.warmLoad.label')} (s)`, k.warmMs ? number(k.warmMs.median / 1000, 2) : DASH],
         [t('metrics.vramPeak.label'), k.vram ? `${gb(k.vram.mib)}${k.vram.approximate ? ` (${t('result.vramApprox')})` : ''}` : DASH],

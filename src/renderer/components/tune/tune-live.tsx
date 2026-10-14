@@ -1,13 +1,15 @@
 /**
  * Live screen of "Trova le impostazioni migliori": every launch so far as it happens (loaded, out of
- * memory, spilling into shared RAM, error), the largest context per KV cache as it becomes known,
- * and the speed-vs-context chart filling in.
+ * memory, spilling into shared RAM, error) with the speed it measured and where, the largest context
+ * per KV cache as it becomes known, and the speed-vs-context chart filling in.
  */
 import { Check, CircleAlert, Loader, MemoryStick, TriangleAlert } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { EngineKind } from '../../../contract/engines';
-import type { TuneAttempt, Tuning } from '../../../contract/results';
-import { useI18n } from '../../i18n';
+import { fillsContext, type TuneAttempt, type Tuning } from '../../../contract/results';
+import { useI18n, type Formatters } from '../../i18n';
 import { cn } from '../../lib/cn';
+import { contextShort, tokensK } from '../../lib/speed-at';
 import type { TuneCurrent } from '../bench/live-state';
 import { MIB_PER_GB } from '../bench/format';
 import { MeasureTable, type MeasureRow } from '../bench/measure-table';
@@ -29,6 +31,22 @@ function Outcome({ a }: { a: Pick<TuneAttempt, 'outcome' | 'screen' | 'error'> }
     <span className={cn('inline-flex items-center gap-1.5 font-medium', a.screen === 'lost' ? 'text-fg-3' : TONES[a.outcome])}>
       <Icon aria-hidden className="size-4 shrink-0" />
       {outcomeText(a, f)}
+    </span>
+  );
+}
+
+/**
+ * The generation speed an attempt measured last, over where: "a 64K di contesto", or "a 256K, contesto
+ * pieno" when it filled the launch's context (where a combination's speeds are read).
+ */
+export function attemptSpeed(a: Pick<TuneAttempt, 'points' | 'contextSize'>, f: Pick<Formatters, 't' | 'number' | 'integer'>): ReactNode {
+  const p = lastPoint(a);
+  if (!p) return '–';
+  const at = fillsContext(p.promptTokens, a.contextSize) ? f.t('tune.live.atFull', { tokens: tokensK(a.contextSize, f) }) : contextShort({ kind: 'write', tokens: p.promptTokens, basis: 'depth' }, f);
+  return (
+    <span className="inline-flex flex-col items-end leading-5">
+      <span>{f.number(p.decodeTps.median, 1)}</span>
+      <span className="text-xs text-fg-3">{at}</span>
     </span>
   );
 }
@@ -68,14 +86,11 @@ export function TuneLive({ tuning, current, engineKind }: TuneLiveProps) {
         ]
       : []),
     ...attempts
-      .map((a, i) => {
-        const p = lastPoint(a);
-        return {
-          key: i,
-          muted: a.screen === 'lost',
-          cells: [<Outcome key="o" a={a} />, depthLabel(a.contextSize, f), kvName(a.kvType, f), settings(a), gb(a.vramPeakMiB), p ? number(p.decodeTps.median, 1) : '–'],
-        };
-      })
+      .map((a, i) => ({
+        key: i,
+        muted: a.screen === 'lost',
+        cells: [<Outcome key="o" a={a} />, depthLabel(a.contextSize, f), kvName(a.kvType, f), settings(a), gb(a.vramPeakMiB), attemptSpeed(a, f)],
+      }))
       .reverse(),
   ];
   const combos = tuning ? measuredCombinations(tuning).length : 0;
@@ -107,7 +122,7 @@ export function TuneLive({ tuning, current, engineKind }: TuneLiveProps) {
           ) : (
             <p className="px-card pb-card text-sm text-fg-3">{t('tune.live.noAttempts')}</p>
           )}
-          <TuneGlossary className="border-t border-border px-card py-3" />
+          <TuneGlossary className="border-t border-border px-card py-3" engineKind={engineKind} tuning={tuning} />
         </Card>
         <CapacityLive tuning={tuning} current={current} />
       </div>

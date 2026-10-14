@@ -4,13 +4,17 @@
  * configuration in words, the exact command, how fast it reads and writes, what long conversations
  * wait, what the cache saves, how the queue works, how much context the memory holds, the comparison
  * in words and a glossary. Never any secret: commands are stored redacted, and every text is scrubbed again.
+ * A "Trova le impostazioni migliori" result is about its recommended combination (or the one compared):
+ * its settings, its command and its speeds with the context full.
  */
-import type { RunResult } from '../../../contract/results';
+import { contextTokensOf, promptsCalibrated, type RunResult } from '../../../contract/results';
 import { compareRows, engineName, rowLead, type CompareItem } from '../../components/compare/compare-model';
 import { engineLabelOf, headlinePoint, MIB_PER_GB, modelLabelOf, prefillStat, shortGpuName, slug } from '../../components/bench/format';
+import { tuneHeadline, type TuneHeadline } from '../../components/bench/kpis';
 import { launchLabelOf } from '../../components/presets/config-label';
 import { kvCapacityText, sessionsGlossary, sessionsOf, sessionsRows, sessionsSentences, sessionsTable, soloPoint } from '../../components/bench/sessions-view';
 import type { Formatters } from '../../i18n';
+import { tokensK } from '../speed-at';
 import { reportToHtml } from './html';
 import { reportToMarkdown } from './markdown';
 import type { Report, ReportSection } from './report';
@@ -28,6 +32,8 @@ export interface SheetCompare {
 export interface SheetInput {
   /** The result the sheet is about (in a comparison: the item chosen in the dialog). */
   run: RunResult;
+  /** A search's combination the sheet is about (in a comparison: the one compared); default: its recommended one. */
+  combo?: number | undefined;
   /** From the Compare page: every item, the one the sheet is about included. */
   compare?: SheetCompare;
   /** Typed by the user in the export dialog (all optional). */
@@ -98,7 +104,7 @@ function machine(run: RunResult, f: Pick<Formatters, 'integer' | 'bytes'>): { gp
   };
 }
 
-function speedSections(run: RunResult, f: Formatters): ReportSection[] {
+function speedSections(run: RunResult, tuned: TuneHeadline | undefined, f: Formatters): ReportSection[] {
   const { t, integer, number, duration } = f;
   const out: ReportSection[] = [];
   const points = sessionsOf(run);
@@ -146,6 +152,19 @@ function speedSections(run: RunResult, f: Formatters): ReportSection[] {
         numericFrom: 0,
       },
     });
+  } else if (tuned) {
+    // A search: one request with the context full (where it reads the speeds), or as full as it got.
+    const q = tuned.point;
+    const tokens = integer(contextTokensOf(q, promptsCalibrated(run)));
+    out.push({
+      title: t('sheet.sections.speed'),
+      table: {
+        head: [t('sheet.basic.depth'), t('sheet.basic.read'), t('sheet.basic.firstWait'), t('sheet.basic.write')],
+        rows: [[tuned.full ? t('sheet.basic.depthFull', { n: tokens }) : tokens, integer(prefillStat(q).median), duration(q.ttftMs.median), number(q.decodeTps.median, 1)]],
+        numericFrom: 0,
+      },
+      ...(tuned.full ? {} : { after: [t('sheet.basic.notFull', { ctx: tokensK(tuned.combo.maxContext, f), depth: tokensK(q.promptTokens, f) })] }),
+    });
   }
   return out;
 }
@@ -183,6 +202,9 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
   const m = machine(run, f);
   const model = modelLabelOf(run.model);
   const sections: ReportSection[] = [];
+  // A search is used through a combination: its settings and its command, not the search's last launch.
+  const tuned = tuneHeadline(run, input.combo);
+  const launch = tuned ? { params: tuned.combo.params, display: { powershell: tuned.combo.command.powershell, bash: tuned.combo.command.bash } } : run.launch;
 
   if (service || address || notes) {
     sections.push({
@@ -211,14 +233,14 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
         [t('sheet.facts.gpu'), m.gpu],
         [t('sheet.facts.pc'), m.pc],
         // The same words as the rest of the app (Risultati → Configurazioni, the result header).
-        [t('sheet.facts.launch'), launchLabelOf(run.launch.params, run.engine.kind, f, { blockCount: run.model.facts?.blockCount }).text],
+        [t('sheet.facts.launch'), launchLabelOf(launch.params, run.engine.kind, f, { blockCount: run.model.facts?.blockCount, tags: tuned?.combo.tags }).text],
       ],
     },
     after: [t('sheet.facts.commandIntro')],
-    code: run.launch.display,
+    code: launch.display,
   });
 
-  sections.push(...speedSections(run, f));
+  sections.push(...speedSections(run, tuned, f));
   if (run.metrics.kvCapacity) {
     sections.push({ title: t('sheet.sections.memory'), text: t('sheet.memory.body', { value: kvCapacityText(run.metrics.kvCapacity, f) }) });
   }
@@ -229,11 +251,20 @@ export function sheetOf(input: SheetInput, f: Formatters): Report {
 
   const solo = soloPoint(sessionsOf(run));
   const p = headlinePoint(run.metrics.latency);
+  const who = { model, engine: engineLabelOf(run.engine), gpu: shortGpuName(run.hardware.gpus[0]?.name ?? '–') };
   const sentence = solo?.aggregatePrefillTps !== undefined
-    ? t('sheet.summary.sessions', { model, engine: engineLabelOf(run.engine), gpu: shortGpuName(run.hardware.gpus[0]?.name ?? '–'), read: integer(solo.aggregatePrefillTps), write: f.number(solo.firstTurn.decodeTps.median, 1), depth: integer(solo.depth) })
+    ? t('sheet.summary.sessions', { ...who, read: integer(solo.aggregatePrefillTps), write: f.number(solo.firstTurn.decodeTps.median, 1), depth: integer(solo.depth) })
     : p
-      ? t('sheet.summary.basic', { model, engine: engineLabelOf(run.engine), gpu: shortGpuName(run.hardware.gpus[0]?.name ?? '–'), read: integer(prefillStat(p).median), write: f.number(p.decodeTps.median, 1) })
-      : undefined;
+      ? t('sheet.summary.basic', { ...who, read: integer(prefillStat(p).median), write: f.number(p.decodeTps.median, 1) })
+      : tuned
+        ? t(tuned.full ? 'sheet.summary.tuneFull' : 'sheet.summary.tuneAt', {
+            ...who,
+            read: integer(prefillStat(tuned.point).median),
+            write: f.number(tuned.point.decodeTps.median, 1),
+            ctx: tokensK(tuned.combo.maxContext, f),
+            depth: tokensK(tuned.point.promptTokens, f),
+          })
+        : undefined;
 
   return scrub({
     title: service ? t('sheet.titleNamed', { service, model }) : t('sheet.title', { model }),

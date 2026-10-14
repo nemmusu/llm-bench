@@ -46,6 +46,15 @@ describe('Risultati → Configurazioni', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ view: 'configs' }));
     await table();
     expect(screen.getByText('6 configurazioni')).toBeTruthy();
+    // "Contesto massimo" first: each one with its own context full. Only the Full test filled its 8K
+    // (a prompt of 8.192 tokens); the others say where they were not measured, and sink to the bottom.
+    expect(screen.getByRole('combobox', { name: 'Confronta a' }).textContent).toContain('Contesto massimo');
+    expect(screen.getByRole('columnheader', { name: /Generazione/ }).textContent).toBe('Generazione(tok/s) al contesto massimo');
+    expect(rowModels()[0]).toContain('Qwen3 8B');
+    expect(within(rowOf(/Qwen3 8B/)).getByText('157,9')).toBeTruthy();
+    expect(within(rowOf(/Gemma 4 31B/)).getByText('non misurata a 8K')).toBeTruthy();
+    expect(within(rowOf(/Mistral/)).getByText('non misurata a 1K')).toBeTruthy();
+    await choose('Confronta a', '512 token');
     // Fastest first; the headers say their unit.
     const decode = screen.getByRole('columnheader', { name: /Generazione/ });
     expect(decode.getAttribute('aria-sort')).toBe('descending');
@@ -68,11 +77,11 @@ describe('Risultati → Configurazioni', () => {
     expect(within(qwen).getByText('184,7')).toBeTruthy();
     expect(within(qwen).getByRole('button', { name: 'Mostra i 2 test di Qwen3 8B' })).toBeTruthy();
 
-    // "Confronta a": 512 by default (every configuration has it); at 4K the quick test sinks to the bottom.
+    // "Confronta a" 4K: the quick test (1K of context) sinks to the bottom and says how far it gets.
     expect(screen.getByRole('combobox', { name: 'Confronta a' }).textContent).toContain('512 token');
     await choose('Confronta a', '4K token');
     expect(rowModels().at(-1)).toContain('Mistral');
-    expect(within(rowOf(/Mistral/)).getByText('non misurata a questa profondità')).toBeTruthy();
+    expect(within(rowOf(/Mistral/)).getByText('arriva solo a 1K')).toBeTruthy();
     await userEvent.click(within(decode).getByRole('button'));
     expect(screen.getByRole('columnheader', { name: /Generazione/ }).getAttribute('aria-sort')).toBe('ascending');
     expect(rowModels()[0]).toContain('Gemma');
@@ -104,11 +113,12 @@ describe('Risultati → Configurazioni', () => {
     await userEvent.click(within(rowOf(/Qwen3 8B/)).getByRole('button', { name: 'Mostra i 2 test di Qwen3 8B' }));
     const dialog = await screen.findByRole('dialog', { name: 'Test di questa configurazione' });
     expect(within(dialog).getByText(/Qwen3 8B · Q4_K_M · llama.cpp b11438 \(CUDA 13.4\) · Contesto 8\.192 · cache KV f16 · flash attention/)).toBeTruthy();
-    expect(within(dialog).getByRole('columnheader', { name: /Generazione a 512/ }).textContent).toContain('(tok/s)');
+    // Each test with its own context full, as the table compares them.
+    expect(within(dialog).getByRole('columnheader', { name: /Generazione al contesto massimo/ }).textContent).toContain('(tok/s)');
     const links = within(dialog).getAllByRole('link');
     expect(links).toHaveLength(2);
     expect(within(dialog).getAllByText('Completo')).toHaveLength(2);
-    expect(within(dialog).getByText('186,0')).toBeTruthy();
+    expect(within(dialog).getAllByText('157,9')).toHaveLength(2);
     expect(within(dialog).getAllByText('16 utenti')).toHaveLength(1);
     expect(within(dialog).getAllByText('90 ciascuno · 1.435 in tutto')).toHaveLength(1);
     await userEvent.click(links[1]!);
@@ -157,8 +167,8 @@ describe('Risultati → Configurazioni', () => {
     await userEvent.click(await within(qwen).findByRole('button', { name: 'Usa questo preset' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     const banner = await screen.findByRole('region', { name: 'Preset' });
-    // The newest test of the configuration that measured 512 tokens, quoted with its own numbers.
-    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M» del 07/10: scrive 186 tok/s a 512 token, 8K di contesto')).toBeTruthy();
+    // The newest test of the configuration with its context full, quoted with its own numbers.
+    expect(within(banner).getByText('Preset da «Qwen3 8B · Q4_K_M» del 07/10: scrive 158 tok/s a 8K token, 8K di contesto')).toBeTruthy();
     expect(api.settings.expertMode).toBe(true);
     expect(((await screen.findByLabelText('Contesto (token)')) as HTMLInputElement).value).toBe('8192');
     await waitFor(() => expect(posted(api, '/api/runs/plan').at(-1)?.body).toMatchObject({ model: { localId: 'qwen3-8b' }, params: { contextSize: 8192, flashAttention: 'on' } }));

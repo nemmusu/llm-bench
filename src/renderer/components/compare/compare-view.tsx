@@ -33,7 +33,22 @@ import { Switch } from '../ui/switch';
 import { refOfConfig, rankConfigs } from './best-config';
 import { speedSeries, usersLinesOption, usersSeries } from './compare-charts';
 import { DIFF_GROUPS, diffRows } from './compare-diff';
-import { compareRows, defaultDepth, depthChoices, engineName, itemName, itemShortName, leadSentences, LETTERS, ROW_GROUPS, usersChoice, type CompareItem, type CompareRow, type UsersChoice } from './compare-model';
+import {
+  compareRows,
+  defaultDepth,
+  depthChoices,
+  engineName,
+  fullDepth,
+  itemName,
+  itemShortName,
+  leadSentences,
+  LETTERS,
+  ROW_GROUPS,
+  usersChoice,
+  type CompareItem,
+  type CompareRow,
+  type UsersChoice,
+} from './compare-model';
 
 /** The item colors, in order (the same as the chart lines). */
 export const ITEM_COLORS = ['border-chart-1', 'border-chart-2', 'border-chart-3', 'border-chart-4'] as const;
@@ -373,7 +388,9 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
   const { t } = f;
   const [sheet, setSheet] = useState(false);
   const choices = useMemo(() => depthChoices(items), [items]);
-  const depth = at !== undefined && choices.some((c) => c.depth === at) ? at : defaultDepth(choices);
+  // Combinations of a search start where it reads their speeds: with the context full, when they share it.
+  const full = fullDepth(items);
+  const depth = at !== undefined && choices.some((c) => c.depth === at) ? at : defaultDepth(choices, full);
   const rows = useMemo(() => compareRows(items, depth, f), [items, depth, f]);
   const lead = leadSentences(items, rows, f);
   const names = useMemo(() => items.map((it, i) => itemName(it, i)), [items]);
@@ -389,7 +406,7 @@ export function Comparison({ items, at, onDepth, onItems, onAdd }: ComparisonPro
       value: String(c.depth),
       label: tokensK(c.depth, f),
       text: tokensK(c.depth, f),
-      description: missing.length ? t('compare.depth.missing', { items: missing.join(', ') }) : t('compare.depth.all'),
+      description: missing.length ? t('compare.depth.missing', { items: missing.join(', ') }) : t(c.depth === full ? 'compare.depth.allFull' : 'compare.depth.all'),
     };
   };
 

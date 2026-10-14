@@ -1,17 +1,28 @@
 /** Run lists: speed history for sparklines, "this PC", and the filter options of the results page. */
-import { spilledRun, type RunSummary } from '../../../contract/results';
+import { nominalDepth, spilledRun, type RunSummary } from '../../../contract/results';
+
+/** The grid depth a run's generation speed was measured at (the headline prompt, or a search's largest context). */
+const decodeDepth = (r: Pick<RunSummary, 'decodeTokens'>) => (r.decodeTokens === undefined ? undefined : nominalDepth(r.decodeTokens));
 
 /**
  * Generation speed of the same model on the same GPU over time, oldest first, up to `target`
- * included: the sparkline next to a result tells whether this run is in line with the others. Runs
- * that spilled to shared memory are left out (their numbers are not the card's).
+ * included: the sparkline next to a result tells whether this run is in line with the others. Only
+ * speeds measured with as much text in the context (a search's at 256K never sits next to a test's at
+ * 512 tokens); runs that spilled to shared memory are left out (their numbers are not the card's).
  */
 export function decodeHistory(target: RunSummary, runs: readonly RunSummary[], max = 12): number[] {
   const at = Date.parse(target.createdAt);
+  const depth = decodeDepth(target);
   return runs
     .filter(
       (r) =>
-        r.status === 'completed' && r.decodeTps !== undefined && !spilledRun(r) && r.modelWeakKey === target.modelWeakKey && r.gpuName === target.gpuName && Date.parse(r.createdAt) <= at,
+        r.status === 'completed' &&
+        r.decodeTps !== undefined &&
+        !spilledRun(r) &&
+        r.modelWeakKey === target.modelWeakKey &&
+        r.gpuName === target.gpuName &&
+        decodeDepth(r) === depth &&
+        Date.parse(r.createdAt) <= at,
     )
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     .slice(-max)

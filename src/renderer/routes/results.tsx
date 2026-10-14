@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { Download, GitCompareArrows, ListChecks, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
-import { spilledRun, type RunSummary } from '../../contract/results';
+import { fillsContext, spilledRun, type RunSummary } from '../../contract/results';
 import { ErrorCard } from '../components/bench/error-card';
 import { SpillBadge } from '../components/bench/spill';
 import { countKey, MIB_PER_GB, prettyEngineLabel, shortEngineLabel, shortGpuName } from '../components/bench/format';
@@ -28,13 +28,30 @@ import { Switch } from '../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useI18n } from '../i18n';
 import { useApi } from '../lib/api-context';
+import { cn } from '../lib/cn';
 import { bundleRequest } from '../lib/export';
 import { saveTextFile } from '../lib/export/save';
-import { contextShort, usersWords } from '../lib/speed-at';
+import { contextShort, tokensK, usersWords, type SpeedKind } from '../lib/speed-at';
 import { apiErrorData, RUNS_KEY, useBenchSystem, useRuns, useRunsLiveRefresh } from '../lib/queries-runs';
 
 const col = columnHelper<RunSummary>();
 const statusTone = { completed: 'success', failed: 'danger', cancelled: 'neutral' } as const;
+
+/**
+ * Under a speed, what it was measured on: "a 512 token di contesto", "prompt da 4K"; a one-user search
+ * reads every speed at its largest context with the context full ("a 256K di contesto", the Contesto
+ * column), and one that stopped before filling it says so (its deepest measurement, marked, why on hover).
+ */
+function SpeedContext({ run, kind, tokens }: { run: RunSummary; kind: SpeedKind; tokens: number }) {
+  const f = useI18n();
+  const ctx = run.contextSize;
+  const short = run.profile === 'tune' && run.tuneGoal !== 'multi' && ctx !== undefined && !fillsContext(tokens, ctx);
+  return (
+    <span className={cn('text-xs', short ? 'text-warning-text' : 'text-fg-3')} title={short ? f.t('results.tuning.notFull', { depth: tokensK(tokens, f), ctx: tokensK(ctx, f) }) : undefined}>
+      {contextShort({ kind, tokens, basis: run.speedBasis }, f)}
+    </span>
+  );
+}
 
 /** History of every saved run: filters, sorting, "Confronta" on every row, import/export and delete. */
 export function ResultsPage() {
@@ -168,7 +185,7 @@ export function ResultsPage() {
               )}
               <span className="flex flex-col items-end leading-5 whitespace-nowrap">
                 <b className="font-semibold">{number(v, 1)}</b>
-                {r.decodeTokens !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'write', tokens: r.decodeTokens, basis: r.speedBasis }, f)}</span>}
+                {r.decodeTokens !== undefined && <SpeedContext run={r} kind="write" tokens={r.decodeTokens} />}
               </span>
             </span>
           );
@@ -186,7 +203,7 @@ export function ResultsPage() {
           ) : (
             <span className="flex flex-col items-end leading-5 whitespace-nowrap">
               <span>{integer(v)}</span>
-              {r.prefillTokens !== undefined && <span className="text-xs text-fg-3">{contextShort({ kind: 'read', tokens: r.prefillTokens, basis: r.speedBasis }, f)}</span>}
+              {r.prefillTokens !== undefined && <SpeedContext run={r} kind="read" tokens={r.prefillTokens} />}
             </span>
           );
         },
