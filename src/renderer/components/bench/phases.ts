@@ -60,6 +60,8 @@ export interface TuneShape {
   goal?: TuneGoal | undefined;
   budget?: TuneBudget | undefined;
   usersMode?: TuneUsersMode | undefined;
+  /** "Più utenti" with the context per user "Massimo": its first phase searches that context. */
+  perUserMax?: boolean | undefined;
 }
 
 /**
@@ -67,10 +69,10 @@ export interface TuneShape {
  * else there ("Più utenti": whether the users fit, the settings with all of them busy; "Ricontrollo
  * rapido": the earlier combinations loaded again), else the phase's.
  */
-export function phaseKey(phase: RunPhase, tune?: TuneShape): `phases.${RunPhase}` | 'tune.phases.usersCapacity' | 'tune.phases.usersVariants' | 'tune.phases.recheck' {
+export function phaseKey(phase: RunPhase, tune?: TuneShape): `phases.${RunPhase}` | 'tune.phases.usersCapacity' | 'tune.phases.usersCapacityMax' | 'tune.phases.usersVariants' | 'tune.phases.recheck' {
   if (tune?.budget === 'recheck' && phase === 'tune-capacity') return 'tune.phases.recheck';
   if (tune?.goal === 'multi' && tune.budget !== 'recheck') {
-    if (phase === 'tune-capacity') return 'tune.phases.usersCapacity';
+    if (phase === 'tune-capacity') return tune.perUserMax ? 'tune.phases.usersCapacityMax' : 'tune.phases.usersCapacity';
     if (phase === 'tune-variants') return 'tune.phases.usersVariants';
   }
   return `phases.${phase}`;

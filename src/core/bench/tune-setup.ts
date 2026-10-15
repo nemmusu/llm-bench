@@ -9,7 +9,7 @@ import { engineBaseOf, type EngineBase, type EngineConfig, type EngineKind, type
 import type { HardwareFingerprint } from '../../contract/hardware';
 import { extendedContext, YARN_TARGETS, yarnScaling } from '../../contract/recipes';
 import { trainedContextOf } from '../../contract/ninfer';
-import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type Tuning } from '../../contract/results';
+import { spilledRun, TUNE_MULTI_DEFAULTS, type RunResult, type RunSummary, type Scenario, type TuneGoal, type TunePerUserContext, type Tuning } from '../../contract/results';
 import type { LlamaCaps } from '../engines/llamacpp-native/caps';
 import type { EngineAdapter, LaunchPlan, ModelTarget } from '../engines/types';
 import { estimateFit, fitParamsFrom, type FitCalibration } from '../models/fit';
@@ -67,7 +67,7 @@ export function vllmTuneUtilization(gpu: { totalMiB: number; freeMiB: number } |
 }
 
 /** What a tune request asks for: the goal, and for 'multi' its users and context per user. */
-export function tuneGoalOf(req: Pick<StartRunRequest, 'tune'>): { goal: TuneGoal; users?: number; perUserContext?: number } {
+export function tuneGoalOf(req: Pick<StartRunRequest, 'tune'>): { goal: TuneGoal; users?: number; perUserContext?: TunePerUserContext } {
   if (req.tune?.goal !== 'multi') return { goal: 'single' };
   return { goal: 'multi', users: req.tune.users ?? TUNE_MULTI_DEFAULTS.users, perUserContext: req.tune.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext };
 }
@@ -76,7 +76,7 @@ export function tuneGoalOf(req: Pick<StartRunRequest, 'tune'>): { goal: TuneGoal
 export function tuneMultiOf(req: Pick<StartRunRequest, 'tune'>): TunerInput['multi'] {
   const goal = tuneGoalOf(req);
   if (goal.users === undefined) return undefined;
-  return { users: goal.users, perUserContext: goal.perUserContext as number, turns: MULTI_TURNS, ...(req.tune?.usersMode === 'exact' ? { usersMode: 'exact' as const } : {}) };
+  return { users: goal.users, perUserContext: goal.perUserContext as TunePerUserContext, turns: MULTI_TURNS, ...(req.tune?.usersMode === 'exact' ? { usersMode: 'exact' as const } : {}) };
 }
 
 const sameGpu = (r: RunSummary, here: Pick<HereIdentity, 'gpuUuid' | 'gpuName'>): boolean =>
@@ -324,7 +324,7 @@ const family = (kind: EngineKind): EngineBase => engineBaseOf(kind);
 export interface TuneQuestion {
   goal: TuneGoal;
   users?: number | undefined;
-  perUserContext?: number | undefined;
+  perUserContext?: TunePerUserContext | undefined;
 }
 
 /**

@@ -72,7 +72,11 @@ export function configParts(kind: EngineKind, p: ConfigParams, f: Pick<Formatter
   if (p.batchSize !== undefined) parts.push(t('result.launch.batch', { n: p.batchSize }));
   if (p.maxNumBatchedTokens !== undefined) parts.push(t('result.launch.batchTokens', { n: p.maxNumBatchedTokens }));
   if (p.tensorParallel !== undefined) parts.push(t('result.launch.tensorParallel', { n: p.tensorParallel }));
-  if (p.parallel !== undefined && p.parallel > 1) parts.push(t('result.launch.parallel', { n: p.parallel }));
+  if (p.parallel !== undefined && p.parallel > 1) {
+    parts.push(t('result.launch.parallel', { n: p.parallel }));
+    // llama.cpp's context is every slot's together: what each user has ("contesto per utente").
+    if (family === 'llamacpp' && p.contextSize !== undefined) parts.push(t('result.launch.perUserContext', { n: integer(Math.floor(p.contextSize / p.parallel)) }));
+  }
   if (p.kvLayout !== undefined) parts.push(t(p.kvLayout === 'unified' ? 'result.launch.kvShared' : 'result.launch.kvPerUser'));
   if (p.cacheReuse !== undefined) parts.push(t('result.launch.cacheReuse', { n: p.cacheReuse }));
   if (p.blockSize !== undefined) parts.push(t('result.launch.blockSize', { n: p.blockSize }));

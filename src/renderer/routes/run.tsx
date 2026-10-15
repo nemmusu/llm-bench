@@ -110,14 +110,15 @@ function LiveRun({ runId, ctx }: { runId: string; ctx: RunContext | undefined })
   const goal = asked?.goal ?? live.tuning?.goal;
   const budget = asked?.budget ?? live.tuning?.budget;
   const usersMode = asked?.usersMode ?? live.tuning?.multi?.usersMode;
+  const perUserMax = (asked?.perUserContext ?? live.tuning?.multi?.perUserContext) === 'max';
   const isTune = scenario?.profile === 'tune';
   const phases = relevantPhases(scenario, ctx?.pre, { fidelity: asked?.fidelity === true || live.phase === 'fidelity', tune: { goal, budget, usersMode } });
-  const words = useCallback((p: RunPhase) => phaseKey(p, isTune ? ({ goal, budget, usersMode } satisfies TuneShape) : undefined), [isTune, goal, budget, usersMode]);
+  const words = useCallback((p: RunPhase) => phaseKey(p, isTune ? ({ goal, budget, usersMode, perUserMax } satisfies TuneShape) : undefined), [isTune, goal, budget, usersMode, perUserMax]);
   const current: RunPhase = displayPhase(live.phase, live.detail);
   const tune = scenario?.profile === 'tune';
   const engineKind = ctx?.request.engine.kind ?? engineKindOfLabel(live.launch?.engineLabel ?? info?.engineLabel ?? '');
   const label = useConfigLabel();
-  const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f, goal) : undefined;
+  const stage = tune && live.tuneCurrent ? stageText(live.tuneCurrent, engineKind, label, f, goal, perUserMax) : undefined;
   // A search's launch in progress: its measurement with the context full (where its speeds are read) says so.
   const fullAt = tune ? live.tuneCurrent?.contextSize : undefined;
   const nowLine = live.current ? nowText(live.current, f, fullAt) : undefined;

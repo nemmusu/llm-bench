@@ -491,8 +491,17 @@ export type TuneUsersMode = z.infer<typeof tuneUsersModeSchema>;
 
 /** "Più utenti": users at once and context per user when the request leaves them unset. */
 export const TUNE_MULTI_DEFAULTS = { users: 4, perUserContext: 8192 } as const;
-/** Context-per-user presets offered by the UI (any value from 1024 up is accepted). */
+/** Context-per-user presets offered by the UI (any value from 1024 up to the model's context is accepted, and 'max'). */
 export const TUNE_PER_USER_CONTEXTS = [4096, 8192, 16384, 32768] as const;
+/** The smallest context per user a request may ask for. */
+export const TUNE_MIN_PER_USER_CONTEXT = 1024;
+/**
+ * Context per user of "Più utenti": a number of tokens, or 'max' ("Massimo": for each KV cache the
+ * largest context every user can have with all N at once fully on the GPU, found like the largest
+ * context of "Un utente, contesto massimo").
+ */
+export const tunePerUserContextSchema = z.union([z.number().int().positive(), z.literal('max')]);
+export type TunePerUserContext = z.infer<typeof tunePerUserContextSchema>;
 /** Most users the "Più utenti" goal accepts. */
 export const TUNE_MAX_USERS = 32;
 
@@ -630,6 +639,12 @@ export const tuneCombinationSchema = z.object({
   /** Goal 'multi': the most users (≤ N) whose level had no failed request. */
   usersWithoutErrors: z.number().int().min(0).optional(),
   /**
+   * Goal 'multi': the context every user had (tokens; each user's prompt filled it but the answer and a
+   * margin). With Tuning.multi.perUserContext 'max' it is the largest this combination's KV cache held
+   * for all N at once, so it differs between combinations. Absent on runs before 0.6.1 (the asked one).
+   */
+  perUserContext: z.number().int().positive().optional(),
+  /**
    * Goal 'multi': llama.cpp 'split' = each user its own part of the context (-np N, ctx = N × context
    * per user); 'unified' = one pool of the same total shared by everyone (--kv-unified). vLLM: always 'unified'.
    */
@@ -705,17 +720,19 @@ export const tuningSchema = z.object({
   multi: z
     .object({
       users: z.number().int().min(2),
-      perUserContext: z.number().int().positive(),
-      /** Prompt of every concurrent request: perUserContext − outputTokens − margin. */
-      promptTokens: z.number().int().positive(),
+      /** As asked: tokens (at most the model's context), or 'max' (each combination its own: TuneCombination.perUserContext). */
+      perUserContext: tunePerUserContextSchema,
+      /** Prompt of every concurrent request: perUserContext − outputTokens − margin. Absent with 'max' (each combination's own prompt is on its points). */
+      promptTokens: z.number().int().positive().optional(),
       outputTokens: z.number().int().positive(),
       /** Messages per conversation of the sessions measurement. */
       turns: z.number().int().positive(),
       /** 'exact': only N users at once were measured (no lower levels). Absent = 'ramp' (users 1 … N). */
       usersMode: tuneUsersModeSchema.optional(),
       /**
-       * Nothing held N users at perUserContext, not even the most compact KV cache: the most users that
-       * did fit (each with the full perUserContext), measured instead of N. Absent = N fit.
+       * Nothing held N users at perUserContext (with 'max': at the smallest context searched, 4K), not even
+       * the most compact KV cache: the most users that did fit (each with that context), measured
+       * instead of N. Absent = N fit.
        */
       fittingUsers: z.number().int().positive().optional(),
     })
@@ -742,7 +759,7 @@ export const tuningSchema = z.object({
   stoppedBy: z.enum(TUNE_STOPS).optional(),
   /** Searched dimensions with the values tried, in search order (kv, fa, ubatch, batch, draft, batchTokens…). */
   dimensions: z.array(z.object({ key: z.string(), values: z.array(z.union([z.string(), z.number(), z.boolean()])) })).default([]),
-  /** Per KV type: the estimate before loading anything, and the largest context measured. */
+  /** Per KV type: the estimate before loading anything, and the largest context measured (goal 'multi' with perUserContext 'max': per user). */
   capacity: z
     .array(
       z.object({
@@ -882,8 +899,8 @@ export const runSummarySchema = z.object({
   /** Tune runs: the goal (absent on runs before phase 3 = 'single'), users of goal 'multi', and the budget ('recheck' = "Ricontrollo rapido"). */
   tuneGoal: tuneGoalSchema.optional(),
   tuneUsers: z.number().int().optional(),
-  /** Goal 'multi': the context per user asked (Tuning.multi.perUserContext). */
-  tunePerUserContext: z.number().int().optional(),
+  /** Goal 'multi': the context per user asked (Tuning.multi.perUserContext: tokens or 'max'). */
+  tunePerUserContext: tunePerUserContextSchema.optional(),
   tuneBudget: tuneBudgetSchema.optional(),
   /**
    * The engine release the run used: llama.cpp build ("b10997"), else the Docker image digest

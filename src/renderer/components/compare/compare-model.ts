@@ -500,6 +500,16 @@ export function compareRows(items: readonly CompareItem[], at: CompareAt | undef
       plain: reserves,
     },
     {
+      id: 'perUserContext',
+      group: 'memory',
+      label: t('compare.rows.perUserContext'),
+      context: t('compare.rows.perUserContextHint'),
+      values: items.map((it) => it.combo?.perUserContext),
+      higherIsBetter: true,
+      kind: 'amount',
+      format: (v) => t('speedAt.tokens', { n: integer(v) }),
+    },
+    {
       id: 'kvTokens',
       group: 'memory',
       label: t('compare.rows.kvTokens'),

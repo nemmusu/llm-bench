@@ -17,7 +17,7 @@ import { useConfigLabel } from '../presets/config-label';
 import { Card } from '../ui/card';
 import { HelpTip } from '../ui/help-tip';
 import { TuneChart } from './tune-chart';
-import { depthLabel, kvName, outcomeText, settingsText } from './tune-format';
+import { depthLabel, kvName, launchPerUser, outcomeText, settingsText } from './tune-format';
 import { lastPoint, measuredCombinations } from './tune-logic';
 import { TuneGlossary } from './tune-sections';
 
@@ -152,22 +152,27 @@ export function TuneLive({ tuning, current, engineKind }: TuneLiveProps) {
           )}
           <TuneGlossary className="border-t border-border px-card py-3" engineKind={engineKind} tuning={tuning} />
         </Card>
-        <CapacityLive tuning={tuning} current={current} />
+        <CapacityLive tuning={tuning} current={current} engineKind={engineKind} />
       </div>
       {tuning && combos > 0 && <TuneChart tuning={tuning} engineKind={engineKind} title={t('tune.chart.liveTitle')} help={t('tune.chart.help')} />}
     </div>
   );
 }
 
-/** The largest context per KV cache: measured, being searched now, estimated, or not tried (and why). */
-function CapacityLive({ tuning, current }: { tuning: Tuning | undefined; current: TuneCurrent | undefined }) {
+/**
+ * The largest context per KV cache: measured, being searched now, estimated, or not tried (and why).
+ * "Più utenti" with the context per user "Massimo": the context of each user ("32K a testa").
+ */
+function CapacityLive({ tuning, current, engineKind }: { tuning: Tuning | undefined; current: TuneCurrent | undefined; engineKind: EngineKind }) {
   const f = useI18n();
   const { t } = f;
   const list = tuning?.capacity ?? [];
+  const perUser = tuning?.multi?.perUserContext === 'max';
+  const ctxOf = (n: number) => (perUser ? t('tune.capacity.perUser', { ctx: depthLabel(n, f) }) : depthLabel(n, f));
   return (
     <Card className="flex flex-col self-start overflow-hidden">
       <div className="flex items-center gap-1.5 px-card pt-card pb-3">
-        <h2 className="text-md font-semibold tracking-[-0.01em]">{t('tune.capacity.liveTitle')}</h2>
+        <h2 className="text-md font-semibold tracking-[-0.01em]">{t(perUser ? 'tune.capacity.liveTitlePerUser' : 'tune.capacity.liveTitle')}</h2>
         <HelpTip term={t('tune.help.kvTerm')}>{t('tune.help.kv')}</HelpTip>
       </div>
       {list.length ? (
@@ -177,9 +182,9 @@ function CapacityLive({ tuning, current }: { tuning: Tuning | undefined; current
             const searching = current?.stage === 'capacity' && current.kvType === c.kvType;
             const status =
               c.measuredMax !== undefined
-                ? depthLabel(c.measuredMax, f)
+                ? ctxOf(c.measuredMax)
                 : searching
-                  ? t('tune.capacity.searching', { ctx: depthLabel(current.contextSize, f) })
+                  ? t('tune.capacity.searching', { ctx: perUser ? ctxOf(launchPerUser(engineKind, current.contextSize, current.params.parallel)) : depthLabel(current.contextSize, f) })
                   : c.skipped
                     ? t(`tune.capacity.skipped.${c.skipped}`)
                     : t('tune.capacity.waiting');
@@ -187,7 +192,7 @@ function CapacityLive({ tuning, current }: { tuning: Tuning | undefined; current
               <li key={c.kvType} className="flex items-center justify-between gap-3 border-t border-border px-card py-3 text-sm">
                 <span className="flex flex-col">
                   <span className="font-medium text-fg">{t('tune.capacity.cache', { kv: kvName(c.kvType, f) })}</span>
-                  {c.predictedMax !== undefined && <span className="text-xs text-fg-3">{t('tune.capacity.estimate', { ctx: depthLabel(c.predictedMax, f) })}</span>}
+                  {c.predictedMax !== undefined && <span className="text-xs text-fg-3">{t('tune.capacity.estimate', { ctx: ctxOf(c.predictedMax) })}</span>}
                 </span>
                 <span className={cn('text-right tabular-nums', c.measuredMax !== undefined ? 'text-md font-semibold text-fg' : searching ? 'text-accent-text' : 'text-fg-3')}>{status}</span>
               </li>

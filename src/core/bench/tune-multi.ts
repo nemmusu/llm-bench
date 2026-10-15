@@ -19,13 +19,43 @@
  *     utenti insieme" (usersMode 'exact'): nothing more, the best's own screening (N users at once
  *     and the conversations) is its measurement: no lower level, no launch of its own.
  *  4. Recommended: the combination that serves N users best (then the more precise KV).
+ *
+ * "Massimo" (perUserContext 'max'): step 1 is the capacity search of goal 'single' (tuner.ts) on the
+ * context of each user instead of the launch's: the VRAM estimate's candidates (powers of two from 4K,
+ * the estimate itself, the model's context), the top one first, then a binary search and the steps of
+ * 8K between the largest that loads and the smallest that does not; each candidate is launched for N
+ * users of that context (llama.cpp -c N × it with -np N; vLLM / SGLang --max-model-len it and its KV
+ * pool, NInfer --max-context it with --kv-capacity N × it, TensorRT-LLM max_seq_len it with
+ * max_batch_size N, a program's {ctx} N × it with {parallel} N), and holds them when it loads without
+ * running out of memory or spilling and its KV pool, when the engine says it, holds N × it tokens (the
+ * pool an engine reports, divided among the users, is the next candidate). The screening with every user
+ * busy then fills each user's whole context: when that runs out of memory or spills, the next candidate
+ * down is screened instead. Steps 2–3 follow at each KV type's own context per user; the recommended
+ * combination is the one with the largest context per user, then the one that serves N users best. When
+ * not even 4K each holds N users, the most users with 4K each are searched, as above.
  */
 import type { AppErrorData } from '../../contract/errors';
 import type { ConcurrencyPoint, SessionsPoint, SessionsStep, TuneCombination, TuneKvType, Tuning } from '../../contract/results';
 import { sessionExtras } from './scenarios';
 import { maxDepth } from './sweep';
 import { compareUsers, recommendedForUsers, usersWithoutErrors, type UsersMeasure } from './tune-rank';
-import { lastToTry, MIN_SWEEP_MS, PROBE_DEPTH, PROBE_OUTPUT, Tuner, type Capacity, type DimValue, type Dimension, type LabEngine, type Live, type TunerDeps, type TunerInput, type Variant } from './tuner';
+import {
+  CAPACITY_LAUNCHES,
+  lastToTry,
+  MIN_SWEEP_MS,
+  PROBE_DEPTH,
+  PROBE_OUTPUT,
+  Tuner,
+  type Capacity,
+  type DimValue,
+  type Dimension,
+  type LabEngine,
+  type Live,
+  type TunerDeps,
+  type TunerInput,
+  type Variant,
+  type Work,
+} from './tuner';
 
 /** Messages per conversation and new text of every later message, in the short conversations. */
 export const MULTI_TURNS = 3;
@@ -54,8 +84,8 @@ export class MultiTuner extends Tuner {
   /** Users measured: those asked, or the most that fit. */
   private users: number;
   private readonly asked: number;
-  /** Context per user (at most the model's trained context). */
-  private readonly perUser: number;
+  /** Context per user asked (at most the model's trained context); undefined = "Massimo" (each KV type its own). */
+  private readonly fixed: number | undefined;
   /** Messages per conversation of the sessions measurement. */
   private readonly turns: number;
   private fittingUsers: number | undefined;
@@ -69,8 +99,13 @@ export class MultiTuner extends Tuner {
     this.exact = m.usersMode === 'exact';
     this.asked = m.users;
     this.users = m.users;
-    this.perUser = Math.min(m.perUserContext, this.cap);
+    this.fixed = m.perUserContext === 'max' ? undefined : Math.min(m.perUserContext, this.cap);
     this.turns = m.turns;
+  }
+
+  /** "Massimo": the largest context per user is searched for each KV type. */
+  private get largest(): boolean {
+    return this.fixed === undefined;
   }
 
   private get out(): number {
@@ -78,29 +113,57 @@ export class MultiTuner extends Tuner {
   }
 
   /** Prompt of every concurrent request: the user's whole context but the answer and the margin. */
-  private get prompt(): number {
-    return maxDepth(this.perUser, this.out);
+  private promptOf(perUser: number): number {
+    return maxDepth(perUser, this.out);
   }
 
-  /** The short conversations of `users` users: each fills its own context over MULTI_TURNS messages. */
-  sessionsStep(users: number): SessionsStep | undefined {
+  /** The short conversations of `users` users: each fills its own context of `perUser` tokens over MULTI_TURNS messages. */
+  sessionsStep(users: number, perUser: number): SessionsStep | undefined {
     const step = { kind: 'sessions' as const, depth: 0, levels: [users], turns: this.turns, followupTokens: MULTI_FOLLOWUP, outputTokens: this.out };
-    const depth = this.perUser - sessionExtras(step);
+    const depth = perUser - sessionExtras(step);
     return depth >= 1 ? { ...step, depth } : undefined;
   }
 
-  private contextFor(users: number): number {
-    return this.input.space.contextFor(users, this.perUser);
+  /** The context of a launch for `users` users of `perUser` tokens each. */
+  private contextFor(users: number, perUser: number): number {
+    return this.input.space.contextFor(users, perUser);
+  }
+
+  /** Context per user of a launch: its context over what one user adds to it (llama.cpp: the users × it; vLLM: it). */
+  private perUserOf(live: Live): number {
+    return Math.floor(live.att.contextSize / this.contextFor(this.levelOf(live), 1));
+  }
+
+  /** "Massimo": a capacity candidate is a context per user, launched for every user. */
+  protected override launchContext(c: number): number {
+    return this.largest ? this.contextFor(this.users, c) : c;
+  }
+
+  /** "Massimo" (the only search of a context here): the KV pool an engine reports is shared by every user. */
+  protected override hintContext(tokens: number): number {
+    return Math.floor(tokens / this.users);
+  }
+
+  /** "Massimo" (the only search of a context here): a capacity launch holds the users only when its KV pool, if the engine says it, holds all of them. */
+  protected override capacityWork(c: number): Work {
+    return async (_engine, live) => {
+      const need = this.users * c;
+      if (live.hint !== undefined && live.hint < need) {
+        live.att.outcome = 'oom';
+        live.att.error = poolTooSmall(live.hint, need);
+      }
+    };
   }
 
   protected override base(kv: TuneKvType): Variant {
     return { ...super.base(kv), np: this.users };
   }
 
-  /** Each KV type holds the users or not: one candidate, the context of N users. */
+  /** Each KV type holds the users or not: one candidate, the context of N users ("Massimo": the candidates of goal 'single', per user). */
   protected override predict(): void {
+    if (this.largest) return super.predict();
     const { space } = this.input;
-    const ctx = this.contextFor(this.users);
+    const ctx = this.contextFor(this.users, this.fixed as number);
     for (const kv of space.kvLadder) {
       const fits = this.predictFits(space.params(this.base(kv), ctx));
       this.capacity.set(kv, { kv, ...(fits === true ? { predictedMax: ctx } : {}), candidates: fits === false ? [] : [ctx], status: new Map(), launched: new Set(), inferred: false });
@@ -109,16 +172,8 @@ export class MultiTuner extends Tuner {
 
   override async run(): Promise<Tuning> {
     this.prepare();
-    const { space } = this.input;
-    const ctx = this.contextFor(this.users);
     this.deps.onPhase?.('tune-capacity');
-    if (this.input.spillPossible) await this.reference(space.contextFor(this.users, Math.min(this.perUser, MULTI_REFERENCE_CONTEXT)));
-    for (const kv of space.kvLadder) {
-      await this.holdsUsers(kv, ctx);
-      this.capacityEnded.add(kv);
-    }
-    let fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
-    if (fitting.length === 0) fitting = await this.mostUsers();
+    const fitting = this.largest ? await this.largestPerUser() : await this.holdAll(this.fixed as number);
     for (const kv of fitting) {
       this.deps.onPhase?.('tune-variants');
       const best = await this.descendUsers(kv);
@@ -136,26 +191,65 @@ export class MultiTuner extends Tuner {
     return this.snapshot();
   }
 
-  /** Expected ms of N users at once with `prompt` tokens each: prompts read one after the other, answers slowed 15 % per extra user. */
-  private levelMs(users: number): number {
-    const one = this.requestMs(this.prompt, this.out);
+  /** Every KV type at the context of N users of `perUser` tokens each; returns those that hold them (else the most users that fit). */
+  private async holdAll(perUser: number): Promise<TuneKvType[]> {
+    const { space } = this.input;
+    const ctx = this.contextFor(this.users, perUser);
+    if (this.input.spillPossible) await this.reference(this.contextFor(this.users, Math.min(perUser, MULTI_REFERENCE_CONTEXT)));
+    for (const kv of space.kvLadder) {
+      await this.holdsUsers(kv, ctx);
+      this.capacityEnded.add(kv);
+    }
+    const fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
+    return fitting.length ? fitting : this.mostUsers(perUser);
+  }
+
+  /**
+   * "Massimo": the largest context per user of every KV type with N users at once (the capacity search
+   * of goal 'single', see the top of this file); returns those that hold N users at all, in the order
+   * of goal 'single' (the largest context first), else the most users that fit with 4K each.
+   */
+  private async largestPerUser(): Promise<TuneKvType[]> {
+    const { space } = this.input;
+    const ref = Math.min(MULTI_REFERENCE_CONTEXT, this.min);
+    if (this.input.spillPossible) await this.reference(this.contextFor(this.users, ref), ref);
+    for (const kv of space.kvLadder) await this.searchCapacity(kv);
+    const fitting = space.kvLadder.filter((kv) => this.capacity.get(kv)?.measuredMax !== undefined);
+    return fitting.length ? this.sweepOrder(fitting) : this.mostUsers(this.min);
+  }
+
+  /** Expected ms of N users at once with `perUser` tokens each: prompts read one after the other, answers slowed 15 % per extra user. */
+  private levelMs(users: number, perUser: number): number {
+    const one = this.requestMs(this.promptOf(perUser), this.out);
     const read = one - this.requestMs(0, this.out);
     return users * read + (one - read) * (1 + 0.15 * (users - 1));
   }
 
   /** Expected ms of the short conversations of N users (first messages read in full, later ones from the cache). */
-  private sessionsMs(users: number): number {
-    return this.levelMs(users) + (this.turns - 1) * this.requestMs(MULTI_FOLLOWUP, this.out) * users;
+  private sessionsMs(users: number, perUser: number): number {
+    return this.levelMs(users, perUser) + (this.turns - 1) * this.requestMs(MULTI_FOLLOWUP, this.out) * users;
   }
 
   /**
    * Expected ms of the work not started yet (goal 'multi'): per KV type that holds the users (or is
-   * expected to), its screenings with every user busy, then users 1 … N.
+   * expected to), its screenings with every user busy, then users 1 … N. "Massimo": first the capacity
+   * launches of goal 'single', each type at the context per user it is expected to reach.
    */
   protected override plannedMs(): number {
-    const load = this.loadMs();
-    const screen = load + this.levelMs(this.users) + this.sessionsMs(this.users);
-    let ms = this.input.spillPossible && !this.refDone ? load + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT) : 0;
+    const probe = this.loadMs() + this.requestMs(PROBE_DEPTH, PROBE_OUTPUT);
+    let ms = this.input.spillPossible && !this.refDone ? probe : 0;
+    if (this.largest) {
+      let previous: number | undefined;
+      for (const kv of this.input.space.kvLadder) {
+        const cap = this.capacity.get(kv) as Capacity;
+        if (!this.capacityDone.has(kv) && cap.candidates.some((c) => c > (previous ?? 0))) ms += CAPACITY_LAUNCHES * probe;
+        const perUser = this.expectedMax(kv, previous);
+        if (perUser === undefined) continue;
+        previous = perUser;
+        ms += this.usersPlanMs(kv, perUser, this.descentLeft.get(kv) ?? this.screensOf(kv));
+      }
+      return ms;
+    }
     let fitting = false;
     for (const kv of this.input.space.kvLadder) {
       const cap = this.capacity.get(kv) as Capacity;
@@ -164,13 +258,19 @@ export class MultiTuner extends Tuner {
       if (!holds) continue;
       fitting = true;
       // A capacity launch already screened the base settings.
-      const screens = this.descentLeft.get(kv) ?? this.screensOf(kv) - (cap.launched.size > 0 ? 1 : 0);
-      if (!this.descended.has(kv)) ms += screens * screen;
-      // "Solo N utenti": the best's screening is its measurement (nothing more to run).
-      if (!this.swept.has(kv) && !this.exact) {
-        ms += load;
-        for (let n = 1; n <= this.users; n++) ms += this.levelMs(n);
-      }
+      ms += this.usersPlanMs(kv, this.fixed as number, this.descentLeft.get(kv) ?? this.screensOf(kv) - (cap.launched.size > 0 ? 1 : 0));
+    }
+    return ms;
+  }
+
+  /** Expected ms of what is left of a KV type that holds the users with `perUser` tokens each: `screens` screenings, then users 1 … N. */
+  private usersPlanMs(kv: TuneKvType, perUser: number, screens: number): number {
+    const load = this.loadMs();
+    let ms = this.descended.has(kv) ? 0 : screens * (load + this.levelMs(this.users, perUser) + this.sessionsMs(this.users, perUser));
+    // "Solo N utenti": the best's screening is its measurement (nothing more to run).
+    if (!this.swept.has(kv) && !this.exact) {
+      ms += load;
+      for (let n = 1; n <= this.users; n++) ms += this.levelMs(n, perUser);
     }
     return ms;
   }
@@ -200,17 +300,17 @@ export class MultiTuner extends Tuner {
   }
 
   /**
-   * Nothing holds N users: the most users (each with the whole context per user) that the most compact
-   * KV type holds, by binary search; they are measured instead of N. Returns the fitting KV types.
+   * Nothing holds N users: the most users (each with `perUser` tokens) that the most compact KV type
+   * holds, by binary search; they are measured instead of N. Returns the fitting KV types.
    */
-  private async mostUsers(): Promise<TuneKvType[]> {
+  private async mostUsers(perUser: number): Promise<TuneKvType[]> {
     const ladder = this.input.space.kvLadder;
     const kv = ladder[ladder.length - 1] as TuneKvType;
     let lo = 0;
     let hi = this.users;
     while (hi - lo > 1) {
       const n = Math.floor((lo + hi) / 2);
-      const live = await this.launch('capacity', { ...this.base(kv), np: n }, this.contextFor(n), (e, l) => this.usersWork(e, l));
+      const live = await this.launch('capacity', { ...this.base(kv), np: n }, this.contextFor(n, perUser), (e, l) => this.usersWork(e, l));
       if (!live) break;
       if (live.att.outcome === 'ok') lo = n;
       else hi = n;
@@ -219,7 +319,8 @@ export class MultiTuner extends Tuner {
     this.fittingUsers = lo;
     this.users = lo;
     const cap = this.capacity.get(kv) as Capacity;
-    cap.measuredMax = this.contextFor(lo);
+    // "Massimo": the capacity is said per user (launchContext gives the launch of the users that fit).
+    cap.measuredMax = this.largest ? perUser : this.contextFor(lo, perUser);
     return [kv];
   }
 
@@ -232,26 +333,28 @@ export class MultiTuner extends Tuner {
   private async usersWork(engine: LabEngine, live: Live): Promise<void> {
     const att = live.att;
     const level = this.levelOf(live);
-    const need = level * this.perUser;
+    const perUser = this.perUserOf(live);
+    const prompt = this.promptOf(perUser);
+    const need = level * perUser;
     if (live.hint !== undefined && live.hint < need) {
       att.outcome = 'oom';
       att.error = poolTooSmall(live.hint, need);
       return;
     }
-    const predicted = this.levelMs(level);
+    const predicted = this.levelMs(level, perUser);
     // Every user at once would end past the time limit: not started (the search stops).
     if (!this.fitsInTime(predicted)) {
-      att.skipped = [{ depth: this.prompt, predictedMs: Math.round(predicted) }];
+      att.skipped = [{ depth: prompt, predictedMs: Math.round(predicted) }];
       this.stoppedBy ??= 'budget';
       return;
     }
     const t0 = this.deps.now();
     this.busy(predicted);
-    const point = await engine.concurrency(level, this.prompt, this.out, 1);
+    const point = await engine.concurrency(level, prompt, this.out, 1);
     this.settle();
     const levelMs = this.deps.now() - t0;
     att.concurrency = [...(att.concurrency ?? []), point];
-    const step = this.sessionsStep(level);
+    const step = this.sessionsStep(level, perUser);
     const sessions = step ? await engine.sessions(step) : [];
     if (sessions.length) att.sessions = [...(att.sessions ?? []), ...sessions];
     this.usersScreens.set(this.key(live.variant, att.contextSize), { variant: live.variant, ctx: att.contextSize, attempt: live.index, measure: { point, sessions: sessions[0] }, levelMs, live });
@@ -271,16 +374,18 @@ export class MultiTuner extends Tuner {
   private async fullWork(engine: LabEngine, live: Live, screened: UsersScreen): Promise<void> {
     this.deps.onPhase?.('concurrency');
     const level = this.levelOf(live);
+    const perUser = this.perUserOf(live);
+    const prompt = this.promptOf(perUser);
     const deadline = this.started + Math.max(this.limitMs, this.deps.now() - this.started + MIN_SWEEP_MS);
     const levelMs = screened.levelMs;
     const points: ConcurrencyPoint[] = [];
     for (let n = 1; n <= level; n++) {
       if (n < level && this.deps.now() + (levelMs * n) / level + levelMs > deadline) continue;
-      points.push(await engine.concurrency(n, this.prompt, this.out, 1));
+      points.push(await engine.concurrency(n, prompt, this.out, 1));
     }
     live.att.concurrency = [...(live.att.concurrency ?? []), ...points];
     let sessions: SessionsPoint[] = screened.measure.sessions && screened.attempt === live.index ? [screened.measure.sessions] : [];
-    const step = this.sessionsStep(level);
+    const step = this.sessionsStep(level, perUser);
     // Part of measuring the users: the live screen stays on that phase.
     if (!sessions.length && step) {
       sessions = await engine.sessions(step);
@@ -289,21 +394,34 @@ export class MultiTuner extends Tuner {
     live.users = { concurrency: points, sessions };
   }
 
-  /** The base settings of a fitting KV type screened with all users (launched if not yet). */
+  /**
+   * The base settings of a fitting KV type screened with all users (launched if not yet). "Massimo": the
+   * capacity check only loaded the users; when filling their whole context runs out of memory or
+   * spills, the next context per user down is screened instead.
+   */
   private async baseUsers(kv: TuneKvType): Promise<UsersScreen | undefined> {
     this.screened(kv);
     const cap = this.capacity.get(kv) as Capacity;
     const base = this.base(kv);
-    const ctx = cap.measuredMax as number;
-    const known = this.usersScreens.get(this.key(base, ctx));
-    if (known) return known;
-    const live = await this.launch('variant', base, ctx, (e, l) => this.usersWork(e, l));
-    if (live?.att.outcome !== 'ok') {
-      if (live) delete cap.measuredMax;
-      return undefined;
+    for (;;) {
+      const c = cap.measuredMax as number;
+      const ctx = this.launchContext(c);
+      const known = this.usersScreens.get(this.key(base, ctx));
+      if (known) return known;
+      const live = await this.launch('variant', base, ctx, (e, l) => this.usersWork(e, l));
+      if (!live) return undefined;
+      if (live.att.outcome === 'ok') {
+        live.att.screen = 'kept';
+        return this.usersScreens.get(this.key(base, ctx));
+      }
+      const lower = this.largest ? cap.candidates.filter((x) => x < c) : [];
+      if (lower.length === 0) {
+        delete cap.measuredMax;
+        return undefined;
+      }
+      cap.status.set(c, false);
+      cap.measuredMax = lower[lower.length - 1] as number;
     }
-    live.att.screen = 'kept';
-    return this.usersScreens.get(this.key(base, ctx));
   }
 
   /** One screening of a KV type's descent is done (or skipped): the forecast counts one less. */
@@ -352,9 +470,9 @@ export class MultiTuner extends Tuner {
     return best;
   }
 
-  /** The context is the request's (N users × their context): there is no largest context to bound. */
-  protected override boundOf(): Partial<Tuning['capacity'][number]> {
-    return {};
+  /** The context is the request's (N users × their context): there is no largest context to bound ("Massimo": as goal 'single', per user). */
+  protected override boundOf(c: Capacity): Partial<Tuning['capacity'][number]> {
+    return this.largest && this.fittingUsers === undefined ? super.boundOf(c) : {};
   }
 
   /** Every combination of this goal measured its users: an unfinished screening is not one (nothing "misurata in parte"). */
@@ -373,12 +491,13 @@ export class MultiTuner extends Tuner {
       sessions: u.sessions,
       usersWithoutErrors: usersWithoutErrors(u.concurrency),
       kvLayout: v.layout === 'split' ? 'split' : 'unified',
+      perUserContext: this.perUserOf(live),
       ...(typeof v.reuse === 'number' && v.reuse > 0 ? { cacheReuse: v.reuse } : {}),
     };
   }
 
   protected override recommend(combos: readonly TuneCombination[]): number | undefined {
-    return recommendedForUsers(combos, this.users);
+    return recommendedForUsers(combos, this.users, undefined, this.largest);
   }
 
   protected override goalFields(): Partial<Tuning> {
@@ -387,8 +506,7 @@ export class MultiTuner extends Tuner {
       goal: 'multi',
       multi: {
         users: this.asked,
-        perUserContext: this.perUser,
-        promptTokens: this.prompt,
+        ...(this.fixed === undefined ? { perUserContext: 'max' as const } : { perUserContext: this.fixed, promptTokens: this.promptOf(this.fixed) }),
         outputTokens: this.out,
         turns,
         ...(this.exact ? { usersMode: 'exact' as const } : {}),

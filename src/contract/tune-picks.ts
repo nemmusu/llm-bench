@@ -26,6 +26,9 @@ export interface TunePick {
   kvType: TuneKvType;
   /** The combination's largest context (its launch). */
   maxContext: number;
+  /** "Più utenti": the users at once and the context each one had (TuneCombination.perUserContext). */
+  users?: number;
+  perUserContext?: number;
   /** 'fastest-write' / 'fastest-read': the depth of the peak, and the speeds there (tokens/s). */
   depth?: number;
   decodeTps?: number;
@@ -42,9 +45,12 @@ export function tunePicks(t: Tuning): TunePick[] {
   const ok = t.combinations.map((c, i) => ({ c, i })).filter(({ c }) => c.outcome === 'ok');
   if (ok.length === 0) return [];
   const picks: (Omit<TunePick, 'ids'> & { id: TunePickId })[] = [];
+  // A "Più utenti" search measured its users at this level (the most that fit, or those asked).
+  const users = t.multi ? (t.multi.fittingUsers ?? t.multi.users) : undefined;
   const base = (i: number) => {
     const c = t.combinations[i]!;
-    return { combination: i, params: c.params, kvType: c.kvType, maxContext: c.maxContext };
+    const each = users !== undefined && c.perUserContext !== undefined ? { users, perUserContext: c.perUserContext } : {};
+    return { combination: i, params: c.params, kvType: c.kvType, maxContext: c.maxContext, ...each };
   };
   if (t.recommended !== undefined && t.combinations[t.recommended]?.outcome === 'ok') {
     const full = fullContextPoint(t.combinations[t.recommended]!);

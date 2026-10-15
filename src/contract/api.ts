@@ -6,7 +6,7 @@ import { gpuInfoSchema, osInfoSchema } from './hardware';
 import { fitEstimateSchema, hubFileSchema, hubModelSchema, localModelSchema } from './models';
 import { ninferBuildChoiceSchema } from './ninfer';
 import { appliedRecipeSchema, MAX_RECIPE_CONTEXT, recipeChoiceSchema } from './recipes';
-import { profileSchema, scenarioSchema, TUNE_MAX_USERS, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuneUsersModeSchema, tuningSchema } from './results';
+import { profileSchema, scenarioSchema, TUNE_MAX_USERS, TUNE_MIN_PER_USER_CONTEXT, tuneBudgetSchema, tuneGoalSchema, tuneKvTypeSchema, tuneUsersModeSchema, tuningSchema } from './results';
 import { serverNetworkSchema, serverPortSchema } from './servers';
 
 /**
@@ -117,8 +117,12 @@ export const startRunRequestSchema = z.object({
       goal: tuneGoalSchema.optional(),
       /** Goal 'multi': users at once (absent = TUNE_MULTI_DEFAULTS.users = 4). */
       users: z.number().int().min(2).max(TUNE_MAX_USERS).optional(),
-      /** Goal 'multi': context each user needs, tokens (absent = TUNE_MULTI_DEFAULTS.perUserContext = 8192). */
-      perUserContext: z.number().int().min(1024).max(1_048_576).optional(),
+      /**
+       * Goal 'multi': context each user needs, tokens (at most the model's own: larger is searched at the
+       * model's), or 'max' = the largest every user can have with all of them at once, for each KV
+       * cache. Absent = TUNE_MULTI_DEFAULTS.perUserContext = 8192.
+       */
+      perUserContext: z.union([z.number().int().min(TUNE_MIN_PER_USER_CONTEXT).max(1_048_576), z.literal('max')]).optional(),
       /**
        * Goal 'multi': 'ramp' = users 1, 2, … N in this order; 'exact' = only N users at once (no lower
        * levels). Absent = 'ramp'. Tuning.multi.usersMode says it back.

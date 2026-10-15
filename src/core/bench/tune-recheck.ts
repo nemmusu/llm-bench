@@ -129,6 +129,7 @@ export class RecheckTuner extends Tuner {
       usersWithoutErrors: usersWithoutErrors(live.users.concurrency),
       ...(previous.kvLayout ? { kvLayout: previous.kvLayout } : {}),
       ...(previous.cacheReuse ? { cacheReuse: previous.cacheReuse } : {}),
+      ...(previous.perUserContext ? { perUserContext: previous.perUserContext } : {}),
     };
   }
 

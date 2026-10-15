@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { RunPlan, StartRunRequest } from '../../../contract/api';
 import { defaultYarnTarget } from '../../../contract/recipes';
-import { TUNE_MAX_USERS, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal, type TuneUsersMode } from '../../../contract/results';
+import { TUNE_MAX_USERS, TUNE_MIN_PER_USER_CONTEXT, TUNE_MULTI_DEFAULTS, TUNE_PER_USER_CONTEXTS, type TuneBudget, type TuneGoal, type TunePerUserContext, type TuneUsersMode } from '../../../contract/results';
 import { YarnChoice } from '../recipes/yarn-choice';
 import { useI18n } from '../../i18n';
 import { Field, Input } from '../ui/input';
@@ -43,6 +43,27 @@ export function tuneRequestOf(v: TuneRequest, o: { expert: boolean; previous: Ru
   };
 }
 
+/** The largest context per user the request accepts when the model does not say its own. */
+export const PER_USER_CONTEXT_LIMIT = 1_048_576;
+
+/**
+ * A context per user typed in the "Altro…" box: tokens ("98304", "98.304") or thousands of tokens
+ * ("96K", 1K = 1,024), a whole number from 1K up to `max` (the model's context); else undefined.
+ */
+export function parsePerUserContext(text: string, max = PER_USER_CONTEXT_LIMIT): number | undefined {
+  const m = /^\s*(\d+(?:[.,]\d{3})*)\s*(k?)\s*$/i.exec(text);
+  if (!m) return undefined;
+  const digits = Number((m[1] as string).replace(/[.,]/g, ''));
+  const n = m[2] ? digits * 1024 : digits;
+  return n >= TUNE_MIN_PER_USER_CONTEXT && n <= max ? n : undefined;
+}
+
+/** The segment of a context per user: 'max', one of the sizes offered, or 'other' (a value typed in "Altro…"). */
+export function perUserSegment(v: TunePerUserContext): string {
+  if (v === 'max') return 'max';
+  return (TUNE_PER_USER_CONTEXTS as readonly number[]).includes(v) ? String(v) : 'other';
+}
+
 /** Users typed in the box: a whole number from 2 to TUNE_MAX_USERS, else undefined. */
 export function parseUsers(text: string): number | undefined {
   const n = /^\s*\d+\s*$/.test(text) ? Number(text) : NaN;
@@ -78,8 +99,15 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
   const timeOf = (seconds: number | undefined, fallback: Parameters<typeof t>[0]) => (seconds === undefined ? t(fallback) : t('tune.options.modelTime', { time: roughDuration(seconds) }));
   const goal: TuneGoal = value.goal ?? 'single';
   const users = value.users ?? TUNE_MULTI_DEFAULTS.users;
-  const perUser = value.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext;
+  const perUser: TunePerUserContext = value.perUserContext ?? TUNE_MULTI_DEFAULTS.perUserContext;
   const [usersText, setUsersText] = useState(String(users));
+  // "Altro…": chosen (a typed value shows it), and the text as typed (the request keeps the last valid value).
+  const [other, setOther] = useState(perUserSegment(perUser) === 'other');
+  const [otherText, setOtherText] = useState(typeof perUser === 'number' ? String(perUser) : String(TUNE_MULTI_DEFAULTS.perUserContext));
+  const contextMax = trainedContext ?? PER_USER_CONTEXT_LIMIT;
+  const otherInvalid = parsePerUserContext(otherText, contextMax) === undefined;
+  const segment = other ? 'other' : perUserSegment(perUser);
+  const setPerUser = (c: TunePerUserContext) => onChange({ ...value, goal: 'multi', users, perUserContext: c });
   // The YaRN context as typed: the request keeps the last whole number.
   const [yarnText, setYarnText] = useState(value.yarnTarget === undefined ? '' : String(value.yarnTarget));
   const usersInvalid = parseUsers(usersText) === undefined;
@@ -145,11 +173,56 @@ export function TuneOptions({ value, onChange, expert, previous, times, recheckT
               // Never past the card's edge: the sizes go on a second row when the card is narrow.
               className="flex-wrap"
               label={t('tune.options.perUserContext')}
-              value={String(perUser)}
-              onValueChange={(v) => onChange({ ...value, goal: 'multi', users, perUserContext: Number(v) })}
-              options={TUNE_PER_USER_CONTEXTS.map((c) => ({ value: String(c), label: depthLabel(c, f) }))}
+              value={segment}
+              onValueChange={(v) => {
+                setOther(v === 'other');
+                if (v === 'other') {
+                  // The box starts from the context chosen so far: the request stays what the box says.
+                  const start = typeof perUser === 'number' ? perUser : TUNE_MULTI_DEFAULTS.perUserContext;
+                  setOtherText(String(start));
+                  setPerUser(start);
+                } else setPerUser(v === 'max' ? 'max' : Number(v));
+              }}
+              options={[
+                { value: 'max', label: t('tune.options.perUserMax') },
+                ...TUNE_PER_USER_CONTEXTS.map((c) => ({ value: String(c), label: depthLabel(c, f) })),
+                { value: 'other', label: t('tune.options.perUserOther') },
+              ]}
             />
+            {segment === 'max' && (
+              <p className="inline-flex items-start gap-1 text-xs text-fg-3">
+                {t('tune.options.perUserMaxDesc', { n: users })}
+                <HelpTip term={t('tune.options.perUserMax')}>{t('tune.options.perUserMaxHelp')}</HelpTip>
+              </p>
+            )}
           </div>
+          {segment === 'other' && (
+            <Field
+              className="@xs:col-span-2"
+              label={t('tune.options.perUserOtherLabel')}
+              hint={
+                <span className={otherInvalid ? 'text-danger-text' : undefined}>
+                  {trainedContext === undefined ? t('tune.options.perUserOtherHintOpen') : t('tune.options.perUserOtherHint', { max: depthLabel(trainedContext, f), tokens: f.integer(trainedContext) })}
+                </span>
+              }
+            >
+              {({ id, describedBy }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  aria-invalid={otherInvalid || undefined}
+                  value={otherText}
+                  onChange={(e) => {
+                    setOtherText(e.target.value);
+                    const n = parsePerUserContext(e.target.value, contextMax);
+                    if (n !== undefined) setPerUser(n);
+                  }}
+                  className="tabular-nums"
+                  autoComplete="off"
+                />
+              )}
+            </Field>
+          )}
           <div className="flex flex-col gap-1.5 @xs:col-span-2">
             <span className="inline-flex items-center gap-1 text-sm font-medium text-fg">
               {t('tune.options.usersMode')}

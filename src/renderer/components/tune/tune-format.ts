@@ -1,5 +1,5 @@
 /** Words and short numbers for the tune screens (pure: the caller passes the formatters). */
-import type { EngineKind, LaunchParams } from '../../../contract/engines';
+import { engineBaseOf, type EngineKind, type LaunchParams } from '../../../contract/engines';
 import type { TuneAttempt, TuneCombination, TuneGoal, TuneKvType, Tuning } from '../../../contract/results';
 import type { Formatters } from '../../i18n';
 import type { useConfigLabel } from '../presets/config-label';
@@ -78,11 +78,29 @@ export function discardReason(a: TuneAttempt, f: F & Pick<Formatters, 'bytes'>):
   return f.t('tune.discard.lost');
 }
 
-/** The live status of the launch in progress: "Cerco il contesto massimo con cache q4_0: provo 48K…". */
-export function stageText(a: Pick<TuneAttempt, 'stage' | 'kvType' | 'contextSize' | 'params'>, engineKind: EngineKind, label: LabelFn, f: F, goal?: TuneGoal): string {
+/**
+ * The context each user has in a launch of "Più utenti" of `users` users: vLLM, SGLang and TensorRT-LLM
+ * are launched with one user's context (their KV pool holds every user); llama.cpp, NInfer and a
+ * program with an OpenAI API with every user's together.
+ */
+export function launchPerUser(engineKind: EngineKind, contextSize: number, users: number | undefined): number {
+  const base = engineBaseOf(engineKind);
+  if (base === 'vllm' || base === 'sglang' || base === 'trtllm') return contextSize;
+  return Math.floor(contextSize / Math.max(1, users ?? 1));
+}
+
+/**
+ * The live status of the launch in progress: "Cerco il contesto massimo con cache q4_0: provo 48K…".
+ * `perUserMax`: "Più utenti" with the context per user "Massimo" (its capacity search is per user).
+ */
+export function stageText(a: Pick<TuneAttempt, 'stage' | 'kvType' | 'contextSize' | 'params'>, engineKind: EngineKind, label: LabelFn, f: F, goal?: TuneGoal, perUserMax = false): string {
   const kv = kvName(a.kvType, f);
   const ctx = depthLabel(a.contextSize, f);
   const settings = settingsText(a.params, engineKind, label);
+  if (goal === 'multi' && perUserMax && a.stage === 'capacity') {
+    const n = a.params.parallel ?? 1;
+    return f.t('tune.stage.usersCapacityMax', { kv, n, perUser: depthLabel(launchPerUser(engineKind, a.contextSize, n), f) });
+  }
   // "Più utenti": a capacity launch checks the users fit (no largest context), the last one measures them.
   if (goal === 'multi' && (a.stage === 'capacity' || a.stage === 'sweep')) return f.t(a.stage === 'capacity' ? 'tune.stage.usersCapacity' : 'tune.stage.usersSweep', { kv, ctx, settings });
   return f.t(`tune.stage.${a.stage}`, { kv, ctx, settings });

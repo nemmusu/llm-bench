@@ -191,3 +191,43 @@ test('"Più utenti", only 2 users at once: no lower levels, the phases and the r
     await gb.close();
   }
 });
+
+test('"Più utenti" with the largest context each: 2 users, every KV cache its own context per user, the result says them', async () => {
+  const gb = await launchApp({ env: { FAKE_ENGINE_PROFILE: JSON.stringify(MULTI_PROFILE) } });
+  try {
+    const { page } = gb;
+    await skipWelcome(page);
+    await page.getByRole('radio', { name: /Trova le impostazioni migliori/ }).click();
+    await page.getByRole('radio', { name: 'Più utenti' }).click();
+    await page.getByRole('textbox', { name: 'Utenti insieme' }).fill('2');
+    const context = page.getByRole('radiogroup', { name: 'Contesto per utente (token)' });
+    await context.getByRole('radio', { name: 'Massimo' }).click();
+    await expect(page.getByText(/Per ogni cache KV cerco il contesto più grande che può avere ognuno dei 2 utenti/)).toBeVisible();
+    // "Altro…" checks what is typed; back to "Massimo".
+    await context.getByRole('radio', { name: 'Altro…' }).click();
+    const box = page.getByRole('textbox', { name: 'Contesto per utente a tua scelta' });
+    await box.fill('512');
+    await expect(box).toHaveAttribute('aria-invalid', 'true');
+    await context.getByRole('radio', { name: 'Massimo' }).click();
+    await page.getByRole('radio', { name: 'Solo 2 utenti insieme' }).click();
+    await scan(page, 'benchmark, several users, largest context each');
+    await page.getByRole('button', { name: 'Avvia benchmark' }).click();
+    await page.getByRole('dialog', { name: 'Prima di iniziare scarico quello che manca' }).getByRole('button', { name: 'Scarica e avvia' }).click();
+
+    // The live screen: the first phase searches the context of each user.
+    await expect(h1(page, 'Test in corso')).toBeVisible({ timeout: 30_000 });
+    const steps = page.getByRole('list', { name: 'Fasi del test' });
+    await expect(steps.getByText('Contesto per utente')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Contesto massimo per utente, per cache' })).toBeVisible();
+
+    // The result: how much each user can have, with every cache, and the ranking with the context of each.
+    await expect(h1(page, /Qwen3-0\.6B/)).toBeVisible({ timeout: 180_000 });
+    await expect(page.getByText(/^Con 2 utenti insieme ognuno può avere fino a \d+K di contesto; con quel contesto la più veloce per utente è .+ Il contesto più grande a testa, per cache: /)).toBeVisible();
+    const ranking = page.getByRole('table', { name: 'Classifica delle configurazioni con 2 utenti' });
+    await expect(ranking.getByRole('columnheader', { name: 'Contesto per utente (token)' })).toBeVisible();
+    await expect(page.getByText(/^Ordinata per contesto per utente, dal più grande/)).toBeVisible();
+    await scan(page, 'tune result, largest context each');
+  } finally {
+    await gb.close();
+  }
+});

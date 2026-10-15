@@ -79,6 +79,7 @@ import {
   type TuneCommand,
   type TuneGoal,
   type TuneKvType,
+  type TunePerUserContext,
   type TuneStage,
   type TuneTag,
   type TuneUsersMode,
@@ -408,8 +409,8 @@ export interface TunerInput {
   fidelity: boolean;
   /** Absent = 'single'. */
   goal?: TuneGoal;
-  /** Goal 'multi': users at once, context per user, messages per conversation, users 1 … N or N only ('exact'). */
-  multi?: { users: number; perUserContext: number; turns: number; usersMode?: TuneUsersMode };
+  /** Goal 'multi': users at once, context per user (tokens or 'max'), messages per conversation, users 1 … N or N only ('exact'). */
+  multi?: { users: number; perUserContext: TunePerUserContext; turns: number; usersMode?: TuneUsersMode };
   /** Values tried first because they won before on this GPU (reported as is). */
   learned?: Tuning['learned'];
   /** Budget 'recheck'. */
@@ -620,6 +621,24 @@ export class Tuner {
     return (this.capacity.get(kv) as Capacity).measuredMax as number;
   }
 
+  /**
+   * The context a launch is made with for a capacity candidate (the same number here; goal 'multi' with
+   * the largest context per user: the launch of every user with that context).
+   */
+  protected launchContext(c: number): number {
+    return c;
+  }
+
+  /** The candidate an engine's report of its KV cache (tokens) stands for (goal 'multi', largest per user: shared by every user). */
+  protected hintContext(tokens: number): number {
+    return tokens;
+  }
+
+  /** What a capacity launch at candidate `c` checks after its quick probe (goal 'multi', largest per user: the KV pool holds every user). */
+  protected capacityWork(_c: number): Work | undefined {
+    return undefined;
+  }
+
   /** The base settings of a KV type, with the start-up setting in use. */
   protected base(kv: TuneKvType): Variant {
     return this.withStartup(this.input.space.base(kv));
@@ -810,7 +829,7 @@ export class Tuner {
    * The largest context a KV type is expected to reach: measured once its capacity search ended, else
    * (not started, or under way) predicted; undefined = none.
    */
-  private expectedMax(kv: TuneKvType, previous: number | undefined): number | undefined {
+  protected expectedMax(kv: TuneKvType, previous: number | undefined): number | undefined {
     const cap = this.capacity.get(kv) as Capacity;
     if (this.capacityEnded.has(kv)) return cap.measuredMax;
     const ladder = this.input.space.kvLadder;
@@ -852,7 +871,7 @@ export class Tuner {
 
   /** Largest context the estimate allows for this KV type (with slack): 0 = not even the smallest, undefined = no estimate. */
   private predictMax(kv: TuneKvType): number | undefined {
-    const fits = (ctx: number) => this.predictFits(this.input.space.params(this.base(kv), ctx));
+    const fits = (ctx: number) => this.predictFits(this.input.space.params(this.base(kv), this.launchContext(ctx)));
     const atMin = fits(this.min);
     if (atMin === undefined) return undefined;
     if (!atMin) return 0;
@@ -882,16 +901,20 @@ export class Tuner {
     return { kv, ...(predicted !== undefined ? { predictedMax: predicted } : {}), candidates, status: new Map(), launched: new Set(), inferred: false };
   }
 
-  /** The most precise KV type's base settings at a small context: the speed and the shared memory a spill is compared with. */
-  protected async reference(ctx: number): Promise<void> {
+  /**
+   * The most precise KV type's base settings at a small context: the speed and the shared memory a spill
+   * is compared with. `unit` = the capacity candidate it stands for (goal 'multi', largest per user: a
+   * small context each).
+   */
+  protected async reference(ctx: number, unit = ctx): Promise<void> {
     this.refDone = true;
     for (const kv of this.input.space.kvLadder) {
       const cap = this.capacity.get(kv) as Capacity;
       if (cap.candidates.length === 0) continue;
       const live = await this.launch('reference', this.base(kv), ctx);
       if (!live) return;
-      cap.status.set(ctx, live.att.outcome === 'ok');
-      cap.launched.add(ctx);
+      cap.status.set(unit, live.att.outcome === 'ok');
+      cap.launched.add(unit);
       if (live.att.outcome === 'ok') {
         const probe = live.att.points[0] as LatencyPoint;
         this.refDecode = probe.decodeTps.median;
@@ -912,7 +935,7 @@ export class Tuner {
     return known.length ? Math.max(...known) : undefined;
   }
 
-  private async searchCapacity(kv: TuneKvType): Promise<void> {
+  protected async searchCapacity(kv: TuneKvType): Promise<void> {
     this.capacityDone.add(kv);
     await this.findCapacity(kv);
     this.capacityEnded.add(kv);
@@ -967,7 +990,7 @@ export class Tuner {
       const next = tried ? Math.floor((okIdx + hi) / 2) : hi - 1;
       tried = true;
       const ctx = cands[next] as number;
-      const live = await this.launch('capacity', variant, ctx, work && next === hi - 1 ? work : undefined);
+      const live = await this.launch('capacity', variant, this.launchContext(ctx), work && next === hi - 1 ? work : this.capacityWork(ctx));
       if (!live) {
         cap.skipped = 'budget';
         break;
@@ -1014,8 +1037,9 @@ export class Tuner {
    * above are impossible, the exact capacity (rounded down to 1K) becomes one. True when that added a
    * candidate.
    */
-  private applyHint(cap: Capacity, hint: number | undefined): boolean {
-    if (hint === undefined) return false;
+  private applyHint(cap: Capacity, tokens: number | undefined): boolean {
+    if (tokens === undefined) return false;
+    const hint = this.hintContext(tokens);
     const exact = Math.floor(hint / 1024) * 1024;
     cap.hinted = exact;
     for (const c of cap.candidates) if (c > hint) cap.status.set(c, false);

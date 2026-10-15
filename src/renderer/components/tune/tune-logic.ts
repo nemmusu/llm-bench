@@ -269,7 +269,8 @@ export function compareUsersRows(a: RankRow & { users: ConcurrencyPoint }, b: Ra
 
 /**
  * The ranking of a "Più utenti" run: the combinations measured with every user busy (the core's
- * recommendation on top, then by {@link compareUsersRows}), then those measured otherwise.
+ * recommendation on top, then by {@link compareUsersRows}; "Massimo": the largest context per user
+ * first, as the core decides), then those measured otherwise.
  */
 export function rankUsers(tuning: Pick<Tuning, 'combinations' | 'multi' | 'recommended'>): RankRow[] {
   const n = usersLevel(tuning);
@@ -284,7 +285,9 @@ export function rankUsers(tuning: Pick<Tuning, 'combinations' | 'multi' | 'recom
   }
   // The core's recommendation on top (it decided with the same rule), the others by the rule.
   const top = full.filter((r) => r.index === tuning.recommended);
-  full.splice(0, full.length, ...top, ...full.filter((r) => r.index !== tuning.recommended).sort(compareUsersRows));
+  const largest = tuning.multi?.perUserContext === 'max';
+  const wider = (a: RankRow, b: RankRow) => (largest ? (b.combo.perUserContext as number) - (a.combo.perUserContext as number) : 0);
+  full.splice(0, full.length, ...top, ...full.filter((r) => r.index !== tuning.recommended).sort((a, b) => wider(a, b) || compareUsersRows(a, b)));
   return [
     ...full.map((r, k) => {
       const above = full[k - 1];
@@ -296,9 +299,12 @@ export function rankUsers(tuning: Pick<Tuning, 'combinations' | 'multi' | 'recom
   ];
 }
 
-/** Per-user context of a combination: what its users-at-once points say, else the launch context over the users. */
+/**
+ * Per-user context of a combination: the context each user had in the search (TuneCombination.perUserContext),
+ * else (runs before 0.6.1) what its users-at-once points say.
+ */
 export function perUserContextOf(r: Pick<RankRow, 'combo' | 'users'>): number | undefined {
-  return r.users?.contextPerUser;
+  return r.combo.perUserContext ?? r.users?.contextPerUser;
 }
 
 /** "Più utenti": per-user generation, total, slowest first token, context per user, memory (the KV layout and cache reuse are in the configuration's words). */

@@ -190,9 +190,10 @@ const measureOf = (c: TuneCombination, users: number): UsersMeasure | undefined 
 
 /**
  * Goal 'multi': the combination that serves `users` users best (compareUsers, then the more precise
- * KV cache, then the earlier one). Undefined when none was measured at that level.
+ * KV cache, then the earlier one). `largestFirst` (context per user "Massimo"): the largest context per
+ * user first, what was asked. Undefined when none was measured at that level.
  */
-export function recommendedForUsers(combos: readonly TuneCombination[], users: number, exclude?: number): number | undefined {
+export function recommendedForUsers(combos: readonly TuneCombination[], users: number, exclude?: number, largestFirst = false): number | undefined {
   let best: number | undefined;
   combos.forEach((c, i) => {
     if (c.outcome !== 'ok' || i === exclude || !measureOf(c, users)) return;
@@ -201,7 +202,9 @@ export function recommendedForUsers(combos: readonly TuneCombination[], users: n
       return;
     }
     const b = combos[best] as TuneCombination;
-    const cmp = compareUsers(measureOf(c, users) as UsersMeasure, measureOf(b, users) as UsersMeasure) || kvPrecisionRank(b.kvType) - kvPrecisionRank(c.kvType);
+    // Every combination of a "Massimo" search says its context per user.
+    const wider = largestFirst ? (c.perUserContext as number) - (b.perUserContext as number) : 0;
+    const cmp = wider || compareUsers(measureOf(c, users) as UsersMeasure, measureOf(b, users) as UsersMeasure) || kvPrecisionRank(b.kvType) - kvPrecisionRank(c.kvType);
     if (cmp > 0) best = i;
   });
   return best;
@@ -216,7 +219,9 @@ export function usersOf(t: Pick<Tuning, 'multi'>): number | undefined {
 export function runnerUp(t: Tuning): number | undefined {
   if (t.recommended === undefined) return undefined;
   const users = usersOf(t);
-  return users !== undefined ? recommendedForUsers(t.combinations, users, t.recommended) : recommendedCombination(t.combinations, t.recommended);
+  if (users === undefined) return recommendedCombination(t.combinations, t.recommended);
+  // A users level comes from a 'multi' tuning.
+  return recommendedForUsers(t.combinations, users, t.recommended, (t.multi as NonNullable<Tuning['multi']>).perUserContext === 'max');
 }
 
 /** The most users (from 1, in order) served without a failed request. */

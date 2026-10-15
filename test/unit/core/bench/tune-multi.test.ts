@@ -203,10 +203,11 @@ describe('MultiTuner: llama.cpp, 4 users × 8K', () => {
   it('conversations only when the context per user holds them', () => {
     const lab = machine();
     const t = new MultiTuner(input({ ...multi(4, 800), modelContext: undefined }), { lab, now: lab.now });
-    expect(t.sessionsStep(4)).toBeUndefined();
+    expect(t.sessionsStep(4, 800)).toBeUndefined();
     const fits = new MultiTuner(input({ ...multi(4, 8192), modelContext: 4096 }), { lab, now: lab.now });
+    expect(fits.sessionsStep(2, 4096)).toMatchObject({ depth: 4096 - (3 * 128 + 2 * 256 + 16), levels: [2], turns: 3 });
     // The context per user never exceeds the model's trained context.
-    expect(fits.sessionsStep(2)).toMatchObject({ depth: 4096 - (3 * 128 + 2 * 256 + 16), levels: [2], turns: 3 });
+    expect(fits.interrupted('cancelled').multi).toMatchObject({ perUserContext: 4096, promptTokens: 4096 - 128 - 16 });
   });
 });
 

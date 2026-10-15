@@ -65,7 +65,8 @@ export function TunePresetList({ presets, currentBuild, onUse }: TunePresetListP
           const name = p.ids.map((id) => t(`presets.tune.ids.${id}`)).join(' · ');
           const parts = [
             t('presets.tune.kv', { kv: kvName(p.kvType, f) }),
-            t('presets.tune.ctx', { ctx: depthLabel(p.maxContext, f) }),
+            // "Più utenti": how many and the context of each, not the launch's whole context.
+            p.perUserContext !== undefined ? t('presets.tune.perUser', { n: p.users as number, ctx: depthLabel(p.perUserContext, f) }) : t('presets.tune.ctx', { ctx: depthLabel(p.maxContext, f) }),
             // The numbers are those of its first answer: a peak's (where it peaked), else with the context full.
             ...(p.depth !== undefined && p.ids[0] === 'fastest-read'
               ? [t('presets.tune.read', { tps: number(p.prefillTps as number, 0), depth: depthLabel(p.depth, f) })]
