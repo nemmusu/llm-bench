@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -155,7 +155,8 @@ describe('HashQueue', () => {
     const hasher: typeof sha256File = (file, opts) =>
       new Promise((resolve, reject) => {
         calls++;
-        const timer = setTimeout(() => resolve(sha(readFileSync(file))), 30);
+        // The first try never ends by itself (only the pause stops it), the one after the resume does.
+        const timer = setTimeout(() => resolve(sha(readFileSync(file))), calls === 1 ? 60_000 : 30);
         opts?.signal?.addEventListener('abort', () => {
           clearTimeout(timer);
           reject(new DOMException('aborted', 'AbortError'));
@@ -163,7 +164,8 @@ describe('HashQueue', () => {
       });
     const { q } = setup(hasher);
     const p = q.enqueue(a);
-    await new Promise((r) => setTimeout(r, 5));
+    // Paused while the file is being hashed (a busy machine may take a while to get there).
+    await vi.waitFor(() => expect(calls).toBe(1), { interval: 1 });
     q.pause();
     expect(q.isPaused).toBe(true);
     await new Promise((r) => setTimeout(r, 50));
