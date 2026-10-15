@@ -33,13 +33,16 @@ export const TUNE_PROFILE = {
  * 40 960 tokens). The KV cache costs twice TUNE_PROFILE's, so upstream's types stop short:
  *   - f16 holds 8K, q8_0 16K, q4_0 32K (40K runs out of memory);
  *   - a fork type holds the whole 40K (turbo3: 6000 + 1200 × 40 × 3.125/16 + 300 = 15 675 MiB; turbo2
- *     13 575 MiB) → more context than q4_0.
+ *     13 575 MiB) → more context than q4_0;
+ *   - turbo1.5 (also the whole 40K) generates at 0.8× the speed of turbo2 → turbo2 is the recommendation
+ *     (equal speeds would leave it to the timing noise of a busy test machine).
  * VRAM need = 6000 + 1200 × ctx/1K × (bits per value / 16) + 300 × ub/512 MiB, against 18 000 (no spill:
  * over it, out of memory).
  */
 export const TURBO_PROFILE = {
   ...TUNE_PROFILE,
   memory: { totalMiB: 18_000, weightsMiB: 6000, kvMiBPer1k: 1200, computeMiBPer512: 300 },
+  speed: { ...TUNE_PROFILE.speed, kvDecodeFactor: { 'turbo1.5': 0.8 } },
 };
 
 /**
