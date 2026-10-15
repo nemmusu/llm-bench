@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { exposeOnGlobal, menuTemplate } from '../../../src/main/shell';
-import { coreState, FakeTray, oneServer, started, tick } from './harness';
+import { exposeOnGlobal, menuTemplate, startShell, TRAY_GUID_NAMESPACE, trayGuid } from '../../../src/main/shell';
+import { coreState, FakeTray, oneServer, started, tick, world } from './harness';
 
 const trayDir = path.resolve('/app/out/main', '../../resources/icons/tray');
 
@@ -279,5 +279,56 @@ describe('helpers', () => {
 
   it('FakeTray stays isolated between tests', () => {
     expect(FakeTray).toBeDefined();
+  });
+});
+
+/**
+ * One icon in the Windows notification area: an icon of a process that was killed (an installer
+ * upgrade, a crash, a test) stays there until the mouse passes over it. The installed app takes its
+ * own slot (a GUID), so a new start replaces the stale icon instead of adding one.
+ */
+describe('tray icon slot (Windows)', () => {
+  const exe = 'C:\\Program Files\\LLM Bench\\LLM Bench.exe';
+
+  it('trayGuid: a UUID version 5, the same for the same executable (any case), another for another folder', () => {
+    const g = trayGuid(exe);
+    expect(g).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(trayGuid(exe.toUpperCase())).toBe(g);
+    expect(trayGuid('D:\\Apps\\LLM Bench\\LLM Bench.exe')).not.toBe(g);
+    expect(g).not.toBe(TRAY_GUID_NAMESPACE);
+  });
+
+  it('the packaged app on Windows creates its icon with the GUID of its executable', async () => {
+    const t = await started({ packaged: true });
+    expect(t.tray!.extra).toEqual([trayGuid('/app/electron')]);
+  });
+
+  it('development, the E2E tests and other systems create it without one (Electron is shared by every checkout)', async () => {
+    expect((await started()).tray!.extra).toEqual([]);
+    const linux = await started({ packaged: true, platform: 'linux', run: (cmd) => (cmd === 'gdbus' ? { code: 0, stdout: '(true,)' } : { code: 1, stdout: '' }) });
+    expect(linux.tray!.extra).toEqual([]);
+  });
+
+  it('every way out takes the icon away: quit, a core crash (before the restart), a second start', async () => {
+    const quit = await started({ packaged: true });
+    quit.appEvents.get('before-quit')!({ preventDefault: () => {} });
+    quit.proc.emit('exit', 0);
+    await vi.waitFor(() => expect(quit.tray!.destroyed).toBe(true));
+    expect(quit.s.tray).toBeUndefined();
+
+    const crash = await started({ packaged: true });
+    crash.proc.emit('exit', 9);
+    expect(crash.tray!.destroyed).toBe(true);
+    expect(crash.s.tray).toBeUndefined();
+    expect(crash.calls.relaunch).toBe(1);
+
+    // A second start leaves before it makes an icon (the first one is focused instead).
+    FakeTray.last = undefined;
+    const second = world({ lock: false, packaged: true });
+    startShell(second.e, second.h);
+    second.readyResolve();
+    await tick();
+    expect(second.calls.quit).toBe(1);
+    expect(FakeTray.last).toBeUndefined();
   });
 });

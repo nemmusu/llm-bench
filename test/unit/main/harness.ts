@@ -106,7 +106,10 @@ export class FakeTray {
   menu: { template: MenuItemConstructorOptions[] } | undefined;
   handlers = new Map<string, Handler>();
   destroyed = false;
-  constructor(image: unknown) {
+  /** The constructor's arguments after the image (Windows: the GUID of the packaged app). */
+  extra: unknown[];
+  constructor(image: unknown, ...extra: unknown[]) {
+    this.extra = extra;
     this.image = image;
     this.images.push(image);
     FakeTray.last = this;

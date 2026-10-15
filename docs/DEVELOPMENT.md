@@ -20,7 +20,7 @@ npm run dist         # Windows installers (NSIS + portable) or Linux packages (.
 
 ## Architecture
 
-- `src/main`: the Electron shell (window, notification area, dialogs, encrypted secrets).
+- `src/main`: the Electron shell (window, notification area, dialogs, encrypted secrets). On Windows the installed app creates its notification-area icon with a GUID derived from its executable's path (`trayGuid` in `src/main/shell.ts`): Windows keeps the icon of a process that was killed (an installer upgrade, a crash) until the mouse passes over it, and with its own slot a new start replaces that icon instead of adding another. Development and E2E runs use no GUID (their executable is Electron's own), and every way out of the app destroys the icon.
 - `src/core`: a local HTTP server (127.0.0.1, with a per-session token) in a utility process: engines, models, downloads, benchmarks, GPU telemetry, Docker, servers.
 - `src/renderer`: the React UI (its own design system, English and Italian).
 - `src/contract`: the shared schemas (zod) and response types.

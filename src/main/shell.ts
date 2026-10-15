@@ -13,7 +13,7 @@ import type {
   Shell,
   UtilityProcess,
 } from 'electron';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { AppNotice } from '../contract/app-notices';
 import { shellStateSchema, type ShellState as CoreState } from '../contract/servers';
@@ -63,7 +63,8 @@ export interface ElectronApi {
   safeStorage: Pick<SafeStorage, 'isEncryptionAvailable' | 'encryptString' | 'decryptString' | 'getSelectedStorageBackend'>;
   shell: Pick<Shell, 'openExternal' | 'showItemInFolder'>;
   utilityProcess: { fork(modulePath: string, args: string[], opts: Record<string, unknown>): UtilityProcess };
-  Tray: new (image: NativeImage) => TrayLike;
+  /** `guid` (Windows): the notification-area slot of the icon (see trayGuid). */
+  Tray: new (image: NativeImage, guid?: string) => TrayLike;
   Menu: { buildFromTemplate(template: MenuItemConstructorOptions[]): MenuType };
   nativeImage: { createFromPath(p: string): NativeImage };
   Notification: { new (o: { title: string; body: string; icon?: string }): { show(): void }; isSupported(): boolean };
@@ -113,6 +114,29 @@ export const SHUTDOWN_MS = 4000;
 
 export function titleBarColors(dark: boolean): { color: string; symbolColor: string } {
   return dark ? { color: '#0b0d12', symbolColor: '#e6e8ee' } : { color: '#f4f5f8', symbolColor: '#1b1f2a' };
+}
+
+/** Namespace of the tray icon's GUID (trayGuid): a fixed UUID of LLM Bench. */
+export const TRAY_GUID_NAMESPACE = '6c1f3b2e-8d4a-4f57-9b0e-2a7d5c9e41b3';
+
+/**
+ * The GUID of the notification-area icon of the LLM Bench at `execPath` (Windows, packaged app only).
+ * Windows keeps the icon of a process that was killed (an installer upgrade, a crash) until the mouse
+ * passes over it, so every start without a GUID adds one more icon. With a GUID the slot is the
+ * app's: a new start takes it over and the stale icon goes. Windows ties a GUID to one executable path
+ * (an unsigned app): the GUID is derived from the path (a UUID version 5 of it, case-insensitive like
+ * Windows paths), fixed for an installation, and an installation in another folder (or the portable
+ * copy) gets its own instead of an icon that cannot be created. Unpackaged runs (development, the E2E
+ * tests) use none: their executable is Electron's own, shared by every checkout.
+ */
+export function trayGuid(execPath: string): string {
+  const ns = Buffer.from(TRAY_GUID_NAMESPACE.replace(/-/g, ''), 'hex');
+  const hash = createHash('sha1').update(ns).update(execPath.toLowerCase(), 'utf8').digest();
+  const b = hash.subarray(0, 16);
+  b[6] = ((b[6] as number) & 0x0f) | 0x50;
+  b[8] = ((b[8] as number) & 0x3f) | 0x80;
+  const hex = b.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /** index.ts's `expose`: a property of the main process's global object. */
@@ -295,6 +319,12 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     }
   }
 
+  /** Every way out takes the icon away: an icon left behind stays in the notification area until the mouse passes over it. */
+  function destroyTray(): void {
+    s.tray?.destroy();
+    s.tray = undefined;
+  }
+
   const loginHost: LoginItemHost = {
     platform: h.platform,
     env: h.env,
@@ -372,6 +402,8 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
           reject(new Error(`core exited with code ${code}`));
           return;
         }
+        // app.exit() skips 'before-quit': the icon goes now, before the new start puts up its own.
+        destroyTray();
         e.dialog.showErrorBox(APP_NAME, t('coreCrashed', { code: String(code) }));
         app.relaunch();
         app.exit(1);
@@ -562,7 +594,9 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     }
     s.hideNoticeShown = (await prefs).hideNoticeShown === true;
     if (await hasTray) {
-      s.tray = new e.Tray(e.nativeImage.createFromPath(trayIconFile('idle')));
+      const image = e.nativeImage.createFromPath(trayIconFile('idle'));
+      // The installed app's own slot (trayGuid): a start after a kill replaces the icon left behind.
+      s.tray = h.platform === 'win32' && app.isPackaged ? new e.Tray(image, trayGuid(h.execPath)) : new e.Tray(image);
       s.trayIcon = 'idle';
       // Windows: a click on the icon opens the window (Linux panels open the menu instead).
       s.tray.on('click', showWindow);
@@ -576,7 +610,7 @@ export function startShell(e: ElectronApi, h: ShellHost): ShellState {
     s.quitting = true;
     ev.preventDefault();
     void shutdownCore().then(() => {
-      s.tray?.destroy();
+      destroyTray();
       if (h.env.NODE_V8_COVERAGE) h.takeCoverage();
       app.quit();
     });
