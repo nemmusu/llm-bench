@@ -77,7 +77,11 @@ test('find the best settings: watch the attempts, read the ranking, use the winn
     const first = ranking.getByRole('row').nth(1);
     await expect(first.getByRole('cell').nth(0)).toHaveText('1');
     await expect(first.getByRole('cell').nth(2)).toContainText('il migliore');
-    await expect(ranking.getByRole('row')).toHaveCount(4);
+    // One combination per cache; a screened variant that was the fastest at one of its depths gets a sweep
+    // and a row of its own too (at most MAX_EXTRA_SWEEPS = 2: the timing of a busy PC decides whether one does).
+    for (const kv of ['f16', 'q8_0', 'q4_0']) await expect(ranking.getByRole('row', { name: new RegExp(`^Cache KV ${kv}`) }).first()).toBeVisible();
+    await expect.poll(() => ranking.getByRole('row').count()).toBeGreaterThanOrEqual(1 + 3);
+    expect(await ranking.getByRole('row').count()).toBeLessThanOrEqual(1 + 3 + 2);
 
     // Compared at 32K, where f16 no longer fits: it drops to the bottom and says how far it gets.
     await page.getByRole('radiogroup', { name: 'Confronta a' }).getByRole('radio', { name: '32K' }).click();
