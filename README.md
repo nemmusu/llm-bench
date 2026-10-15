@@ -10,6 +10,9 @@ Benchmark local LLMs on your own PC, find the best settings, and get the answer 
 </p>
 
 <p align="center">
+  <a href="https://github.com/nemmusu/llm-bench/releases/latest"><img src="https://img.shields.io/github/v/release/nemmusu/llm-bench?label=release&color=6E56CF" alt="Latest release"></a>
+  <a href="https://github.com/nemmusu/llm-bench/releases"><img src="https://img.shields.io/github/downloads/nemmusu/llm-bench/total?color=6E56CF" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nemmusu/llm-bench?color=555" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white" alt="Windows 10 and 11">
   <img src="https://img.shields.io/badge/Linux-.deb%20%7C%20AppImage-FCC624?logo=linux&logoColor=black" alt="Linux: .deb and AppImage">
   <img src="https://img.shields.io/badge/NVIDIA-GPU-76B900?logo=nvidia&logoColor=white" alt="NVIDIA graphics cards">
@@ -95,3 +98,7 @@ You only need an NVIDIA graphics card with its driver. Some engines also use Doc
 
 - 📖 **[Full guide](docs/GUIDE.md)**: install, every screen, engines, troubleshooting · [Italiano](docs/GUIDA.md)
 - 🛠️ **[For developers](docs/DEVELOPMENT.md)**: build, tests, architecture
+
+## License
+
+[MIT](LICENSE) © nemmusu

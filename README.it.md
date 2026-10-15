@@ -10,6 +10,9 @@ Misura i modelli linguistici (LLM) sul tuo PC, trova le impostazioni migliori e 
 </p>
 
 <p align="center">
+  <a href="https://github.com/nemmusu/llm-bench/releases/latest"><img src="https://img.shields.io/github/v/release/nemmusu/llm-bench?label=release&color=6E56CF" alt="Latest release"></a>
+  <a href="https://github.com/nemmusu/llm-bench/releases"><img src="https://img.shields.io/github/downloads/nemmusu/llm-bench/total?color=6E56CF" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nemmusu/llm-bench?color=555" alt="Licenza MIT"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white" alt="Windows 10 e 11">
   <img src="https://img.shields.io/badge/Linux-.deb%20%7C%20AppImage-FCC624?logo=linux&logoColor=black" alt="Linux: .deb e AppImage">
   <img src="https://img.shields.io/badge/NVIDIA-GPU-76B900?logo=nvidia&logoColor=white" alt="Schede video NVIDIA">
@@ -95,3 +98,7 @@ Ti serve solo una scheda video NVIDIA con il suo driver. Alcuni motori usano anc
 
 - 📖 **[Guida completa](docs/GUIDA.md)**: installazione, ogni schermata, motori, problemi comuni · [English](docs/GUIDE.md)
 - 🛠️ **[Per sviluppatori](docs/DEVELOPMENT.md)** (in inglese): compilazione, test, architettura
+
+## Licenza
+
+[MIT](LICENSE) © nemmusu
